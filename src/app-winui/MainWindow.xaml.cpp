@@ -244,20 +244,26 @@ namespace winrt::ElMd::implementation
 
         textEditContext.LayoutRequested([this](auto const&, winrt::Windows::UI::Text::Core::CoreTextLayoutRequestedEventArgs const& args)
         {
-            auto request = args.Request();
-            auto caret = editorSession.Core().editor.selection().active.v;
-            auto caretBounds = editorRenderer.CaretBounds(caret);
-            auto rect = winrt::Windows::Foundation::Rect{ 0.0f, 0.0f, 1.0f, 24.0f };
-            if (caretBounds)
+            try
             {
-                auto transform = EditorSurface().TransformToVisual(nullptr);
-                auto point = transform.TransformPoint(winrt::Windows::Foundation::Point{ caretBounds->left, caretBounds->top });
-                rect = winrt::Windows::Foundation::Rect{ point.X, point.Y, caretBounds->right - caretBounds->left, caretBounds->bottom - caretBounds->top };
+                auto request = args.Request();
+                auto caret = editorSession.Core().editor.selection().active.v;
+                auto caretBounds = editorRenderer.CaretBounds(caret);
+                auto rect = winrt::Windows::Foundation::Rect{ 0.0f, 0.0f, 1.0f, 24.0f };
+                if (caretBounds)
+                {
+                    auto transform = EditorSurface().TransformToVisual(nullptr);
+                    auto point = transform.TransformPoint(winrt::Windows::Foundation::Point{ caretBounds->left, caretBounds->top });
+                    rect = winrt::Windows::Foundation::Rect{ point.X, point.Y, caretBounds->right - caretBounds->left, caretBounds->bottom - caretBounds->top };
+                }
+                auto bounds = request.LayoutBounds();
+                bounds.TextBounds(rect);
+                bounds.ControlBounds(rect);
             }
-            request.LayoutBounds().TextBounds(rect);
-            request.LayoutBounds().ControlBounds(rect);
-            request.LayoutBoundsVisualPixels().TextBounds(rect);
-            request.LayoutBoundsVisualPixels().ControlBounds(rect);
+            catch (winrt::hresult_error const& error)
+            {
+                (void)error;
+            }
         });
 
         textEditContext.SelectionUpdating([this](auto const&, winrt::Windows::UI::Text::Core::CoreTextSelectionUpdatingEventArgs const& args)
