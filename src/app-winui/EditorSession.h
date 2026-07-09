@@ -1,6 +1,7 @@
 #pragma once
 
 import elmd.core.editor;
+import elmd.core.command;
 import elmd.core.render_model;
 
 namespace winrt::ElMd
@@ -27,6 +28,7 @@ namespace winrt::ElMd
         void Open(winrt::Windows::Storage::StorageFile const& file, winrt::hstring const& text);
         void SaveAs(winrt::Windows::Storage::StorageFile const& file);
         void SetText(winrt::hstring const& text);
+        bool ExecuteCommand(elmd::Command const& command);
         bool HasFile() const;
         winrt::Windows::Storage::StorageFile File() const;
         winrt::hstring Text() const;
@@ -37,6 +39,7 @@ namespace winrt::ElMd
 
     private:
         void RebuildCore();
+        void RebuildRenderModel();
 
         winrt::Windows::Storage::StorageFile file_{ nullptr };
         winrt::hstring text_;

@@ -5,6 +5,7 @@ import elmd.core.editor;
 import elmd.core.parser;
 import elmd.core.render_builder;
 import elmd.core.render_model;
+import elmd.core.utf;
 
 namespace winrt::ElMd
 {
@@ -41,8 +42,27 @@ namespace winrt::ElMd
     {
         core_->sourceText = winrt::to_string(text_);
         core_->editor = elmd::Editor(core_->sourceText);
+        RebuildRenderModel();
+    }
+
+    void EditorSession::RebuildRenderModel()
+    {
         auto parsed = elmd::parse_text(core_->editor.revision(), core_->sourceText);
         core_->renderModel = elmd::build_render_model(parsed.document, core_->sourceText, parsed.outline);
+    }
+
+    bool EditorSession::ExecuteCommand(elmd::Command const& command)
+    {
+        if (!core_->editor.execute_command(command))
+        {
+            return false;
+        }
+
+        core_->sourceText = elmd::cps_to_utf8(core_->editor.text_cps());
+        text_ = winrt::to_hstring(core_->sourceText);
+        revision_ = core_->editor.revision();
+        RebuildRenderModel();
+        return true;
     }
 
     bool EditorSession::HasFile() const

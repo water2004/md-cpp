@@ -165,10 +165,11 @@ namespace winrt::ElMd
         winrt::check_hresult(dwriteFactory->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 30.0f, L"en-us", heading2Format.GetAddressOf()));
         winrt::check_hresult(dwriteFactory->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 24.0f, L"en-us", heading3Format.GetAddressOf()));
         winrt::check_hresult(dwriteFactory->CreateTextFormat(L"Cascadia Mono", nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, CodeFontSizeDip, L"en-us", codeFormat.GetAddressOf()));
-        for (auto format : { heading1Format.Get(), heading2Format.Get(), heading3Format.Get(), codeFormat.Get() })
+        for (auto format : { heading1Format.Get(), heading2Format.Get(), heading3Format.Get() })
         {
             winrt::check_hresult(format->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP));
         }
+        winrt::check_hresult(codeFormat->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP));
         winrt::check_hresult(codeFormat->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, CodeLineHeightDip, CodeFontSizeDip * 1.25f));
 
         ::Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
@@ -238,6 +239,24 @@ namespace winrt::ElMd
         auto documentRight = (std::min)(static_cast<float>(surfaceWidth) - DocumentHorizontalPaddingDip, documentLeft + DocumentWidthDip);
         auto y = documentTop;
 
+        auto measureTextHeight = [&](std::wstring const& text, IDWriteTextFormat* format, float width, float fallbackHeight)
+        {
+            ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+            auto hr = dwriteFactory->CreateTextLayout(text.c_str(), static_cast<UINT32>(text.size()), format, width, 100000.0f, layout.GetAddressOf());
+            if (FAILED(hr) || !layout)
+            {
+                return fallbackHeight;
+            }
+
+            DWRITE_TEXT_METRICS metrics{};
+            if (FAILED(layout->GetMetrics(&metrics)))
+            {
+                return fallbackHeight;
+            }
+
+            return (std::max)(fallbackHeight, metrics.height);
+        };
+
         if (sessionCore.renderModel.blocks.empty())
         {
             auto emptyText = winrt::hstring(L"Open a Markdown file or start editing to see the WYSIWYG surface.");
@@ -252,6 +271,9 @@ namespace winrt::ElMd
             ID2D1Brush* brush = textBrush.Get();
             float height = 48.0f;
             float inset = 0.0f;
+            float textTop = 4.0f;
+            bool fillPanel = false;
+            bool measureHeight = false;
             std::u32string text;
 
             switch (block.kind)
@@ -277,17 +299,21 @@ namespace winrt::ElMd
                     text = block.code_text;
                     format = codeFormat.Get();
                     brush = codeBrush.Get();
-                    height = 120.0f;
+                    height = 64.0f;
                     inset = 16.0f;
-                    d2dContext->FillRectangle(D2D1::RectF(documentLeft, y, documentRight, y + height), panelBrush.Get());
+                    textTop = 16.0f;
+                    fillPanel = true;
+                    measureHeight = true;
                     break;
                 case elmd::RenderBlockKind::Math:
                     text = U"$$\n" + block.tex + U"\n$$";
                     format = codeFormat.Get();
                     brush = accentBrush.Get();
-                    height = 96.0f;
+                    height = 64.0f;
                     inset = 16.0f;
-                    d2dContext->FillRectangle(D2D1::RectF(documentLeft, y, documentRight, y + height), panelBrush.Get());
+                    textTop = 16.0f;
+                    fillPanel = true;
+                    measureHeight = true;
                     break;
                 case elmd::RenderBlockKind::Unsupported:
                     text = elmd::utf8_to_cps(block.raw);
@@ -301,7 +327,16 @@ namespace winrt::ElMd
             }
 
             auto wide = ToWide(text);
-            auto rect = D2D1::RectF(documentLeft + inset, y + 4.0f, documentRight - inset, y + height);
+            if (measureHeight)
+            {
+                auto textWidth = (std::max)(1.0f, documentRight - documentLeft - inset * 2.0f);
+                height = textTop + measureTextHeight(wide, format, textWidth, CodeLineHeightDip) + 16.0f;
+            }
+            if (fillPanel)
+            {
+                d2dContext->FillRectangle(D2D1::RectF(documentLeft, y, documentRight, y + height), panelBrush.Get());
+            }
+            auto rect = D2D1::RectF(documentLeft + inset, y + textTop, documentRight - inset, y + height);
             d2dContext->DrawTextW(wide.c_str(), static_cast<UINT32>(wide.size()), format, rect, brush);
             y += height + 8.0f;
             if (y > static_cast<float>(surfaceHeight) - DocumentVerticalPaddingDip)

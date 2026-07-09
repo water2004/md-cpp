@@ -4,6 +4,8 @@
 #include "MainWindow.g.cpp"
 #endif
 
+import elmd.core.command;
+
 namespace winrt::ElMd::implementation
 {
     MainWindow::MainWindow()
@@ -25,6 +27,24 @@ namespace winrt::ElMd::implementation
         {
             ResizeEditorSurface(EditorSurface().ActualWidth(), EditorSurface().ActualHeight());
         });
+
+        EditorSurface().IsTabStop(true);
+        EditorSurface().CharacterReceived([this](auto const&, Microsoft::UI::Xaml::Input::CharacterReceivedRoutedEventArgs const& args)
+        {
+            HandleEditorCharacter(args.Character());
+            args.Handled(true);
+        });
+
+        EditorSurface().KeyDown([this](auto const&, Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args)
+        {
+            HandleEditorKey(args.Key());
+            args.Handled(true);
+        });
+
+        EditorSurface().PointerPressed([this](auto const&, auto const&)
+        {
+            EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Pointer);
+        });
     }
 
     void MainWindow::RegisterCommandHandlers()
@@ -41,13 +61,71 @@ namespace winrt::ElMd::implementation
 
         BoldButton().Click([this](auto const&, auto const&)
         {
-            SetStatus(L"Bold command pending editor-core bridge");
+            elmd::Command command;
+            command.kind = elmd::CommandKind::ToggleStrong;
+            ExecuteEditorCommand(command);
         });
 
         ItalicButton().Click([this](auto const&, auto const&)
         {
-            SetStatus(L"Italic command pending editor-core bridge");
+            elmd::Command command;
+            command.kind = elmd::CommandKind::ToggleEmphasis;
+            ExecuteEditorCommand(command);
         });
+    }
+
+    bool MainWindow::ExecuteEditorCommand(elmd::Command const& command)
+    {
+        if (!editorSession.ExecuteCommand(command))
+        {
+            return false;
+        }
+
+        SetStatus(editorSession.DisplayName() + L" | " + winrt::to_hstring(editorSession.Text().size()) + L" chars | rev " + winrt::to_hstring(editorSession.Revision()));
+        return true;
+    }
+
+    void MainWindow::HandleEditorCharacter(char32_t character)
+    {
+        if (character < 0x20 || character == 0x7f)
+        {
+            return;
+        }
+
+        ExecuteEditorCommand(elmd::Command::InsertText(std::u32string(1, character)));
+    }
+
+    void MainWindow::HandleEditorKey(winrt::Windows::System::VirtualKey key)
+    {
+        elmd::Command command;
+        switch (key)
+        {
+            case winrt::Windows::System::VirtualKey::Back:
+                command.kind = elmd::CommandKind::DeleteBackward;
+                break;
+            case winrt::Windows::System::VirtualKey::Delete:
+                command.kind = elmd::CommandKind::DeleteForward;
+                break;
+            case winrt::Windows::System::VirtualKey::Enter:
+                command.kind = elmd::CommandKind::InsertNewline;
+                break;
+            case winrt::Windows::System::VirtualKey::Left:
+                command.kind = elmd::CommandKind::MoveLeft;
+                break;
+            case winrt::Windows::System::VirtualKey::Right:
+                command.kind = elmd::CommandKind::MoveRight;
+                break;
+            case winrt::Windows::System::VirtualKey::Home:
+                command.kind = elmd::CommandKind::MoveLineStart;
+                break;
+            case winrt::Windows::System::VirtualKey::End:
+                command.kind = elmd::CommandKind::MoveLineEnd;
+                break;
+            default:
+                return;
+        }
+
+        ExecuteEditorCommand(command);
     }
 
     void MainWindow::SetStatus(winrt::hstring const& text)

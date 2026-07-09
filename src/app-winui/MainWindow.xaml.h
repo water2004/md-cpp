@@ -15,6 +15,9 @@ namespace winrt::ElMd::implementation
         void ResizeEditorSurface(double width, double height);
         void RenderEditorSurface();
         void RegisterCommandHandlers();
+        bool ExecuteEditorCommand(elmd::Command const& command);
+        void HandleEditorCharacter(char32_t character);
+        void HandleEditorKey(winrt::Windows::System::VirtualKey key);
         void SetStatus(winrt::hstring const& text);
         HWND WindowHandle();
         winrt::fire_and_forget OpenDocumentAsync();
