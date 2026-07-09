@@ -20,6 +20,11 @@ namespace winrt::ElMd::implementation
         {
             ResizeEditorSurface(args.NewSize().Width, args.NewSize().Height);
         });
+
+        EditorSurface().CompositionScaleChanged([this](auto const&, auto const&)
+        {
+            ResizeEditorSurface(EditorSurface().ActualWidth(), EditorSurface().ActualHeight());
+        });
     }
 
     void MainWindow::RegisterCommandHandlers()
@@ -50,6 +55,33 @@ namespace winrt::ElMd::implementation
         lastCommand = text;
         StatusText().Text(text);
         RenderEditorSurface();
+    }
+
+    float MainWindow::CompositionScaleX()
+    {
+        return (std::max)(1.0f, EditorSurface().CompositionScaleX());
+    }
+
+    float MainWindow::CompositionScaleY()
+    {
+        return (std::max)(1.0f, EditorSurface().CompositionScaleY());
+    }
+
+    void MainWindow::ApplySwapChainTransform()
+    {
+        if (!swapChain)
+        {
+            return;
+        }
+
+        ::Microsoft::WRL::ComPtr<IDXGISwapChain2> swapChain2;
+        if (SUCCEEDED(swapChain.As(&swapChain2)))
+        {
+            DXGI_MATRIX_3X2_F matrix{};
+            matrix._11 = 1.0f / surfaceScaleX;
+            matrix._22 = 1.0f / surfaceScaleY;
+            winrt::check_hresult(swapChain2->SetMatrixTransform(&matrix));
+        }
     }
 
     HWND MainWindow::WindowHandle()
@@ -196,10 +228,11 @@ namespace winrt::ElMd::implementation
             DWRITE_FONT_WEIGHT_NORMAL,
             DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL,
-            15.0f,
+            20.0f,
             L"en-us",
             textFormat.GetAddressOf()));
         winrt::check_hresult(textFormat->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP));
+        winrt::check_hresult(textFormat->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, 28.0f, 22.0f));
 
         ::Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
         winrt::check_hresult(dxgiDevice->GetAdapter(adapter.GetAddressOf()));
@@ -207,8 +240,10 @@ namespace winrt::ElMd::implementation
         ::Microsoft::WRL::ComPtr<IDXGIFactory2> factory;
         winrt::check_hresult(adapter->GetParent(__uuidof(IDXGIFactory2), reinterpret_cast<void**>(factory.GetAddressOf())));
 
-        auto width = std::max<uint32_t>(1, static_cast<uint32_t>(EditorSurface().ActualWidth()));
-        auto height = std::max<uint32_t>(1, static_cast<uint32_t>(EditorSurface().ActualHeight()));
+        surfaceScaleX = CompositionScaleX();
+        surfaceScaleY = CompositionScaleY();
+        auto width = std::max<uint32_t>(1, static_cast<uint32_t>(std::ceil(EditorSurface().ActualWidth() * surfaceScaleX)));
+        auto height = std::max<uint32_t>(1, static_cast<uint32_t>(std::ceil(EditorSurface().ActualHeight() * surfaceScaleY)));
 
         DXGI_SWAP_CHAIN_DESC1 desc{};
         desc.Width = width;
@@ -225,6 +260,7 @@ namespace winrt::ElMd::implementation
         desc.Flags = 0;
 
         winrt::check_hresult(factory->CreateSwapChainForComposition(d3dDevice.Get(), &desc, nullptr, swapChain.GetAddressOf()));
+        ApplySwapChainTransform();
 
         auto panelNative = EditorSurface().as<ISwapChainPanelNative>();
         winrt::check_hresult(panelNative->SetSwapChain(swapChain.Get()));
@@ -241,9 +277,11 @@ namespace winrt::ElMd::implementation
             return;
         }
 
-        auto newWidth = std::max<uint32_t>(1, static_cast<uint32_t>(width));
-        auto newHeight = std::max<uint32_t>(1, static_cast<uint32_t>(height));
-        if (newWidth == surfaceWidth && newHeight == surfaceHeight)
+        auto newScaleX = CompositionScaleX();
+        auto newScaleY = CompositionScaleY();
+        auto newWidth = std::max<uint32_t>(1, static_cast<uint32_t>(std::ceil(width * newScaleX)));
+        auto newHeight = std::max<uint32_t>(1, static_cast<uint32_t>(std::ceil(height * newScaleY)));
+        if (newWidth == surfaceWidth && newHeight == surfaceHeight && newScaleX == surfaceScaleX && newScaleY == surfaceScaleY)
         {
             return;
         }
@@ -254,6 +292,9 @@ namespace winrt::ElMd::implementation
         winrt::check_hresult(swapChain->ResizeBuffers(0, newWidth, newHeight, DXGI_FORMAT_UNKNOWN, 0));
         surfaceWidth = newWidth;
         surfaceHeight = newHeight;
+        surfaceScaleX = newScaleX;
+        surfaceScaleY = newScaleY;
+        ApplySwapChainTransform();
         RenderEditorSurface();
     }
 
@@ -279,8 +320,8 @@ namespace winrt::ElMd::implementation
             D2D1_BITMAP_PROPERTIES1 properties{};
             properties.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
             properties.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
-            properties.dpiX = 96.0f;
-            properties.dpiY = 96.0f;
+            properties.dpiX = 96.0f * surfaceScaleX;
+            properties.dpiY = 96.0f * surfaceScaleY;
             properties.bitmapOptions = D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW;
 
             winrt::check_hresult(d2dContext->CreateBitmapFromDxgiSurface(surface.Get(), &properties, d2dTarget.GetAddressOf()));
@@ -293,7 +334,9 @@ namespace winrt::ElMd::implementation
         }
 
         auto text = currentText.empty() ? winrt::hstring(L"Open a Markdown file to preview it here.") : currentText;
-        auto rect = D2D1::RectF(28.0f, 24.0f, static_cast<float>(surfaceWidth) - 28.0f, static_cast<float>(surfaceHeight) - 24.0f);
+        auto dipWidth = static_cast<float>(static_cast<double>(surfaceWidth) / surfaceScaleX);
+        auto dipHeight = static_cast<float>(static_cast<double>(surfaceHeight) / surfaceScaleY);
+        auto rect = D2D1::RectF(32.0f, 28.0f, dipWidth - 32.0f, dipHeight - 28.0f);
 
         d2dContext->BeginDraw();
         d2dContext->Clear(D2D1::ColorF(0.070f, 0.086f, 0.110f, 1.0f));

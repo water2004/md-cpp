@@ -13,6 +13,7 @@
 #include <shobjidl_core.h>
 #include <wrl/client.h>
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 
 #undef GetCurrentTime

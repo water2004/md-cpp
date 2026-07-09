@@ -12,6 +12,9 @@ namespace winrt::ElMd::implementation
         void InitializeEditorSurface();
         void ResizeEditorSurface(double width, double height);
         void RenderEditorSurface();
+        float CompositionScaleX();
+        float CompositionScaleY();
+        void ApplySwapChainTransform();
         void RegisterCommandHandlers();
         void SetStatus(winrt::hstring const& text);
         HWND WindowHandle();
@@ -32,6 +35,8 @@ namespace winrt::ElMd::implementation
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> textBrush;
         uint32_t surfaceWidth = 0;
         uint32_t surfaceHeight = 0;
+        float surfaceScaleX = 1.0f;
+        float surfaceScaleY = 1.0f;
         winrt::hstring lastCommand = L"Ready";
         winrt::Windows::Storage::StorageFile currentFile{ nullptr };
         winrt::hstring currentText;
