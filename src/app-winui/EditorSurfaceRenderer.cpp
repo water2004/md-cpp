@@ -70,17 +70,13 @@ namespace winrt::ElMd
 
     std::size_t SourceStart(elmd::RenderBlock const& block)
     {
-        if (!block.inline_items.empty())
-        {
-            return block.inline_items.front().source_range.start.v;
-        }
-        return block.source_range.start.v;
+        return block.content_range.start.v;
     }
 
     std::size_t SourceEnd(elmd::RenderBlock const& block, std::u32string const& text)
     {
         auto sourceStart = SourceStart(block);
-        return (std::min)(block.source_range.end.v, sourceStart + text.size());
+        return (std::min)(block.content_range.end.v, sourceStart + text.size());
     }
 
     float EditorSurfaceRenderer::CompositionScaleX(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const

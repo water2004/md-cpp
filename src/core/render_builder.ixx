@@ -47,6 +47,7 @@ inline RenderBlock render_block_base(BlockKind k, NodeId id, TextRange<CharOffse
         return RenderBlockKind::Text;
     }(k);
     b.id = id; b.source_range = sr; b.block_style = bs;
+    b.content_range = sr;
     return b;
 }
 
@@ -239,12 +240,20 @@ struct Builder {
             if (const auto* r = sm ? sm->find_node_by_id(b.id) : nullptr) return r->source_range;
             return CharRange(CharOffset(0), CharOffset(0));
         };
+        auto content_range = [&]() -> TextRange<CharOffset> {
+            if (const auto* r = sm ? sm->find_node_by_id(b.id) : nullptr) return r->content_range;
+            return base_range();
+        };
+        auto with_content_range = [&](RenderBlock rb) {
+            rb.content_range = content_range();
+            return rb;
+        };
         switch (b.kind) {
             case BK::Paragraph: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::paragraph());
                 InlineStyle s = InlineStyle::plain();
                 rb.inline_items = build_inlines(b.children, base_range().start.v, s);
-                return rb;
+                return with_content_range(std::move(rb));
             }
             case BK::Heading: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::heading(b.level));
@@ -253,7 +262,7 @@ struct Builder {
                 std::size_t cs = base_range().start.v;
                 if (const auto* r = sm ? sm->find_node_by_id(b.id) : nullptr) cs = r->content_range.start.v;
                 rb.inline_items = build_inlines(b.children, cs, s);
-                return rb;
+                return with_content_range(std::move(rb));
             }
             case BK::BlockQuote: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::blockquote());
@@ -265,7 +274,7 @@ struct Builder {
                         push_marker(rb.inline_items, cursor, U"\n");
                     }
                 }
-                return rb;
+                return with_content_range(std::move(rb));
             }
             case BK::List: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::paragraph());
@@ -280,7 +289,7 @@ struct Builder {
                         }
                     }
                 }
-                return rb;
+                return with_content_range(std::move(rb));
             }
             case BK::TaskList: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::paragraph());
@@ -295,7 +304,7 @@ struct Builder {
                         }
                     }
                 }
-                return rb;
+                return with_content_range(std::move(rb));
             }
             case BK::CodeBlock: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::code());
@@ -303,12 +312,12 @@ struct Builder {
                 rb.code_text = b.code_text;
                 std::size_t n = 1; for (char32_t c : b.code_text) if (c == '\n') ++n;
                 rb.line_count = n;
-                return rb;
+                return with_content_range(std::move(rb));
             }
             case BK::MathBlock: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::math());
                 rb.tex = b.tex; rb.math_delim = b.math_delim;
-                return rb;
+                return with_content_range(std::move(rb));
             }
             case BK::Table: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::table());
@@ -326,12 +335,12 @@ struct Builder {
                         rb.table_cells.push_back(std::move(items));
                     }
                 }
-                return rb;
+                return with_content_range(std::move(rb));
             }
             case BK::ImageBlock: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::image());
                 rb.alt = b.image_alt; rb.src = b.src;
-                return rb;
+                return with_content_range(std::move(rb));
             }
             case BK::Callout: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::callout(b.callout_kind));
@@ -342,22 +351,22 @@ struct Builder {
                     rb.callout_title = std::move(items);
                 }
                 for (const auto& ch : b.quote_children) rb.child_blocks.push_back(build_block(ch));
-                return rb;
+                return with_content_range(std::move(rb));
             }
             case BK::FootnoteDefinition: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::footnote());
                 rb.footnote_label = b.footnote_label;
                 for (const auto& ch : b.quote_children) rb.child_blocks.push_back(build_block(ch));
-                return rb;
+                return with_content_range(std::move(rb));
             }
             case BK::Toc: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::toc());
-                return rb;
+                return with_content_range(std::move(rb));
             }
             case BK::Frontmatter: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::frontmatter());
                 rb.raw = b.raw;
-                return rb;
+                return with_content_range(std::move(rb));
             }
             case BK::ThematicBreak: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::paragraph());
@@ -366,18 +375,18 @@ struct Builder {
                 m.text = U"─────────";
                 m.marker_style = MarkerStyle{true, {}}; m.visibility = MarkerVisibility::Always;
                 rb.inline_items.push_back(std::move(m));
-                return rb;
+                return with_content_range(std::move(rb));
             }
             case BK::UnsupportedMarkup: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::unsupported());
                 rb.raw = b.raw;
                 rb.reason_text = unsupported_reason_message(b.unsup_reason);
-                return rb;
+                return with_content_range(std::move(rb));
             }
             case BK::Extension: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::extension());
                 rb.extension_name = b.ext_name;
-                return rb;
+                return with_content_range(std::move(rb));
             }
         }
         return render_block_base(b.kind, b.id, base_range(), BlockStyle::paragraph());

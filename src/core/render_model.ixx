@@ -135,6 +135,7 @@ struct RenderBlock {
     RenderBlockKind kind = RenderBlockKind::Text;
     NodeId id{};
     TextRange<CharOffset> source_range;
+    TextRange<CharOffset> content_range;
     BlockStyle block_style;
 
     // TextBlock
