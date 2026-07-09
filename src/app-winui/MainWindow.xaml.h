@@ -17,6 +17,7 @@ namespace winrt::ElMd::implementation
         HWND WindowHandle();
         winrt::fire_and_forget OpenDocumentAsync();
         winrt::fire_and_forget SaveDocumentAsync();
+        winrt::fire_and_forget SaveDocumentAsAsync();
 
         ::Microsoft::WRL::ComPtr<ID3D11Device> d3dDevice;
         ::Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3dContext;

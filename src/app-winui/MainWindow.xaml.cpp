@@ -100,12 +100,45 @@ namespace winrt::ElMd::implementation
         {
             if (!currentFile)
             {
-                SetStatus(L"Save skipped: no open document");
+                SaveDocumentAsAsync();
                 co_return;
             }
 
             co_await winrt::Windows::Storage::FileIO::WriteTextAsync(currentFile, currentText);
             SetStatus(L"Saved " + currentFile.Path() + L" | " + winrt::to_hstring(currentText.size()) + L" chars");
+        }
+        catch (winrt::hresult_error const& error)
+        {
+            SetStatus(L"Save failed: " + error.message());
+        }
+    }
+
+    winrt::fire_and_forget MainWindow::SaveDocumentAsAsync()
+    {
+        auto lifetime = get_strong();
+
+        try
+        {
+            auto picker = winrt::Windows::Storage::Pickers::FileSavePicker();
+            picker.DefaultFileExtension(L".md");
+            picker.SuggestedFileName(L"Untitled.md");
+            picker.FileTypeChoices().Insert(L"Markdown", winrt::single_threaded_vector<winrt::hstring>({ L".md" }));
+            picker.FileTypeChoices().Insert(L"Text", winrt::single_threaded_vector<winrt::hstring>({ L".txt" }));
+
+            auto initializeWithWindow = picker.as<IInitializeWithWindow>();
+            winrt::check_hresult(initializeWithWindow->Initialize(WindowHandle()));
+
+            auto file = co_await picker.PickSaveFileAsync();
+            if (!file)
+            {
+                SetStatus(L"Save cancelled");
+                co_return;
+            }
+
+            co_await winrt::Windows::Storage::FileIO::WriteTextAsync(file, currentText);
+            currentFile = file;
+            Title(L"el-md - " + file.Name());
+            SetStatus(L"Saved " + file.Path() + L" | " + winrt::to_hstring(currentText.size()) + L" chars");
         }
         catch (winrt::hresult_error const& error)
         {
