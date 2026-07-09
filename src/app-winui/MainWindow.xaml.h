@@ -1,5 +1,6 @@
 #pragma once
 
+#include "EditorSession.h"
 #include "MainWindow.g.h"
 
 namespace winrt::ElMd::implementation
@@ -38,8 +39,7 @@ namespace winrt::ElMd::implementation
         float surfaceScaleX = 1.0f;
         float surfaceScaleY = 1.0f;
         winrt::hstring lastCommand = L"Ready";
-        winrt::Windows::Storage::StorageFile currentFile{ nullptr };
-        winrt::hstring currentText;
+        winrt::ElMd::EditorSession editorSession;
     };
 }
 

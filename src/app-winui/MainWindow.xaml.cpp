@@ -119,10 +119,10 @@ namespace winrt::ElMd::implementation
                 co_return;
             }
 
-            currentText = co_await winrt::Windows::Storage::FileIO::ReadTextAsync(file);
-            currentFile = file;
-            Title(L"el-md - " + file.Name());
-            SetStatus(file.Path() + L" | " + winrt::to_hstring(currentText.size()) + L" chars");
+            auto text = co_await winrt::Windows::Storage::FileIO::ReadTextAsync(file);
+            editorSession.Open(file, text);
+            Title(L"el-md - " + editorSession.DisplayName());
+            SetStatus(editorSession.Path() + L" | " + winrt::to_hstring(editorSession.Text().size()) + L" chars | rev " + winrt::to_hstring(editorSession.Revision()));
         }
         catch (winrt::hresult_error const& error)
         {
@@ -136,14 +136,14 @@ namespace winrt::ElMd::implementation
 
         try
         {
-            if (!currentFile)
+            if (!editorSession.HasFile())
             {
                 SaveDocumentAsAsync();
                 co_return;
             }
 
-            co_await winrt::Windows::Storage::FileIO::WriteTextAsync(currentFile, currentText);
-            SetStatus(L"Saved " + currentFile.Path() + L" | " + winrt::to_hstring(currentText.size()) + L" chars");
+            co_await winrt::Windows::Storage::FileIO::WriteTextAsync(editorSession.File(), editorSession.Text());
+            SetStatus(L"Saved " + editorSession.Path() + L" | " + winrt::to_hstring(editorSession.Text().size()) + L" chars | rev " + winrt::to_hstring(editorSession.Revision()));
         }
         catch (winrt::hresult_error const& error)
         {
@@ -173,10 +173,10 @@ namespace winrt::ElMd::implementation
                 co_return;
             }
 
-            co_await winrt::Windows::Storage::FileIO::WriteTextAsync(file, currentText);
-            currentFile = file;
-            Title(L"el-md - " + file.Name());
-            SetStatus(L"Saved " + file.Path() + L" | " + winrt::to_hstring(currentText.size()) + L" chars");
+            co_await winrt::Windows::Storage::FileIO::WriteTextAsync(file, editorSession.Text());
+            editorSession.SaveAs(file);
+            Title(L"el-md - " + editorSession.DisplayName());
+            SetStatus(L"Saved " + editorSession.Path() + L" | " + winrt::to_hstring(editorSession.Text().size()) + L" chars | rev " + winrt::to_hstring(editorSession.Revision()));
         }
         catch (winrt::hresult_error const& error)
         {
@@ -339,7 +339,8 @@ namespace winrt::ElMd::implementation
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(D2D1::ColorF(0.86f, 0.90f, 0.96f, 1.0f), textBrush.GetAddressOf()));
         }
 
-        auto text = currentText.empty() ? winrt::hstring(L"Open a Markdown file to preview it here.") : currentText;
+        auto sessionText = editorSession.Text();
+        auto text = sessionText.empty() ? winrt::hstring(L"Open a Markdown file to preview it here.") : sessionText;
         auto dipWidth = static_cast<float>(surfaceWidth);
         auto dipHeight = static_cast<float>(surfaceHeight);
         auto rect = D2D1::RectF(
