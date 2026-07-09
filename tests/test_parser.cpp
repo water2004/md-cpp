@@ -69,6 +69,22 @@ ELMD_TEST(test_parse_inline_code) {
     ELMD_CHECK(p && inlines_have_kind(p->children, InlineKind::InlineCode));
 }
 
+ELMD_TEST(test_unmatched_inline_delimiters_are_text) {
+    auto out = parse_text(1, "Hello **world\nnext ~~line\nplain *text\ncode `span\n");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 4u);
+    for (auto const& block : out.document.blocks) {
+        ELMD_CHECK(block.kind == BlockKind::Paragraph);
+        ELMD_CHECK(!inlines_have_kind(block.children, InlineKind::Strong));
+        ELMD_CHECK(!inlines_have_kind(block.children, InlineKind::Emphasis));
+        ELMD_CHECK(!inlines_have_kind(block.children, InlineKind::Strike));
+        ELMD_CHECK(!inlines_have_kind(block.children, InlineKind::InlineCode));
+    }
+    ELMD_CHECK(cps_to_utf8(block_inline_text_content(out.document.blocks[0].children)) == "Hello **world");
+    ELMD_CHECK(cps_to_utf8(block_inline_text_content(out.document.blocks[1].children)) == "next ~~line");
+    ELMD_CHECK(cps_to_utf8(block_inline_text_content(out.document.blocks[2].children)) == "plain *text");
+    ELMD_CHECK(cps_to_utf8(block_inline_text_content(out.document.blocks[3].children)) == "code `span");
+}
+
 ELMD_TEST(test_parse_inline_math) {
     auto out = parse_text(1, "Hello $x+1$ world\n");
     auto* p = first_of(out.document.blocks, BlockKind::Paragraph);

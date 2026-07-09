@@ -9,11 +9,19 @@ namespace winrt::ElMd
 
     struct EditorSurfaceRenderer
     {
+        enum class Theme
+        {
+            Light,
+            Dark,
+        };
+
         void Initialize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel);
         void Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height);
         void Render(detail::EditorSessionCore const& sessionCore);
+        void SetTheme(Theme value);
         std::optional<std::size_t> HitTest(float x, float y) const;
         std::optional<D2D1_RECT_F> CaretBounds(std::size_t sourceOffset) const;
+        std::optional<std::size_t> MoveCaretVertically(std::size_t sourceOffset, bool down) const;
         void ScrollBy(float delta);
         void ScrollToSourceOffset(std::size_t sourceOffset);
 
@@ -33,8 +41,51 @@ namespace winrt::ElMd
             std::size_t sourceEnd = 0;
             float documentY = 0.0f;
             std::u32string text;
+            std::vector<std::size_t> displayToSource;
             ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
         };
+
+        struct VisualLine
+        {
+            std::size_t blockIndex = 0;
+            std::size_t sourceStart = 0;
+            std::size_t sourceEnd = 0;
+            D2D1_RECT_F rect{};
+        };
+
+        struct FontStyle
+        {
+            std::wstring family;
+            float size = 0.0f;
+            float lineHeight = 0.0f;
+            DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_NORMAL;
+            DWRITE_FONT_STYLE style = DWRITE_FONT_STYLE_NORMAL;
+        };
+
+        struct EditorStyleSheet
+        {
+            FontStyle body;
+            FontStyle heading1;
+            FontStyle heading2;
+            FontStyle heading3;
+            FontStyle code;
+            D2D1_COLOR_F canvasColor{};
+            D2D1_COLOR_F textColor{};
+            D2D1_COLOR_F mutedColor{};
+            D2D1_COLOR_F accentColor{};
+            D2D1_COLOR_F codeTextColor{};
+            D2D1_COLOR_F panelColor{};
+            D2D1_COLOR_F selectionColor{};
+            D2D1_COLOR_F caretColor{};
+            float documentWidth = 900.0f;
+            float horizontalPadding = 48.0f;
+            float verticalPadding = 40.0f;
+            float blockGap = 8.0f;
+        };
+
+        void RebuildTextFormats();
+        void ResetBrushes();
+        static EditorStyleSheet CreateStyleSheet(Theme value);
 
         ::Microsoft::WRL::ComPtr<ID3D11Device> d3dDevice;
         ::Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3dContext;
@@ -57,7 +108,10 @@ namespace winrt::ElMd
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> panelBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> selectionBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> caretBrush;
+        Theme theme = Theme::Dark;
+        EditorStyleSheet styleSheet = CreateStyleSheet(Theme::Dark);
         std::vector<VisualBlock> visualBlocks;
+        std::vector<VisualLine> visualLines;
         float scrollOffset = 0.0f;
         float totalDocumentHeight = 0.0f;
         uint32_t surfaceWidth = 0;

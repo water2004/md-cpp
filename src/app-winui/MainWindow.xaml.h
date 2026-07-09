@@ -15,6 +15,8 @@ namespace winrt::ElMd::implementation
         void InitializeTextInput();
         void ResizeEditorSurface(double width, double height);
         void RenderEditorSurface();
+        void UpdateTheme();
+        winrt::ElMd::EditorSurfaceRenderer::Theme CurrentRendererTheme();
         void UpdateOutlinePanel();
         void UpdateDiagnosticsPanel();
         void NotifyTextInputChanged(std::size_t oldLength);
@@ -24,7 +26,8 @@ namespace winrt::ElMd::implementation
         void HandleDiagnosticsSelection(winrt::Windows::Foundation::IInspectable const& selectedItem);
         void RegisterCommandHandlers();
         bool ExecuteEditorCommand(elmd::Command const& command);
-        void HandleEditorCharacter(char32_t character);
+        bool InsertEditorNewline();
+        bool HandleEditorCharacter(char32_t character);
         bool HandleEditorKey(winrt::Windows::System::VirtualKey key);
         void HandlePointerPressed(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
         void HandlePointerMoved(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
@@ -49,6 +52,9 @@ namespace winrt::ElMd::implementation
         std::size_t textInputKnownLength = 0;
         bool textInputFocused = false;
         bool textInputUpdating = false;
+        bool pendingCharacterTextUpdate = false;
+        std::size_t pendingCharacterStart = 0;
+        std::u32string pendingCharacterText;
         bool pointerSelecting = false;
         std::size_t pointerAnchor = 0;
         std::vector<std::size_t> outlineOffsets;

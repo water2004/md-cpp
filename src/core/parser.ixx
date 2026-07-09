@@ -234,6 +234,7 @@ public:
     }
     std::optional<InlineNode> try_parse_inline_format() {
         if (peek1()=='*' && peek2()=='*') {
+            if (!delimiter_exists_before_newline(pos + 2, {'*','*'})) return std::nullopt;
             advance_n(2);
             InlineVec ch = parse_inlines_until({'*','*'});
             std::size_t end_mark = pos; advance_n(2);
@@ -244,6 +245,7 @@ public:
             return n;
         }
         if (peek1() == '*') {
+            if (!delimiter_exists_before_newline(pos + 1, {'*'})) return std::nullopt;
             advance();
             std::size_t inner_start = pos;
             InlineVec ch = parse_inlines_until({'*'});
@@ -278,6 +280,12 @@ public:
                 if (auto n = try_parse_inline_math()) { flush(); inlines.push_back(std::move(*n)); continue; }
             }
             if (peek1() == '*' && peek2() == '*') {
+                if (!delimiter_exists_before_newline(pos + 2, {'*','*'})) {
+                    buf.push_back('*');
+                    buf.push_back('*');
+                    advance_n(2);
+                    continue;
+                }
                 flush();
                 std::size_t inner_start = pos + 2;
                 advance_n(2);
@@ -290,6 +298,11 @@ public:
                 continue;
             }
             if (peek1() == '*' && peek2() != ' ' && peek2() != '*') {
+                if (!delimiter_exists_before_newline(pos + 1, {'*'})) {
+                    buf.push_back('*');
+                    advance();
+                    continue;
+                }
                 flush();
                 std::size_t inner_start = pos + 1;
                 advance();
@@ -302,6 +315,12 @@ public:
                 continue;
             }
             if (peek1() == '_' && peek2() == '_' && peek2next_is_nonspace_underscore_()) {
+                if (!delimiter_exists_before_newline(pos + 2, {'_','_'})) {
+                    buf.push_back('_');
+                    buf.push_back('_');
+                    advance_n(2);
+                    continue;
+                }
                 flush();
                 std::size_t inner_start = pos + 2;
                 advance_n(2);
@@ -314,6 +333,11 @@ public:
                 continue;
             }
             if (peek1() == '_' && peek2() != ' ' && peek2() != '_') {
+                if (!delimiter_exists_before_newline(pos + 1, {'_'})) {
+                    buf.push_back('_');
+                    advance();
+                    continue;
+                }
                 flush();
                 std::size_t inner_start = pos + 1;
                 advance();
@@ -326,6 +350,12 @@ public:
                 continue;
             }
             if (peek1() == '~' && peek2() == '~' && peek2next2() != ' ') {
+                if (!delimiter_exists_before_newline(pos + 2, {'~','~'})) {
+                    buf.push_back('~');
+                    buf.push_back('~');
+                    advance_n(2);
+                    continue;
+                }
                 flush();
                 std::size_t inner_start = pos + 2;
                 advance_n(2);
@@ -367,6 +397,18 @@ public:
 
     bool peek2next_is_nonspace_underscore_() { char32_t c = peek2(); return c != ' ' && c != '_' && c != 0; }
     char32_t peek2next2() { return peek2(); }
+
+    bool delimiter_exists_before_newline(std::size_t from, std::vector<char32_t> del) const {
+        for (std::size_t i = from; i + del.size() <= cps.size(); ++i) {
+            if (cps[i] == '\n') return false;
+            bool matched = true;
+            for (std::size_t j = 0; j < del.size(); ++j) {
+                if (cps[i + j] != del[j]) { matched = false; break; }
+            }
+            if (matched) return true;
+        }
+        return false;
+    }
 
     // parse_inlines_until(del) — collect text until a run of `del` chars.
     // Delimiters DO NOT cross newlines.
@@ -417,6 +459,10 @@ public:
         std::size_t start = pos;
         std::size_t count = 0;
         while (peek1() == '`') { ++count; advance(); }
+        if (!delimiter_exists_before_newline(pos, std::vector<char32_t>(count, '`'))) {
+            pos = start;
+            return std::nullopt;
+        }
         std::u32string code;
         while (!eof()) {
             if (peek1() == '`') {
@@ -628,6 +674,8 @@ public:
         if (count < 3) { pos = start; return std::nullopt; }
         auto [info_line, _] = rest_of_line();
         if (peek1() == '\n') advance();
+        std::size_t content_start = pos;
+        std::size_t content_end = pos;
         auto info_utf8 = cps_to_utf8(info_line);
         std::optional<std::string> lang;
         auto trimmed = trim_utf8(info_utf8);
@@ -636,10 +684,12 @@ public:
         while (!eof()) {
             if (peek1() == '\n') {
                 text.push_back('\n'); advance();
+                content_end = pos;
                 std::size_t save = pos, c = 0;
                 while (peek1() == '`') { ++c; advance(); }
                 if (c >= count) {
                     if (eof() || peek1() == '\n' || peek1() == ' ') {
+                        content_end = save;
                         if (peek1() == '\n') advance();
                         break;
                     }
@@ -647,10 +697,12 @@ public:
                 }
                 continue;
             }
+            content_end = pos + 1;
             text.push_back(peek1()); advance();
         }
+        if (content_end < content_start) content_end = pos;
         NodeId id = next_node_id();
-        push_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(start), cur()));
+        push_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(content_start), CharOffset(content_end)));
         std::size_t n_lines = 1; for (char32_t c : text) if (c == '\n') ++n_lines;
         code_blocks.push_back({id, lang, n_lines});
         if (lang && *lang == "math" && input->dialect.math.fenced_math) {

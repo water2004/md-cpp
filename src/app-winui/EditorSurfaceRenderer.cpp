@@ -7,13 +7,10 @@ import elmd.core.utf;
 
 namespace winrt::ElMd
 {
-    constexpr float DocumentWidthDip = 900.0f;
-    constexpr float DocumentHorizontalPaddingDip = 48.0f;
-    constexpr float DocumentVerticalPaddingDip = 40.0f;
-    constexpr float ParagraphFontSizeDip = 18.0f;
-    constexpr float CodeFontSizeDip = 15.0f;
-    constexpr float ParagraphLineHeightDip = 30.0f;
-    constexpr float CodeLineHeightDip = 24.0f;
+    D2D1_COLOR_F Rgba(float red, float green, float blue, float alpha = 1.0f)
+    {
+        return D2D1::ColorF(red, green, blue, alpha);
+    }
 
     std::wstring ToWide(std::u32string_view text)
     {
@@ -113,25 +110,184 @@ namespace winrt::ElMd
         bool marker = false;
     };
 
-    std::u32string InlineText(std::vector<elmd::InlineRenderItem> const& items, std::vector<InlineStyleRange>& ranges)
+    struct DisplayInlineText
     {
         std::u32string text;
-        for (auto const& item : items)
+        std::vector<std::size_t> displayToSource;
+        std::vector<InlineStyleRange> ranges;
+    };
+
+    bool IsStyleMarker(elmd::InlineRenderItem const& item)
+    {
+        return item.kind == elmd::InlineRenderItem::Kind::Marker
+            && (item.text == U"*" || item.text == U"**" || item.text == U"~~" || item.text == U"`");
+    }
+
+    bool IsHeadingMarker(elmd::InlineRenderItem const& item)
+    {
+        if (item.kind != elmd::InlineRenderItem::Kind::Marker || item.text.size() < 2 || item.text.back() != U' ')
         {
-            auto start = static_cast<UINT32>(text.size());
-            text += InlineText(item);
-            auto length = static_cast<UINT32>(text.size()) - start;
-            if (length > 0)
+            return false;
+        }
+        for (std::size_t index = 0; index + 1 < item.text.size(); ++index)
+        {
+            if (item.text[index] != U'#')
             {
-                InlineStyleRange range;
-                range.start = start;
-                range.length = length;
-                range.style = item.style;
-                range.marker = item.kind == elmd::InlineRenderItem::Kind::Marker;
-                ranges.push_back(range);
+                return false;
             }
         }
-        return text;
+        return true;
+    }
+
+    std::vector<bool> RevealedStyleMarkers(std::vector<elmd::InlineRenderItem> const& items, std::size_t caret)
+    {
+        std::vector<bool> visible(items.size(), true);
+        std::vector<std::pair<std::u32string, std::size_t>> stack;
+        for (std::size_t index = 0; index < items.size(); ++index)
+        {
+            auto const& item = items[index];
+            if (!IsStyleMarker(item))
+            {
+                continue;
+            }
+
+            auto open = std::find_if(stack.rbegin(), stack.rend(), [&](auto const& entry)
+            {
+                return entry.first == item.text;
+            });
+            if (open == stack.rend())
+            {
+                stack.push_back({ item.text, index });
+                visible[index] = false;
+                continue;
+            }
+
+            auto openIndex = open->second;
+            auto reveal = items[openIndex].source_range.start.v <= caret && caret <= item.source_range.end.v;
+            visible[openIndex] = reveal;
+            visible[index] = reveal;
+            stack.erase(std::next(open).base());
+        }
+
+        for (auto const& entry : stack)
+        {
+            visible[entry.second] = true;
+        }
+        return visible;
+    }
+
+    void AppendDisplayText(DisplayInlineText& display, std::u32string const& text, std::size_t sourceStart, elmd::InlineStyle style, bool marker)
+    {
+        auto start = static_cast<UINT32>(display.text.size());
+        display.text += text;
+        auto length = static_cast<UINT32>(display.text.size()) - start;
+        for (std::size_t index = 0; index < text.size(); ++index)
+        {
+            display.displayToSource.push_back(sourceStart + index);
+        }
+        if (length > 0)
+        {
+            InlineStyleRange range;
+            range.start = start;
+            range.length = length;
+            range.style = style;
+            range.marker = marker;
+            display.ranges.push_back(range);
+        }
+    }
+
+    DisplayInlineText BuildDisplayInlineText(std::vector<elmd::InlineRenderItem> const& items, std::size_t caret, std::size_t sourceEnd)
+    {
+        DisplayInlineText display;
+        auto markerVisibility = RevealedStyleMarkers(items, caret);
+        for (std::size_t index = 0; index < items.size(); ++index)
+        {
+            auto const& item = items[index];
+            if (IsStyleMarker(item) && !markerVisibility[index])
+            {
+                continue;
+            }
+            if (IsHeadingMarker(item) && !(item.source_range.start.v <= caret && caret <= sourceEnd))
+            {
+                continue;
+            }
+            AppendDisplayText(display, InlineText(item), item.source_range.start.v, item.style, item.kind == elmd::InlineRenderItem::Kind::Marker);
+        }
+        display.displayToSource.push_back(sourceEnd);
+        return display;
+    }
+
+    DisplayInlineText BuildCodeBlockText(elmd::RenderBlock const& block, std::size_t caret)
+    {
+        DisplayInlineText display;
+        auto showFence = block.source_range.start.v <= caret && caret <= block.source_range.end.v;
+        if (showFence)
+        {
+            std::u32string opening = U"```";
+            if (block.language)
+            {
+                opening += elmd::utf8_to_cps(*block.language);
+            }
+            opening.push_back(U'\n');
+            AppendDisplayText(display, opening, block.source_range.start.v, elmd::InlineStyle::plain(), true);
+        }
+        AppendDisplayText(display, block.code_text, block.content_range.start.v, elmd::InlineStyle::plain(), false);
+        if (showFence)
+        {
+            AppendDisplayText(display, U"```", block.content_range.end.v, elmd::InlineStyle::plain(), true);
+        }
+        display.displayToSource.push_back(showFence ? block.source_range.end.v : block.content_range.end.v);
+        return display;
+    }
+
+    EditorSurfaceRenderer::EditorStyleSheet EditorSurfaceRenderer::CreateStyleSheet(Theme value)
+    {
+        EditorStyleSheet sheet;
+        sheet.body = FontStyle{ L"Microsoft YaHei UI", 18.0f, 31.0f, DWRITE_FONT_WEIGHT_NORMAL };
+        sheet.heading1 = FontStyle{ L"Microsoft YaHei UI", 38.0f, 50.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD };
+        sheet.heading2 = FontStyle{ L"Microsoft YaHei UI", 30.0f, 42.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD };
+        sheet.heading3 = FontStyle{ L"Microsoft YaHei UI", 24.0f, 35.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD };
+        sheet.code = FontStyle{ L"Cascadia Code", 15.0f, 24.0f, DWRITE_FONT_WEIGHT_NORMAL };
+
+        if (value == Theme::Light)
+        {
+            sheet.canvasColor = Rgba(0.982f, 0.984f, 0.988f);
+            sheet.textColor = Rgba(0.125f, 0.137f, 0.160f);
+            sheet.mutedColor = Rgba(0.420f, 0.455f, 0.520f);
+            sheet.accentColor = Rgba(0.145f, 0.388f, 0.922f);
+            sheet.codeTextColor = Rgba(0.180f, 0.205f, 0.250f);
+            sheet.panelColor = Rgba(0.940f, 0.945f, 0.955f);
+            sheet.selectionColor = Rgba(0.370f, 0.570f, 0.960f, 0.30f);
+            sheet.caretColor = Rgba(0.065f, 0.075f, 0.090f);
+            return sheet;
+        }
+
+        sheet.canvasColor = Rgba(0.070f, 0.078f, 0.098f);
+        sheet.textColor = Rgba(0.895f, 0.910f, 0.940f);
+        sheet.mutedColor = Rgba(0.545f, 0.585f, 0.665f);
+        sheet.accentColor = Rgba(0.480f, 0.635f, 0.970f);
+        sheet.codeTextColor = Rgba(0.875f, 0.895f, 0.925f);
+        sheet.panelColor = Rgba(0.100f, 0.113f, 0.140f);
+        sheet.selectionColor = Rgba(0.255f, 0.390f, 0.700f, 0.44f);
+        sheet.caretColor = Rgba(0.965f, 0.975f, 1.000f);
+        return sheet;
+    }
+
+    std::size_t DisplayPositionForSource(std::vector<std::size_t> const& displayToSource, std::size_t sourceOffset)
+    {
+        if (displayToSource.empty())
+        {
+            return 0;
+        }
+
+        for (std::size_t index = 0; index < displayToSource.size(); ++index)
+        {
+            if (displayToSource[index] >= sourceOffset)
+            {
+                return index;
+            }
+        }
+        return displayToSource.size() - 1;
     }
 
     std::size_t SourceStart(elmd::RenderBlock const& block)
@@ -141,8 +297,8 @@ namespace winrt::ElMd
 
     std::size_t SourceEnd(elmd::RenderBlock const& block, std::u32string const& text)
     {
-        auto sourceStart = SourceStart(block);
-        return (std::min)(block.content_range.end.v, sourceStart + text.size());
+        (void)text;
+        return block.content_range.end.v;
     }
 
     float EditorSurfaceRenderer::CompositionScaleX(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const
@@ -176,6 +332,11 @@ namespace winrt::ElMd
     {
         renderTargetView = nullptr;
         d2dTarget = nullptr;
+        ResetBrushes();
+    }
+
+    void EditorSurfaceRenderer::ResetBrushes()
+    {
         textBrush = nullptr;
         mutedBrush = nullptr;
         accentBrush = nullptr;
@@ -183,6 +344,49 @@ namespace winrt::ElMd
         panelBrush = nullptr;
         selectionBrush = nullptr;
         caretBrush = nullptr;
+    }
+
+    void EditorSurfaceRenderer::RebuildTextFormats()
+    {
+        if (!dwriteFactory)
+        {
+            return;
+        }
+
+        auto createFormat = [&](FontStyle const& font, ::Microsoft::WRL::ComPtr<IDWriteTextFormat>& target)
+        {
+            target = nullptr;
+            winrt::check_hresult(dwriteFactory->CreateTextFormat(
+                font.family.c_str(),
+                nullptr,
+                font.weight,
+                font.style,
+                DWRITE_FONT_STRETCH_NORMAL,
+                font.size,
+                L"en-us",
+                target.GetAddressOf()));
+            winrt::check_hresult(target->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP));
+            winrt::check_hresult(target->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, font.lineHeight, font.size * 1.2f));
+        };
+
+        createFormat(styleSheet.body, textFormat);
+        createFormat(styleSheet.heading1, heading1Format);
+        createFormat(styleSheet.heading2, heading2Format);
+        createFormat(styleSheet.heading3, heading3Format);
+        createFormat(styleSheet.code, codeFormat);
+    }
+
+    void EditorSurfaceRenderer::SetTheme(Theme value)
+    {
+        if (theme == value)
+        {
+            return;
+        }
+
+        theme = value;
+        styleSheet = CreateStyleSheet(value);
+        RebuildTextFormats();
+        ResetBrushes();
     }
 
     void EditorSurfaceRenderer::Initialize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel)
@@ -228,28 +432,7 @@ namespace winrt::ElMd
         winrt::check_hresult(d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, d2dContext.GetAddressOf()));
 
         winrt::check_hresult(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(dwriteFactory.GetAddressOf())));
-        winrt::check_hresult(dwriteFactory->CreateTextFormat(
-            L"Segoe UI",
-            nullptr,
-            DWRITE_FONT_WEIGHT_NORMAL,
-            DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL,
-            ParagraphFontSizeDip,
-            L"en-us",
-            textFormat.GetAddressOf()));
-        winrt::check_hresult(textFormat->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP));
-        winrt::check_hresult(textFormat->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, ParagraphLineHeightDip, ParagraphFontSizeDip * 1.2f));
-
-        winrt::check_hresult(dwriteFactory->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 38.0f, L"en-us", heading1Format.GetAddressOf()));
-        winrt::check_hresult(dwriteFactory->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 30.0f, L"en-us", heading2Format.GetAddressOf()));
-        winrt::check_hresult(dwriteFactory->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 24.0f, L"en-us", heading3Format.GetAddressOf()));
-        winrt::check_hresult(dwriteFactory->CreateTextFormat(L"Cascadia Mono", nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, CodeFontSizeDip, L"en-us", codeFormat.GetAddressOf()));
-        for (auto format : { heading1Format.Get(), heading2Format.Get(), heading3Format.Get() })
-        {
-            winrt::check_hresult(format->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP));
-        }
-        winrt::check_hresult(codeFormat->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP));
-        winrt::check_hresult(codeFormat->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, CodeLineHeightDip, CodeFontSizeDip * 1.25f));
+        RebuildTextFormats();
 
         ::Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
         winrt::check_hresult(dxgiDevice->GetAdapter(adapter.GetAddressOf()));
@@ -320,12 +503,14 @@ namespace winrt::ElMd
     void EditorSurfaceRenderer::DrawDocument(detail::EditorSessionCore const& sessionCore)
     {
         visualBlocks.clear();
-        auto documentLeft = DocumentHorizontalPaddingDip;
-        auto documentTop = DocumentVerticalPaddingDip;
-        auto documentRight = (std::min)(surfaceWidthDip - DocumentHorizontalPaddingDip, documentLeft + DocumentWidthDip);
+        visualLines.clear();
+        auto documentLeft = styleSheet.horizontalPadding;
+        auto documentTop = styleSheet.verticalPadding;
+        auto documentRight = (std::min)(surfaceWidthDip - styleSheet.horizontalPadding, documentLeft + styleSheet.documentWidth);
         auto y = documentTop - scrollOffset;
         auto selection = sessionCore.editor.selection().normalized_range();
         auto caret = sessionCore.editor.selection().active.v;
+        auto sourceText = sessionCore.editor.text_cps();
 
         auto createLayout = [&](std::wstring const& text, IDWriteTextFormat* format, float width)
         {
@@ -360,14 +545,18 @@ namespace winrt::ElMd
                 {
                     layout->SetUnderline(true, textRange);
                 }
+                if (range.style.strikethrough)
+                {
+                    layout->SetStrikethrough(true, textRange);
+                }
                 if (range.style.code)
                 {
-                    layout->SetFontFamilyName(L"Cascadia Mono", textRange);
-                    layout->SetFontSize(CodeFontSizeDip, textRange);
+                    layout->SetFontFamilyName(styleSheet.code.family.c_str(), textRange);
+                    layout->SetFontSize(styleSheet.code.size, textRange);
                 }
-                if (range.marker)
+                if (range.marker && !range.style.heading_level)
                 {
-                    layout->SetFontSize(ParagraphFontSizeDip * 0.82f, textRange);
+                    layout->SetFontSize(styleSheet.body.size * 0.82f, textRange);
                 }
             }
         };
@@ -388,7 +577,48 @@ namespace winrt::ElMd
             return (std::max)(fallbackHeight, metrics.height);
         };
 
-        if (sessionCore.renderModel.blocks.empty())
+        auto addVisualLinesForBlock = [&](std::size_t blockIndex)
+        {
+            auto const& block = visualBlocks[blockIndex];
+            if (!block.layout || block.displayToSource.empty())
+            {
+                return;
+            }
+
+            UINT32 lineCount = 0;
+            auto hr = block.layout->GetLineMetrics(nullptr, 0, &lineCount);
+            if (hr != E_NOT_SUFFICIENT_BUFFER || lineCount == 0)
+            {
+                return;
+            }
+
+            std::vector<DWRITE_LINE_METRICS> metrics(lineCount);
+            if (FAILED(block.layout->GetLineMetrics(metrics.data(), lineCount, &lineCount)))
+            {
+                return;
+            }
+
+            UINT32 textPosition = 0;
+            float lineTop = block.textOrigin.y;
+            for (UINT32 lineIndex = 0; lineIndex < lineCount; ++lineIndex)
+            {
+                auto const& line = metrics[lineIndex];
+                auto lineEndPosition = textPosition + line.length;
+                auto visibleEndPosition = lineEndPosition >= line.newlineLength ? lineEndPosition - line.newlineLength : lineEndPosition;
+                auto startIndex = (std::min)(static_cast<std::size_t>(textPosition), block.displayToSource.size() - 1);
+                auto endIndex = (std::min)(static_cast<std::size_t>(visibleEndPosition), block.displayToSource.size() - 1);
+                VisualLine visualLine;
+                visualLine.blockIndex = blockIndex;
+                visualLine.sourceStart = block.displayToSource[startIndex];
+                visualLine.sourceEnd = block.displayToSource[endIndex];
+                visualLine.rect = D2D1::RectF(block.textOrigin.x, lineTop, block.textOrigin.x + block.textWidth, lineTop + line.height);
+                visualLines.push_back(visualLine);
+                textPosition = lineEndPosition;
+                lineTop += line.height;
+            }
+        };
+
+        if (sessionCore.renderModel.blocks.empty() && sourceText.empty())
         {
             auto emptyText = winrt::hstring(L"Open a Markdown file or start editing to see the WYSIWYG surface.");
             auto rect = D2D1::RectF(documentLeft, y, documentRight, y + 80.0f);
@@ -396,8 +626,9 @@ namespace winrt::ElMd
             return;
         }
 
-        for (auto const& block : sessionCore.renderModel.blocks)
+        for (std::size_t blockIndex = 0; blockIndex < sessionCore.renderModel.blocks.size(); ++blockIndex)
         {
+            auto const& block = sessionCore.renderModel.blocks[blockIndex];
             IDWriteTextFormat* format = textFormat.Get();
             ID2D1Brush* brush = textBrush.Get();
             float height = 48.0f;
@@ -407,11 +638,16 @@ namespace winrt::ElMd
             bool measureHeight = true;
             std::u32string text;
             std::vector<InlineStyleRange> inlineRanges;
+            std::vector<std::size_t> displayToSource;
 
             switch (block.kind)
             {
                 case elmd::RenderBlockKind::Text:
-                    text = InlineText(block.inline_items, inlineRanges);
+                {
+                    auto display = BuildDisplayInlineText(block.inline_items, caret, block.content_range.end.v);
+                    text = std::move(display.text);
+                    inlineRanges = std::move(display.ranges);
+                    displayToSource = std::move(display.displayToSource);
                     if (block.block_style.margin_top >= 24.0f)
                     {
                         format = heading1Format.Get();
@@ -427,8 +663,13 @@ namespace winrt::ElMd
                         format = heading3Format.Get();
                     }
                     break;
+                }
                 case elmd::RenderBlockKind::Code:
-                    text = block.code_text;
+                {
+                    auto display = BuildCodeBlockText(block, caret);
+                    text = std::move(display.text);
+                    inlineRanges = std::move(display.ranges);
+                    displayToSource = std::move(display.displayToSource);
                     format = codeFormat.Get();
                     brush = codeBrush.Get();
                     height = 64.0f;
@@ -436,6 +677,7 @@ namespace winrt::ElMd
                     textTop = 16.0f;
                     fillPanel = true;
                     break;
+                }
                 case elmd::RenderBlockKind::Math:
                     text = U"$$\n" + block.tex + U"\n$$";
                     format = codeFormat.Get();
@@ -466,9 +708,25 @@ namespace winrt::ElMd
                     height = 64.0f;
                     break;
                 default:
-                    text = InlineText(block.inline_items, inlineRanges);
+                {
+                    auto display = BuildDisplayInlineText(block.inline_items, caret, block.content_range.end.v);
+                    text = std::move(display.text);
+                    inlineRanges = std::move(display.ranges);
+                    displayToSource = std::move(display.displayToSource);
                     brush = mutedBrush.Get();
                     break;
+                }
+            }
+
+            if (displayToSource.empty())
+            {
+                auto sourceStart = SourceStart(block);
+                displayToSource.reserve(text.size() + 1);
+                for (std::size_t index = 0; index < text.size(); ++index)
+                {
+                    displayToSource.push_back(sourceStart + index);
+                }
+                displayToSource.push_back(SourceEnd(block, text));
             }
 
             auto wide = ToWide(text);
@@ -477,7 +735,7 @@ namespace winrt::ElMd
             applyInlineStyles(layout.Get(), inlineRanges);
             if (measureHeight)
             {
-                auto fallbackHeight = format == codeFormat.Get() ? CodeLineHeightDip : ParagraphLineHeightDip;
+                auto fallbackHeight = format == codeFormat.Get() ? styleSheet.code.lineHeight : styleSheet.body.lineHeight;
                 auto bottomPadding = fillPanel ? 16.0f : 8.0f;
                 height = textTop + measureTextHeight(layout.Get(), fallbackHeight) + bottomPadding;
             }
@@ -488,12 +746,38 @@ namespace winrt::ElMd
             auto origin = D2D1::Point2F(documentLeft + inset, y + textTop);
             if (layout)
             {
-                auto sourceStart = SourceStart(block);
-                auto sourceEnd = SourceEnd(block, text);
+                auto sourceStart = displayToSource.empty() ? SourceStart(block) : displayToSource.front();
+                auto sourceEnd = displayToSource.empty() ? SourceEnd(block, text) : displayToSource.back();
+                for (auto const& range : inlineRanges)
+                {
+                    if (!range.style.code || range.length == 0)
+                    {
+                        continue;
+                    }
+
+                    UINT32 actualCount = 0;
+                    auto hr = layout->HitTestTextRange(range.start, range.length, origin.x, origin.y, nullptr, 0, &actualCount);
+                    if (hr == E_NOT_SUFFICIENT_BUFFER && actualCount > 0)
+                    {
+                        std::vector<DWRITE_HIT_TEST_METRICS> metrics(actualCount);
+                        if (SUCCEEDED(layout->HitTestTextRange(range.start, range.length, origin.x, origin.y, metrics.data(), actualCount, &actualCount)))
+                        {
+                            for (UINT32 index = 0; index < actualCount; ++index)
+                            {
+                                auto const& metric = metrics[index];
+                                auto rect = D2D1::RoundedRect(
+                                    D2D1::RectF(metric.left - 3.0f, metric.top + 2.0f, metric.left + metric.width + 3.0f, metric.top + metric.height - 1.0f),
+                                    4.0f,
+                                    4.0f);
+                                d2dContext->FillRoundedRectangle(rect, panelBrush.Get());
+                            }
+                        }
+                    }
+                }
                 if (!selection.is_empty() && selection.end.v > sourceStart && selection.start.v < sourceEnd)
                 {
-                    auto rangeStart = (std::max)(selection.start.v, sourceStart) - sourceStart;
-                    auto rangeEnd = (std::min)(selection.end.v, sourceEnd) - sourceStart;
+                    auto rangeStart = DisplayPositionForSource(displayToSource, (std::max)(selection.start.v, sourceStart));
+                    auto rangeEnd = DisplayPositionForSource(displayToSource, (std::min)(selection.end.v, sourceEnd));
                     UINT32 actualCount = 0;
                     auto hr = layout->HitTestTextRange(static_cast<UINT32>(rangeStart), static_cast<UINT32>(rangeEnd - rangeStart), origin.x, origin.y, nullptr, 0, &actualCount);
                     if (hr == E_NOT_SUFFICIENT_BUFFER && actualCount > 0)
@@ -512,12 +796,14 @@ namespace winrt::ElMd
 
                 d2dContext->DrawTextLayout(origin, layout.Get(), brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
 
-                if (sourceStart <= caret && caret <= sourceEnd)
+                auto caretAtHiddenBlockNewline = caret == sourceEnd && sourceEnd > sourceStart && sourceEnd <= sourceText.size() && sourceText[sourceEnd - 1] == U'\n';
+                if (sourceStart <= caret && caret <= sourceEnd && !caretAtHiddenBlockNewline)
                 {
+                    auto caretPosition = DisplayPositionForSource(displayToSource, caret);
                     FLOAT caretX = 0.0f;
                     FLOAT caretY = 0.0f;
                     DWRITE_HIT_TEST_METRICS caretMetrics{};
-                    if (SUCCEEDED(layout->HitTestTextPosition(static_cast<UINT32>(caret - sourceStart), false, &caretX, &caretY, &caretMetrics)))
+                    if (SUCCEEDED(layout->HitTestTextPosition(static_cast<UINT32>(caretPosition), false, &caretX, &caretY, &caretMetrics)))
                     {
                         auto x = origin.x + caretX;
                         auto top = origin.y + caretY;
@@ -533,13 +819,15 @@ namespace winrt::ElMd
                 visualBlock.sourceEnd = sourceEnd;
                 visualBlock.documentY = y + scrollOffset;
                 visualBlock.text = std::move(text);
+                visualBlock.displayToSource = std::move(displayToSource);
                 visualBlock.layout = layout;
                 visualBlocks.push_back(std::move(visualBlock));
+                addVisualLinesForBlock(visualBlocks.size() - 1);
             }
-            y += height + 8.0f;
+            y += height + styleSheet.blockGap;
         }
 
-        totalDocumentHeight = y + scrollOffset + DocumentVerticalPaddingDip;
+        totalDocumentHeight = y + scrollOffset + styleSheet.verticalPadding;
     }
 
     void EditorSurfaceRenderer::ScrollBy(float delta)
@@ -550,12 +838,27 @@ namespace winrt::ElMd
 
     void EditorSurfaceRenderer::ScrollToSourceOffset(std::size_t sourceOffset)
     {
+        if (auto caretBounds = CaretBounds(sourceOffset))
+        {
+            auto margin = styleSheet.verticalPadding;
+            auto maxScroll = (std::max)(0.0f, totalDocumentHeight - surfaceHeightDip);
+            if (caretBounds->top < margin)
+            {
+                scrollOffset = (std::max)(0.0f, scrollOffset - (margin - caretBounds->top));
+            }
+            else if (caretBounds->bottom > surfaceHeightDip - margin)
+            {
+                scrollOffset = (std::min)(maxScroll, scrollOffset + caretBounds->bottom - (surfaceHeightDip - margin));
+            }
+            return;
+        }
+
         for (auto const& block : visualBlocks)
         {
             if (block.sourceStart <= sourceOffset && sourceOffset <= block.sourceEnd)
             {
                 auto maxScroll = (std::max)(0.0f, totalDocumentHeight - surfaceHeightDip);
-                scrollOffset = (std::min)(maxScroll, (std::max)(0.0f, block.documentY - DocumentVerticalPaddingDip));
+                scrollOffset = (std::min)(maxScroll, (std::max)(0.0f, block.documentY - styleSheet.verticalPadding));
                 return;
             }
         }
@@ -565,6 +868,11 @@ namespace winrt::ElMd
     {
         for (auto const& block : visualBlocks)
         {
+            if (y < block.rect.top)
+            {
+                return block.sourceStart;
+            }
+
             if (x < block.rect.left || x > block.rect.right || y < block.rect.top || y > block.rect.bottom || !block.layout)
             {
                 continue;
@@ -576,7 +884,11 @@ namespace winrt::ElMd
             if (SUCCEEDED(block.layout->HitTestPoint(x - block.textOrigin.x, y - block.textOrigin.y, &isTrailingHit, &isInside, &metrics)))
             {
                 auto position = static_cast<std::size_t>(metrics.textPosition + (isTrailingHit ? metrics.length : 0));
-                return (std::min)(block.sourceEnd, block.sourceStart + position);
+                if (position < block.displayToSource.size())
+                {
+                    return (std::min)(block.sourceEnd, block.displayToSource[position]);
+                }
+                return block.sourceEnd;
             }
         }
 
@@ -592,6 +904,46 @@ namespace winrt::ElMd
         return std::nullopt;
     }
 
+    std::optional<std::size_t> EditorSurfaceRenderer::MoveCaretVertically(std::size_t sourceOffset, bool down) const
+    {
+        auto caretBounds = CaretBounds(sourceOffset);
+        if (!caretBounds || visualLines.empty())
+        {
+            return std::nullopt;
+        }
+
+        auto x = caretBounds->left;
+        auto caretCenterY = (caretBounds->top + caretBounds->bottom) * 0.5f;
+        auto currentLineIndex = std::optional<std::size_t>{};
+        for (std::size_t index = 0; index < visualLines.size(); ++index)
+        {
+            auto const& line = visualLines[index];
+            if (line.rect.top <= caretCenterY && caretCenterY <= line.rect.bottom && line.sourceStart <= sourceOffset && sourceOffset <= line.sourceEnd)
+            {
+                currentLineIndex = index;
+                break;
+            }
+        }
+
+        if (!currentLineIndex)
+        {
+            return std::nullopt;
+        }
+        if (!down && *currentLineIndex == 0)
+        {
+            return visualLines.front().sourceStart;
+        }
+        if (down && *currentLineIndex + 1 >= visualLines.size())
+        {
+            return visualLines.back().sourceEnd;
+        }
+
+        auto const& targetLine = visualLines[*currentLineIndex + (down ? 1 : -1)];
+        auto targetX = (std::min)((std::max)(x, targetLine.rect.left), targetLine.rect.right - 1.0f);
+        auto targetY = (targetLine.rect.top + targetLine.rect.bottom) * 0.5f;
+        return HitTest(targetX, targetY);
+    }
+
     std::optional<D2D1_RECT_F> EditorSurfaceRenderer::CaretBounds(std::size_t sourceOffset) const
     {
         for (auto const& block : visualBlocks)
@@ -604,7 +956,8 @@ namespace winrt::ElMd
             FLOAT caretX = 0.0f;
             FLOAT caretY = 0.0f;
             DWRITE_HIT_TEST_METRICS metrics{};
-            if (SUCCEEDED(block.layout->HitTestTextPosition(static_cast<UINT32>(sourceOffset - block.sourceStart), false, &caretX, &caretY, &metrics)))
+            auto position = DisplayPositionForSource(block.displayToSource, sourceOffset);
+            if (SUCCEEDED(block.layout->HitTestTextPosition(static_cast<UINT32>(position), false, &caretX, &caretY, &metrics)))
             {
                 auto left = block.textOrigin.x + caretX;
                 auto top = block.textOrigin.y + caretY;
@@ -648,17 +1001,17 @@ namespace winrt::ElMd
 
         if (!textBrush)
         {
-            winrt::check_hresult(d2dContext->CreateSolidColorBrush(D2D1::ColorF(0.86f, 0.90f, 0.96f, 1.0f), textBrush.GetAddressOf()));
-            winrt::check_hresult(d2dContext->CreateSolidColorBrush(D2D1::ColorF(0.58f, 0.65f, 0.75f, 1.0f), mutedBrush.GetAddressOf()));
-            winrt::check_hresult(d2dContext->CreateSolidColorBrush(D2D1::ColorF(0.43f, 0.72f, 1.0f, 1.0f), accentBrush.GetAddressOf()));
-            winrt::check_hresult(d2dContext->CreateSolidColorBrush(D2D1::ColorF(0.80f, 0.86f, 0.92f, 1.0f), codeBrush.GetAddressOf()));
-            winrt::check_hresult(d2dContext->CreateSolidColorBrush(D2D1::ColorF(0.105f, 0.130f, 0.165f, 1.0f), panelBrush.GetAddressOf()));
-            winrt::check_hresult(d2dContext->CreateSolidColorBrush(D2D1::ColorF(0.20f, 0.42f, 0.70f, 0.55f), selectionBrush.GetAddressOf()));
-            winrt::check_hresult(d2dContext->CreateSolidColorBrush(D2D1::ColorF(0.92f, 0.96f, 1.0f, 1.0f), caretBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.textColor, textBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.mutedColor, mutedBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.accentColor, accentBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.codeTextColor, codeBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.panelColor, panelBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.selectionColor, selectionBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.caretColor, caretBrush.GetAddressOf()));
         }
 
         d2dContext->BeginDraw();
-        d2dContext->Clear(D2D1::ColorF(0.070f, 0.086f, 0.110f, 1.0f));
+        d2dContext->Clear(styleSheet.canvasColor);
         DrawDocument(sessionCore);
         winrt::check_hresult(d2dContext->EndDraw());
 

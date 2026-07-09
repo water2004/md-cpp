@@ -258,10 +258,17 @@ struct Builder {
             case BK::Heading: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::heading(b.level));
                 InlineStyle s = InlineStyle::plain(); s.heading_level = b.level;
-                // content_start: skip "# "
                 std::size_t cs = base_range().start.v;
                 if (const auto* r = sm ? sm->find_node_by_id(b.id) : nullptr) cs = r->content_range.start.v;
-                rb.inline_items = build_inlines(b.children, cs, s);
+                std::size_t cursor = base_range().start.v;
+                std::u32string marker(static_cast<std::size_t>(b.level), U'#');
+                marker.push_back(U' ');
+                if (cursor + marker.size() <= cs) {
+                    push_marker(rb.inline_items, cursor, std::move(marker));
+                    rb.inline_items.back().style = s;
+                }
+                auto items = build_inlines(b.children, cs, s);
+                for (auto& it : items) rb.inline_items.push_back(std::move(it));
                 return with_content_range(std::move(rb));
             }
             case BK::BlockQuote: {

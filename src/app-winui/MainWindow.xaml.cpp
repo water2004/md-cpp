@@ -30,20 +30,29 @@ namespace winrt::ElMd::implementation
             ResizeEditorSurface(EditorSurface().ActualWidth(), EditorSurface().ActualHeight());
         });
 
+        Root().ActualThemeChanged([this](auto const&, auto const&)
+        {
+            UpdateTheme();
+        });
+
         EditorSurface().IsTabStop(true);
         EditorSurface().CharacterReceived([this](auto const&, Microsoft::UI::Xaml::Input::CharacterReceivedRoutedEventArgs const& args)
         {
-            if (!textInputFocused)
-            {
-                HandleEditorCharacter(args.Character());
-            }
-            args.Handled(true);
+            args.Handled(HandleEditorCharacter(args.Character()));
         });
 
         EditorSurface().KeyDown([this](auto const&, Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args)
         {
             args.Handled(HandleEditorKey(args.Key()));
         });
+
+        auto enterAccelerator = Microsoft::UI::Xaml::Input::KeyboardAccelerator();
+        enterAccelerator.Key(winrt::Windows::System::VirtualKey::Enter);
+        enterAccelerator.Invoked([this](auto const&, Microsoft::UI::Xaml::Input::KeyboardAcceleratorInvokedEventArgs const& args)
+        {
+            args.Handled(InsertEditorNewline());
+        });
+        EditorSurface().KeyboardAccelerators().Append(enterAccelerator);
 
         EditorSurface().PointerPressed([this](auto const&, Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
         {
@@ -249,16 +258,28 @@ namespace winrt::ElMd::implementation
                 auto request = args.Request();
                 auto caret = editorSession.Core().editor.selection().active.v;
                 auto caretBounds = editorRenderer.CaretBounds(caret);
-                auto rect = winrt::Windows::Foundation::Rect{ 0.0f, 0.0f, 1.0f, 24.0f };
+                auto textRect = winrt::Windows::Foundation::Rect{ 0.0f, 0.0f, 1.0f, 24.0f };
+                auto controlRect = winrt::Windows::Foundation::Rect{ 0.0f, 0.0f, static_cast<float>(EditorSurface().ActualWidth()), static_cast<float>(EditorSurface().ActualHeight()) };
+                auto transform = EditorSurface().TransformToVisual(nullptr);
+                auto hwnd = WindowHandle();
+                POINT clientOrigin{};
+                ClientToScreen(hwnd, &clientOrigin);
+                auto dpi = static_cast<float>(GetDpiForWindow(hwnd));
+                auto scale = dpi > 0.0f ? dpi / 96.0f : 1.0f;
+                auto screenOrigin = winrt::Windows::Foundation::Point{ static_cast<float>(clientOrigin.x), static_cast<float>(clientOrigin.y) };
                 if (caretBounds)
                 {
-                    auto transform = EditorSurface().TransformToVisual(nullptr);
                     auto point = transform.TransformPoint(winrt::Windows::Foundation::Point{ caretBounds->left, caretBounds->top });
-                    rect = winrt::Windows::Foundation::Rect{ point.X, point.Y, caretBounds->right - caretBounds->left, caretBounds->bottom - caretBounds->top };
+                    textRect = winrt::Windows::Foundation::Rect{ screenOrigin.X + point.X * scale, screenOrigin.Y + point.Y * scale, (caretBounds->right - caretBounds->left) * scale, (caretBounds->bottom - caretBounds->top) * scale };
                 }
+                auto controlTopLeft = transform.TransformPoint(winrt::Windows::Foundation::Point{ 0.0f, 0.0f });
+                controlRect.X = screenOrigin.X + controlTopLeft.X * scale;
+                controlRect.Y = screenOrigin.Y + controlTopLeft.Y * scale;
+                controlRect.Width *= scale;
+                controlRect.Height *= scale;
                 auto bounds = request.LayoutBounds();
-                bounds.TextBounds(rect);
-                bounds.ControlBounds(rect);
+                bounds.TextBounds(textRect);
+                bounds.ControlBounds(controlRect);
             }
             catch (winrt::hresult_error const& error)
             {
@@ -283,17 +304,61 @@ namespace winrt::ElMd::implementation
             auto length = editorSession.Core().editor.text_cps().size();
             auto start = static_cast<std::size_t>((std::max)(0, range.StartCaretPosition));
             auto end = static_cast<std::size_t>((std::max)(0, range.EndCaretPosition));
+            auto incoming = elmd::utf8_to_cps(winrt::to_string(args.Text()));
+            auto isIncomingNewline = incoming == U"\r" || incoming == U"\n" || incoming == U"\r\n";
+            auto selection = editorSession.Core().editor.selection();
+            auto text = editorSession.Core().editor.text_cps();
+            if (isIncomingNewline
+                && start < text.size()
+                && text[start] == U'\n'
+                && selection.is_caret()
+                && selection.active.v == start + 1)
+            {
+                RenderEditorSurface();
+                textEditContext.NotifySelectionChanged(CurrentTextInputSelection());
+                textInputKnownLength = length;
+                args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Succeeded);
+                return;
+            }
+            if (pendingCharacterTextUpdate
+                && start <= text.size()
+                && start == pendingCharacterStart
+                && incoming == pendingCharacterText
+                && start + pendingCharacterText.size() <= text.size()
+                && selection.is_caret()
+                && selection.active.v == start + pendingCharacterText.size()
+                && std::equal(pendingCharacterText.begin(), pendingCharacterText.end(), text.begin() + start))
+            {
+                pendingCharacterTextUpdate = false;
+                auto newSelection = args.NewSelection();
+                auto newStart = static_cast<std::size_t>((std::max)(0, newSelection.StartCaretPosition));
+                auto newEnd = static_cast<std::size_t>((std::max)(0, newSelection.EndCaretPosition));
+                editorSession.SetSelection((std::min)(newStart, length), (std::min)(newEnd, length));
+                RenderEditorSurface();
+                textEditContext.NotifySelectionChanged(CurrentTextInputSelection());
+                textInputKnownLength = length;
+                args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Succeeded);
+                return;
+            }
+            pendingCharacterTextUpdate = false;
             editorSession.SetSelection((std::min)(start, length), (std::min)(end, length));
-            auto command = elmd::Command::InsertText(elmd::utf8_to_cps(winrt::to_string(args.Text())));
+            auto command = isIncomingNewline ? elmd::Command{} : elmd::Command::InsertText(incoming);
+            if (isIncomingNewline)
+            {
+                command.kind = elmd::CommandKind::InsertNewline;
+            }
             textInputUpdating = true;
             if (ExecuteEditorCommand(command))
             {
                 textInputUpdating = false;
-                auto newSelection = args.NewSelection();
                 auto newLength = editorSession.Core().editor.text_cps().size();
-                auto newStart = static_cast<std::size_t>((std::max)(0, newSelection.StartCaretPosition));
-                auto newEnd = static_cast<std::size_t>((std::max)(0, newSelection.EndCaretPosition));
-                editorSession.SetSelection((std::min)(newStart, newLength), (std::min)(newEnd, newLength));
+                if (!isIncomingNewline)
+                {
+                    auto newSelection = args.NewSelection();
+                    auto newStart = static_cast<std::size_t>((std::max)(0, newSelection.StartCaretPosition));
+                    auto newEnd = static_cast<std::size_t>((std::max)(0, newSelection.EndCaretPosition));
+                    editorSession.SetSelection((std::min)(newStart, newLength), (std::min)(newEnd, newLength));
+                }
                 RenderEditorSurface();
                 textEditContext.NotifySelectionChanged(CurrentTextInputSelection());
                 textInputKnownLength = newLength;
@@ -327,6 +392,14 @@ namespace winrt::ElMd::implementation
         return true;
     }
 
+    bool MainWindow::InsertEditorNewline()
+    {
+        pendingCharacterTextUpdate = false;
+        elmd::Command command;
+        command.kind = elmd::CommandKind::InsertNewline;
+        return ExecuteEditorCommand(command);
+    }
+
     winrt::Windows::UI::Text::Core::CoreTextRange MainWindow::CurrentTextInputSelection() const
     {
         auto selection = editorSession.Core().editor.selection();
@@ -357,19 +430,34 @@ namespace winrt::ElMd::implementation
         }
     }
 
-    void MainWindow::HandleEditorCharacter(char32_t character)
+    bool MainWindow::HandleEditorCharacter(char32_t character)
     {
-        if (character < 0x20 || character == 0x7f)
+        if (character == U'\r' || character == U'\n')
         {
-            return;
+            return InsertEditorNewline();
         }
 
-        ExecuteEditorCommand(elmd::Command::InsertText(std::u32string(1, character)));
+        if (character < 0x20 || character == 0x7f)
+        {
+            return false;
+        }
+
+        auto start = editorSession.Core().editor.selection().normalized_range().start.v;
+        std::u32string text(1, character);
+        if (!ExecuteEditorCommand(elmd::Command::InsertText(text)))
+        {
+            return false;
+        }
+        pendingCharacterTextUpdate = true;
+        pendingCharacterStart = start;
+        pendingCharacterText = std::move(text);
+        return true;
     }
 
     bool MainWindow::HandleEditorKey(winrt::Windows::System::VirtualKey key)
     {
         elmd::Command command;
+        pendingCharacterTextUpdate = false;
         auto keyState = [](winrt::Windows::System::VirtualKey virtualKey)
         {
             return winrt::Microsoft::UI::Input::InputKeyboardSource::GetKeyStateForCurrentThread(virtualKey);
@@ -378,8 +466,12 @@ namespace winrt::ElMd::implementation
         {
             return (static_cast<std::uint32_t>(keyState(virtualKey)) & 0x1u) != 0;
         };
-        auto ctrl = isDown(winrt::Windows::System::VirtualKey::Control);
-        auto shift = isDown(winrt::Windows::System::VirtualKey::Shift);
+        auto ctrl = isDown(winrt::Windows::System::VirtualKey::Control)
+            || isDown(winrt::Windows::System::VirtualKey::LeftControl)
+            || isDown(winrt::Windows::System::VirtualKey::RightControl);
+        auto shift = isDown(winrt::Windows::System::VirtualKey::Shift)
+            || isDown(winrt::Windows::System::VirtualKey::LeftShift)
+            || isDown(winrt::Windows::System::VirtualKey::RightShift);
 
         if (ctrl)
         {
@@ -459,8 +551,7 @@ namespace winrt::ElMd::implementation
                 command.kind = elmd::CommandKind::DeleteForward;
                 break;
             case winrt::Windows::System::VirtualKey::Enter:
-                command.kind = elmd::CommandKind::InsertNewline;
-                break;
+                return InsertEditorNewline();
             case winrt::Windows::System::VirtualKey::Left:
                 command.kind = elmd::CommandKind::MoveLeft;
                 command.extend_selection = shift;
@@ -470,13 +561,29 @@ namespace winrt::ElMd::implementation
                 command.extend_selection = shift;
                 break;
             case winrt::Windows::System::VirtualKey::Up:
-                command.kind = elmd::CommandKind::MoveUp;
-                command.extend_selection = shift;
-                break;
+                if (auto offset = editorRenderer.MoveCaretVertically(editorSession.Core().editor.selection().active.v, false))
+                {
+                    auto selection = editorSession.Core().editor.selection();
+                    editorSession.SetSelection(shift ? selection.anchor.v : *offset, *offset);
+                    NotifyTextInputSelectionChanged();
+                    RenderEditorSurface();
+                    editorRenderer.ScrollToSourceOffset(*offset);
+                    RenderEditorSurface();
+                    return true;
+                }
+                return false;
             case winrt::Windows::System::VirtualKey::Down:
-                command.kind = elmd::CommandKind::MoveDown;
-                command.extend_selection = shift;
-                break;
+                if (auto offset = editorRenderer.MoveCaretVertically(editorSession.Core().editor.selection().active.v, true))
+                {
+                    auto selection = editorSession.Core().editor.selection();
+                    editorSession.SetSelection(shift ? selection.anchor.v : *offset, *offset);
+                    NotifyTextInputSelectionChanged();
+                    RenderEditorSurface();
+                    editorRenderer.ScrollToSourceOffset(*offset);
+                    RenderEditorSurface();
+                    return true;
+                }
+                return false;
             case winrt::Windows::System::VirtualKey::Home:
                 command.kind = elmd::CommandKind::MoveLineStart;
                 command.extend_selection = shift;
@@ -799,6 +906,7 @@ namespace winrt::ElMd::implementation
 
     void MainWindow::InitializeEditorSurface()
     {
+        UpdateTheme();
         editorRenderer.Initialize(EditorSurface());
         RenderEditorSurface();
     }
@@ -812,6 +920,19 @@ namespace winrt::ElMd::implementation
     void MainWindow::RenderEditorSurface()
     {
         editorRenderer.Render(editorSession.Core());
+    }
+
+    winrt::ElMd::EditorSurfaceRenderer::Theme MainWindow::CurrentRendererTheme()
+    {
+        return Root().ActualTheme() == Microsoft::UI::Xaml::ElementTheme::Dark
+            ? winrt::ElMd::EditorSurfaceRenderer::Theme::Dark
+            : winrt::ElMd::EditorSurfaceRenderer::Theme::Light;
+    }
+
+    void MainWindow::UpdateTheme()
+    {
+        editorRenderer.SetTheme(CurrentRendererTheme());
+        RenderEditorSurface();
     }
 
     void MainWindow::UpdateOutlinePanel()
