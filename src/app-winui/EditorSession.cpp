@@ -96,6 +96,17 @@ namespace winrt::ElMd
         core_->editor.set_selection(selection);
     }
 
+    bool EditorSession::HasSelection() const
+    {
+        return !core_->editor.selection().is_caret();
+    }
+
+    std::string EditorSession::SelectedTextUtf8() const
+    {
+        auto range = core_->editor.selection().normalized_range();
+        return elmd::cps_to_utf8(core_->editor.buffer().text_range(range));
+    }
+
     bool EditorSession::HasFile() const
     {
         return file_ != nullptr;

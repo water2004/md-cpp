@@ -5,6 +5,7 @@
 #endif
 
 import elmd.core.command;
+import elmd.core.utf;
 
 namespace winrt::ElMd::implementation
 {
@@ -143,6 +144,15 @@ namespace winrt::ElMd::implementation
                 case winrt::Windows::System::VirtualKey::A:
                     command.kind = elmd::CommandKind::SelectAll;
                     break;
+                case winrt::Windows::System::VirtualKey::C:
+                    CopySelectionToClipboard();
+                    return;
+                case winrt::Windows::System::VirtualKey::X:
+                    CutSelectionToClipboard();
+                    return;
+                case winrt::Windows::System::VirtualKey::V:
+                    PasteClipboardAsync();
+                    return;
                 default:
                     return;
             }
@@ -238,6 +248,55 @@ namespace winrt::ElMd::implementation
         editorRenderer.ScrollBy(static_cast<float>(-delta));
         RenderEditorSurface();
         args.Handled(true);
+    }
+
+    void MainWindow::CopySelectionToClipboard()
+    {
+        if (!editorSession.HasSelection())
+        {
+            return;
+        }
+
+        auto package = winrt::Windows::ApplicationModel::DataTransfer::DataPackage();
+        package.SetText(winrt::to_hstring(editorSession.SelectedTextUtf8()));
+        winrt::Windows::ApplicationModel::DataTransfer::Clipboard::SetContent(package);
+        SetStatus(L"Copied selection");
+    }
+
+    void MainWindow::CutSelectionToClipboard()
+    {
+        if (!editorSession.HasSelection())
+        {
+            return;
+        }
+
+        CopySelectionToClipboard();
+        elmd::Command command;
+        command.kind = elmd::CommandKind::DeleteSelection;
+        ExecuteEditorCommand(command);
+    }
+
+    winrt::fire_and_forget MainWindow::PasteClipboardAsync()
+    {
+        auto lifetime = get_strong();
+        try
+        {
+            auto content = winrt::Windows::ApplicationModel::DataTransfer::Clipboard::GetContent();
+            if (!content.Contains(winrt::Windows::ApplicationModel::DataTransfer::StandardDataFormats::Text()))
+            {
+                co_return;
+            }
+
+            auto text = co_await content.GetTextAsync();
+            if (!text.empty())
+            {
+                ExecuteEditorCommand(elmd::Command::InsertText(elmd::utf8_to_cps(winrt::to_string(text))));
+            }
+        }
+        catch (winrt::hresult_error const& error)
+        {
+            SetStatus(L"Paste failed: " + error.message());
+        }
     }
 
     void MainWindow::SetStatus(winrt::hstring const& text)
