@@ -113,6 +113,44 @@ namespace winrt::ElMd::implementation
     void MainWindow::HandleEditorKey(winrt::Windows::System::VirtualKey key)
     {
         elmd::Command command;
+        auto keyState = [](winrt::Windows::System::VirtualKey virtualKey)
+        {
+            return winrt::Microsoft::UI::Input::InputKeyboardSource::GetKeyStateForCurrentThread(virtualKey);
+        };
+        auto isDown = [&](winrt::Windows::System::VirtualKey virtualKey)
+        {
+            return (static_cast<std::uint32_t>(keyState(virtualKey)) & 0x1u) != 0;
+        };
+        auto ctrl = isDown(winrt::Windows::System::VirtualKey::Control);
+        auto shift = isDown(winrt::Windows::System::VirtualKey::Shift);
+
+        if (ctrl)
+        {
+            switch (key)
+            {
+                case winrt::Windows::System::VirtualKey::B:
+                    command.kind = elmd::CommandKind::ToggleStrong;
+                    break;
+                case winrt::Windows::System::VirtualKey::I:
+                    command.kind = elmd::CommandKind::ToggleEmphasis;
+                    break;
+                case winrt::Windows::System::VirtualKey::Z:
+                    command.kind = shift ? elmd::CommandKind::Redo : elmd::CommandKind::Undo;
+                    break;
+                case winrt::Windows::System::VirtualKey::Y:
+                    command.kind = elmd::CommandKind::Redo;
+                    break;
+                case winrt::Windows::System::VirtualKey::A:
+                    command.kind = elmd::CommandKind::SelectAll;
+                    break;
+                default:
+                    return;
+            }
+
+            ExecuteEditorCommand(command);
+            return;
+        }
+
         switch (key)
         {
             case winrt::Windows::System::VirtualKey::Back:
@@ -126,15 +164,19 @@ namespace winrt::ElMd::implementation
                 break;
             case winrt::Windows::System::VirtualKey::Left:
                 command.kind = elmd::CommandKind::MoveLeft;
+                command.extend_selection = shift;
                 break;
             case winrt::Windows::System::VirtualKey::Right:
                 command.kind = elmd::CommandKind::MoveRight;
+                command.extend_selection = shift;
                 break;
             case winrt::Windows::System::VirtualKey::Home:
                 command.kind = elmd::CommandKind::MoveLineStart;
+                command.extend_selection = shift;
                 break;
             case winrt::Windows::System::VirtualKey::End:
                 command.kind = elmd::CommandKind::MoveLineEnd;
+                command.extend_selection = shift;
                 break;
             default:
                 return;

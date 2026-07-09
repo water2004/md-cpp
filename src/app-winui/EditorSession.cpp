@@ -53,9 +53,31 @@ namespace winrt::ElMd
 
     bool EditorSession::ExecuteCommand(elmd::Command const& command)
     {
-        if (!core_->editor.execute_command(command))
+        if (command.kind == elmd::CommandKind::Undo)
         {
-            return false;
+            if (!core_->editor.undo())
+            {
+                return false;
+            }
+        }
+        else if (command.kind == elmd::CommandKind::Redo)
+        {
+            if (!core_->editor.redo())
+            {
+                return false;
+            }
+        }
+        else if (command.kind == elmd::CommandKind::SelectAll)
+        {
+            SetSelection(0, core_->editor.text_cps().size());
+            return true;
+        }
+        else
+        {
+            if (!core_->editor.execute_command(command))
+            {
+                return false;
+            }
         }
 
         core_->sourceText = elmd::cps_to_utf8(core_->editor.text_cps());
