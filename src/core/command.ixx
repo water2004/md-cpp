@@ -124,6 +124,48 @@ inline std::optional<MarkdownNewlineEdit> markdown_newline_edit(const std::u32st
     return MarkdownNewlineEdit{sel, insert, CharOffset(sel.start.v + insert.size())};
 }
 
+inline std::size_t markdown_line_prefix_end(const std::u32string& line) {
+    std::size_t pos = 0;
+    while (pos < line.size() && is_space_or_tab(line[pos])) ++pos;
+    if (pos + 5 < line.size() && line[pos] == U'-' && line[pos + 1] == U' ' && line[pos + 2] == U'[' && (line[pos + 3] == U' ' || line[pos + 3] == U'x' || line[pos + 3] == U'X') && line[pos + 4] == U']' && line[pos + 5] == U' ') return pos + 6;
+    if (pos + 1 < line.size() && (line[pos] == U'-' || line[pos] == U'*' || line[pos] == U'+') && line[pos + 1] == U' ') return pos + 2;
+    std::size_t number_start = pos;
+    while (pos < line.size() && line[pos] >= U'0' && line[pos] <= U'9') ++pos;
+    if (pos > number_start && pos + 1 < line.size() && (line[pos] == U'.' || line[pos] == U')') && line[pos + 1] == U' ') return pos + 2;
+    return number_start;
+}
+
+inline std::optional<Transaction> list_toggle_transaction(const Command& cmd, const std::u32string& text_cps, const Selection& selection, std::uint64_t revision) {
+    auto sel = selection.normalized_range();
+    std::size_t ls = find_line_start(text_cps, sel.start.v);
+    std::size_t le = find_line_end(text_cps, sel.end.v);
+    std::u32string line(text_cps.begin() + ls, text_cps.begin() + le);
+    std::size_t indent_end = 0;
+    while (indent_end < line.size() && is_space_or_tab(line[indent_end])) ++indent_end;
+    std::size_t prefix_end = markdown_line_prefix_end(line);
+    std::u32string body(line.begin() + prefix_end, line.end());
+    std::u32string prefix(line.begin(), line.begin() + indent_end);
+    bool already_unordered = prefix_end == indent_end + 2 && indent_end + 1 < line.size() && (line[indent_end] == U'-' || line[indent_end] == U'*' || line[indent_end] == U'+') && line[indent_end + 1] == U' ';
+    bool already_task = prefix_end == indent_end + 6 && indent_end + 5 < line.size() && line[indent_end] == U'-' && line[indent_end + 1] == U' ' && line[indent_end + 2] == U'[' && line[indent_end + 4] == U']' && line[indent_end + 5] == U' ';
+    bool already_ordered = prefix_end > indent_end + 2 && prefix_end <= line.size() && (line[prefix_end - 2] == U'.' || line[prefix_end - 2] == U')') && line[prefix_end - 1] == U' ';
+    std::u32string new_line;
+    if ((cmd.kind == CommandKind::ToggleUnorderedList && already_unordered) || (cmd.kind == CommandKind::ToggleOrderedList && already_ordered) || (cmd.kind == CommandKind::ToggleTaskList && already_task)) {
+        new_line = prefix + body;
+    } else if (cmd.kind == CommandKind::ToggleOrderedList) {
+        new_line = prefix + U"1. " + body;
+    } else if (cmd.kind == CommandKind::ToggleTaskList) {
+        new_line = prefix + U"- [ ] " + body;
+    } else {
+        new_line = prefix + U"- " + body;
+    }
+    std::size_t new_prefix_len = new_line.size() - body.size();
+    std::size_t body_offset = selection.head().v > ls + prefix_end ? (std::min)(selection.head().v - ls - prefix_end, body.size()) : 0;
+    std::size_t new_pos = ls + new_prefix_len + body_offset;
+    Transaction t(revision, selection, Selection::caret(CharOffset(new_pos)), TransactionReason::StructuralCommand);
+    t.with_edit(CharRange(CharOffset(ls), CharOffset(le)), std::move(new_line));
+    return t;
+}
+
 // to_transaction: builds (does not apply) a Transaction. `text_cps` is the
 // current buffer text as codepoints; `revision` is buffer.revision().
 inline std::optional<Transaction> to_transaction(const Command& cmd,
@@ -348,6 +390,10 @@ inline std::optional<Transaction> to_transaction(const Command& cmd,
             t.with_edit(CharRange(CharOffset(ls), CharOffset(le)), std::move(new_line));
             return t;
         }
+        case CommandKind::ToggleUnorderedList:
+        case CommandKind::ToggleOrderedList:
+        case CommandKind::ToggleTaskList:
+            return list_toggle_transaction(cmd, text_cps, selection, revision);
         case CommandKind::InsertCodeBlock: {
             std::u32string block; block.push_back('\n'); block.push_back('`'); block.push_back('`'); block.push_back('`');
             if (cmd.lang) block += *cmd.lang;
@@ -378,8 +424,6 @@ inline std::optional<Transaction> to_transaction(const Command& cmd,
         case CommandKind::Undo: case CommandKind::Redo:
         case CommandKind::Cut: case CommandKind::Copy: case CommandKind::Paste:
         case CommandKind::SelectAll: case CommandKind::ClearHeading:
-        case CommandKind::ToggleUnorderedList: case CommandKind::ToggleOrderedList:
-        case CommandKind::ToggleTaskList:
         case CommandKind::InsertImage: case CommandKind::InsertFootnote:
         case CommandKind::ToggleCallout: case CommandKind::ExtensionCmd:
             return std::nullopt;

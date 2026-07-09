@@ -164,3 +164,33 @@ ELMD_TEST(test_enter_on_empty_list_exits_list) {
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string(""));
     ELMD_CHECK_EQ(e.selection().head().v, 0u);
 }
+
+ELMD_TEST(test_toggle_unordered_list) {
+    Editor e("alpha");
+    e.set_caret(CharOffset(5));
+    Command c; c.kind = CommandKind::ToggleUnorderedList;
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- alpha"));
+    ELMD_CHECK_EQ(e.selection().head().v, 7u);
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha"));
+    ELMD_CHECK_EQ(e.selection().head().v, 5u);
+}
+
+ELMD_TEST(test_toggle_ordered_list_replaces_unordered_marker) {
+    Editor e("- alpha");
+    e.set_caret(CharOffset(7));
+    Command c; c.kind = CommandKind::ToggleOrderedList;
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("1. alpha"));
+    ELMD_CHECK_EQ(e.selection().head().v, 8u);
+}
+
+ELMD_TEST(test_toggle_task_list_replaces_ordered_marker) {
+    Editor e("1. alpha");
+    e.set_caret(CharOffset(8));
+    Command c; c.kind = CommandKind::ToggleTaskList;
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- [ ] alpha"));
+    ELMD_CHECK_EQ(e.selection().head().v, 11u);
+}
