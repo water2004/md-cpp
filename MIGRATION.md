@@ -36,7 +36,7 @@ script 执行 / iframe / 把 `<img>` 当图片 / 把 `<table>` 当表格 /
 | storage | `src/core/storage.ixx` | ✅ 新增（file_io+assets） |
 | export | `src/core/exporter.ixx` | ✅ 新增（markdown+html+plain_text） |
 | platform-windows | `src/platform/*.ixx` + `paint.{h,cpp}` | ⚠️ DWrite factory/measurer/D2D factory/theme/native surface 接口已实现；D2D painter 因 MSVC module ICE 暂为 stub |
-| app-winui | `src/app-winui/*.cpp + *.xaml` | ⚠️ WinUI 3 壳可启动；`SwapChainPanel` 已接 D3D/DXGI composition swap chain 并可清屏呈现；未接 core parse/render/layout |
+| app-winui | `src/app-winui/*.cpp + *.xaml` | ⚠️ WinUI 3 壳可启动；`SwapChainPanel` 已接 D3D/DXGI + Direct2D/DirectWrite 文本预览；Open/Save/Save As 文件对话框已接；未接 core parse/render/layout |
 
 ### 缺失/待补的 core 模块
 
@@ -194,7 +194,7 @@ UI 与 editor-core 分离清楚。
 ## 19. 下一步迁移优先级
 
 1. 完善 platform 层 DWrite/D2D 真实测量+绘制（占位 StubMeasurer 已够测试）。
-2. Direct2D/DirectWrite EditorView 绘制 pipeline（parse→render→layout→draw）。
+2. core parse/render/layout 接入 Direct2D EditorView 绘制 pipeline。
 3. WinUI 3 原生 OutlinePanel + 文件对话框。
 4. TSF/IME composition（C++ 重点，Rust 卡住项）。
 5. 补 core scheduler + extension registry 骨架。

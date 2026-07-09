@@ -23,6 +23,13 @@ namespace winrt::ElMd::implementation
         ::Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3dContext;
         ::Microsoft::WRL::ComPtr<IDXGISwapChain1> swapChain;
         ::Microsoft::WRL::ComPtr<ID3D11RenderTargetView> renderTargetView;
+        ::Microsoft::WRL::ComPtr<ID2D1Factory1> d2dFactory;
+        ::Microsoft::WRL::ComPtr<ID2D1Device> d2dDevice;
+        ::Microsoft::WRL::ComPtr<ID2D1DeviceContext> d2dContext;
+        ::Microsoft::WRL::ComPtr<ID2D1Bitmap1> d2dTarget;
+        ::Microsoft::WRL::ComPtr<IDWriteFactory> dwriteFactory;
+        ::Microsoft::WRL::ComPtr<IDWriteTextFormat> textFormat;
+        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> textBrush;
         uint32_t surfaceWidth = 0;
         uint32_t surfaceHeight = 0;
         winrt::hstring lastCommand = L"Ready";

@@ -181,6 +181,26 @@ namespace winrt::ElMd::implementation
         ::Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
         winrt::check_hresult(d3dDevice.As(&dxgiDevice));
 
+        D2D1_FACTORY_OPTIONS d2dOptions{};
+#if defined(_DEBUG)
+        d2dOptions.debugLevel = D2D1_DEBUG_LEVEL_INFORMATION;
+#endif
+        winrt::check_hresult(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, d2dOptions, d2dFactory.GetAddressOf()));
+        winrt::check_hresult(d2dFactory->CreateDevice(dxgiDevice.Get(), d2dDevice.GetAddressOf()));
+        winrt::check_hresult(d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, d2dContext.GetAddressOf()));
+
+        winrt::check_hresult(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(dwriteFactory.GetAddressOf())));
+        winrt::check_hresult(dwriteFactory->CreateTextFormat(
+            L"Cascadia Mono",
+            nullptr,
+            DWRITE_FONT_WEIGHT_NORMAL,
+            DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL,
+            15.0f,
+            L"en-us",
+            textFormat.GetAddressOf()));
+        winrt::check_hresult(textFormat->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP));
+
         ::Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
         winrt::check_hresult(dxgiDevice->GetAdapter(adapter.GetAddressOf()));
 
@@ -229,6 +249,8 @@ namespace winrt::ElMd::implementation
         }
 
         renderTargetView = nullptr;
+        d2dTarget = nullptr;
+        textBrush = nullptr;
         winrt::check_hresult(swapChain->ResizeBuffers(0, newWidth, newHeight, DXGI_FORMAT_UNKNOWN, 0));
         surfaceWidth = newWidth;
         surfaceHeight = newHeight;
@@ -249,8 +271,35 @@ namespace winrt::ElMd::implementation
             winrt::check_hresult(d3dDevice->CreateRenderTargetView(backBuffer.Get(), nullptr, renderTargetView.GetAddressOf()));
         }
 
-        const float color[] = { 0.070f, 0.086f, 0.110f, 1.0f };
-        d3dContext->ClearRenderTargetView(renderTargetView.Get(), color);
+        if (!d2dTarget)
+        {
+            ::Microsoft::WRL::ComPtr<IDXGISurface> surface;
+            winrt::check_hresult(swapChain->GetBuffer(0, __uuidof(IDXGISurface), reinterpret_cast<void**>(surface.GetAddressOf())));
+
+            D2D1_BITMAP_PROPERTIES1 properties{};
+            properties.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
+            properties.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
+            properties.dpiX = 96.0f;
+            properties.dpiY = 96.0f;
+            properties.bitmapOptions = D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW;
+
+            winrt::check_hresult(d2dContext->CreateBitmapFromDxgiSurface(surface.Get(), &properties, d2dTarget.GetAddressOf()));
+            d2dContext->SetTarget(d2dTarget.Get());
+        }
+
+        if (!textBrush)
+        {
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(D2D1::ColorF(0.86f, 0.90f, 0.96f, 1.0f), textBrush.GetAddressOf()));
+        }
+
+        auto text = currentText.empty() ? winrt::hstring(L"Open a Markdown file to preview it here.") : currentText;
+        auto rect = D2D1::RectF(28.0f, 24.0f, static_cast<float>(surfaceWidth) - 28.0f, static_cast<float>(surfaceHeight) - 24.0f);
+
+        d2dContext->BeginDraw();
+        d2dContext->Clear(D2D1::ColorF(0.070f, 0.086f, 0.110f, 1.0f));
+        d2dContext->DrawTextW(text.c_str(), static_cast<UINT32>(text.size()), textFormat.Get(), rect, textBrush.Get());
+        winrt::check_hresult(d2dContext->EndDraw());
+
         winrt::check_hresult(swapChain->Present(1, 0));
     }
 }

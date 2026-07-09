@@ -4,7 +4,9 @@
 #include <unknwn.h>
 #include <restrictederrorinfo.h>
 #include <hstring.h>
+#include <d2d1_1.h>
 #include <d3d11_4.h>
+#include <dwrite.h>
 #include <dxgi1_6.h>
 #include <microsoft.ui.xaml.window.h>
 #include <microsoft.ui.xaml.media.dxinterop.h>
