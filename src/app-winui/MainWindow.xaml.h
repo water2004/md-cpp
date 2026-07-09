@@ -21,6 +21,7 @@ namespace winrt::ElMd::implementation
         void HandlePointerPressed(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
         void HandlePointerMoved(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
         void HandlePointerReleased(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
+        void HandlePointerWheel(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
         void SetStatus(winrt::hstring const& text);
         HWND WindowHandle();
         winrt::fire_and_forget OpenDocumentAsync();

@@ -251,7 +251,7 @@ namespace winrt::ElMd
         auto documentLeft = DocumentHorizontalPaddingDip;
         auto documentTop = DocumentVerticalPaddingDip;
         auto documentRight = (std::min)(static_cast<float>(surfaceWidth) - DocumentHorizontalPaddingDip, documentLeft + DocumentWidthDip);
-        auto y = documentTop;
+        auto y = documentTop - scrollOffset;
         auto selection = sessionCore.editor.selection().normalized_range();
         auto caret = sessionCore.editor.selection().active.v;
 
@@ -413,11 +413,15 @@ namespace winrt::ElMd
                 visualBlocks.push_back(std::move(visualBlock));
             }
             y += height + 8.0f;
-            if (y > static_cast<float>(surfaceHeight) - DocumentVerticalPaddingDip)
-            {
-                break;
-            }
         }
+
+        totalDocumentHeight = y + scrollOffset + DocumentVerticalPaddingDip;
+    }
+
+    void EditorSurfaceRenderer::ScrollBy(float delta)
+    {
+        auto maxScroll = (std::max)(0.0f, totalDocumentHeight - static_cast<float>(surfaceHeight));
+        scrollOffset = (std::min)(maxScroll, (std::max)(0.0f, scrollOffset + delta));
     }
 
     std::optional<std::size_t> EditorSurfaceRenderer::HitTest(float x, float y) const

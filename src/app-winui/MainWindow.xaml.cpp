@@ -55,6 +55,11 @@ namespace winrt::ElMd::implementation
         {
             HandlePointerReleased(args);
         });
+
+        EditorSurface().PointerWheelChanged([this](auto const&, Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
+        {
+            HandlePointerWheel(args);
+        });
     }
 
     void MainWindow::RegisterCommandHandlers()
@@ -183,6 +188,14 @@ namespace winrt::ElMd::implementation
             EditorSurface().ReleasePointerCapture(args.Pointer());
             args.Handled(true);
         }
+    }
+
+    void MainWindow::HandlePointerWheel(Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
+    {
+        auto delta = args.GetCurrentPoint(EditorSurface()).Properties().MouseWheelDelta();
+        editorRenderer.ScrollBy(static_cast<float>(-delta));
+        RenderEditorSurface();
+        args.Handled(true);
     }
 
     void MainWindow::SetStatus(winrt::hstring const& text)

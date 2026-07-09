@@ -13,6 +13,7 @@ namespace winrt::ElMd
         void Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height);
         void Render(detail::EditorSessionCore const& sessionCore);
         std::optional<std::size_t> HitTest(float x, float y) const;
+        void ScrollBy(float delta);
 
     private:
         float CompositionScaleX(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const;
@@ -54,6 +55,8 @@ namespace winrt::ElMd
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> selectionBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> caretBrush;
         std::vector<VisualBlock> visualBlocks;
+        float scrollOffset = 0.0f;
+        float totalDocumentHeight = 0.0f;
         uint32_t surfaceWidth = 0;
         uint32_t surfaceHeight = 0;
         float surfaceScaleX = 1.0f;
