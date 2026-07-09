@@ -9,6 +9,7 @@ namespace winrt::ElMd::implementation
     MainWindow::MainWindow()
     {
         InitializeComponent();
+        RegisterCommandHandlers();
 
         EditorSurface().Loaded([this](auto const&, auto const&)
         {
@@ -19,6 +20,36 @@ namespace winrt::ElMd::implementation
         {
             ResizeEditorSurface(args.NewSize().Width, args.NewSize().Height);
         });
+    }
+
+    void MainWindow::RegisterCommandHandlers()
+    {
+        OpenButton().Click([this](auto const&, auto const&)
+        {
+            SetStatus(L"Open command pending file picker integration");
+        });
+
+        SaveButton().Click([this](auto const&, auto const&)
+        {
+            SetStatus(L"Save command pending storage integration");
+        });
+
+        BoldButton().Click([this](auto const&, auto const&)
+        {
+            SetStatus(L"Bold command pending editor-core bridge");
+        });
+
+        ItalicButton().Click([this](auto const&, auto const&)
+        {
+            SetStatus(L"Italic command pending editor-core bridge");
+        });
+    }
+
+    void MainWindow::SetStatus(winrt::hstring const& text)
+    {
+        lastCommand = text;
+        StatusText().Text(text);
+        RenderEditorSurface();
     }
 
     void MainWindow::InitializeEditorSurface()
