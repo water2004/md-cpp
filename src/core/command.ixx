@@ -57,6 +57,73 @@ inline std::size_t find_line_end(const std::u32string& cps, std::size_t pos) {
     return p;
 }
 
+struct MarkdownNewlineEdit {
+    CharRange range;
+    std::u32string text;
+    CharOffset caret;
+};
+
+inline bool is_space_or_tab(char32_t ch) {
+    return ch == U' ' || ch == U'\t';
+}
+
+inline std::optional<MarkdownNewlineEdit> markdown_newline_edit(const std::u32string& cps, CharRange sel) {
+    std::size_t ls = find_line_start(cps, sel.start.v);
+    std::size_t le = find_line_end(cps, sel.start.v);
+    std::u32string line(cps.begin() + ls, cps.begin() + le);
+    std::size_t pos = 0;
+    std::u32string base_prefix;
+    while (pos < line.size() && is_space_or_tab(line[pos])) base_prefix.push_back(line[pos++]);
+    while (pos < line.size() && line[pos] == U'>') {
+        base_prefix.push_back(U'>');
+        ++pos;
+        if (pos < line.size() && line[pos] == U' ') {
+            base_prefix.push_back(U' ');
+            ++pos;
+        } else {
+            base_prefix.push_back(U' ');
+        }
+        while (pos < line.size() && is_space_or_tab(line[pos])) base_prefix.push_back(line[pos++]);
+    }
+
+    std::u32string marker;
+    if (pos + 1 < line.size() && (line[pos] == U'-' || line[pos] == U'*' || line[pos] == U'+') && line[pos + 1] == U' ') {
+        marker.push_back(line[pos]);
+        marker.push_back(U' ');
+        pos += 2;
+    } else {
+        std::size_t number_start = pos;
+        while (pos < line.size() && line[pos] >= U'0' && line[pos] <= U'9') ++pos;
+        if (pos > number_start && pos + 1 < line.size() && (line[pos] == U'.' || line[pos] == U')') && line[pos + 1] == U' ') {
+            std::size_t value = 0;
+            for (std::size_t i = number_start; i < pos; ++i) value = value * 10 + static_cast<std::size_t>(line[i] - U'0');
+            marker = utf8_to_cps(std::to_string(value + 1));
+            marker.push_back(line[pos]);
+            marker.push_back(U' ');
+            pos += 2;
+        }
+    }
+
+    if (base_prefix.empty() && marker.empty()) return std::nullopt;
+    bool empty_item = true;
+    for (std::size_t i = pos; i < line.size(); ++i) {
+        if (!is_space_or_tab(line[i])) {
+            empty_item = false;
+            break;
+        }
+    }
+
+    if (empty_item && (!marker.empty() || !base_prefix.empty())) {
+        return MarkdownNewlineEdit{CharRange(CharOffset(ls), CharOffset(le)), U"", CharOffset(ls)};
+    }
+
+    std::u32string insert;
+    insert.push_back(U'\n');
+    insert += base_prefix;
+    insert += marker;
+    return MarkdownNewlineEdit{sel, insert, CharOffset(sel.start.v + insert.size())};
+}
+
 // to_transaction: builds (does not apply) a Transaction. `text_cps` is the
 // current buffer text as codepoints; `revision` is buffer.revision().
 inline std::optional<Transaction> to_transaction(const Command& cmd,
@@ -104,8 +171,10 @@ inline std::optional<Transaction> to_transaction(const Command& cmd,
             return t;
         }
         case CommandKind::InsertNewline: {
-            Transaction t(revision, selection, caret_after(CharOffset(sel.start.v + 1)), TransactionReason::Typing);
-            t.with_edit(sel, U"\n");
+            auto markdown_edit = selection.is_caret() ? markdown_newline_edit(text_cps, sel) : std::nullopt;
+            Transaction t(revision, selection, caret_after(markdown_edit ? markdown_edit->caret : CharOffset(sel.start.v + 1)), TransactionReason::Typing);
+            if (markdown_edit) t.with_edit(markdown_edit->range, markdown_edit->text);
+            else t.with_edit(sel, U"\n");
             return t;
         }
         case CommandKind::MoveRight: {

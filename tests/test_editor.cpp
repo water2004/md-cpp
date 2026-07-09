@@ -128,3 +128,39 @@ ELMD_TEST(test_insert_toc_contains_marker) {
     e.execute_command(c);
     ELMD_CHECK(e.buffer().text_utf8().find("[TOC]") != std::string::npos);
 }
+
+ELMD_TEST(test_enter_continues_unordered_list) {
+    Editor e("- alpha");
+    e.set_caret(CharOffset(7));
+    Command c; c.kind = CommandKind::InsertNewline;
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- alpha\n- "));
+    ELMD_CHECK_EQ(e.selection().head().v, 10u);
+}
+
+ELMD_TEST(test_enter_continues_ordered_list) {
+    Editor e("9. alpha");
+    e.set_caret(CharOffset(8));
+    Command c; c.kind = CommandKind::InsertNewline;
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("9. alpha\n10. "));
+    ELMD_CHECK_EQ(e.selection().head().v, 13u);
+}
+
+ELMD_TEST(test_enter_continues_blockquote) {
+    Editor e("> alpha");
+    e.set_caret(CharOffset(7));
+    Command c; c.kind = CommandKind::InsertNewline;
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha\n> "));
+    ELMD_CHECK_EQ(e.selection().head().v, 10u);
+}
+
+ELMD_TEST(test_enter_on_empty_list_exits_list) {
+    Editor e("- ");
+    e.set_caret(CharOffset(2));
+    Command c; c.kind = CommandKind::InsertNewline;
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string(""));
+    ELMD_CHECK_EQ(e.selection().head().v, 0u);
+}
