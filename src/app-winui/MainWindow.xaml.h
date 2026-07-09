@@ -14,6 +14,7 @@ namespace winrt::ElMd::implementation
         void InitializeEditorSurface();
         void ResizeEditorSurface(double width, double height);
         void RenderEditorSurface();
+        void UpdateOutlinePanel();
         void RegisterCommandHandlers();
         bool ExecuteEditorCommand(elmd::Command const& command);
         void HandleEditorCharacter(char32_t character);

@@ -98,6 +98,7 @@ namespace winrt::ElMd::implementation
         }
 
         SetStatus(editorSession.DisplayName() + L" | " + winrt::to_hstring(editorSession.Text().size()) + L" chars | rev " + winrt::to_hstring(editorSession.Revision()));
+        UpdateOutlinePanel();
         return true;
     }
 
@@ -338,6 +339,7 @@ namespace winrt::ElMd::implementation
             auto text = co_await winrt::Windows::Storage::FileIO::ReadTextAsync(file);
             editorSession.Open(file, text);
             Title(L"el-md - " + editorSession.DisplayName());
+            UpdateOutlinePanel();
             SetStatus(editorSession.Path() + L" | " + winrt::to_hstring(editorSession.Text().size()) + L" chars | rev " + winrt::to_hstring(editorSession.Revision()));
         }
         catch (winrt::hresult_error const& error)
@@ -415,5 +417,15 @@ namespace winrt::ElMd::implementation
     void MainWindow::RenderEditorSurface()
     {
         editorRenderer.Render(editorSession.Core());
+    }
+
+    void MainWindow::UpdateOutlinePanel()
+    {
+        OutlineList().Items().Clear();
+        for (auto const* item : editorSession.Core().renderModel.outline.flat_items())
+        {
+            std::wstring indent((std::max)(0, static_cast<int>(item->level) - 1) * 2, L' ');
+            OutlineList().Items().Append(winrt::box_value(winrt::hstring(indent + winrt::to_hstring(item->title_plain_text).c_str())));
+        }
     }
 }

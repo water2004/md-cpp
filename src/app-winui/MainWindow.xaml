@@ -16,14 +16,12 @@
             <AppBarButton x:Name="ItalicButton" Icon="Italic" Label="Italic"/>
         </CommandBar>
 
-        <NavigationView Grid.Row="1" Grid.Column="0" PaneDisplayMode="LeftMinimal" IsBackButtonVisible="Collapsed" IsSettingsVisible="False">
-            <NavigationView.MenuItems>
-                <NavigationViewItem Content="Outline" Icon="List"/>
-                <NavigationViewItem Content="Diagnostics" Icon="ReportHacked"/>
-                <NavigationViewItem Content="Assets" Icon="Pictures"/>
-                <NavigationViewItem Content="Search" Icon="Find"/>
-            </NavigationView.MenuItems>
-        </NavigationView>
+        <Border Grid.Row="1" Grid.Column="0" Background="#F3F5F8" BorderBrush="#D7DCE3" BorderThickness="0,0,1,0">
+            <Grid RowDefinitions="Auto,*" Padding="16,14">
+                <TextBlock Text="Outline" FontSize="15" FontWeight="SemiBold" Foreground="#273142" Margin="0,0,0,10"/>
+                <ListView x:Name="OutlineList" Grid.Row="1" SelectionMode="None" Background="Transparent"/>
+            </Grid>
+        </Border>
 
         <SwapChainPanel x:Name="EditorSurface" Grid.Row="1" Grid.Column="1"/>
 
