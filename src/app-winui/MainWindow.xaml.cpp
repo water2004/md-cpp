@@ -250,11 +250,36 @@ namespace winrt::ElMd::implementation
                     command.kind = elmd::CommandKind::MoveDocumentEnd;
                     command.extend_selection = shift;
                     break;
+                case winrt::Windows::System::VirtualKey::Number1:
+                    command.kind = elmd::CommandKind::SetHeading;
+                    command.level = 1;
+                    break;
+                case winrt::Windows::System::VirtualKey::Number2:
+                    command.kind = elmd::CommandKind::SetHeading;
+                    command.level = 2;
+                    break;
+                case winrt::Windows::System::VirtualKey::Number7:
+                    command.kind = elmd::CommandKind::ToggleOrderedList;
+                    break;
+                case winrt::Windows::System::VirtualKey::Number8:
+                    command.kind = elmd::CommandKind::ToggleUnorderedList;
+                    break;
+                case winrt::Windows::System::VirtualKey::Number9:
+                    command.kind = elmd::CommandKind::ToggleTaskList;
+                    break;
                 case winrt::Windows::System::VirtualKey::B:
                     command.kind = elmd::CommandKind::ToggleStrong;
                     break;
                 case winrt::Windows::System::VirtualKey::I:
                     command.kind = elmd::CommandKind::ToggleEmphasis;
+                    break;
+                case winrt::Windows::System::VirtualKey::Q:
+                    command.kind = elmd::CommandKind::ToggleBlockQuote;
+                    break;
+                case winrt::Windows::System::VirtualKey::T:
+                    command.kind = elmd::CommandKind::InsertTable;
+                    command.rows = 2;
+                    command.cols = 3;
                     break;
                 case winrt::Windows::System::VirtualKey::Z:
                     command.kind = shift ? elmd::CommandKind::Redo : elmd::CommandKind::Undo;
