@@ -113,6 +113,66 @@ namespace winrt::ElMd::implementation
             ExecuteEditorCommand(command);
         });
 
+        Heading1Button().Click([this](auto const&, auto const&)
+        {
+            elmd::Command command;
+            command.kind = elmd::CommandKind::SetHeading;
+            command.level = 1;
+            ExecuteEditorCommand(command);
+        });
+
+        Heading2Button().Click([this](auto const&, auto const&)
+        {
+            elmd::Command command;
+            command.kind = elmd::CommandKind::SetHeading;
+            command.level = 2;
+            ExecuteEditorCommand(command);
+        });
+
+        QuoteButton().Click([this](auto const&, auto const&)
+        {
+            elmd::Command command;
+            command.kind = elmd::CommandKind::ToggleBlockQuote;
+            ExecuteEditorCommand(command);
+        });
+
+        UnorderedListButton().Click([this](auto const&, auto const&)
+        {
+            elmd::Command command;
+            command.kind = elmd::CommandKind::ToggleUnorderedList;
+            ExecuteEditorCommand(command);
+        });
+
+        OrderedListButton().Click([this](auto const&, auto const&)
+        {
+            elmd::Command command;
+            command.kind = elmd::CommandKind::ToggleOrderedList;
+            ExecuteEditorCommand(command);
+        });
+
+        TaskListButton().Click([this](auto const&, auto const&)
+        {
+            elmd::Command command;
+            command.kind = elmd::CommandKind::ToggleTaskList;
+            ExecuteEditorCommand(command);
+        });
+
+        CodeBlockButton().Click([this](auto const&, auto const&)
+        {
+            elmd::Command command;
+            command.kind = elmd::CommandKind::InsertCodeBlock;
+            ExecuteEditorCommand(command);
+        });
+
+        TableButton().Click([this](auto const&, auto const&)
+        {
+            elmd::Command command;
+            command.kind = elmd::CommandKind::InsertTable;
+            command.rows = 2;
+            command.cols = 3;
+            ExecuteEditorCommand(command);
+        });
+
         CutMenuItem().Click([this](auto const&, auto const&)
         {
             CutSelectionToClipboard();

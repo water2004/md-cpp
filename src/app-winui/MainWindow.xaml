@@ -14,6 +14,15 @@
             <AppBarSeparator/>
             <AppBarButton x:Name="BoldButton" Icon="Bold" Label="Bold"/>
             <AppBarButton x:Name="ItalicButton" Icon="Italic" Label="Italic"/>
+            <AppBarSeparator/>
+            <AppBarButton x:Name="Heading1Button" Label="H1"/>
+            <AppBarButton x:Name="Heading2Button" Label="H2"/>
+            <AppBarButton x:Name="QuoteButton" Label="Quote"/>
+            <AppBarButton x:Name="UnorderedListButton" Label="Bullet"/>
+            <AppBarButton x:Name="OrderedListButton" Label="Numbered"/>
+            <AppBarButton x:Name="TaskListButton" Label="Task"/>
+            <AppBarButton x:Name="CodeBlockButton" Label="Code"/>
+            <AppBarButton x:Name="TableButton" Label="Table"/>
         </CommandBar>
 
         <Border Grid.Row="1" Grid.Column="0" Background="#F3F5F8" BorderBrush="#D7DCE3" BorderThickness="0,0,1,0">
