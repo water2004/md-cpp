@@ -21,7 +21,7 @@ namespace winrt::ElMd::implementation
         void RegisterCommandHandlers();
         bool ExecuteEditorCommand(elmd::Command const& command);
         void HandleEditorCharacter(char32_t character);
-        void HandleEditorKey(winrt::Windows::System::VirtualKey key);
+        bool HandleEditorKey(winrt::Windows::System::VirtualKey key);
         void HandlePointerPressed(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
         void HandlePointerMoved(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
         void HandlePointerReleased(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);

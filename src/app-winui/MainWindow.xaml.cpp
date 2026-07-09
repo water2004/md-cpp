@@ -38,8 +38,7 @@ namespace winrt::ElMd::implementation
 
         EditorSurface().KeyDown([this](auto const&, Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args)
         {
-            HandleEditorKey(args.Key());
-            args.Handled(true);
+            args.Handled(HandleEditorKey(args.Key()));
         });
 
         EditorSurface().PointerPressed([this](auto const&, Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
@@ -224,7 +223,7 @@ namespace winrt::ElMd::implementation
         ExecuteEditorCommand(elmd::Command::InsertText(std::u32string(1, character)));
     }
 
-    void MainWindow::HandleEditorKey(winrt::Windows::System::VirtualKey key)
+    bool MainWindow::HandleEditorKey(winrt::Windows::System::VirtualKey key)
     {
         elmd::Command command;
         auto keyState = [](winrt::Windows::System::VirtualKey virtualKey)
@@ -292,19 +291,19 @@ namespace winrt::ElMd::implementation
                     break;
                 case winrt::Windows::System::VirtualKey::C:
                     CopySelectionToClipboard();
-                    return;
+                    return true;
                 case winrt::Windows::System::VirtualKey::X:
                     CutSelectionToClipboard();
-                    return;
+                    return true;
                 case winrt::Windows::System::VirtualKey::V:
                     PasteClipboardAsync();
-                    return;
+                    return true;
                 default:
-                    return;
+                    return false;
             }
 
             ExecuteEditorCommand(command);
-            return;
+            return true;
         }
 
         switch (key)
@@ -346,10 +345,11 @@ namespace winrt::ElMd::implementation
                 command = elmd::Command::InsertText(U"\t");
                 break;
             default:
-                return;
+                return false;
         }
 
         ExecuteEditorCommand(command);
+        return true;
     }
 
     void MainWindow::HandlePointerPressed(Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
