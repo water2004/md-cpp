@@ -337,6 +337,12 @@ namespace winrt::ElMd::implementation
             return;
         }
 
+        if (TryToggleTaskCheckboxAt(*hit))
+        {
+            args.Handled(true);
+            return;
+        }
+
         pointerSelecting = true;
         pointerAnchor = *hit;
         editorSession.SetSelection(pointerAnchor, pointerAnchor);
@@ -434,6 +440,36 @@ namespace winrt::ElMd::implementation
 
         editorSession.SetSelection(start, end);
         return true;
+    }
+
+    bool MainWindow::TryToggleTaskCheckboxAt(std::size_t offset)
+    {
+        auto text = editorSession.Core().editor.text_cps();
+        auto lineStart = (std::min)(offset, text.size());
+        while (lineStart > 0 && text[lineStart - 1] != U'\n')
+        {
+            --lineStart;
+        }
+
+        auto pos = lineStart;
+        while (pos < text.size() && (text[pos] == U' ' || text[pos] == U'\t'))
+        {
+            ++pos;
+        }
+
+        if (pos + 5 >= text.size() || text[pos] != U'-' || text[pos + 1] != U' ' || text[pos + 2] != U'[' || text[pos + 4] != U']' || text[pos + 5] != U' ')
+        {
+            return false;
+        }
+        if (offset < pos || offset > pos + 5)
+        {
+            return false;
+        }
+
+        editorSession.SetSelection(offset, offset);
+        elmd::Command command;
+        command.kind = elmd::CommandKind::ToggleTaskCheckbox;
+        return ExecuteEditorCommand(command);
     }
 
     void MainWindow::CopySelectionToClipboard()

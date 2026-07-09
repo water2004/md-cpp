@@ -28,6 +28,7 @@ namespace winrt::ElMd::implementation
         void HandlePointerWheel(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
         void HandleEditorDoubleTapped(winrt::Microsoft::UI::Xaml::Input::DoubleTappedRoutedEventArgs const& args);
         bool SelectWordAt(std::size_t offset);
+        bool TryToggleTaskCheckboxAt(std::size_t offset);
         void CopySelectionToClipboard();
         void CutSelectionToClipboard();
         winrt::fire_and_forget PasteClipboardAsync();

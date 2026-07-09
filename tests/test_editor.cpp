@@ -194,3 +194,13 @@ ELMD_TEST(test_toggle_task_list_replaces_ordered_marker) {
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- [ ] alpha"));
     ELMD_CHECK_EQ(e.selection().head().v, 11u);
 }
+
+ELMD_TEST(test_toggle_task_checkbox) {
+    Editor e("- [ ] alpha");
+    e.set_caret(CharOffset(3));
+    Command c; c.kind = CommandKind::ToggleTaskCheckbox;
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- [x] alpha"));
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- [ ] alpha"));
+}

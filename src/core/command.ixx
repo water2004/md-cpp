@@ -18,7 +18,7 @@ enum class CommandKind {
     MovePageUp, MovePageDown, SelectAll,
     ToggleStrong, ToggleEmphasis, ToggleStrikethrough, ToggleInlineCode,
     SetHeading, ClearHeading,
-    ToggleUnorderedList, ToggleOrderedList, ToggleTaskList, ToggleBlockQuote,
+    ToggleUnorderedList, ToggleOrderedList, ToggleTaskList, ToggleTaskCheckbox, ToggleBlockQuote,
     InsertCodeBlock, InsertMathInline, InsertMathBlock,
     InsertTable, InsertImage, InsertLink, InsertFootnote, InsertToc,
     ToggleCallout, ExtensionCmd,
@@ -163,6 +163,21 @@ inline std::optional<Transaction> list_toggle_transaction(const Command& cmd, co
     std::size_t new_pos = ls + new_prefix_len + body_offset;
     Transaction t(revision, selection, Selection::caret(CharOffset(new_pos)), TransactionReason::StructuralCommand);
     t.with_edit(CharRange(CharOffset(ls), CharOffset(le)), std::move(new_line));
+    return t;
+}
+
+inline std::optional<Transaction> task_checkbox_transaction(const std::u32string& text_cps, const Selection& selection, std::uint64_t revision) {
+    auto sel = selection.normalized_range();
+    std::size_t ls = find_line_start(text_cps, sel.start.v);
+    std::size_t le = find_line_end(text_cps, sel.start.v);
+    std::u32string line(text_cps.begin() + ls, text_cps.begin() + le);
+    std::size_t pos = 0;
+    while (pos < line.size() && is_space_or_tab(line[pos])) ++pos;
+    if (pos + 5 >= line.size() || line[pos] != U'-' || line[pos + 1] != U' ' || line[pos + 2] != U'[' || line[pos + 4] != U']' || line[pos + 5] != U' ') return std::nullopt;
+    if (line[pos + 3] != U' ' && line[pos + 3] != U'x' && line[pos + 3] != U'X') return std::nullopt;
+    auto replacement = line[pos + 3] == U' ' ? U"x" : U" ";
+    Transaction t(revision, selection, selection, TransactionReason::StructuralCommand);
+    t.with_edit(CharRange(CharOffset(ls + pos + 3), CharOffset(ls + pos + 4)), replacement);
     return t;
 }
 
@@ -394,6 +409,8 @@ inline std::optional<Transaction> to_transaction(const Command& cmd,
         case CommandKind::ToggleOrderedList:
         case CommandKind::ToggleTaskList:
             return list_toggle_transaction(cmd, text_cps, selection, revision);
+        case CommandKind::ToggleTaskCheckbox:
+            return task_checkbox_transaction(text_cps, selection, revision);
         case CommandKind::InsertCodeBlock: {
             std::u32string block; block.push_back('\n'); block.push_back('`'); block.push_back('`'); block.push_back('`');
             if (cmd.lang) block += *cmd.lang;
