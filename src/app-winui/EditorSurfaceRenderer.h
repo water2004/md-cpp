@@ -1,0 +1,33 @@
+#pragma once
+
+namespace winrt::ElMd
+{
+    struct EditorSurfaceRenderer
+    {
+        void Initialize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel);
+        void Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height);
+        void Render(winrt::hstring const& text);
+
+    private:
+        float CompositionScaleX(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const;
+        float CompositionScaleY(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const;
+        void ApplySwapChainTransform();
+        void ResetTargets();
+
+        ::Microsoft::WRL::ComPtr<ID3D11Device> d3dDevice;
+        ::Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3dContext;
+        ::Microsoft::WRL::ComPtr<IDXGISwapChain1> swapChain;
+        ::Microsoft::WRL::ComPtr<ID3D11RenderTargetView> renderTargetView;
+        ::Microsoft::WRL::ComPtr<ID2D1Factory1> d2dFactory;
+        ::Microsoft::WRL::ComPtr<ID2D1Device> d2dDevice;
+        ::Microsoft::WRL::ComPtr<ID2D1DeviceContext> d2dContext;
+        ::Microsoft::WRL::ComPtr<ID2D1Bitmap1> d2dTarget;
+        ::Microsoft::WRL::ComPtr<IDWriteFactory> dwriteFactory;
+        ::Microsoft::WRL::ComPtr<IDWriteTextFormat> textFormat;
+        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> textBrush;
+        uint32_t surfaceWidth = 0;
+        uint32_t surfaceHeight = 0;
+        float surfaceScaleX = 1.0f;
+        float surfaceScaleY = 1.0f;
+    };
+}
