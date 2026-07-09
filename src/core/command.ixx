@@ -8,6 +8,7 @@ import elmd.core.selection;
 import elmd.core.transaction;
 import elmd.core.utf;
 import elmd.core.dialect;
+import elmd.core.table_edit;
 
 export namespace elmd {
 
@@ -21,6 +22,9 @@ enum class CommandKind {
     ToggleUnorderedList, ToggleOrderedList, ToggleTaskList, ToggleTaskCheckbox, ToggleBlockQuote,
     InsertCodeBlock, InsertMathInline, InsertMathBlock,
     InsertTable, InsertImage, InsertLink, InsertFootnote, InsertToc,
+    MoveTableCellNext, MoveTableCellPrevious,
+    InsertTableRowAbove, InsertTableRowBelow, DeleteTableRow, MoveTableRowUp, MoveTableRowDown,
+    InsertTableColumnLeft, InsertTableColumnRight, DeleteTableColumn, MoveTableColumnLeft, MoveTableColumnRight,
     ToggleCallout, ExtensionCmd,
     Undo, Redo, Cut, Copy, Paste,
 };
@@ -358,6 +362,30 @@ inline std::optional<Transaction> to_transaction(const Command& cmd,
             t.with_edit(sel, s);
             return t;
         }
+        case CommandKind::MoveTableCellNext:
+            return table_edit_transaction(TableEditKind::MoveCellNext, text_cps, selection, revision);
+        case CommandKind::MoveTableCellPrevious:
+            return table_edit_transaction(TableEditKind::MoveCellPrevious, text_cps, selection, revision);
+        case CommandKind::InsertTableRowAbove:
+            return table_edit_transaction(TableEditKind::InsertRowAbove, text_cps, selection, revision);
+        case CommandKind::InsertTableRowBelow:
+            return table_edit_transaction(TableEditKind::InsertRowBelow, text_cps, selection, revision);
+        case CommandKind::DeleteTableRow:
+            return table_edit_transaction(TableEditKind::DeleteRow, text_cps, selection, revision);
+        case CommandKind::MoveTableRowUp:
+            return table_edit_transaction(TableEditKind::MoveRowUp, text_cps, selection, revision);
+        case CommandKind::MoveTableRowDown:
+            return table_edit_transaction(TableEditKind::MoveRowDown, text_cps, selection, revision);
+        case CommandKind::InsertTableColumnLeft:
+            return table_edit_transaction(TableEditKind::InsertColumnLeft, text_cps, selection, revision);
+        case CommandKind::InsertTableColumnRight:
+            return table_edit_transaction(TableEditKind::InsertColumnRight, text_cps, selection, revision);
+        case CommandKind::DeleteTableColumn:
+            return table_edit_transaction(TableEditKind::DeleteColumn, text_cps, selection, revision);
+        case CommandKind::MoveTableColumnLeft:
+            return table_edit_transaction(TableEditKind::MoveColumnLeft, text_cps, selection, revision);
+        case CommandKind::MoveTableColumnRight:
+            return table_edit_transaction(TableEditKind::MoveColumnRight, text_cps, selection, revision);
         case CommandKind::InsertTable: {
             std::u32string s;
             for (std::size_t c = 0; c < cmd.cols; ++c) s += U"| Header ";

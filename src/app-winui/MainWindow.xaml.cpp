@@ -472,11 +472,32 @@ namespace winrt::ElMd::implementation
         auto shift = isDown(winrt::Windows::System::VirtualKey::Shift)
             || isDown(winrt::Windows::System::VirtualKey::LeftShift)
             || isDown(winrt::Windows::System::VirtualKey::RightShift);
+        auto alt = isDown(winrt::Windows::System::VirtualKey::Menu)
+            || isDown(winrt::Windows::System::VirtualKey::LeftMenu)
+            || isDown(winrt::Windows::System::VirtualKey::RightMenu);
 
         if (ctrl)
         {
             switch (key)
             {
+                case winrt::Windows::System::VirtualKey::Up:
+                    command.kind = alt ? elmd::CommandKind::MoveTableRowUp : elmd::CommandKind::InsertTableRowAbove;
+                    break;
+                case winrt::Windows::System::VirtualKey::Down:
+                    command.kind = alt ? elmd::CommandKind::MoveTableRowDown : elmd::CommandKind::InsertTableRowBelow;
+                    break;
+                case winrt::Windows::System::VirtualKey::Left:
+                    command.kind = alt ? elmd::CommandKind::MoveTableColumnLeft : elmd::CommandKind::InsertTableColumnLeft;
+                    break;
+                case winrt::Windows::System::VirtualKey::Right:
+                    command.kind = alt ? elmd::CommandKind::MoveTableColumnRight : elmd::CommandKind::InsertTableColumnRight;
+                    break;
+                case winrt::Windows::System::VirtualKey::Back:
+                    command.kind = elmd::CommandKind::DeleteTableRow;
+                    break;
+                case winrt::Windows::System::VirtualKey::Delete:
+                    command.kind = elmd::CommandKind::DeleteTableColumn;
+                    break;
                 case winrt::Windows::System::VirtualKey::Home:
                     command.kind = elmd::CommandKind::MoveDocumentStart;
                     command.extend_selection = shift;
@@ -593,8 +614,12 @@ namespace winrt::ElMd::implementation
                 command.extend_selection = shift;
                 break;
             case winrt::Windows::System::VirtualKey::Tab:
-                command = elmd::Command::InsertText(U"\t");
-                break;
+                command.kind = shift ? elmd::CommandKind::MoveTableCellPrevious : elmd::CommandKind::MoveTableCellNext;
+                if (!ExecuteEditorCommand(command))
+                {
+                    ExecuteEditorCommand(elmd::Command::InsertText(U"\t"));
+                }
+                return true;
             default:
                 return false;
         }

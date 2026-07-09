@@ -3,6 +3,7 @@
 #include "EditorSurfaceRenderer.h"
 
 import elmd.core.render_model;
+import elmd.core.table_edit;
 import elmd.core.utf;
 
 namespace winrt::ElMd
@@ -85,19 +86,7 @@ namespace winrt::ElMd
                 }
                 text += U" | ";
             }
-            if (row == 0 && block.row_count > 1)
-            {
-                text += U"\n| ";
-                for (std::size_t column = 0; column < block.column_count; ++column)
-                {
-                    text += U"--- | ";
-                }
-                text.push_back(U'\n');
-            }
-            else if (row + 1 < block.row_count)
-            {
-                text.push_back(U'\n');
-            }
+            if (row + 1 < block.row_count) text.push_back(U'\n');
         }
         return text;
     }
@@ -116,6 +105,36 @@ namespace winrt::ElMd
         std::vector<std::size_t> displayToSource;
         std::vector<InlineStyleRange> ranges;
     };
+
+    DisplayInlineText BuildTableText(elmd::RenderBlock const& block, std::u32string const& sourceText)
+    {
+        DisplayInlineText display;
+        if (auto table = elmd::table_source_at(sourceText, block.source_range.start.v))
+        {
+            auto end = table->range.end.v;
+            if (table->trailing_newline && end > table->range.start.v)
+            {
+                --end;
+            }
+            display.text = std::u32string(sourceText.begin() + table->range.start.v, sourceText.begin() + end);
+            display.displayToSource.reserve(display.text.size() + 1);
+            for (std::size_t index = 0; index < display.text.size(); ++index)
+            {
+                display.displayToSource.push_back(table->range.start.v + index);
+            }
+            display.displayToSource.push_back(end);
+            return display;
+        }
+
+        display.text = TableText(block);
+        display.displayToSource.reserve(display.text.size() + 1);
+        for (std::size_t index = 0; index < display.text.size(); ++index)
+        {
+            display.displayToSource.push_back(block.source_range.start.v + index);
+        }
+        display.displayToSource.push_back(block.source_range.end.v);
+        return display;
+    }
 
     bool IsStyleMarker(elmd::InlineRenderItem const& item)
     {
@@ -688,12 +707,16 @@ namespace winrt::ElMd
                     fillPanel = true;
                     break;
                 case elmd::RenderBlockKind::Table:
-                    text = TableText(block);
+                {
+                    auto display = BuildTableText(block, sourceText);
+                    text = std::move(display.text);
+                    displayToSource = std::move(display.displayToSource);
                     format = codeFormat.Get();
                     inset = 16.0f;
                     textTop = 16.0f;
                     fillPanel = true;
                     break;
+                }
                 case elmd::RenderBlockKind::Image:
                     text = U"Image: " + (block.alt.empty() ? elmd::utf8_to_cps(block.src) : elmd::utf8_to_cps(block.alt)) + U"\n" + elmd::utf8_to_cps(block.src);
                     brush = mutedBrush.Get();

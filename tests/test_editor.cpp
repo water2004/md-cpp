@@ -122,6 +122,38 @@ ELMD_TEST(test_insert_table_contains_header) {
     ELMD_CHECK(s.find("| Header |") != std::string::npos);
 }
 
+ELMD_TEST(test_table_tab_moves_to_next_cell) {
+    Editor e("| A | B |\n| --- | --- |\n| C | D |\n");
+    e.set_caret(CharOffset(2));
+    Command c; c.kind = CommandKind::MoveTableCellNext;
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.selection().head().v, 6u);
+}
+
+ELMD_TEST(test_table_insert_row_below) {
+    Editor e("| A | B |\n| --- | --- |\n| C | D |\n");
+    e.set_caret(CharOffset(27));
+    Command c; c.kind = CommandKind::InsertTableRowBelow;
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A   | B   |\n| --- | --- |\n| C   | D   |\n|     |     |\n"));
+}
+
+ELMD_TEST(test_table_delete_column) {
+    Editor e("| A | B |\n| --- | --- |\n| C | D |\n");
+    e.set_caret(CharOffset(6));
+    Command c; c.kind = CommandKind::DeleteTableColumn;
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A   |\n| --- |\n| C   |\n"));
+}
+
+ELMD_TEST(test_table_move_column_left) {
+    Editor e("| A | B |\n| --- | --- |\n| C | D |\n");
+    e.set_caret(CharOffset(6));
+    Command c; c.kind = CommandKind::MoveTableColumnLeft;
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| B   | A   |\n| --- | --- |\n| D   | C   |\n"));
+}
+
 ELMD_TEST(test_insert_toc_contains_marker) {
     Editor e;
     Command c; c.kind = CommandKind::InsertToc;

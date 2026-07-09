@@ -774,9 +774,7 @@ public:
         NodeId id = next_node_id();
         push_range(id, CharRange(CharOffset(save), cur()), CharRange(CharOffset(save), cur()));
         BlockNode b; b.id = id; b.kind = BlockKind::Table;
-        // header: per Rust quirk, a single empty header cell is emitted.
-        TableCell hc; hc.id = next_node_id();
-        b.table_header.push_back(hc);
+        b.table_header = std::move(header_row->cells);
         b.table_rows = std::move(rows);
         b.table_aligns = std::move(*alignments);
         return b;

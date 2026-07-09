@@ -183,6 +183,9 @@
     <ClCompile Include="..\core\symbols.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\core\table_edit.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\core\theme.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
