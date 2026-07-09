@@ -1,0 +1,46 @@
+# Build output
+/build/
+/out/
+cmake-build*/
+/Bin/
+/Bin/
+
+# Visual Studio
+.vs/
+.vscode/
+*.user
+*.suo
+*.sln
+*.vcxproj*
+CMakeSettings.json
+.cache/
+!el-md.sln
+!src/app-winui/el-md.vcxproj
+!src/app-winui/el-md.vcxproj.filters
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+*.cmake
+
+# Object / precompiled
+*.obj
+*.lib
+*.pdb
+*.ilk
+*.exp
+
+# WinUI/MSBuild output
+src/app-winui/Generated Files/
+src/app-winui/x64/
+src/app-winui/el-md/x64/
+
+# Vendored WinUI NuGet packages
+!src/app-winui/packages/
+!src/app-winui/packages/**
+
+# OS
+Thumbs.db
+desktop.ini
