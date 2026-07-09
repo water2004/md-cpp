@@ -69,6 +69,17 @@ namespace winrt::ElMd::implementation
                 HandleOutlineSelection(args.AddedItems().GetAt(0));
             }
         });
+
+        DiagnosticsList().SelectionChanged([this](auto const&, Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const& args)
+        {
+            if (args.AddedItems().Size() > 0)
+            {
+                HandleDiagnosticsSelection(args.AddedItems().GetAt(0));
+            }
+        });
+
+        UpdateOutlinePanel();
+        UpdateDiagnosticsPanel();
     }
 
     void MainWindow::RegisterCommandHandlers()
@@ -109,6 +120,7 @@ namespace winrt::ElMd::implementation
         lastCommand = status;
         StatusText().Text(status);
         UpdateOutlinePanel();
+        UpdateDiagnosticsPanel();
         RenderEditorSurface();
         editorRenderer.ScrollToSourceOffset(editorSession.Core().editor.selection().active.v);
         RenderEditorSurface();
@@ -372,6 +384,7 @@ namespace winrt::ElMd::implementation
             editorSession.Open(file, text);
             Title(L"el-md - " + editorSession.DisplayName());
             UpdateOutlinePanel();
+            UpdateDiagnosticsPanel();
             SetStatus(editorSession.Path() + L" | " + winrt::to_hstring(editorSession.Text().size()) + L" chars | rev " + winrt::to_hstring(editorSession.Revision()));
         }
         catch (winrt::hresult_error const& error)
@@ -474,6 +487,35 @@ namespace winrt::ElMd::implementation
         }
     }
 
+    void MainWindow::UpdateDiagnosticsPanel()
+    {
+        DiagnosticsList().Items().Clear();
+        diagnosticOffsets.clear();
+        for (auto const& diagnostic : editorSession.Core().renderModel.diagnostics)
+        {
+            auto severity = L"Warning";
+            if (diagnostic.severity == elmd::RenderDiagnostic::Sev::Info)
+            {
+                severity = L"Info";
+            }
+            else if (diagnostic.severity == elmd::RenderDiagnostic::Sev::Error)
+            {
+                severity = L"Error";
+            }
+
+            auto offset = diagnostic.source_range ? diagnostic.source_range->start.v : 0;
+            auto label = winrt::hstring(severity) + L" @ " + winrt::to_hstring(offset) + L": " + winrt::to_hstring(diagnostic.message);
+            DiagnosticsList().Items().Append(winrt::box_value(label));
+            diagnosticOffsets.push_back(offset);
+        }
+
+        if (DiagnosticsList().Items().Size() == 0)
+        {
+            DiagnosticsList().Items().Append(winrt::box_value(L"No diagnostics"));
+            diagnosticOffsets.push_back(editorSession.Core().editor.selection().active.v);
+        }
+    }
+
     void MainWindow::HandleOutlineSelection(winrt::Windows::Foundation::IInspectable const& selectedItem)
     {
         auto selectedText = winrt::unbox_value<winrt::hstring>(selectedItem);
@@ -483,6 +525,26 @@ namespace winrt::ElMd::implementation
             {
                 editorSession.SetSelection(outlineOffsets[index], outlineOffsets[index]);
                 editorRenderer.ScrollToSourceOffset(outlineOffsets[index]);
+                RenderEditorSurface();
+                return;
+            }
+        }
+    }
+
+    void MainWindow::HandleDiagnosticsSelection(winrt::Windows::Foundation::IInspectable const& selectedItem)
+    {
+        auto selectedText = winrt::unbox_value<winrt::hstring>(selectedItem);
+        if (selectedText == L"No diagnostics")
+        {
+            return;
+        }
+
+        for (uint32_t index = 0; index < DiagnosticsList().Items().Size() && index < diagnosticOffsets.size(); ++index)
+        {
+            if (winrt::unbox_value<winrt::hstring>(DiagnosticsList().Items().GetAt(index)) == selectedText)
+            {
+                editorSession.SetSelection(diagnosticOffsets[index], diagnosticOffsets[index]);
+                editorRenderer.ScrollToSourceOffset(diagnosticOffsets[index]);
                 RenderEditorSurface();
                 return;
             }

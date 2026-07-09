@@ -15,7 +15,9 @@ namespace winrt::ElMd::implementation
         void ResizeEditorSurface(double width, double height);
         void RenderEditorSurface();
         void UpdateOutlinePanel();
+        void UpdateDiagnosticsPanel();
         void HandleOutlineSelection(winrt::Windows::Foundation::IInspectable const& selectedItem);
+        void HandleDiagnosticsSelection(winrt::Windows::Foundation::IInspectable const& selectedItem);
         void RegisterCommandHandlers();
         bool ExecuteEditorCommand(elmd::Command const& command);
         void HandleEditorCharacter(char32_t character);
@@ -39,6 +41,7 @@ namespace winrt::ElMd::implementation
         bool pointerSelecting = false;
         std::size_t pointerAnchor = 0;
         std::vector<std::size_t> outlineOffsets;
+        std::vector<std::size_t> diagnosticOffsets;
     };
 }
 

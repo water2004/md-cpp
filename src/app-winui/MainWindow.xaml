@@ -17,9 +17,15 @@
         </CommandBar>
 
         <Border Grid.Row="1" Grid.Column="0" Background="#F3F5F8" BorderBrush="#D7DCE3" BorderThickness="0,0,1,0">
-            <Grid RowDefinitions="Auto,*" Padding="16,14">
-                <TextBlock Text="Outline" FontSize="15" FontWeight="SemiBold" Foreground="#273142" Margin="0,0,0,10"/>
-                <ListView x:Name="OutlineList" Grid.Row="1" SelectionMode="Single" Background="Transparent"/>
+            <Grid Padding="10,10">
+                <TabView IsAddTabButtonVisible="False">
+                    <TabViewItem Header="Outline" IsClosable="False">
+                        <ListView x:Name="OutlineList" SelectionMode="Single" Background="Transparent"/>
+                    </TabViewItem>
+                    <TabViewItem Header="Diagnostics" IsClosable="False">
+                        <ListView x:Name="DiagnosticsList" SelectionMode="Single" Background="Transparent"/>
+                    </TabViewItem>
+                </TabView>
             </Grid>
         </Border>
 
