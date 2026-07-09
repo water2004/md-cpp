@@ -47,6 +47,8 @@ namespace winrt::ElMd::implementation
         winrt::ElMd::EditorSurfaceRenderer editorRenderer;
         winrt::Windows::UI::Text::Core::CoreTextEditContext textEditContext{ nullptr };
         std::size_t textInputKnownLength = 0;
+        bool textInputFocused = false;
+        bool textInputUpdating = false;
         bool pointerSelecting = false;
         std::size_t pointerAnchor = 0;
         std::vector<std::size_t> outlineOffsets;

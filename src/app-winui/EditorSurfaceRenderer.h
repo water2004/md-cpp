@@ -13,6 +13,7 @@ namespace winrt::ElMd
         void Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height);
         void Render(detail::EditorSessionCore const& sessionCore);
         std::optional<std::size_t> HitTest(float x, float y) const;
+        std::optional<D2D1_RECT_F> CaretBounds(std::size_t sourceOffset) const;
         void ScrollBy(float delta);
         void ScrollToSourceOffset(std::size_t sourceOffset);
 

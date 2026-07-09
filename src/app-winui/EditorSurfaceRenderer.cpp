@@ -592,6 +592,29 @@ namespace winrt::ElMd
         return std::nullopt;
     }
 
+    std::optional<D2D1_RECT_F> EditorSurfaceRenderer::CaretBounds(std::size_t sourceOffset) const
+    {
+        for (auto const& block : visualBlocks)
+        {
+            if (sourceOffset < block.sourceStart || sourceOffset > block.sourceEnd || !block.layout)
+            {
+                continue;
+            }
+
+            FLOAT caretX = 0.0f;
+            FLOAT caretY = 0.0f;
+            DWRITE_HIT_TEST_METRICS metrics{};
+            if (SUCCEEDED(block.layout->HitTestTextPosition(static_cast<UINT32>(sourceOffset - block.sourceStart), false, &caretX, &caretY, &metrics)))
+            {
+                auto left = block.textOrigin.x + caretX;
+                auto top = block.textOrigin.y + caretY;
+                return D2D1::RectF(left, top, left + 2.0f, top + metrics.height);
+            }
+        }
+
+        return std::nullopt;
+    }
+
     void EditorSurfaceRenderer::Render(detail::EditorSessionCore const& sessionCore)
     {
         if (!swapChain || !d3dDevice || !d3dContext)

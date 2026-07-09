@@ -33,7 +33,10 @@ namespace winrt::ElMd::implementation
         EditorSurface().IsTabStop(true);
         EditorSurface().CharacterReceived([this](auto const&, Microsoft::UI::Xaml::Input::CharacterReceivedRoutedEventArgs const& args)
         {
-            HandleEditorCharacter(args.Character());
+            if (!textInputFocused)
+            {
+                HandleEditorCharacter(args.Character());
+            }
             args.Handled(true);
         });
 
@@ -66,7 +69,9 @@ namespace winrt::ElMd::implementation
         {
             if (textEditContext)
             {
+                textInputFocused = true;
                 textEditContext.NotifyFocusEnter();
+                textEditContext.NotifySelectionChanged(CurrentTextInputSelection());
             }
         });
 
@@ -74,6 +79,7 @@ namespace winrt::ElMd::implementation
         {
             if (textEditContext)
             {
+                textInputFocused = false;
                 textEditContext.NotifyFocusLeave();
             }
         });
@@ -236,6 +242,24 @@ namespace winrt::ElMd::implementation
             args.Request().Selection(CurrentTextInputSelection());
         });
 
+        textEditContext.LayoutRequested([this](auto const&, winrt::Windows::UI::Text::Core::CoreTextLayoutRequestedEventArgs const& args)
+        {
+            auto request = args.Request();
+            auto caret = editorSession.Core().editor.selection().active.v;
+            auto caretBounds = editorRenderer.CaretBounds(caret);
+            auto rect = winrt::Windows::Foundation::Rect{ 0.0f, 0.0f, 1.0f, 24.0f };
+            if (caretBounds)
+            {
+                auto transform = EditorSurface().TransformToVisual(nullptr);
+                auto point = transform.TransformPoint(winrt::Windows::Foundation::Point{ caretBounds->left, caretBounds->top });
+                rect = winrt::Windows::Foundation::Rect{ point.X, point.Y, caretBounds->right - caretBounds->left, caretBounds->bottom - caretBounds->top };
+            }
+            request.LayoutBounds().TextBounds(rect);
+            request.LayoutBounds().ControlBounds(rect);
+            request.LayoutBoundsVisualPixels().TextBounds(rect);
+            request.LayoutBoundsVisualPixels().ControlBounds(rect);
+        });
+
         textEditContext.SelectionUpdating([this](auto const&, winrt::Windows::UI::Text::Core::CoreTextSelectionUpdatingEventArgs const& args)
         {
             auto selection = args.Selection();
@@ -255,8 +279,10 @@ namespace winrt::ElMd::implementation
             auto end = static_cast<std::size_t>((std::max)(0, range.EndCaretPosition));
             editorSession.SetSelection((std::min)(start, length), (std::min)(end, length));
             auto command = elmd::Command::InsertText(elmd::utf8_to_cps(winrt::to_string(args.Text())));
+            textInputUpdating = true;
             if (ExecuteEditorCommand(command))
             {
+                textInputUpdating = false;
                 auto newSelection = args.NewSelection();
                 auto newLength = editorSession.Core().editor.text_cps().size();
                 auto newStart = static_cast<std::size_t>((std::max)(0, newSelection.StartCaretPosition));
@@ -264,10 +290,12 @@ namespace winrt::ElMd::implementation
                 editorSession.SetSelection((std::min)(newStart, newLength), (std::min)(newEnd, newLength));
                 RenderEditorSurface();
                 textEditContext.NotifySelectionChanged(CurrentTextInputSelection());
+                textInputKnownLength = newLength;
                 args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Succeeded);
             }
             else
             {
+                textInputUpdating = false;
                 args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Failed);
             }
         });
@@ -301,7 +329,7 @@ namespace winrt::ElMd::implementation
 
     void MainWindow::NotifyTextInputChanged(std::size_t oldLength)
     {
-        if (!textEditContext)
+        if (!textEditContext || textInputUpdating)
         {
             return;
         }
