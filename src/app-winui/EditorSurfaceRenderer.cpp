@@ -361,7 +361,7 @@ namespace winrt::ElMd
             float inset = 0.0f;
             float textTop = 4.0f;
             bool fillPanel = false;
-            bool measureHeight = false;
+            bool measureHeight = true;
             std::u32string text;
             std::vector<InlineStyleRange> inlineRanges;
 
@@ -392,7 +392,6 @@ namespace winrt::ElMd
                     inset = 16.0f;
                     textTop = 16.0f;
                     fillPanel = true;
-                    measureHeight = true;
                     break;
                 case elmd::RenderBlockKind::Math:
                     text = U"$$\n" + block.tex + U"\n$$";
@@ -402,7 +401,6 @@ namespace winrt::ElMd
                     inset = 16.0f;
                     textTop = 16.0f;
                     fillPanel = true;
-                    measureHeight = true;
                     break;
                 case elmd::RenderBlockKind::Unsupported:
                     text = elmd::utf8_to_cps(block.raw);
@@ -421,7 +419,9 @@ namespace winrt::ElMd
             applyInlineStyles(layout.Get(), inlineRanges);
             if (measureHeight)
             {
-                height = textTop + measureTextHeight(layout.Get(), CodeLineHeightDip) + 16.0f;
+                auto fallbackHeight = format == codeFormat.Get() ? CodeLineHeightDip : ParagraphLineHeightDip;
+                auto bottomPadding = fillPanel ? 16.0f : 8.0f;
+                height = textTop + measureTextHeight(layout.Get(), fallbackHeight) + bottomPadding;
             }
             if (fillPanel)
             {
