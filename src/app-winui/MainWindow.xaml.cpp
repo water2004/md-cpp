@@ -138,6 +138,14 @@ namespace winrt::ElMd::implementation
         {
             switch (key)
             {
+                case winrt::Windows::System::VirtualKey::Home:
+                    command.kind = elmd::CommandKind::MoveDocumentStart;
+                    command.extend_selection = shift;
+                    break;
+                case winrt::Windows::System::VirtualKey::End:
+                    command.kind = elmd::CommandKind::MoveDocumentEnd;
+                    command.extend_selection = shift;
+                    break;
                 case winrt::Windows::System::VirtualKey::B:
                     command.kind = elmd::CommandKind::ToggleStrong;
                     break;
@@ -189,6 +197,14 @@ namespace winrt::ElMd::implementation
                 command.kind = elmd::CommandKind::MoveRight;
                 command.extend_selection = shift;
                 break;
+            case winrt::Windows::System::VirtualKey::Up:
+                command.kind = elmd::CommandKind::MoveUp;
+                command.extend_selection = shift;
+                break;
+            case winrt::Windows::System::VirtualKey::Down:
+                command.kind = elmd::CommandKind::MoveDown;
+                command.extend_selection = shift;
+                break;
             case winrt::Windows::System::VirtualKey::Home:
                 command.kind = elmd::CommandKind::MoveLineStart;
                 command.extend_selection = shift;
@@ -196,6 +212,9 @@ namespace winrt::ElMd::implementation
             case winrt::Windows::System::VirtualKey::End:
                 command.kind = elmd::CommandKind::MoveLineEnd;
                 command.extend_selection = shift;
+                break;
+            case winrt::Windows::System::VirtualKey::Tab:
+                command = elmd::Command::InsertText(U"\t");
                 break;
             default:
                 return;
