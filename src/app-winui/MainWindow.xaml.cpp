@@ -105,8 +105,13 @@ namespace winrt::ElMd::implementation
             return false;
         }
 
-        SetStatus(editorSession.DisplayName() + L" | " + winrt::to_hstring(editorSession.Text().size()) + L" chars | rev " + winrt::to_hstring(editorSession.Revision()));
+        auto status = editorSession.DisplayName() + L" | " + winrt::to_hstring(editorSession.Text().size()) + L" chars | rev " + winrt::to_hstring(editorSession.Revision());
+        lastCommand = status;
+        StatusText().Text(status);
         UpdateOutlinePanel();
+        RenderEditorSurface();
+        editorRenderer.ScrollToSourceOffset(editorSession.Core().editor.selection().active.v);
+        RenderEditorSurface();
         return true;
     }
 
