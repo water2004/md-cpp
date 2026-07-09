@@ -2,17 +2,23 @@
 
 namespace winrt::ElMd
 {
+    namespace detail
+    {
+        struct EditorSessionCore;
+    }
+
     struct EditorSurfaceRenderer
     {
         void Initialize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel);
         void Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height);
-        void Render(winrt::hstring const& text);
+        void Render(detail::EditorSessionCore const& sessionCore);
 
     private:
         float CompositionScaleX(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const;
         float CompositionScaleY(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const;
         void ApplySwapChainTransform();
         void ResetTargets();
+        void DrawDocument(detail::EditorSessionCore const& sessionCore);
 
         ::Microsoft::WRL::ComPtr<ID3D11Device> d3dDevice;
         ::Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3dContext;
@@ -24,7 +30,15 @@ namespace winrt::ElMd
         ::Microsoft::WRL::ComPtr<ID2D1Bitmap1> d2dTarget;
         ::Microsoft::WRL::ComPtr<IDWriteFactory> dwriteFactory;
         ::Microsoft::WRL::ComPtr<IDWriteTextFormat> textFormat;
+        ::Microsoft::WRL::ComPtr<IDWriteTextFormat> heading1Format;
+        ::Microsoft::WRL::ComPtr<IDWriteTextFormat> heading2Format;
+        ::Microsoft::WRL::ComPtr<IDWriteTextFormat> heading3Format;
+        ::Microsoft::WRL::ComPtr<IDWriteTextFormat> codeFormat;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> textBrush;
+        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> mutedBrush;
+        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> accentBrush;
+        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> codeBrush;
+        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> panelBrush;
         uint32_t surfaceWidth = 0;
         uint32_t surfaceHeight = 0;
         float surfaceScaleX = 1.0f;

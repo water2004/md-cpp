@@ -165,6 +165,6 @@ namespace winrt::ElMd::implementation
 
     void MainWindow::RenderEditorSurface()
     {
-        editorRenderer.Render(editorSession.Text());
+        editorRenderer.Render(editorSession.Core());
     }
 }

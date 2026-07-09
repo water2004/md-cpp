@@ -15,6 +15,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #undef GetCurrentTime
 

@@ -1,13 +1,72 @@
 #include "pch.h"
+#include "EditorSession.h"
 #include "EditorSurfaceRenderer.h"
+
+import elmd.core.render_model;
+import elmd.core.utf;
 
 namespace winrt::ElMd
 {
-    constexpr float PreviewFontSizeDip = 28.0f;
-    constexpr float PreviewLineHeightDip = 38.0f;
-    constexpr float PreviewBaselineDip = 30.0f;
-    constexpr float PreviewHorizontalPaddingDip = 36.0f;
-    constexpr float PreviewVerticalPaddingDip = 32.0f;
+    constexpr float DocumentWidthDip = 900.0f;
+    constexpr float DocumentHorizontalPaddingDip = 48.0f;
+    constexpr float DocumentVerticalPaddingDip = 40.0f;
+    constexpr float ParagraphFontSizeDip = 18.0f;
+    constexpr float CodeFontSizeDip = 15.0f;
+    constexpr float ParagraphLineHeightDip = 30.0f;
+    constexpr float CodeLineHeightDip = 24.0f;
+
+    std::wstring ToWide(std::u32string_view text)
+    {
+        std::wstring wide;
+        wide.reserve(text.size());
+        for (auto codepoint : text)
+        {
+            if (codepoint <= 0xFFFF)
+            {
+                wide.push_back(static_cast<wchar_t>(codepoint));
+            }
+            else
+            {
+                codepoint -= 0x10000;
+                wide.push_back(static_cast<wchar_t>(0xD800 + (codepoint >> 10)));
+                wide.push_back(static_cast<wchar_t>(0xDC00 + (codepoint & 0x3FF)));
+            }
+        }
+        return wide;
+    }
+
+    std::u32string InlineText(elmd::InlineRenderItem const& item)
+    {
+        switch (item.kind)
+        {
+            case elmd::InlineRenderItem::Kind::Text:
+            case elmd::InlineRenderItem::Kind::Marker:
+                return item.text;
+            case elmd::InlineRenderItem::Kind::Math:
+                return U"$" + item.text + U"$";
+            case elmd::InlineRenderItem::Kind::Image:
+                return item.alt.empty() ? U"image" : elmd::utf8_to_cps(item.alt);
+            case elmd::InlineRenderItem::Kind::Link: {
+                std::u32string text;
+                for (auto const& child : item.children)
+                {
+                    text += InlineText(child);
+                }
+                return text;
+            }
+        }
+        return {};
+    }
+
+    std::u32string InlineText(std::vector<elmd::InlineRenderItem> const& items)
+    {
+        std::u32string text;
+        for (auto const& item : items)
+        {
+            text += InlineText(item);
+        }
+        return text;
+    }
 
     float EditorSurfaceRenderer::CompositionScaleX(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const
     {
@@ -41,13 +100,16 @@ namespace winrt::ElMd
         renderTargetView = nullptr;
         d2dTarget = nullptr;
         textBrush = nullptr;
+        mutedBrush = nullptr;
+        accentBrush = nullptr;
+        codeBrush = nullptr;
+        panelBrush = nullptr;
     }
 
     void EditorSurfaceRenderer::Initialize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel)
     {
         if (swapChain)
         {
-            Render({});
             return;
         }
 
@@ -88,16 +150,26 @@ namespace winrt::ElMd
 
         winrt::check_hresult(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(dwriteFactory.GetAddressOf())));
         winrt::check_hresult(dwriteFactory->CreateTextFormat(
-            L"Cascadia Mono",
+            L"Segoe UI",
             nullptr,
             DWRITE_FONT_WEIGHT_NORMAL,
             DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL,
-            PreviewFontSizeDip,
+            ParagraphFontSizeDip,
             L"en-us",
             textFormat.GetAddressOf()));
         winrt::check_hresult(textFormat->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP));
-        winrt::check_hresult(textFormat->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, PreviewLineHeightDip, PreviewBaselineDip));
+        winrt::check_hresult(textFormat->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, ParagraphLineHeightDip, ParagraphFontSizeDip * 1.2f));
+
+        winrt::check_hresult(dwriteFactory->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 38.0f, L"en-us", heading1Format.GetAddressOf()));
+        winrt::check_hresult(dwriteFactory->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 30.0f, L"en-us", heading2Format.GetAddressOf()));
+        winrt::check_hresult(dwriteFactory->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 24.0f, L"en-us", heading3Format.GetAddressOf()));
+        winrt::check_hresult(dwriteFactory->CreateTextFormat(L"Cascadia Mono", nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, CodeFontSizeDip, L"en-us", codeFormat.GetAddressOf()));
+        for (auto format : { heading1Format.Get(), heading2Format.Get(), heading3Format.Get(), codeFormat.Get() })
+        {
+            winrt::check_hresult(format->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP));
+        }
+        winrt::check_hresult(codeFormat->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, CodeLineHeightDip, CodeFontSizeDip * 1.25f));
 
         ::Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
         winrt::check_hresult(dxgiDevice->GetAdapter(adapter.GetAddressOf()));
@@ -159,7 +231,87 @@ namespace winrt::ElMd
         ApplySwapChainTransform();
     }
 
-    void EditorSurfaceRenderer::Render(winrt::hstring const& text)
+    void EditorSurfaceRenderer::DrawDocument(detail::EditorSessionCore const& sessionCore)
+    {
+        auto documentLeft = DocumentHorizontalPaddingDip;
+        auto documentTop = DocumentVerticalPaddingDip;
+        auto documentRight = (std::min)(static_cast<float>(surfaceWidth) - DocumentHorizontalPaddingDip, documentLeft + DocumentWidthDip);
+        auto y = documentTop;
+
+        if (sessionCore.renderModel.blocks.empty())
+        {
+            auto emptyText = winrt::hstring(L"Open a Markdown file or start editing to see the WYSIWYG surface.");
+            auto rect = D2D1::RectF(documentLeft, y, documentRight, y + 80.0f);
+            d2dContext->DrawTextW(emptyText.c_str(), static_cast<UINT32>(emptyText.size()), textFormat.Get(), rect, mutedBrush.Get());
+            return;
+        }
+
+        for (auto const& block : sessionCore.renderModel.blocks)
+        {
+            IDWriteTextFormat* format = textFormat.Get();
+            ID2D1Brush* brush = textBrush.Get();
+            float height = 48.0f;
+            float inset = 0.0f;
+            std::u32string text;
+
+            switch (block.kind)
+            {
+                case elmd::RenderBlockKind::Text:
+                    text = InlineText(block.inline_items);
+                    if (block.block_style.margin_top >= 24.0f)
+                    {
+                        format = heading1Format.Get();
+                        height = 58.0f;
+                    }
+                    else if (block.block_style.margin_top >= 20.0f)
+                    {
+                        format = heading2Format.Get();
+                        height = 50.0f;
+                    }
+                    else if (block.block_style.margin_top >= 16.0f)
+                    {
+                        format = heading3Format.Get();
+                    }
+                    break;
+                case elmd::RenderBlockKind::Code:
+                    text = block.code_text;
+                    format = codeFormat.Get();
+                    brush = codeBrush.Get();
+                    height = 120.0f;
+                    inset = 16.0f;
+                    d2dContext->FillRectangle(D2D1::RectF(documentLeft, y, documentRight, y + height), panelBrush.Get());
+                    break;
+                case elmd::RenderBlockKind::Math:
+                    text = U"$$\n" + block.tex + U"\n$$";
+                    format = codeFormat.Get();
+                    brush = accentBrush.Get();
+                    height = 96.0f;
+                    inset = 16.0f;
+                    d2dContext->FillRectangle(D2D1::RectF(documentLeft, y, documentRight, y + height), panelBrush.Get());
+                    break;
+                case elmd::RenderBlockKind::Unsupported:
+                    text = elmd::utf8_to_cps(block.raw);
+                    brush = mutedBrush.Get();
+                    height = 64.0f;
+                    break;
+                default:
+                    text = InlineText(block.inline_items);
+                    brush = mutedBrush.Get();
+                    break;
+            }
+
+            auto wide = ToWide(text);
+            auto rect = D2D1::RectF(documentLeft + inset, y + 4.0f, documentRight - inset, y + height);
+            d2dContext->DrawTextW(wide.c_str(), static_cast<UINT32>(wide.size()), format, rect, brush);
+            y += height + 8.0f;
+            if (y > static_cast<float>(surfaceHeight) - DocumentVerticalPaddingDip)
+            {
+                break;
+            }
+        }
+    }
+
+    void EditorSurfaceRenderer::Render(detail::EditorSessionCore const& sessionCore)
     {
         if (!swapChain || !d3dDevice || !d3dContext)
         {
@@ -192,18 +344,15 @@ namespace winrt::ElMd
         if (!textBrush)
         {
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(D2D1::ColorF(0.86f, 0.90f, 0.96f, 1.0f), textBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(D2D1::ColorF(0.58f, 0.65f, 0.75f, 1.0f), mutedBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(D2D1::ColorF(0.43f, 0.72f, 1.0f, 1.0f), accentBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(D2D1::ColorF(0.80f, 0.86f, 0.92f, 1.0f), codeBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(D2D1::ColorF(0.105f, 0.130f, 0.165f, 1.0f), panelBrush.GetAddressOf()));
         }
-
-        auto displayText = text.empty() ? winrt::hstring(L"Open a Markdown file to preview it here.") : text;
-        auto rect = D2D1::RectF(
-            PreviewHorizontalPaddingDip,
-            PreviewVerticalPaddingDip,
-            static_cast<float>(surfaceWidth) - PreviewHorizontalPaddingDip,
-            static_cast<float>(surfaceHeight) - PreviewVerticalPaddingDip);
 
         d2dContext->BeginDraw();
         d2dContext->Clear(D2D1::ColorF(0.070f, 0.086f, 0.110f, 1.0f));
-        d2dContext->DrawTextW(displayText.c_str(), static_cast<UINT32>(displayText.size()), textFormat.Get(), rect, textBrush.Get());
+        DrawDocument(sessionCore);
         winrt::check_hresult(d2dContext->EndDraw());
 
         winrt::check_hresult(swapChain->Present(1, 0));

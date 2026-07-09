@@ -10,8 +10,37 @@
     <Filter Include="Resource Files">
       <UniqueIdentifier>{b56c9b65-797f-48cc-8449-ef437aeab428}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Core Modules">
+      <UniqueIdentifier>{1d794d6b-38a8-41d2-89a5-74cdbff8ce3f}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\core\ast.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\buffer.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\caret.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\command.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\diagnostics.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\dialect.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\document.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\editor.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\error.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\extension.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\ids.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\input.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\metadata.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\outline.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\parser.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\render_builder.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\render_model.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\selection.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\slug.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\source_map.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\symbols.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\theme.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\transaction.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\types.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\undo.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\utf.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="pch.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

@@ -1,13 +1,28 @@
 #include "pch.h"
 #include "EditorSession.h"
 
+import elmd.core.editor;
+import elmd.core.parser;
+import elmd.core.render_builder;
+import elmd.core.render_model;
+
 namespace winrt::ElMd
 {
+    EditorSession::EditorSession() : core_(std::make_unique<detail::EditorSessionCore>())
+    {
+        RebuildCore();
+    }
+
+    EditorSession::~EditorSession() = default;
+    EditorSession::EditorSession(EditorSession&&) noexcept = default;
+    EditorSession& EditorSession::operator=(EditorSession&&) noexcept = default;
+
     void EditorSession::Open(winrt::Windows::Storage::StorageFile const& file, winrt::hstring const& text)
     {
         file_ = file;
         text_ = text;
         ++revision_;
+        RebuildCore();
     }
 
     void EditorSession::SaveAs(winrt::Windows::Storage::StorageFile const& file)
@@ -19,6 +34,15 @@ namespace winrt::ElMd
     {
         text_ = text;
         ++revision_;
+        RebuildCore();
+    }
+
+    void EditorSession::RebuildCore()
+    {
+        core_->sourceText = winrt::to_string(text_);
+        core_->editor = elmd::Editor(core_->sourceText);
+        auto parsed = elmd::parse_text(core_->editor.revision(), core_->sourceText);
+        core_->renderModel = elmd::build_render_model(parsed.document, core_->sourceText, parsed.outline);
     }
 
     bool EditorSession::HasFile() const
@@ -49,5 +73,10 @@ namespace winrt::ElMd
     uint64_t EditorSession::Revision() const
     {
         return revision_;
+    }
+
+    detail::EditorSessionCore const& EditorSession::Core() const
+    {
+        return *core_;
     }
 }

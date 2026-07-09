@@ -1,9 +1,29 @@
 #pragma once
 
+import elmd.core.editor;
+import elmd.core.render_model;
+
 namespace winrt::ElMd
 {
+    namespace detail
+    {
+        struct EditorSessionCore
+        {
+            elmd::Editor editor;
+            elmd::RenderModel renderModel;
+            std::string sourceText;
+        };
+    }
+
     struct EditorSession
     {
+        EditorSession();
+        ~EditorSession();
+        EditorSession(EditorSession const&) = delete;
+        EditorSession& operator=(EditorSession const&) = delete;
+        EditorSession(EditorSession&&) noexcept;
+        EditorSession& operator=(EditorSession&&) noexcept;
+
         void Open(winrt::Windows::Storage::StorageFile const& file, winrt::hstring const& text);
         void SaveAs(winrt::Windows::Storage::StorageFile const& file);
         void SetText(winrt::hstring const& text);
@@ -13,10 +33,14 @@ namespace winrt::ElMd
         winrt::hstring DisplayName() const;
         winrt::hstring Path() const;
         uint64_t Revision() const;
+        detail::EditorSessionCore const& Core() const;
 
     private:
+        void RebuildCore();
+
         winrt::Windows::Storage::StorageFile file_{ nullptr };
         winrt::hstring text_;
         uint64_t revision_ = 0;
+        std::unique_ptr<detail::EditorSessionCore> core_;
     };
 }
