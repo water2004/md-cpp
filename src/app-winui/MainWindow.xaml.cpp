@@ -326,8 +326,8 @@ namespace winrt::ElMd::implementation
             D2D1_BITMAP_PROPERTIES1 properties{};
             properties.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
             properties.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
-            properties.dpiX = 96.0f * surfaceScaleX;
-            properties.dpiY = 96.0f * surfaceScaleY;
+            properties.dpiX = 96.0f;
+            properties.dpiY = 96.0f;
             properties.bitmapOptions = D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW;
 
             winrt::check_hresult(d2dContext->CreateBitmapFromDxgiSurface(surface.Get(), &properties, d2dTarget.GetAddressOf()));
@@ -340,8 +340,8 @@ namespace winrt::ElMd::implementation
         }
 
         auto text = currentText.empty() ? winrt::hstring(L"Open a Markdown file to preview it here.") : currentText;
-        auto dipWidth = static_cast<float>(static_cast<double>(surfaceWidth) / surfaceScaleX);
-        auto dipHeight = static_cast<float>(static_cast<double>(surfaceHeight) / surfaceScaleY);
+        auto dipWidth = static_cast<float>(surfaceWidth);
+        auto dipHeight = static_cast<float>(surfaceHeight);
         auto rect = D2D1::RectF(
             PreviewHorizontalPaddingDip,
             PreviewVerticalPaddingDip,
