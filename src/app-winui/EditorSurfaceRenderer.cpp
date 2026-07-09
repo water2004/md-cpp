@@ -68,6 +68,35 @@ namespace winrt::ElMd
         return text;
     }
 
+    struct InlineStyleRange
+    {
+        UINT32 start = 0;
+        UINT32 length = 0;
+        elmd::InlineStyle style;
+        bool marker = false;
+    };
+
+    std::u32string InlineText(std::vector<elmd::InlineRenderItem> const& items, std::vector<InlineStyleRange>& ranges)
+    {
+        std::u32string text;
+        for (auto const& item : items)
+        {
+            auto start = static_cast<UINT32>(text.size());
+            text += InlineText(item);
+            auto length = static_cast<UINT32>(text.size()) - start;
+            if (length > 0)
+            {
+                InlineStyleRange range;
+                range.start = start;
+                range.length = length;
+                range.style = item.style;
+                range.marker = item.kind == elmd::InlineRenderItem::Kind::Marker;
+                ranges.push_back(range);
+            }
+        }
+        return text;
+    }
+
     std::size_t SourceStart(elmd::RenderBlock const& block)
     {
         return block.content_range.start.v;
@@ -266,6 +295,40 @@ namespace winrt::ElMd
             return layout;
         };
 
+        auto applyInlineStyles = [&](IDWriteTextLayout* layout, std::vector<InlineStyleRange> const& ranges)
+        {
+            if (!layout)
+            {
+                return;
+            }
+
+            for (auto const& range : ranges)
+            {
+                DWRITE_TEXT_RANGE textRange{ range.start, range.length };
+                if (range.style.bold)
+                {
+                    layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, textRange);
+                }
+                if (range.style.italic)
+                {
+                    layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, textRange);
+                }
+                if (range.style.link)
+                {
+                    layout->SetUnderline(true, textRange);
+                }
+                if (range.style.code)
+                {
+                    layout->SetFontFamilyName(L"Cascadia Mono", textRange);
+                    layout->SetFontSize(CodeFontSizeDip, textRange);
+                }
+                if (range.marker)
+                {
+                    layout->SetFontSize(ParagraphFontSizeDip * 0.82f, textRange);
+                }
+            }
+        };
+
         auto measureTextHeight = [&](IDWriteTextLayout* layout, float fallbackHeight)
         {
             if (!layout)
@@ -300,11 +363,12 @@ namespace winrt::ElMd
             bool fillPanel = false;
             bool measureHeight = false;
             std::u32string text;
+            std::vector<InlineStyleRange> inlineRanges;
 
             switch (block.kind)
             {
                 case elmd::RenderBlockKind::Text:
-                    text = InlineText(block.inline_items);
+                    text = InlineText(block.inline_items, inlineRanges);
                     if (block.block_style.margin_top >= 24.0f)
                     {
                         format = heading1Format.Get();
@@ -346,7 +410,7 @@ namespace winrt::ElMd
                     height = 64.0f;
                     break;
                 default:
-                    text = InlineText(block.inline_items);
+                    text = InlineText(block.inline_items, inlineRanges);
                     brush = mutedBrush.Get();
                     break;
             }
@@ -354,6 +418,7 @@ namespace winrt::ElMd
             auto wide = ToWide(text);
             auto textWidth = (std::max)(1.0f, documentRight - documentLeft - inset * 2.0f);
             auto layout = createLayout(wide, format, textWidth);
+            applyInlineStyles(layout.Get(), inlineRanges);
             if (measureHeight)
             {
                 height = textTop + measureTextHeight(layout.Get(), CodeLineHeightDip) + 16.0f;
