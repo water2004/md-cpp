@@ -65,6 +65,15 @@ namespace winrt::ElMd
         return true;
     }
 
+    void EditorSession::SetSelection(std::size_t anchor, std::size_t active)
+    {
+        auto length = core_->editor.text_cps().size();
+        elmd::Selection selection;
+        selection.anchor = elmd::CharOffset((std::min)(anchor, length));
+        selection.active = elmd::CharOffset((std::min)(active, length));
+        core_->editor.set_selection(selection);
+    }
+
     bool EditorSession::HasFile() const
     {
         return file_ != nullptr;

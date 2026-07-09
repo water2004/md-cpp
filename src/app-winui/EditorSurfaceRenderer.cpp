@@ -68,6 +68,21 @@ namespace winrt::ElMd
         return text;
     }
 
+    std::size_t SourceStart(elmd::RenderBlock const& block)
+    {
+        if (!block.inline_items.empty())
+        {
+            return block.inline_items.front().source_range.start.v;
+        }
+        return block.source_range.start.v;
+    }
+
+    std::size_t SourceEnd(elmd::RenderBlock const& block, std::u32string const& text)
+    {
+        auto sourceStart = SourceStart(block);
+        return (std::min)(block.source_range.end.v, sourceStart + text.size());
+    }
+
     float EditorSurfaceRenderer::CompositionScaleX(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const
     {
         return (std::max)(1.0f, panel.CompositionScaleX());
@@ -104,6 +119,8 @@ namespace winrt::ElMd
         accentBrush = nullptr;
         codeBrush = nullptr;
         panelBrush = nullptr;
+        selectionBrush = nullptr;
+        caretBrush = nullptr;
     }
 
     void EditorSurfaceRenderer::Initialize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel)
@@ -234,16 +251,28 @@ namespace winrt::ElMd
 
     void EditorSurfaceRenderer::DrawDocument(detail::EditorSessionCore const& sessionCore)
     {
+        visualBlocks.clear();
         auto documentLeft = DocumentHorizontalPaddingDip;
         auto documentTop = DocumentVerticalPaddingDip;
         auto documentRight = (std::min)(static_cast<float>(surfaceWidth) - DocumentHorizontalPaddingDip, documentLeft + DocumentWidthDip);
         auto y = documentTop;
+        auto selection = sessionCore.editor.selection().normalized_range();
+        auto caret = sessionCore.editor.selection().active.v;
 
-        auto measureTextHeight = [&](std::wstring const& text, IDWriteTextFormat* format, float width, float fallbackHeight)
+        auto createLayout = [&](std::wstring const& text, IDWriteTextFormat* format, float width)
         {
             ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
             auto hr = dwriteFactory->CreateTextLayout(text.c_str(), static_cast<UINT32>(text.size()), format, width, 100000.0f, layout.GetAddressOf());
             if (FAILED(hr) || !layout)
+            {
+                return ::Microsoft::WRL::ComPtr<IDWriteTextLayout>{};
+            }
+            return layout;
+        };
+
+        auto measureTextHeight = [&](IDWriteTextLayout* layout, float fallbackHeight)
+        {
+            if (!layout)
             {
                 return fallbackHeight;
             }
@@ -327,23 +356,106 @@ namespace winrt::ElMd
             }
 
             auto wide = ToWide(text);
+            auto textWidth = (std::max)(1.0f, documentRight - documentLeft - inset * 2.0f);
+            auto layout = createLayout(wide, format, textWidth);
             if (measureHeight)
             {
-                auto textWidth = (std::max)(1.0f, documentRight - documentLeft - inset * 2.0f);
-                height = textTop + measureTextHeight(wide, format, textWidth, CodeLineHeightDip) + 16.0f;
+                height = textTop + measureTextHeight(layout.Get(), CodeLineHeightDip) + 16.0f;
             }
             if (fillPanel)
             {
                 d2dContext->FillRectangle(D2D1::RectF(documentLeft, y, documentRight, y + height), panelBrush.Get());
             }
-            auto rect = D2D1::RectF(documentLeft + inset, y + textTop, documentRight - inset, y + height);
-            d2dContext->DrawTextW(wide.c_str(), static_cast<UINT32>(wide.size()), format, rect, brush);
+            auto origin = D2D1::Point2F(documentLeft + inset, y + textTop);
+            if (layout)
+            {
+                auto sourceStart = SourceStart(block);
+                auto sourceEnd = SourceEnd(block, text);
+                if (!selection.is_empty() && selection.end.v > sourceStart && selection.start.v < sourceEnd)
+                {
+                    auto rangeStart = (std::max)(selection.start.v, sourceStart) - sourceStart;
+                    auto rangeEnd = (std::min)(selection.end.v, sourceEnd) - sourceStart;
+                    UINT32 actualCount = 0;
+                    auto hr = layout->HitTestTextRange(static_cast<UINT32>(rangeStart), static_cast<UINT32>(rangeEnd - rangeStart), origin.x, origin.y, nullptr, 0, &actualCount);
+                    if (hr == E_NOT_SUFFICIENT_BUFFER && actualCount > 0)
+                    {
+                        std::vector<DWRITE_HIT_TEST_METRICS> metrics(actualCount);
+                        if (SUCCEEDED(layout->HitTestTextRange(static_cast<UINT32>(rangeStart), static_cast<UINT32>(rangeEnd - rangeStart), origin.x, origin.y, metrics.data(), actualCount, &actualCount)))
+                        {
+                            for (UINT32 i = 0; i < actualCount; ++i)
+                            {
+                                auto const& metric = metrics[i];
+                                d2dContext->FillRectangle(D2D1::RectF(metric.left, metric.top, metric.left + metric.width, metric.top + metric.height), selectionBrush.Get());
+                            }
+                        }
+                    }
+                }
+
+                d2dContext->DrawTextLayout(origin, layout.Get(), brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+
+                if (sourceStart <= caret && caret <= sourceEnd)
+                {
+                    FLOAT caretX = 0.0f;
+                    FLOAT caretY = 0.0f;
+                    DWRITE_HIT_TEST_METRICS caretMetrics{};
+                    if (SUCCEEDED(layout->HitTestTextPosition(static_cast<UINT32>(caret - sourceStart), false, &caretX, &caretY, &caretMetrics)))
+                    {
+                        auto x = origin.x + caretX;
+                        auto top = origin.y + caretY;
+                        d2dContext->DrawLine(D2D1::Point2F(x, top), D2D1::Point2F(x, top + caretMetrics.height), caretBrush.Get(), 1.5f);
+                    }
+                }
+
+                VisualBlock visualBlock;
+                visualBlock.rect = D2D1::RectF(documentLeft, y, documentRight, y + height);
+                visualBlock.textOrigin = origin;
+                visualBlock.textWidth = textWidth;
+                visualBlock.sourceStart = sourceStart;
+                visualBlock.sourceEnd = sourceEnd;
+                visualBlock.text = std::move(text);
+                visualBlock.layout = layout;
+                visualBlocks.push_back(std::move(visualBlock));
+            }
             y += height + 8.0f;
             if (y > static_cast<float>(surfaceHeight) - DocumentVerticalPaddingDip)
             {
                 break;
             }
         }
+    }
+
+    std::optional<std::size_t> EditorSurfaceRenderer::HitTest(float x, float y) const
+    {
+        x *= surfaceScaleX;
+        y *= surfaceScaleY;
+
+        for (auto const& block : visualBlocks)
+        {
+            if (x < block.rect.left || x > block.rect.right || y < block.rect.top || y > block.rect.bottom || !block.layout)
+            {
+                continue;
+            }
+
+            BOOL isTrailingHit = false;
+            BOOL isInside = false;
+            DWRITE_HIT_TEST_METRICS metrics{};
+            if (SUCCEEDED(block.layout->HitTestPoint(x - block.textOrigin.x, y - block.textOrigin.y, &isTrailingHit, &isInside, &metrics)))
+            {
+                auto position = static_cast<std::size_t>(metrics.textPosition + (isTrailingHit ? metrics.length : 0));
+                return (std::min)(block.sourceEnd, block.sourceStart + position);
+            }
+        }
+
+        if (!visualBlocks.empty())
+        {
+            if (y < visualBlocks.front().rect.top)
+            {
+                return visualBlocks.front().sourceStart;
+            }
+            return visualBlocks.back().sourceEnd;
+        }
+
+        return std::nullopt;
     }
 
     void EditorSurfaceRenderer::Render(detail::EditorSessionCore const& sessionCore)
@@ -383,6 +495,8 @@ namespace winrt::ElMd
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(D2D1::ColorF(0.43f, 0.72f, 1.0f, 1.0f), accentBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(D2D1::ColorF(0.80f, 0.86f, 0.92f, 1.0f), codeBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(D2D1::ColorF(0.105f, 0.130f, 0.165f, 1.0f), panelBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(D2D1::ColorF(0.20f, 0.42f, 0.70f, 0.55f), selectionBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(D2D1::ColorF(0.92f, 0.96f, 1.0f, 1.0f), caretBrush.GetAddressOf()));
         }
 
         d2dContext->BeginDraw();

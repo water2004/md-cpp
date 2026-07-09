@@ -12,6 +12,7 @@ namespace winrt::ElMd
         void Initialize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel);
         void Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height);
         void Render(detail::EditorSessionCore const& sessionCore);
+        std::optional<std::size_t> HitTest(float x, float y) const;
 
     private:
         float CompositionScaleX(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const;
@@ -19,6 +20,17 @@ namespace winrt::ElMd
         void ApplySwapChainTransform();
         void ResetTargets();
         void DrawDocument(detail::EditorSessionCore const& sessionCore);
+
+        struct VisualBlock
+        {
+            D2D1_RECT_F rect{};
+            D2D1_POINT_2F textOrigin{};
+            float textWidth = 0.0f;
+            std::size_t sourceStart = 0;
+            std::size_t sourceEnd = 0;
+            std::u32string text;
+            ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+        };
 
         ::Microsoft::WRL::ComPtr<ID3D11Device> d3dDevice;
         ::Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3dContext;
@@ -39,6 +51,9 @@ namespace winrt::ElMd
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> accentBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> codeBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> panelBrush;
+        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> selectionBrush;
+        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> caretBrush;
+        std::vector<VisualBlock> visualBlocks;
         uint32_t surfaceWidth = 0;
         uint32_t surfaceHeight = 0;
         float surfaceScaleX = 1.0f;

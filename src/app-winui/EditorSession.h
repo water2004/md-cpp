@@ -29,6 +29,7 @@ namespace winrt::ElMd
         void SaveAs(winrt::Windows::Storage::StorageFile const& file);
         void SetText(winrt::hstring const& text);
         bool ExecuteCommand(elmd::Command const& command);
+        void SetSelection(std::size_t anchor, std::size_t active);
         bool HasFile() const;
         winrt::Windows::Storage::StorageFile File() const;
         winrt::hstring Text() const;

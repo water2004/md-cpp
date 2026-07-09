@@ -41,9 +41,19 @@ namespace winrt::ElMd::implementation
             args.Handled(true);
         });
 
-        EditorSurface().PointerPressed([this](auto const&, auto const&)
+        EditorSurface().PointerPressed([this](auto const&, Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
         {
-            EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Pointer);
+            HandlePointerPressed(args);
+        });
+
+        EditorSurface().PointerMoved([this](auto const&, Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
+        {
+            HandlePointerMoved(args);
+        });
+
+        EditorSurface().PointerReleased([this](auto const&, Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
+        {
+            HandlePointerReleased(args);
         });
     }
 
@@ -126,6 +136,53 @@ namespace winrt::ElMd::implementation
         }
 
         ExecuteEditorCommand(command);
+    }
+
+    void MainWindow::HandlePointerPressed(Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
+    {
+        EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Pointer);
+        auto point = args.GetCurrentPoint(EditorSurface()).Position();
+        auto hit = editorRenderer.HitTest(static_cast<float>(point.X), static_cast<float>(point.Y));
+        if (!hit)
+        {
+            return;
+        }
+
+        pointerSelecting = true;
+        pointerAnchor = *hit;
+        editorSession.SetSelection(pointerAnchor, pointerAnchor);
+        EditorSurface().CapturePointer(args.Pointer());
+        RenderEditorSurface();
+        args.Handled(true);
+    }
+
+    void MainWindow::HandlePointerMoved(Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
+    {
+        if (!pointerSelecting)
+        {
+            return;
+        }
+
+        auto point = args.GetCurrentPoint(EditorSurface()).Position();
+        auto hit = editorRenderer.HitTest(static_cast<float>(point.X), static_cast<float>(point.Y));
+        if (!hit)
+        {
+            return;
+        }
+
+        editorSession.SetSelection(pointerAnchor, *hit);
+        RenderEditorSurface();
+        args.Handled(true);
+    }
+
+    void MainWindow::HandlePointerReleased(Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
+    {
+        if (pointerSelecting)
+        {
+            pointerSelecting = false;
+            EditorSurface().ReleasePointerCapture(args.Pointer());
+            args.Handled(true);
+        }
     }
 
     void MainWindow::SetStatus(winrt::hstring const& text)
