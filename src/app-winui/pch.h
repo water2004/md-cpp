@@ -6,7 +6,9 @@
 #include <hstring.h>
 #include <d3d11_4.h>
 #include <dxgi1_6.h>
+#include <microsoft.ui.xaml.window.h>
 #include <microsoft.ui.xaml.media.dxinterop.h>
+#include <shobjidl_core.h>
 #include <wrl/client.h>
 #include <algorithm>
 #include <cstdint>
@@ -16,6 +18,8 @@
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.ApplicationModel.Activation.h>
+#include <winrt/Windows.Storage.h>
+#include <winrt/Windows.Storage.Pickers.h>
 #include <winrt/Microsoft.UI.Composition.h>
 #include <winrt/Microsoft.UI.Xaml.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>

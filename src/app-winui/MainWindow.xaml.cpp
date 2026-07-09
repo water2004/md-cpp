@@ -26,12 +26,12 @@ namespace winrt::ElMd::implementation
     {
         OpenButton().Click([this](auto const&, auto const&)
         {
-            SetStatus(L"Open command pending file picker integration");
+            OpenDocumentAsync();
         });
 
         SaveButton().Click([this](auto const&, auto const&)
         {
-            SetStatus(L"Save command pending storage integration");
+            SaveDocumentAsync();
         });
 
         BoldButton().Click([this](auto const&, auto const&)
@@ -50,6 +50,67 @@ namespace winrt::ElMd::implementation
         lastCommand = text;
         StatusText().Text(text);
         RenderEditorSurface();
+    }
+
+    HWND MainWindow::WindowHandle()
+    {
+        HWND hwnd{};
+        auto windowNative = get_strong().as<IWindowNative>();
+        winrt::check_hresult(windowNative->get_WindowHandle(&hwnd));
+        return hwnd;
+    }
+
+    winrt::fire_and_forget MainWindow::OpenDocumentAsync()
+    {
+        auto lifetime = get_strong();
+
+        try
+        {
+            auto picker = winrt::Windows::Storage::Pickers::FileOpenPicker();
+            picker.FileTypeFilter().Append(L".md");
+            picker.FileTypeFilter().Append(L".markdown");
+            picker.FileTypeFilter().Append(L".txt");
+
+            auto initializeWithWindow = picker.as<IInitializeWithWindow>();
+            winrt::check_hresult(initializeWithWindow->Initialize(WindowHandle()));
+
+            auto file = co_await picker.PickSingleFileAsync();
+            if (!file)
+            {
+                SetStatus(L"Open cancelled");
+                co_return;
+            }
+
+            currentText = co_await winrt::Windows::Storage::FileIO::ReadTextAsync(file);
+            currentFile = file;
+            Title(L"el-md - " + file.Name());
+            SetStatus(file.Path() + L" | " + winrt::to_hstring(currentText.size()) + L" chars");
+        }
+        catch (winrt::hresult_error const& error)
+        {
+            SetStatus(L"Open failed: " + error.message());
+        }
+    }
+
+    winrt::fire_and_forget MainWindow::SaveDocumentAsync()
+    {
+        auto lifetime = get_strong();
+
+        try
+        {
+            if (!currentFile)
+            {
+                SetStatus(L"Save skipped: no open document");
+                co_return;
+            }
+
+            co_await winrt::Windows::Storage::FileIO::WriteTextAsync(currentFile, currentText);
+            SetStatus(L"Saved " + currentFile.Path() + L" | " + winrt::to_hstring(currentText.size()) + L" chars");
+        }
+        catch (winrt::hresult_error const& error)
+        {
+            SetStatus(L"Save failed: " + error.message());
+        }
     }
 
     void MainWindow::InitializeEditorSurface()

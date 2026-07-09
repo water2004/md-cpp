@@ -14,6 +14,9 @@ namespace winrt::ElMd::implementation
         void RenderEditorSurface();
         void RegisterCommandHandlers();
         void SetStatus(winrt::hstring const& text);
+        HWND WindowHandle();
+        winrt::fire_and_forget OpenDocumentAsync();
+        winrt::fire_and_forget SaveDocumentAsync();
 
         ::Microsoft::WRL::ComPtr<ID3D11Device> d3dDevice;
         ::Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3dContext;
@@ -22,6 +25,8 @@ namespace winrt::ElMd::implementation
         uint32_t surfaceWidth = 0;
         uint32_t surfaceHeight = 0;
         winrt::hstring lastCommand = L"Ready";
+        winrt::Windows::Storage::StorageFile currentFile{ nullptr };
+        winrt::hstring currentText;
     };
 }
 
