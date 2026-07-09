@@ -259,6 +259,8 @@ namespace winrt::ElMd
 
         surfaceScaleX = CompositionScaleX(panel);
         surfaceScaleY = CompositionScaleY(panel);
+        surfaceWidthDip = static_cast<float>((std::max)(1.0, panel.ActualWidth()));
+        surfaceHeightDip = static_cast<float>((std::max)(1.0, panel.ActualHeight()));
         auto width = (std::max)(uint32_t{ 1 }, static_cast<uint32_t>(std::ceil(panel.ActualWidth() * surfaceScaleX)));
         auto height = (std::max)(uint32_t{ 1 }, static_cast<uint32_t>(std::ceil(panel.ActualHeight() * surfaceScaleY)));
 
@@ -295,9 +297,11 @@ namespace winrt::ElMd
 
         auto newScaleX = CompositionScaleX(panel);
         auto newScaleY = CompositionScaleY(panel);
+        auto newWidthDip = static_cast<float>((std::max)(1.0, width));
+        auto newHeightDip = static_cast<float>((std::max)(1.0, height));
         auto newWidth = (std::max)(uint32_t{ 1 }, static_cast<uint32_t>(std::ceil(width * newScaleX)));
         auto newHeight = (std::max)(uint32_t{ 1 }, static_cast<uint32_t>(std::ceil(height * newScaleY)));
-        if (newWidth == surfaceWidth && newHeight == surfaceHeight && newScaleX == surfaceScaleX && newScaleY == surfaceScaleY)
+        if (newWidth == surfaceWidth && newHeight == surfaceHeight && newWidthDip == surfaceWidthDip && newHeightDip == surfaceHeightDip && newScaleX == surfaceScaleX && newScaleY == surfaceScaleY)
         {
             return;
         }
@@ -306,6 +310,8 @@ namespace winrt::ElMd
         winrt::check_hresult(swapChain->ResizeBuffers(0, newWidth, newHeight, DXGI_FORMAT_UNKNOWN, 0));
         surfaceWidth = newWidth;
         surfaceHeight = newHeight;
+        surfaceWidthDip = newWidthDip;
+        surfaceHeightDip = newHeightDip;
         surfaceScaleX = newScaleX;
         surfaceScaleY = newScaleY;
         ApplySwapChainTransform();
@@ -314,7 +320,6 @@ namespace winrt::ElMd
     void EditorSurfaceRenderer::DrawDocument(detail::EditorSessionCore const& sessionCore)
     {
         visualBlocks.clear();
-        auto surfaceWidthDip = static_cast<float>(surfaceWidth) / surfaceScaleX;
         auto documentLeft = DocumentHorizontalPaddingDip;
         auto documentTop = DocumentVerticalPaddingDip;
         auto documentRight = (std::min)(surfaceWidthDip - DocumentHorizontalPaddingDip, documentLeft + DocumentWidthDip);
@@ -539,7 +544,6 @@ namespace winrt::ElMd
 
     void EditorSurfaceRenderer::ScrollBy(float delta)
     {
-        auto surfaceHeightDip = static_cast<float>(surfaceHeight) / surfaceScaleY;
         auto maxScroll = (std::max)(0.0f, totalDocumentHeight - surfaceHeightDip);
         scrollOffset = (std::min)(maxScroll, (std::max)(0.0f, scrollOffset + delta));
     }
@@ -550,7 +554,6 @@ namespace winrt::ElMd
         {
             if (block.sourceStart <= sourceOffset && sourceOffset <= block.sourceEnd)
             {
-                auto surfaceHeightDip = static_cast<float>(surfaceHeight) / surfaceScaleY;
                 auto maxScroll = (std::max)(0.0f, totalDocumentHeight - surfaceHeightDip);
                 scrollOffset = (std::min)(maxScroll, (std::max)(0.0f, block.documentY - DocumentVerticalPaddingDip));
                 return;
@@ -617,6 +620,7 @@ namespace winrt::ElMd
 
             winrt::check_hresult(d2dContext->CreateBitmapFromDxgiSurface(surface.Get(), &properties, d2dTarget.GetAddressOf()));
             d2dContext->SetTarget(d2dTarget.Get());
+            d2dContext->SetDpi(96.0f * surfaceScaleX, 96.0f * surfaceScaleY);
         }
 
         if (!textBrush)

@@ -61,6 +61,8 @@ namespace winrt::ElMd
         float totalDocumentHeight = 0.0f;
         uint32_t surfaceWidth = 0;
         uint32_t surfaceHeight = 0;
+        float surfaceWidthDip = 1.0f;
+        float surfaceHeightDip = 1.0f;
         float surfaceScaleX = 1.0f;
         float surfaceScaleY = 1.0f;
     };
