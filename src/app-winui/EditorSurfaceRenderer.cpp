@@ -68,6 +68,43 @@ namespace winrt::ElMd
         return text;
     }
 
+    std::u32string TableText(elmd::RenderBlock const& block)
+    {
+        if (block.column_count == 0 || block.row_count == 0)
+        {
+            return U"Table";
+        }
+
+        std::u32string text;
+        for (std::size_t row = 0; row < block.row_count; ++row)
+        {
+            text += U"| ";
+            for (std::size_t column = 0; column < block.column_count; ++column)
+            {
+                auto index = row * block.column_count + column;
+                if (index < block.table_cells.size())
+                {
+                    text += InlineText(block.table_cells[index]);
+                }
+                text += U" | ";
+            }
+            if (row == 0 && block.row_count > 1)
+            {
+                text += U"\n| ";
+                for (std::size_t column = 0; column < block.column_count; ++column)
+                {
+                    text += U"--- | ";
+                }
+                text.push_back(U'\n');
+            }
+            else if (row + 1 < block.row_count)
+            {
+                text.push_back(U'\n');
+            }
+        }
+        return text;
+    }
+
     struct InlineStyleRange
     {
         UINT32 start = 0;
@@ -398,6 +435,21 @@ namespace winrt::ElMd
                     format = codeFormat.Get();
                     brush = accentBrush.Get();
                     height = 64.0f;
+                    inset = 16.0f;
+                    textTop = 16.0f;
+                    fillPanel = true;
+                    break;
+                case elmd::RenderBlockKind::Table:
+                    text = TableText(block);
+                    format = codeFormat.Get();
+                    inset = 16.0f;
+                    textTop = 16.0f;
+                    fillPanel = true;
+                    break;
+                case elmd::RenderBlockKind::Image:
+                    text = U"Image: " + (block.alt.empty() ? elmd::utf8_to_cps(block.src) : elmd::utf8_to_cps(block.alt)) + U"\n" + elmd::utf8_to_cps(block.src);
+                    brush = mutedBrush.Get();
+                    height = 72.0f;
                     inset = 16.0f;
                     textTop = 16.0f;
                     fillPanel = true;
