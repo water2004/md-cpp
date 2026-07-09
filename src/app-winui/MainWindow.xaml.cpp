@@ -6,6 +6,12 @@
 
 namespace winrt::ElMd::implementation
 {
+    constexpr float PreviewFontSizeDip = 28.0f;
+    constexpr float PreviewLineHeightDip = 38.0f;
+    constexpr float PreviewBaselineDip = 30.0f;
+    constexpr float PreviewHorizontalPaddingDip = 36.0f;
+    constexpr float PreviewVerticalPaddingDip = 32.0f;
+
     MainWindow::MainWindow()
     {
         InitializeComponent();
@@ -228,11 +234,11 @@ namespace winrt::ElMd::implementation
             DWRITE_FONT_WEIGHT_NORMAL,
             DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL,
-            20.0f,
+            PreviewFontSizeDip,
             L"en-us",
             textFormat.GetAddressOf()));
         winrt::check_hresult(textFormat->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP));
-        winrt::check_hresult(textFormat->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, 28.0f, 22.0f));
+        winrt::check_hresult(textFormat->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, PreviewLineHeightDip, PreviewBaselineDip));
 
         ::Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
         winrt::check_hresult(dxgiDevice->GetAdapter(adapter.GetAddressOf()));
@@ -336,7 +342,11 @@ namespace winrt::ElMd::implementation
         auto text = currentText.empty() ? winrt::hstring(L"Open a Markdown file to preview it here.") : currentText;
         auto dipWidth = static_cast<float>(static_cast<double>(surfaceWidth) / surfaceScaleX);
         auto dipHeight = static_cast<float>(static_cast<double>(surfaceHeight) / surfaceScaleY);
-        auto rect = D2D1::RectF(32.0f, 28.0f, dipWidth - 32.0f, dipHeight - 28.0f);
+        auto rect = D2D1::RectF(
+            PreviewHorizontalPaddingDip,
+            PreviewVerticalPaddingDip,
+            dipWidth - PreviewHorizontalPaddingDip,
+            dipHeight - PreviewVerticalPaddingDip);
 
         d2dContext->BeginDraw();
         d2dContext->Clear(D2D1::ColorF(0.070f, 0.086f, 0.110f, 1.0f));
