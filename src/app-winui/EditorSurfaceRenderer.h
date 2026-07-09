@@ -14,6 +14,7 @@ namespace winrt::ElMd
         void Render(detail::EditorSessionCore const& sessionCore);
         std::optional<std::size_t> HitTest(float x, float y) const;
         void ScrollBy(float delta);
+        void ScrollToSourceOffset(std::size_t sourceOffset);
 
     private:
         float CompositionScaleX(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const;
@@ -29,6 +30,7 @@ namespace winrt::ElMd
             float textWidth = 0.0f;
             std::size_t sourceStart = 0;
             std::size_t sourceEnd = 0;
+            float documentY = 0.0f;
             std::u32string text;
             ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
         };

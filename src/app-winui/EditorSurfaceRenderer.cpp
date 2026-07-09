@@ -473,6 +473,7 @@ namespace winrt::ElMd
                 visualBlock.textWidth = textWidth;
                 visualBlock.sourceStart = sourceStart;
                 visualBlock.sourceEnd = sourceEnd;
+                visualBlock.documentY = y + scrollOffset;
                 visualBlock.text = std::move(text);
                 visualBlock.layout = layout;
                 visualBlocks.push_back(std::move(visualBlock));
@@ -487,6 +488,19 @@ namespace winrt::ElMd
     {
         auto maxScroll = (std::max)(0.0f, totalDocumentHeight - static_cast<float>(surfaceHeight));
         scrollOffset = (std::min)(maxScroll, (std::max)(0.0f, scrollOffset + delta));
+    }
+
+    void EditorSurfaceRenderer::ScrollToSourceOffset(std::size_t sourceOffset)
+    {
+        for (auto const& block : visualBlocks)
+        {
+            if (block.sourceStart <= sourceOffset && sourceOffset <= block.sourceEnd)
+            {
+                auto maxScroll = (std::max)(0.0f, totalDocumentHeight - static_cast<float>(surfaceHeight));
+                scrollOffset = (std::min)(maxScroll, (std::max)(0.0f, block.documentY - DocumentVerticalPaddingDip));
+                return;
+            }
+        }
     }
 
     std::optional<std::size_t> EditorSurfaceRenderer::HitTest(float x, float y) const

@@ -61,6 +61,14 @@ namespace winrt::ElMd::implementation
         {
             HandlePointerWheel(args);
         });
+
+        OutlineList().SelectionChanged([this](auto const&, Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const& args)
+        {
+            if (args.AddedItems().Size() > 0)
+            {
+                HandleOutlineSelection(args.AddedItems().GetAt(0));
+            }
+        });
     }
 
     void MainWindow::RegisterCommandHandlers()
@@ -422,10 +430,38 @@ namespace winrt::ElMd::implementation
     void MainWindow::UpdateOutlinePanel()
     {
         OutlineList().Items().Clear();
+        outlineOffsets.clear();
+        std::vector<std::size_t> headingOffsets;
+        for (auto const& block : editorSession.Core().renderModel.blocks)
+        {
+            if (block.kind == elmd::RenderBlockKind::Text && block.block_style.margin_top >= 4.0f && block.content_range.end.v > block.content_range.start.v)
+            {
+                headingOffsets.push_back(block.content_range.start.v);
+            }
+        }
+
+        std::size_t headingIndex = 0;
         for (auto const* item : editorSession.Core().renderModel.outline.flat_items())
         {
             std::wstring indent((std::max)(0, static_cast<int>(item->level) - 1) * 2, L' ');
             OutlineList().Items().Append(winrt::box_value(winrt::hstring(indent + winrt::to_hstring(item->title_plain_text).c_str())));
+            outlineOffsets.push_back(headingIndex < headingOffsets.size() ? headingOffsets[headingIndex] : 0);
+            ++headingIndex;
+        }
+    }
+
+    void MainWindow::HandleOutlineSelection(winrt::Windows::Foundation::IInspectable const& selectedItem)
+    {
+        auto selectedText = winrt::unbox_value<winrt::hstring>(selectedItem);
+        for (uint32_t index = 0; index < OutlineList().Items().Size() && index < outlineOffsets.size(); ++index)
+        {
+            if (winrt::unbox_value<winrt::hstring>(OutlineList().Items().GetAt(index)) == selectedText)
+            {
+                editorSession.SetSelection(outlineOffsets[index], outlineOffsets[index]);
+                editorRenderer.ScrollToSourceOffset(outlineOffsets[index]);
+                RenderEditorSurface();
+                return;
+            }
         }
     }
 }
