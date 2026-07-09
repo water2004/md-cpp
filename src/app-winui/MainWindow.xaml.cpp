@@ -315,6 +315,14 @@ namespace winrt::ElMd::implementation
         textInputKnownLength = newLength;
     }
 
+    void MainWindow::NotifyTextInputSelectionChanged()
+    {
+        if (textEditContext)
+        {
+            textEditContext.NotifySelectionChanged(CurrentTextInputSelection());
+        }
+    }
+
     void MainWindow::HandleEditorCharacter(char32_t character)
     {
         if (character < 0x20 || character == 0x7f)
@@ -473,6 +481,7 @@ namespace winrt::ElMd::implementation
         pointerSelecting = true;
         pointerAnchor = *hit;
         editorSession.SetSelection(pointerAnchor, pointerAnchor);
+        NotifyTextInputSelectionChanged();
         EditorSurface().CapturePointer(args.Pointer());
         RenderEditorSurface();
         args.Handled(true);
@@ -493,6 +502,7 @@ namespace winrt::ElMd::implementation
         }
 
         editorSession.SetSelection(pointerAnchor, *hit);
+        NotifyTextInputSelectionChanged();
         RenderEditorSurface();
         args.Handled(true);
     }
@@ -566,6 +576,7 @@ namespace winrt::ElMd::implementation
         }
 
         editorSession.SetSelection(start, end);
+        NotifyTextInputSelectionChanged();
         return true;
     }
 
@@ -594,6 +605,7 @@ namespace winrt::ElMd::implementation
         }
 
         editorSession.SetSelection(offset, offset);
+        NotifyTextInputSelectionChanged();
         elmd::Command command;
         command.kind = elmd::CommandKind::ToggleTaskCheckbox;
         return ExecuteEditorCommand(command);
@@ -828,6 +840,7 @@ namespace winrt::ElMd::implementation
             if (winrt::unbox_value<winrt::hstring>(OutlineList().Items().GetAt(index)) == selectedText)
             {
                 editorSession.SetSelection(outlineOffsets[index], outlineOffsets[index]);
+                NotifyTextInputSelectionChanged();
                 editorRenderer.ScrollToSourceOffset(outlineOffsets[index]);
                 RenderEditorSurface();
                 return;
@@ -848,6 +861,7 @@ namespace winrt::ElMd::implementation
             if (winrt::unbox_value<winrt::hstring>(DiagnosticsList().Items().GetAt(index)) == selectedText)
             {
                 editorSession.SetSelection(diagnosticOffsets[index], diagnosticOffsets[index]);
+                NotifyTextInputSelectionChanged();
                 editorRenderer.ScrollToSourceOffset(diagnosticOffsets[index]);
                 RenderEditorSurface();
                 return;

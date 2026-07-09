@@ -18,6 +18,7 @@ namespace winrt::ElMd::implementation
         void UpdateOutlinePanel();
         void UpdateDiagnosticsPanel();
         void NotifyTextInputChanged(std::size_t oldLength);
+        void NotifyTextInputSelectionChanged();
         winrt::Windows::UI::Text::Core::CoreTextRange CurrentTextInputSelection() const;
         void HandleOutlineSelection(winrt::Windows::Foundation::IInspectable const& selectedItem);
         void HandleDiagnosticsSelection(winrt::Windows::Foundation::IInspectable const& selectedItem);
