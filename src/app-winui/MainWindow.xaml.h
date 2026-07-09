@@ -12,10 +12,13 @@ namespace winrt::ElMd::implementation
 
     private:
         void InitializeEditorSurface();
+        void InitializeTextInput();
         void ResizeEditorSurface(double width, double height);
         void RenderEditorSurface();
         void UpdateOutlinePanel();
         void UpdateDiagnosticsPanel();
+        void NotifyTextInputChanged(std::size_t oldLength);
+        winrt::Windows::UI::Text::Core::CoreTextRange CurrentTextInputSelection() const;
         void HandleOutlineSelection(winrt::Windows::Foundation::IInspectable const& selectedItem);
         void HandleDiagnosticsSelection(winrt::Windows::Foundation::IInspectable const& selectedItem);
         void RegisterCommandHandlers();
@@ -41,6 +44,8 @@ namespace winrt::ElMd::implementation
         winrt::hstring lastCommand = L"Ready";
         winrt::ElMd::EditorSession editorSession;
         winrt::ElMd::EditorSurfaceRenderer editorRenderer;
+        winrt::Windows::UI::Text::Core::CoreTextEditContext textEditContext{ nullptr };
+        std::size_t textInputKnownLength = 0;
         bool pointerSelecting = false;
         std::size_t pointerAnchor = 0;
         std::vector<std::size_t> outlineOffsets;

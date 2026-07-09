@@ -13,6 +13,7 @@ namespace winrt::ElMd::implementation
     {
         InitializeComponent();
         RegisterCommandHandlers();
+        InitializeTextInput();
 
         EditorSurface().Loaded([this](auto const&, auto const&)
         {
@@ -59,6 +60,22 @@ namespace winrt::ElMd::implementation
         EditorSurface().PointerWheelChanged([this](auto const&, Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
         {
             HandlePointerWheel(args);
+        });
+
+        EditorSurface().GotFocus([this](auto const&, auto const&)
+        {
+            if (textEditContext)
+            {
+                textEditContext.NotifyFocusEnter();
+            }
+        });
+
+        EditorSurface().LostFocus([this](auto const&, auto const&)
+        {
+            if (textEditContext)
+            {
+                textEditContext.NotifyFocusLeave();
+            }
         });
 
         EditorSurface().DoubleTapped([this](auto const&, Microsoft::UI::Xaml::Input::DoubleTappedRoutedEventArgs const& args)
@@ -195,8 +212,70 @@ namespace winrt::ElMd::implementation
         });
     }
 
+    void MainWindow::InitializeTextInput()
+    {
+        auto manager = winrt::Windows::UI::Text::Core::CoreTextServicesManager::GetForCurrentView();
+        textEditContext = manager.CreateEditContext();
+        textEditContext.InputScope(winrt::Windows::UI::Text::Core::CoreTextInputScope::Text);
+        textEditContext.InputPaneDisplayPolicy(winrt::Windows::UI::Text::Core::CoreTextInputPaneDisplayPolicy::Automatic);
+        textInputKnownLength = editorSession.Core().editor.text_cps().size();
+
+        textEditContext.TextRequested([this](auto const&, winrt::Windows::UI::Text::Core::CoreTextTextRequestedEventArgs const& args)
+        {
+            auto request = args.Request();
+            auto range = request.Range();
+            auto text = editorSession.Text();
+            auto textLength = static_cast<int32_t>(text.size());
+            auto start = (std::max)(0, (std::min)(range.StartCaretPosition, textLength));
+            auto end = (std::max)(start, (std::min)(range.EndCaretPosition, textLength));
+            request.Text(winrt::hstring(text.c_str() + start, static_cast<uint32_t>(end - start)));
+        });
+
+        textEditContext.SelectionRequested([this](auto const&, winrt::Windows::UI::Text::Core::CoreTextSelectionRequestedEventArgs const& args)
+        {
+            args.Request().Selection(CurrentTextInputSelection());
+        });
+
+        textEditContext.SelectionUpdating([this](auto const&, winrt::Windows::UI::Text::Core::CoreTextSelectionUpdatingEventArgs const& args)
+        {
+            auto selection = args.Selection();
+            auto length = editorSession.Core().editor.text_cps().size();
+            auto start = static_cast<std::size_t>((std::max)(0, selection.StartCaretPosition));
+            auto end = static_cast<std::size_t>((std::max)(0, selection.EndCaretPosition));
+            editorSession.SetSelection((std::min)(start, length), (std::min)(end, length));
+            RenderEditorSurface();
+            args.Result(winrt::Windows::UI::Text::Core::CoreTextSelectionUpdatingResult::Succeeded);
+        });
+
+        textEditContext.TextUpdating([this](auto const&, winrt::Windows::UI::Text::Core::CoreTextTextUpdatingEventArgs const& args)
+        {
+            auto range = args.Range();
+            auto length = editorSession.Core().editor.text_cps().size();
+            auto start = static_cast<std::size_t>((std::max)(0, range.StartCaretPosition));
+            auto end = static_cast<std::size_t>((std::max)(0, range.EndCaretPosition));
+            editorSession.SetSelection((std::min)(start, length), (std::min)(end, length));
+            auto command = elmd::Command::InsertText(elmd::utf8_to_cps(winrt::to_string(args.Text())));
+            if (ExecuteEditorCommand(command))
+            {
+                auto newSelection = args.NewSelection();
+                auto newLength = editorSession.Core().editor.text_cps().size();
+                auto newStart = static_cast<std::size_t>((std::max)(0, newSelection.StartCaretPosition));
+                auto newEnd = static_cast<std::size_t>((std::max)(0, newSelection.EndCaretPosition));
+                editorSession.SetSelection((std::min)(newStart, newLength), (std::min)(newEnd, newLength));
+                RenderEditorSurface();
+                textEditContext.NotifySelectionChanged(CurrentTextInputSelection());
+                args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Succeeded);
+            }
+            else
+            {
+                args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Failed);
+            }
+        });
+    }
+
     bool MainWindow::ExecuteEditorCommand(elmd::Command const& command)
     {
+        auto oldTextLength = editorSession.Core().editor.text_cps().size();
         if (!editorSession.ExecuteCommand(command))
         {
             return false;
@@ -210,7 +289,30 @@ namespace winrt::ElMd::implementation
         RenderEditorSurface();
         editorRenderer.ScrollToSourceOffset(editorSession.Core().editor.selection().active.v);
         RenderEditorSurface();
+        NotifyTextInputChanged(oldTextLength);
         return true;
+    }
+
+    winrt::Windows::UI::Text::Core::CoreTextRange MainWindow::CurrentTextInputSelection() const
+    {
+        auto selection = editorSession.Core().editor.selection();
+        return winrt::Windows::UI::Text::Core::CoreTextRange{ static_cast<int32_t>(selection.anchor.v), static_cast<int32_t>(selection.active.v) };
+    }
+
+    void MainWindow::NotifyTextInputChanged(std::size_t oldLength)
+    {
+        if (!textEditContext)
+        {
+            return;
+        }
+
+        auto newLength = editorSession.Core().editor.text_cps().size();
+        textEditContext.NotifyTextChanged(
+            winrt::Windows::UI::Text::Core::CoreTextRange{ 0, static_cast<int32_t>(oldLength) },
+            static_cast<int32_t>(newLength),
+            CurrentTextInputSelection());
+        textEditContext.NotifySelectionChanged(CurrentTextInputSelection());
+        textInputKnownLength = newLength;
     }
 
     void MainWindow::HandleEditorCharacter(char32_t character)
