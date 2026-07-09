@@ -314,9 +314,10 @@ namespace winrt::ElMd
     void EditorSurfaceRenderer::DrawDocument(detail::EditorSessionCore const& sessionCore)
     {
         visualBlocks.clear();
+        auto surfaceWidthDip = static_cast<float>(surfaceWidth) / surfaceScaleX;
         auto documentLeft = DocumentHorizontalPaddingDip;
         auto documentTop = DocumentVerticalPaddingDip;
-        auto documentRight = (std::min)(static_cast<float>(surfaceWidth) - DocumentHorizontalPaddingDip, documentLeft + DocumentWidthDip);
+        auto documentRight = (std::min)(surfaceWidthDip - DocumentHorizontalPaddingDip, documentLeft + DocumentWidthDip);
         auto y = documentTop - scrollOffset;
         auto selection = sessionCore.editor.selection().normalized_range();
         auto caret = sessionCore.editor.selection().active.v;
@@ -538,7 +539,8 @@ namespace winrt::ElMd
 
     void EditorSurfaceRenderer::ScrollBy(float delta)
     {
-        auto maxScroll = (std::max)(0.0f, totalDocumentHeight - static_cast<float>(surfaceHeight));
+        auto surfaceHeightDip = static_cast<float>(surfaceHeight) / surfaceScaleY;
+        auto maxScroll = (std::max)(0.0f, totalDocumentHeight - surfaceHeightDip);
         scrollOffset = (std::min)(maxScroll, (std::max)(0.0f, scrollOffset + delta));
     }
 
@@ -548,7 +550,8 @@ namespace winrt::ElMd
         {
             if (block.sourceStart <= sourceOffset && sourceOffset <= block.sourceEnd)
             {
-                auto maxScroll = (std::max)(0.0f, totalDocumentHeight - static_cast<float>(surfaceHeight));
+                auto surfaceHeightDip = static_cast<float>(surfaceHeight) / surfaceScaleY;
+                auto maxScroll = (std::max)(0.0f, totalDocumentHeight - surfaceHeightDip);
                 scrollOffset = (std::min)(maxScroll, (std::max)(0.0f, block.documentY - DocumentVerticalPaddingDip));
                 return;
             }
@@ -557,9 +560,6 @@ namespace winrt::ElMd
 
     std::optional<std::size_t> EditorSurfaceRenderer::HitTest(float x, float y) const
     {
-        x *= surfaceScaleX;
-        y *= surfaceScaleY;
-
         for (auto const& block : visualBlocks)
         {
             if (x < block.rect.left || x > block.rect.right || y < block.rect.top || y > block.rect.bottom || !block.layout)
@@ -611,8 +611,8 @@ namespace winrt::ElMd
             D2D1_BITMAP_PROPERTIES1 properties{};
             properties.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
             properties.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
-            properties.dpiX = 96.0f;
-            properties.dpiY = 96.0f;
+            properties.dpiX = 96.0f * surfaceScaleX;
+            properties.dpiY = 96.0f * surfaceScaleY;
             properties.bitmapOptions = D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW;
 
             winrt::check_hresult(d2dContext->CreateBitmapFromDxgiSurface(surface.Get(), &properties, d2dTarget.GetAddressOf()));
