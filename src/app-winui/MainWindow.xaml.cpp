@@ -112,6 +112,28 @@ namespace winrt::ElMd::implementation
             command.kind = elmd::CommandKind::ToggleEmphasis;
             ExecuteEditorCommand(command);
         });
+
+        CutMenuItem().Click([this](auto const&, auto const&)
+        {
+            CutSelectionToClipboard();
+        });
+
+        CopyMenuItem().Click([this](auto const&, auto const&)
+        {
+            CopySelectionToClipboard();
+        });
+
+        PasteMenuItem().Click([this](auto const&, auto const&)
+        {
+            PasteClipboardAsync();
+        });
+
+        SelectAllMenuItem().Click([this](auto const&, auto const&)
+        {
+            elmd::Command command;
+            command.kind = elmd::CommandKind::SelectAll;
+            ExecuteEditorCommand(command);
+        });
     }
 
     bool MainWindow::ExecuteEditorCommand(elmd::Command const& command)

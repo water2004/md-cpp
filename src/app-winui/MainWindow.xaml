@@ -29,7 +29,17 @@
             </Grid>
         </Border>
 
-        <SwapChainPanel x:Name="EditorSurface" Grid.Row="1" Grid.Column="1"/>
+        <SwapChainPanel x:Name="EditorSurface" Grid.Row="1" Grid.Column="1">
+            <SwapChainPanel.ContextFlyout>
+                <MenuFlyout>
+                    <MenuFlyoutItem x:Name="CutMenuItem" Text="Cut"/>
+                    <MenuFlyoutItem x:Name="CopyMenuItem" Text="Copy"/>
+                    <MenuFlyoutItem x:Name="PasteMenuItem" Text="Paste"/>
+                    <MenuFlyoutSeparator/>
+                    <MenuFlyoutItem x:Name="SelectAllMenuItem" Text="Select All"/>
+                </MenuFlyout>
+            </SwapChainPanel.ContextFlyout>
+        </SwapChainPanel>
 
         <TextBlock x:Name="StatusText" Grid.Row="2" Grid.ColumnSpan="2" Padding="12,6" Text="Ready"/>
     </Grid>
