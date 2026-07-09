@@ -62,6 +62,11 @@ namespace winrt::ElMd::implementation
             HandlePointerWheel(args);
         });
 
+        EditorSurface().DoubleTapped([this](auto const&, Microsoft::UI::Xaml::Input::DoubleTappedRoutedEventArgs const& args)
+        {
+            HandleEditorDoubleTapped(args);
+        });
+
         OutlineList().SelectionChanged([this](auto const&, Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const& args)
         {
             if (args.AddedItems().Size() > 0)
@@ -293,6 +298,60 @@ namespace winrt::ElMd::implementation
         editorRenderer.ScrollBy(static_cast<float>(-delta));
         RenderEditorSurface();
         args.Handled(true);
+    }
+
+    void MainWindow::HandleEditorDoubleTapped(Microsoft::UI::Xaml::Input::DoubleTappedRoutedEventArgs const& args)
+    {
+        EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Pointer);
+        auto point = args.GetPosition(EditorSurface());
+        auto hit = editorRenderer.HitTest(static_cast<float>(point.X), static_cast<float>(point.Y));
+        if (hit && SelectWordAt(*hit))
+        {
+            RenderEditorSurface();
+            args.Handled(true);
+        }
+    }
+
+    bool MainWindow::SelectWordAt(std::size_t offset)
+    {
+        auto text = editorSession.Core().editor.text_cps();
+        if (text.empty())
+        {
+            return false;
+        }
+
+        auto isWordChar = [](char32_t ch)
+        {
+            return (ch >= U'a' && ch <= U'z') || (ch >= U'A' && ch <= U'Z') || (ch >= U'0' && ch <= U'9') || ch == U'_' || ch > 0x7f;
+        };
+
+        if (offset >= text.size())
+        {
+            offset = text.size() - 1;
+        }
+        if (!isWordChar(text[offset]) && offset > 0 && isWordChar(text[offset - 1]))
+        {
+            --offset;
+        }
+        if (!isWordChar(text[offset]))
+        {
+            return false;
+        }
+
+        auto start = offset;
+        while (start > 0 && isWordChar(text[start - 1]))
+        {
+            --start;
+        }
+
+        auto end = offset + 1;
+        while (end < text.size() && isWordChar(text[end]))
+        {
+            ++end;
+        }
+
+        editorSession.SetSelection(start, end);
+        return true;
     }
 
     void MainWindow::CopySelectionToClipboard()
