@@ -1066,6 +1066,7 @@ namespace winrt::ElMd::implementation
         UpdateTheme();
         editorRenderer.Initialize(EditorSurface());
         RenderEditorSurface();
+        EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Programmatic);
     }
 
     void MainWindow::ResizeEditorSurface(double width, double height)

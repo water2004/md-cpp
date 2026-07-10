@@ -33,6 +33,30 @@ namespace winrt::ElMd
         return wide;
     }
 
+    std::string SvgColor(D2D1_COLOR_F color)
+    {
+        auto component = [](float value)
+        {
+            return static_cast<unsigned>((std::clamp)(value, 0.0f, 1.0f) * 255.0f + 0.5f);
+        };
+        char result[8]{};
+        std::snprintf(result, sizeof(result), "#%02X%02X%02X", component(color.r), component(color.g), component(color.b));
+        return result;
+    }
+
+    std::string RecolorMathSvg(std::string svg, D2D1_COLOR_F color)
+    {
+        auto replacement = SvgColor(color);
+        constexpr std::string_view needle = "currentColor";
+        std::size_t offset = 0;
+        while ((offset = svg.find(needle, offset)) != std::string::npos)
+        {
+            svg.replace(offset, needle.size(), replacement);
+            offset += replacement.size();
+        }
+        return svg;
+    }
+
     std::u32string InlineText(elmd::InlineRenderItem const& item)
     {
         switch (item.kind)
@@ -76,9 +100,16 @@ namespace winrt::ElMd
 
     struct DisplayInlineText
     {
+        struct MathOverlay
+        {
+            std::uint32_t displayStart = 0;
+            MathJaxSvg svg;
+        };
+
         std::u32string text;
         std::vector<std::size_t> displayToSource;
         std::vector<InlineStyleRange> ranges;
+        std::vector<MathOverlay> mathOverlays;
     };
 
     bool IsStyleMarker(elmd::InlineRenderItem const& item)
@@ -103,6 +134,17 @@ namespace winrt::ElMd
             }
         }
         return true;
+    }
+
+    bool CaretTouchesRange(std::size_t caret, elmd::CharRange const& range)
+    {
+        auto start = range.start.v;
+        auto end = range.end.v;
+        if (start <= caret && caret <= end)
+        {
+            return true;
+        }
+        return (start > 0 && caret == start - 1) || (end < (std::numeric_limits<std::size_t>::max)() && caret == end + 1);
     }
 
     std::vector<bool> RevealedStyleMarkers(std::vector<elmd::InlineRenderItem> const& items, std::size_t caret)
@@ -169,7 +211,26 @@ namespace winrt::ElMd
         AppendDisplayText(display, std::u32string(sourceText.begin() + start, sourceText.begin() + end), start, style, marker);
     }
 
-    DisplayInlineText BuildDisplayInlineText(std::vector<elmd::InlineRenderItem> const& items, std::size_t caret, std::size_t sourceEnd)
+    void AppendMathPlaceholder(DisplayInlineText& display, std::size_t count, std::size_t sourceOffset)
+    {
+        auto start = static_cast<UINT32>(display.text.size());
+        display.text.append(count, U'\u2007');
+        display.displayToSource.insert(display.displayToSource.end(), count, sourceOffset);
+        if (count > 0)
+        {
+            display.ranges.push_back(InlineStyleRange{ start, static_cast<UINT32>(count), elmd::InlineStyle::plain(), false });
+        }
+    }
+
+    DisplayInlineText BuildDisplayInlineText(
+        std::vector<elmd::InlineRenderItem> const& items,
+        std::size_t caret,
+        std::size_t sourceEnd,
+        std::u32string const& sourceText,
+        MathJaxRenderer& mathJax,
+        float fontSize,
+        float containerWidth,
+        bool svgSupported)
     {
         DisplayInlineText display;
         auto markerVisibility = RevealedStyleMarkers(items, caret);
@@ -182,6 +243,31 @@ namespace winrt::ElMd
             }
             if (IsHeadingMarker(item) && !(item.source_range.start.v <= caret && caret <= sourceEnd))
             {
+                continue;
+            }
+            if (item.kind == elmd::InlineRenderItem::Kind::Math)
+            {
+                if (!svgSupported)
+                {
+                    AppendSourceText(display, sourceText, item.source_range.start.v, item.source_range.end.v, item.style, false);
+                    continue;
+                }
+                auto math = mathJax.Render(elmd::cps_to_utf8(item.text), false, fontSize, containerWidth);
+                auto editing = CaretTouchesRange(caret, item.source_range);
+                if (!math)
+                {
+                    AppendSourceText(display, sourceText, item.source_range.start.v, item.source_range.end.v, item.style, false);
+                    continue;
+                }
+
+                if (editing)
+                {
+                    AppendSourceText(display, sourceText, item.source_range.start.v, item.source_range.end.v, item.style, false);
+                }
+                auto overlayStart = static_cast<UINT32>(display.text.size());
+                auto placeholderCount = static_cast<std::size_t>((std::max)(1.0f, std::ceil(math.width / (fontSize * 0.55f)))) + 1;
+                AppendMathPlaceholder(display, placeholderCount, item.source_range.end.v);
+                display.mathOverlays.push_back(DisplayInlineText::MathOverlay{ overlayStart, std::move(math) });
                 continue;
             }
             AppendDisplayText(display, InlineText(item), item.source_range.start.v, item.style, item.kind == elmd::InlineRenderItem::Kind::Marker);
@@ -485,6 +571,48 @@ namespace winrt::ElMd
         auto selection = sessionCore.editor.selection().normalized_range();
         auto caret = sessionCore.editor.selection().active.v;
         auto sourceText = sessionCore.editor.text_cps();
+        ::Microsoft::WRL::ComPtr<ID2D1DeviceContext5> svgContext;
+        auto svgSupported = SUCCEEDED(d2dContext.As(&svgContext)) && svgContext;
+
+        auto drawMathSvg = [&](MathJaxSvg const& math, D2D1_POINT_2F origin, D2D1_COLOR_F color)
+        {
+            if (!math || !svgSupported)
+            {
+                return;
+            }
+
+            auto svg = RecolorMathSvg(math.svg, color);
+            auto allocation = GlobalAlloc(GMEM_MOVEABLE, svg.size());
+            if (!allocation)
+            {
+                return;
+            }
+            auto bytes = static_cast<char*>(GlobalLock(allocation));
+            if (!bytes)
+            {
+                GlobalFree(allocation);
+                return;
+            }
+            std::memcpy(bytes, svg.data(), svg.size());
+            GlobalUnlock(allocation);
+
+            ::Microsoft::WRL::ComPtr<IStream> stream;
+            if (FAILED(CreateStreamOnHGlobal(allocation, TRUE, stream.GetAddressOf())) || !stream)
+            {
+                GlobalFree(allocation);
+                return;
+            }
+            ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> document;
+            if (FAILED(svgContext->CreateSvgDocument(stream.Get(), D2D1::SizeF(math.width, math.height), document.GetAddressOf())) || !document)
+            {
+                return;
+            }
+            D2D1_MATRIX_3X2_F transform{};
+            svgContext->GetTransform(&transform);
+            svgContext->SetTransform(D2D1::Matrix3x2F::Translation(origin.x, origin.y) * transform);
+            svgContext->DrawSvgDocument(document.Get());
+            svgContext->SetTransform(transform);
+        };
 
         auto createLayout = [&](std::wstring const& text, IDWriteTextFormat* format, float width)
         {
@@ -766,6 +894,9 @@ namespace winrt::ElMd
             std::u32string text;
             std::vector<InlineStyleRange> inlineRanges;
             std::vector<std::size_t> displayToSource;
+            std::vector<DisplayInlineText::MathOverlay> inlineMathOverlays;
+            std::optional<MathJaxSvg> blockMath;
+            bool showRawMath = false;
 
             switch (block.kind)
             {
@@ -779,10 +910,19 @@ namespace winrt::ElMd
                     break;
                 case elmd::RenderBlockKind::Text:
                 {
-                    auto display = BuildDisplayInlineText(block.inline_items, caret, block.content_range.end.v);
+                    auto display = BuildDisplayInlineText(
+                        block.inline_items,
+                        caret,
+                        block.content_range.end.v,
+                        sourceText,
+                        mathJax,
+                        styleSheet.body.size,
+                        documentRight - documentLeft,
+                        svgSupported);
                     text = std::move(display.text);
                     inlineRanges = std::move(display.ranges);
                     displayToSource = std::move(display.displayToSource);
+                    inlineMathOverlays = std::move(display.mathOverlays);
                     if (block.block_style.margin_top >= 24.0f)
                     {
                         format = heading1Format.Get();
@@ -814,14 +954,36 @@ namespace winrt::ElMd
                     break;
                 }
                 case elmd::RenderBlockKind::Math:
-                    text = U"$$\n" + block.tex + U"\n$$";
+                {
+                    blockMath = svgSupported
+                        ? mathJax.Render(elmd::cps_to_utf8(block.tex), true, styleSheet.body.size, documentRight - documentLeft)
+                        : MathJaxSvg{};
+                    showRawMath = block.source_range.start.v <= caret && caret <= block.source_range.end.v;
+                    DisplayInlineText display;
+                    if (showRawMath || !static_cast<bool>(*blockMath))
+                    {
+                        auto visibleEnd = block.source_range.end.v;
+                        if (visibleEnd > block.source_range.start.v && visibleEnd <= sourceText.size() && sourceText[visibleEnd - 1] == U'\n')
+                        {
+                            --visibleEnd;
+                        }
+                        AppendSourceText(display, sourceText, block.source_range.start.v, visibleEnd, elmd::InlineStyle::plain(), false);
+                    }
+                    else
+                    {
+                        AppendMathPlaceholder(display, 1, block.source_range.start.v);
+                    }
+                    display.displayToSource.push_back(block.source_range.end.v);
+                    text = std::move(display.text);
+                    inlineRanges = std::move(display.ranges);
+                    displayToSource = std::move(display.displayToSource);
                     format = codeFormat.Get();
-                    brush = accentBrush.Get();
-                    height = 64.0f;
+                    brush = codeBrush.Get();
                     inset = 16.0f;
                     textTop = 16.0f;
                     fillPanel = true;
                     break;
+                }
                 case elmd::RenderBlockKind::Table:
                     text = U"Table";
                     displayToSource.push_back(block.source_range.start.v);
@@ -842,10 +1004,19 @@ namespace winrt::ElMd
                     break;
                 default:
                 {
-                    auto display = BuildDisplayInlineText(block.inline_items, caret, block.content_range.end.v);
+                    auto display = BuildDisplayInlineText(
+                        block.inline_items,
+                        caret,
+                        block.content_range.end.v,
+                        sourceText,
+                        mathJax,
+                        styleSheet.body.size,
+                        documentRight - documentLeft,
+                        svgSupported);
                     text = std::move(display.text);
                     inlineRanges = std::move(display.ranges);
                     displayToSource = std::move(display.displayToSource);
+                    inlineMathOverlays = std::move(display.mathOverlays);
                     brush = mutedBrush.Get();
                     break;
                 }
@@ -883,11 +1054,29 @@ namespace winrt::ElMd
             auto textWidth = (std::max)(1.0f, documentRight - documentLeft - inset * 2.0f);
             auto layout = createLayout(wide, format, textWidth);
             applyInlineStyles(layout.Get(), inlineRanges);
+            std::optional<D2D1_POINT_2F> blockMathOrigin;
             if (measureHeight)
             {
                 auto fallbackHeight = format == codeFormat.Get() ? styleSheet.code.lineHeight : styleSheet.body.lineHeight;
                 auto bottomPadding = fillPanel ? 16.0f : 8.0f;
                 height = textTop + measureTextHeight(layout.Get(), fallbackHeight) + bottomPadding;
+            }
+            if (block.kind == elmd::RenderBlockKind::Math && blockMath && static_cast<bool>(*blockMath))
+            {
+                auto previewWidth = blockMath->width;
+                auto previewX = documentLeft + (std::max)(inset, (documentRight - documentLeft - previewWidth) * 0.5f);
+                if (showRawMath)
+                {
+                    auto rawHeight = measureTextHeight(layout.Get(), styleSheet.code.lineHeight);
+                    auto previewY = y + textTop + rawHeight + 10.0f;
+                    height = textTop + rawHeight + 10.0f + blockMath->height + 16.0f;
+                    blockMathOrigin = D2D1::Point2F(previewX, previewY);
+                }
+                else
+                {
+                    height = blockMath->height + 32.0f;
+                    blockMathOrigin = D2D1::Point2F(previewX, y + 16.0f);
+                }
             }
             auto sourceStart = displayToSource.empty() ? SourceStart(block) : displayToSource.front();
             auto sourceEnd = displayToSource.empty() ? SourceEnd(block, text) : displayToSource.back();
@@ -945,6 +1134,22 @@ namespace winrt::ElMd
                 }
 
                 d2dContext->DrawTextLayout(origin, layout.Get(), brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+
+                for (auto const& overlay : inlineMathOverlays)
+                {
+                    float pointX = 0.0f;
+                    float pointY = 0.0f;
+                    DWRITE_HIT_TEST_METRICS metrics{};
+                    if (SUCCEEDED(layout->HitTestTextPosition(overlay.displayStart, FALSE, &pointX, &pointY, &metrics)))
+                    {
+                        auto mathY = origin.y + pointY + (metrics.height - overlay.svg.height) * 0.5f;
+                        drawMathSvg(overlay.svg, D2D1::Point2F(origin.x + pointX, mathY), styleSheet.textColor);
+                    }
+                }
+                if (blockMathOrigin && blockMath)
+                {
+                    drawMathSvg(*blockMath, *blockMathOrigin, styleSheet.textColor);
+                }
 
                 VisualBlock visualBlock;
                 visualBlock.rect = D2D1::RectF(documentLeft, y, documentRight, y + height);

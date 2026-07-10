@@ -198,6 +198,26 @@ ELMD_TEST(test_parse_block_math) {
     ELMD_CHECK(blocks_has_kind(out.document.blocks, BlockKind::MathBlock));
 }
 
+ELMD_TEST(test_parse_inline_paren_math) {
+    auto out = parse_text(1, "Speed \\(v=\\frac{d}{t}\\) now\n");
+    auto* p = first_of(out.document.blocks, BlockKind::Paragraph);
+    ELMD_CHECK(p && inlines_have_kind(p->children, InlineKind::InlineMath));
+    auto it = std::find_if(p->children.begin(), p->children.end(), [](auto const& n) {
+        return n.kind == InlineKind::InlineMath;
+    });
+    ELMD_CHECK(it != p->children.end());
+    ELMD_CHECK(it->math_delim == MathDelimiter::InlineParen);
+    ELMD_CHECK(cps_to_utf8(it->text) == "v=\\frac{d}{t}");
+}
+
+ELMD_TEST(test_parse_bracket_math_block) {
+    auto out = parse_text(1, "\\[\nE=mc^2\n\\]\n");
+    auto* math = first_of(out.document.blocks, BlockKind::MathBlock);
+    ELMD_CHECK(math != nullptr);
+    ELMD_CHECK(math->math_delim == MathDelimiter::BlockBracket);
+    ELMD_CHECK(cps_to_utf8(math->tex) == "E=mc^2");
+}
+
 ELMD_TEST(test_parse_code_block) {
     std::string source = "```rust\nfn main() {}\n```\n";
     auto out = parse_text(1, source);

@@ -150,16 +150,16 @@ struct Builder {
                 return;
             }
             case K::InlineMath: {
-                std::size_t len = node.text.size() + 2;
+                std::size_t len = node.text.size() + (node.math_delim == MathDelimiter::InlineParen ? 4 : 2);
                 auto sr = range_for(node.id, cursor + len);
                 MathDisplayMode disp = (node.math_delim == MathDelimiter::BlockDollar
                                         || node.math_delim == MathDelimiter::BlockBracket
                                         || node.math_delim == MathDelimiter::FencedMath)
                                        ? MathDisplayMode::Block : MathDisplayMode::Inline;
                 InlineRenderItem it; it.kind = InlineRenderItem::Kind::Math;
-                it.id = node.id; it.source_range = sr; it.text = node.text; it.display = disp;
+                it.id = node.id; it.source_range = sr; it.text = node.text; it.display = disp; it.math_delim = node.math_delim;
                 out.push_back(std::move(it));
-                cursor += len;
+                cursor = sr.end.v;
                 return;
             }
             case K::Link: {

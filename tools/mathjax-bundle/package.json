@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "bundle": "node bundle.cjs"
+  },
+  "devDependencies": {
+    "@mathjax/src": "^4.0.0",
+    "esbuild": "^0.25.0"
+  }
+}

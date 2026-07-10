@@ -5,6 +5,7 @@
 #include <restrictederrorinfo.h>
 #include <hstring.h>
 #include <d2d1_1.h>
+#include <d2d1_3.h>
 #include <d3d11_4.h>
 #include <dwrite.h>
 #include <dxgi1_6.h>
@@ -13,13 +14,19 @@
 #include <shobjidl_core.h>
 #include <wrl/client.h>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
+#include <cstring>
 #include <limits>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #undef GetCurrentTime

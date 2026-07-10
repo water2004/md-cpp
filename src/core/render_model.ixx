@@ -116,6 +116,7 @@ struct InlineRenderItem {
     std::optional<NodeId> id;             // Math/Image/Link
     InlineStyle style;
     MathDisplayMode display = MathDisplayMode::Inline; // Math
+    MathDelimiter math_delim = MathDelimiter::InlineDollar;
     std::string href, src, alt;            // Image/Link
     MarkerStyle marker_style;
     MarkerVisibility visibility = MarkerVisibility::WhenCaretInsideNode;

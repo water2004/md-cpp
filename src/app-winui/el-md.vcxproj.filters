@@ -13,6 +13,9 @@
     <Filter Include="Core Modules">
       <UniqueIdentifier>{1d794d6b-38a8-41d2-89a5-74cdbff8ce3f}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Third Party">
+      <UniqueIdentifier>{c15f70e8-7f12-4e04-ac76-8d246b5e3ca4}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\core\ast.ixx"><Filter>Core Modules</Filter></ClCompile>
@@ -59,6 +62,9 @@
     <ClCompile Include="EditorSurfaceRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="MathJaxRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -74,6 +80,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EditorSurfaceRenderer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MathJaxRenderer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

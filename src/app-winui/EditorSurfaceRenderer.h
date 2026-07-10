@@ -1,5 +1,7 @@
 #pragma once
 
+#include "MathJaxRenderer.h"
+
 namespace winrt::ElMd
 {
     namespace detail
@@ -174,6 +176,7 @@ namespace winrt::ElMd
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> panelBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> selectionBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> caretBrush;
+        MathJaxRenderer mathJax;
         Theme theme = Theme::Dark;
         EditorStyleSheet styleSheet = CreateStyleSheet(Theme::Dark);
         std::vector<VisualBlock> visualBlocks;

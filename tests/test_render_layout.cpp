@@ -62,6 +62,17 @@ ELMD_TEST(builds_inline_math) {
     ELMD_CHECK(has_math);
 }
 
+ELMD_TEST(builds_paren_inline_math_with_exact_source_range) {
+    auto m = build_model("\\(x\\) after");
+    auto it = std::find_if(m.blocks[0].inline_items.begin(), m.blocks[0].inline_items.end(), [](auto const& item) {
+        return item.kind == InlineRenderItem::Kind::Math;
+    });
+    ELMD_CHECK(it != m.blocks[0].inline_items.end());
+    ELMD_CHECK(it->math_delim == MathDelimiter::InlineParen);
+    ELMD_CHECK_EQ(it->source_range.start.v, 0u);
+    ELMD_CHECK_EQ(it->source_range.end.v, 5u);
+}
+
 ELMD_TEST(builds_table_block) {
     auto m = build_model("| A | B |\n|---|---|\n| 1 | 2 |\n");
     ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Table);

@@ -299,6 +299,9 @@ public:
             if (peek1() == '$') {
                 if (auto n = try_parse_inline_math()) { flush(); inlines.push_back(std::move(*n)); continue; }
             }
+            if (peek1() == '\\' && peek2() == '(') {
+                if (auto n = try_parse_inline_paren_math()) { flush(); inlines.push_back(std::move(*n)); continue; }
+            }
             if (peek1() == '*' && peek2() == '*') {
                 if (!delimiter_exists_before_newline(pos + 2, {'*','*'})) {
                     buf.push_back('*');
@@ -455,6 +458,7 @@ public:
 
     // ---- inline math `$...$` ----
     std::optional<InlineNode> try_parse_inline_math() {
+        if (!input->dialect.math.inline_dollar) return std::nullopt;
         std::size_t start = pos;
         advance(); // consume $
         if (peek1() == '$') { pos = start; return std::nullopt; } // $$ belongs to block path
@@ -471,6 +475,29 @@ public:
         NodeId id = next_node_id();
         push_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(start + 1), cur()));
         InlineNode n; n.id = id; n.kind = InlineKind::InlineMath; n.text = std::move(tex); n.math_delim = MathDelimiter::InlineDollar;
+        return n;
+    }
+
+    std::optional<InlineNode> try_parse_inline_paren_math() {
+        if (!input->dialect.math.inline_paren) return std::nullopt;
+        std::size_t start = pos;
+        advance_n(2);
+        std::u32string tex;
+        while (!eof() && !(peek1() == '\\' && peek2() == ')') && peek1() != '\n') {
+            tex.push_back(peek1());
+            advance();
+        }
+        if (!(peek1() == '\\' && peek2() == ')')) {
+            pos = start;
+            diagnostics.push_back(make_diagnostic(DiagnosticSeverity::Warning,
+                "Unclosed inline math delimiter \\(",
+                CharRange(CharOffset(start), cur()), DIAG_UNCLOSED_MATH_DOLLAR));
+            return std::nullopt;
+        }
+        advance_n(2);
+        NodeId id = next_node_id();
+        push_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(start + 2), CharOffset(cur().v - 2)));
+        InlineNode n; n.id = id; n.kind = InlineKind::InlineMath; n.text = std::move(tex); n.math_delim = MathDelimiter::InlineParen;
         return n;
     }
 
@@ -765,34 +792,37 @@ public:
         return b;
     }
 
-    // ---- math block `$$ ... $$` ----
+    // ---- math blocks `$$ ... $$` and `\\[ ... \\]` ----
     std::optional<BlockNode> try_parse_math_block() {
         std::size_t start = pos;
-        if (!(peek1() == '$' && peek2() == '$')) return std::nullopt;
+        bool dollar = peek1() == '$' && peek2() == '$' && input->dialect.math.block_dollar;
+        bool bracket = peek1() == '\\' && peek2() == '[' && input->dialect.math.block_bracket;
+        if (!dollar && !bracket) return std::nullopt;
         advance_n(2);
         if (peek1() == '\n') advance();
         std::u32string tex;
         while (!eof()) {
-            if (peek1() == '$' && peek2() == '$') {
+            bool closed = dollar ? (peek1() == '$' && peek2() == '$') : (peek1() == '\\' && peek2() == ']');
+            if (closed) {
                 advance_n(2);
                 if (peek1() == '\n') advance();
                 NodeId id = next_node_id();
                 push_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(start), cur()));
                 math_blocks.push_back({id, first_three_lines_utf8_(tex)});
-                auto trimmed = trim_cps_(tex);
-                BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.tex = trimmed; b.math_delim = MathDelimiter::BlockDollar;
+                auto trimmed = trim_math_cps_(tex);
+                BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.tex = trimmed; b.math_delim = dollar ? MathDelimiter::BlockDollar : MathDelimiter::BlockBracket;
                 return b;
             }
             tex.push_back(peek1()); advance();
         }
         diagnostics.push_back(make_diagnostic(DiagnosticSeverity::Warning,
-            "Unclosed math block delimiter $$",
+            dollar ? "Unclosed math block delimiter $$" : "Unclosed math block delimiter \\[",
             CharRange(CharOffset(start), cur()), DIAG_UNCLOSED_MATH_DOLLAR));
         pos = start + 2;
         NodeId id = next_node_id();
         push_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(start), cur()));
         math_blocks.push_back({id, first_three_lines_utf8_(tex)});
-        BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.tex = std::move(tex); b.math_delim = MathDelimiter::BlockDollar;
+        BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.tex = std::move(tex); b.math_delim = dollar ? MathDelimiter::BlockDollar : MathDelimiter::BlockBracket;
         return b;
     }
 
@@ -1103,6 +1133,14 @@ public:
         std::size_t a = 0, b = s.size();
         while (a < b && (s[a] == ' ' || s[a] == '\t' || s[a] == '\r')) ++a;
         while (b > a && (s[b-1] == ' ' || s[b-1] == '\t' || s[b-1] == '\r')) --b;
+        return s.substr(a, b - a);
+    }
+
+    static std::u32string trim_math_cps_(const std::u32string& s) {
+        std::size_t a = 0, b = s.size();
+        auto whitespace = [](char32_t c) { return c == U' ' || c == U'\t' || c == U'\r' || c == U'\n'; };
+        while (a < b && whitespace(s[a])) ++a;
+        while (b > a && whitespace(s[b - 1])) --b;
         return s.substr(a, b - a);
     }
     static std::string trim_utf8(const std::string& s) {

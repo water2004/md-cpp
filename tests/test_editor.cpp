@@ -9,6 +9,8 @@ import elmd.core.transaction;
 import elmd.core.utf;
 import elmd.core.source_structure;
 import elmd.core.table_edit;
+import elmd.core.render_builder;
+import elmd.core.render_model;
 
 using namespace elmd;
 
@@ -21,6 +23,16 @@ ELMD_TEST(test_editor_insert_text) {
     Editor e;
     e.execute_command(Command::InsertText(U"hello"));
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("hello"));
+}
+
+ELMD_TEST(test_editor_incremental_unclosed_bracket_math) {
+    Editor e;
+    ELMD_CHECK(e.execute_command(Command::InsertText(U"\\")) != std::nullopt);
+    ELMD_CHECK(e.execute_command(Command::InsertText(U"[")) != std::nullopt);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("\\["));
+    auto model = build_render_model(e.document(), e.buffer().text_utf8(), e.outline());
+    ELMD_CHECK_EQ(model.blocks.size(), 1u);
+    ELMD_CHECK(model.blocks[0].kind == RenderBlockKind::Math);
 }
 
 ELMD_TEST(test_editor_undo_redo) {

@@ -79,7 +79,8 @@
       <AdditionalOptions>%(AdditionalOptions) /bigobj</AdditionalOptions>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>d2d1.lib;d3d11.lib;dwrite.lib;dxgi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(IntDir)quickjs\quickjs.lib;d2d1.lib;d3d11.lib;dwrite.lib;dxgi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>%(AdditionalOptions) /STACK:33554432</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
@@ -108,6 +109,7 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="EditorSession.h" />
     <ClInclude Include="EditorSurfaceRenderer.h" />
+    <ClInclude Include="MathJaxRenderer.h" />
     <ClInclude Include="App.xaml.h">
       <DependentUpon>App.xaml</DependentUpon>
     </ClInclude>
@@ -212,6 +214,7 @@
     </ClCompile>
     <ClCompile Include="EditorSession.cpp" />
     <ClCompile Include="EditorSurfaceRenderer.cpp" />
+    <ClCompile Include="MathJaxRenderer.cpp" />
     <ClCompile Include="App.xaml.cpp">
       <DependentUpon>App.xaml</DependentUpon>
     </ClCompile>
@@ -228,6 +231,12 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="Assets\mathjax\mathjax-quickjs.js">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Assets\mathjax\LICENSE-MathJax.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Image Include="Assets\LockScreenLogo.scale-200.png" />
@@ -263,6 +272,15 @@
     <Import Project="packages\Microsoft.Windows.SDK.BuildTools.10.0.28000.2270\build\Microsoft.Windows.SDK.BuildTools.targets" Condition="Exists('packages\Microsoft.Windows.SDK.BuildTools.10.0.28000.2270\build\Microsoft.Windows.SDK.BuildTools.targets')" />
     <Import Project="packages\Microsoft.Windows.ImplementationLibrary.1.0.260126.7\build\native\Microsoft.Windows.ImplementationLibrary.targets" Condition="Exists('packages\Microsoft.Windows.ImplementationLibrary.1.0.260126.7\build\native\Microsoft.Windows.ImplementationLibrary.targets')" />
   </ImportGroup>
+  <Target Name="BuildQuickJs" BeforeTargets="PrepareForBuild">
+    <MakeDir Directories="$(IntDir)quickjs" />
+    <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\clang-cl.exe&quot; /nologo /MD /DNDEBUG /TC /std:c17 /D_CRT_SECURE_NO_WARNINGS /U__SIZEOF_INT128__ -Wno-microsoft-enum-forward-reference /clang:-mno-ms-bitfields /c &quot;$(ProjectDir)third_party\quickjs\cutils.c&quot; /Fo&quot;$(IntDir)quickjs\cutils.obj&quot;" />
+    <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\clang-cl.exe&quot; /nologo /MD /DNDEBUG /TC /std:c17 /D_CRT_SECURE_NO_WARNINGS /U__SIZEOF_INT128__ -Wno-microsoft-enum-forward-reference /clang:-mno-ms-bitfields /c &quot;$(ProjectDir)third_party\quickjs\dtoa.c&quot; /Fo&quot;$(IntDir)quickjs\dtoa.obj&quot;" />
+    <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\clang-cl.exe&quot; /nologo /MD /DNDEBUG /TC /std:c17 /D_CRT_SECURE_NO_WARNINGS /U__SIZEOF_INT128__ -Wno-microsoft-enum-forward-reference /clang:-mno-ms-bitfields /c &quot;$(ProjectDir)third_party\quickjs\libregexp.c&quot; /Fo&quot;$(IntDir)quickjs\libregexp.obj&quot;" />
+    <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\clang-cl.exe&quot; /nologo /MD /DNDEBUG /TC /std:c17 /D_CRT_SECURE_NO_WARNINGS /U__SIZEOF_INT128__ -Wno-microsoft-enum-forward-reference /clang:-mno-ms-bitfields /c &quot;$(ProjectDir)third_party\quickjs\libunicode.c&quot; /Fo&quot;$(IntDir)quickjs\libunicode.obj&quot;" />
+    <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\clang-cl.exe&quot; /nologo /MD /DNDEBUG /TC /std:c17 /D_CRT_SECURE_NO_WARNINGS /U__SIZEOF_INT128__ -Wno-microsoft-enum-forward-reference /clang:-mno-ms-bitfields /c &quot;$(ProjectDir)third_party\quickjs\quickjs.c&quot; /Fo&quot;$(IntDir)quickjs\quickjs.obj&quot;" />
+    <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\llvm-lib.exe&quot; /nologo /OUT:&quot;$(IntDir)quickjs\quickjs.lib&quot; &quot;$(IntDir)quickjs\cutils.obj&quot; &quot;$(IntDir)quickjs\dtoa.obj&quot; &quot;$(IntDir)quickjs\libregexp.obj&quot; &quot;$(IntDir)quickjs\libunicode.obj&quot; &quot;$(IntDir)quickjs\quickjs.obj&quot;" />
+  </Target>
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>
       <ErrorText>Missing NuGet package file: {0}. Restore or recopy src\app-winui\packages.</ErrorText>
