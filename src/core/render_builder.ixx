@@ -353,15 +353,17 @@ struct Builder {
                 rb.table_aligns = b.table_aligns;
                 rb.column_count = std::max(b.table_header.size(), b.table_rows.empty() ? 0 : b.table_rows[0].cells.size());
                 rb.row_count = 1 + b.table_rows.size();
-                // header cells
+                auto build_cell = [&](const TableCell& cell) {
+                    std::size_t start = base_range().start.v;
+                    if (const auto* range = sm ? sm->find_node_by_id(cell.id) : nullptr) start = range->content_range.start.v;
+                    return build_inlines(cell.children, start, InlineStyle::plain());
+                };
                 for (const auto& c : b.table_header) {
-                    auto items = build_inlines(c.children, base_range().start.v, InlineStyle::plain());
-                    rb.table_cells.push_back(std::move(items));
+                    rb.table_cells.push_back(build_cell(c));
                 }
                 for (const auto& row : b.table_rows) {
                     for (const auto& c : row.cells) {
-                        auto items = build_inlines(c.children, base_range().start.v, InlineStyle::plain());
-                        rb.table_cells.push_back(std::move(items));
+                        rb.table_cells.push_back(build_cell(c));
                     }
                 }
                 return with_content_range(std::move(rb));

@@ -153,6 +153,8 @@ enum class SemanticEditIntent {
     DeletePreviousTextUnit,
     DeleteNextTextUnit,
     InsertParagraphBlockAfter,
+    InsertParagraphBlockAfterTable,
+    MoveCaretToNextTableRow,
     InsertEmptySiblingBlock,
     InsertCodeLineBreak,
     ContinueContainerLine,
@@ -177,6 +179,16 @@ inline SemanticEditPlan plan_newline(const std::u32string& text, const MarkdownD
     auto block_index = *semantic->document_block_index;
     const auto& block = document.blocks[block_index];
     if (block.kind == BlockKind::CodeBlock && semantic->content_range.start <= selection.head() && selection.head() <= semantic->content_range.end) return {SemanticEditIntent::InsertCodeLineBreak, block_index};
+    if (block.kind == BlockKind::Table) {
+        auto table = table_source_at(text, selection.head().v);
+        if (table && !table->rows.empty()) {
+            auto position = table_position_at(*table, selection.head().v);
+            auto next_row = position.row + 1;
+            while (next_row < table->rows.size() && table->rows[next_row].separator) ++next_row;
+            if (next_row >= table->rows.size()) return {SemanticEditIntent::InsertParagraphBlockAfterTable, block_index};
+            return {SemanticEditIntent::MoveCaretToNextTableRow, block_index};
+        }
+    }
     if (block.kind == BlockKind::BlockQuote || block.kind == BlockKind::List || block.kind == BlockKind::TaskList) return {SemanticEditIntent::ContinueContainerLine, block_index};
     return {SemanticEditIntent::InsertParagraphBlockAfter, block_index};
 }
@@ -195,6 +207,31 @@ inline std::optional<Transaction> semantic_newline_transaction(const std::u32str
             Transaction transaction(revision, selection, caret_after(CharOffset(sel.start.v + 1)), TransactionReason::StructuralCommand);
             transaction.with_edit(sel, U"\n");
             return transaction;
+        }
+        case SemanticEditIntent::InsertParagraphBlockAfterTable: {
+            auto table = table_source_at(text_cps, selection.head().v);
+            if (!table || table->rows.empty()) return std::nullopt;
+            auto position = table->rows.back().line_range.end.v;
+            std::u32string inserted = U"\n\n";
+            if (position < text_cps.size() && text_cps[position] == U'\n') {
+                ++position;
+                inserted = U"\n";
+            }
+            Transaction transaction(revision, selection, caret_after(CharOffset(position + inserted.size())), TransactionReason::StructuralCommand);
+            transaction.with_edit(CharRange(CharOffset(position), CharOffset(position)), inserted);
+            return transaction;
+        }
+        case SemanticEditIntent::MoveCaretToNextTableRow: {
+            auto table = table_source_at(text_cps, selection.head().v);
+            if (!table || table->rows.empty()) return std::nullopt;
+            auto position = table_position_at(*table, selection.head().v);
+            auto next_row = position.row + 1;
+            while (next_row < table->rows.size() && table->rows[next_row].separator) ++next_row;
+            if (next_row >= table->rows.size()) return std::nullopt;
+            auto const& row = table->rows[next_row];
+            auto target = row.line_range.end.v;
+            if (position.column < row.cells.size()) target = row.cells[position.column].content_range.start.v;
+            return Transaction(revision, selection, caret_after(CharOffset(target)), TransactionReason::StructuralCommand);
         }
         case SemanticEditIntent::ContinueContainerLine: {
             auto markdown_edit = markdown_newline_edit(text_cps, sel);
@@ -239,6 +276,15 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
         s.affinity = (p.v < selection.anchor.v) ? TextAffinity::Upstream : TextAffinity::Downstream;
         return s;
     };
+    auto selection_intersects_table = [&]() {
+        if (selection.is_caret()) return false;
+        for (std::size_t index = 0; index < document.blocks.size(); ++index) {
+            if (document.blocks[index].kind != BlockKind::Table) continue;
+            auto range = block_range_at(document, index);
+            if (range && sel.start < range->source_range.end && range->source_range.start < sel.end) return true;
+        }
+        return false;
+    };
 
     switch (cmd.kind) {
         case CommandKind::InsertText: {
@@ -248,7 +294,31 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
             return t;
         }
         case CommandKind::DeleteBackward: {
+            if (auto table = table_source_at(text_cps, sel.start.v)) {
+                if (!selection.is_caret()) {
+                    if (sel.end.v > table->rows.back().line_range.end.v) return std::nullopt;
+                    Transaction transaction(revision, selection, caret_after(sel.start), TransactionReason::Delete);
+                    for (auto const& row : table->rows) {
+                        if (row.separator) continue;
+                        for (auto const& cell : row.cells) {
+                            auto start = (std::max)(sel.start.v, cell.content_range.start.v);
+                            auto end = (std::min)(sel.end.v, cell.content_range.end.v);
+                            if (start < end) transaction.with_edit(CharRange(CharOffset(start), CharOffset(end)), U"");
+                        }
+                    }
+                    if (transaction.edits.empty()) return std::nullopt;
+                    transaction.selection_after = caret_after(transaction.edits.front().range.start);
+                    return transaction;
+                }
+                auto cell = table_content_cell_at(*table, sel.start.v);
+                if (!cell || sel.start.v <= cell->content_range.start.v || sel.start.v > cell->content_range.end.v) return std::nullopt;
+                auto previous = (std::max)(prev_grapheme_boundary_char(text_cps, sel.start.v), cell->content_range.start.v);
+                Transaction transaction(revision, selection, caret_after(CharOffset(previous)), TransactionReason::Delete);
+                transaction.with_edit(CharRange(CharOffset(previous), sel.start), U"");
+                return transaction;
+            }
             if (!selection.is_caret()) {
+                if (selection_intersects_table()) return std::nullopt;
                 Transaction t(revision, selection, caret_after(sel.start), TransactionReason::Delete);
                 t.with_edit(sel, U"");
                 return t;
@@ -256,12 +326,37 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
             std::size_t pos = sel.start.v;
             if (pos == 0) return std::nullopt;
             std::size_t prev = prev_grapheme_boundary_char(text_cps, pos);
+            if (table_source_at(text_cps, prev)) return std::nullopt;
             Transaction t(revision, selection, caret_after(CharOffset(prev)), TransactionReason::Delete);
             t.with_edit(CharRange(CharOffset(prev), CharOffset(pos)), U"");
             return t;
         }
         case CommandKind::DeleteForward: {
+            if (auto table = table_source_at(text_cps, sel.start.v)) {
+                if (!selection.is_caret()) {
+                    if (sel.end.v > table->rows.back().line_range.end.v) return std::nullopt;
+                    Transaction transaction(revision, selection, caret_after(sel.start), TransactionReason::Delete);
+                    for (auto const& row : table->rows) {
+                        if (row.separator) continue;
+                        for (auto const& cell : row.cells) {
+                            auto start = (std::max)(sel.start.v, cell.content_range.start.v);
+                            auto end = (std::min)(sel.end.v, cell.content_range.end.v);
+                            if (start < end) transaction.with_edit(CharRange(CharOffset(start), CharOffset(end)), U"");
+                        }
+                    }
+                    if (transaction.edits.empty()) return std::nullopt;
+                    transaction.selection_after = caret_after(transaction.edits.front().range.start);
+                    return transaction;
+                }
+                auto cell = table_content_cell_at(*table, sel.start.v);
+                if (!cell || sel.start.v < cell->content_range.start.v || sel.start.v >= cell->content_range.end.v) return std::nullopt;
+                auto next = (std::min)(next_grapheme_boundary_char(text_cps, sel.start.v), cell->content_range.end.v);
+                Transaction transaction(revision, selection, caret_after(sel.start), TransactionReason::Delete);
+                transaction.with_edit(CharRange(sel.start, CharOffset(next)), U"");
+                return transaction;
+            }
             if (!selection.is_caret()) {
+                if (selection_intersects_table()) return std::nullopt;
                 Transaction t(revision, selection, caret_after(sel.start), TransactionReason::Delete);
                 t.with_edit(sel, U"");
                 return t;
@@ -269,12 +364,29 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
             std::size_t pos = sel.start.v;
             if (pos >= len) return std::nullopt;
             std::size_t nxt = next_grapheme_boundary_char(text_cps, pos);
+            if (table_source_at(text_cps, nxt)) return std::nullopt;
             Transaction t(revision, selection, caret_after(CharOffset(pos)), TransactionReason::Delete);
             t.with_edit(CharRange(CharOffset(pos), CharOffset(nxt)), U"");
             return t;
         }
         case CommandKind::DeleteSelection: {
             if (selection.is_caret()) return std::nullopt;
+            if (auto table = table_source_at(text_cps, sel.start.v)) {
+                if (sel.end.v > table->rows.back().line_range.end.v) return std::nullopt;
+                Transaction transaction(revision, selection, caret_after(sel.start), TransactionReason::Delete);
+                for (auto const& row : table->rows) {
+                    if (row.separator) continue;
+                    for (auto const& cell : row.cells) {
+                        auto start = (std::max)(sel.start.v, cell.content_range.start.v);
+                        auto end = (std::min)(sel.end.v, cell.content_range.end.v);
+                        if (start < end) transaction.with_edit(CharRange(CharOffset(start), CharOffset(end)), U"");
+                    }
+                }
+                if (transaction.edits.empty()) return std::nullopt;
+                transaction.selection_after = caret_after(transaction.edits.front().range.start);
+                return transaction;
+            }
+            if (selection_intersects_table()) return std::nullopt;
             Transaction t(revision, selection, caret_after(sel.start), TransactionReason::Delete);
             t.with_edit(sel, U"");
             return t;
@@ -411,6 +523,12 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
         case CommandKind::DeleteTableColumn: return table_edit_transaction(TableEditKind::DeleteColumn, text_cps, selection, revision);
         case CommandKind::MoveTableColumnLeft: return table_edit_transaction(TableEditKind::MoveColumnLeft, text_cps, selection, revision);
         case CommandKind::MoveTableColumnRight: return table_edit_transaction(TableEditKind::MoveColumnRight, text_cps, selection, revision);
+        case CommandKind::SetTableColumnAlignment: return table_edit_transaction(TableEditKind::SetColumnAlignment, text_cps, selection, revision, cmd.table_alignment);
+        case CommandKind::NormalizeTable: return table_edit_transaction(TableEditKind::Normalize, text_cps, selection, revision);
+        case CommandKind::InsertTableRowAt: return table_edit_transaction(TableEditKind::InsertRowAt, text_cps, selection, revision, TableAlignment::None, cmd.table_index);
+        case CommandKind::InsertTableColumnAt: return table_edit_transaction(TableEditKind::InsertColumnAt, text_cps, selection, revision, TableAlignment::None, cmd.table_index);
+        case CommandKind::MoveTableRowTo: return table_edit_transaction(TableEditKind::MoveRowTo, text_cps, selection, revision, TableAlignment::None, cmd.table_index);
+        case CommandKind::MoveTableColumnTo: return table_edit_transaction(TableEditKind::MoveColumnTo, text_cps, selection, revision, TableAlignment::None, cmd.table_index);
         case CommandKind::InsertTable: {
             std::u32string s;
             for (std::size_t c = 0; c < cmd.cols; ++c) s += U"| Header ";

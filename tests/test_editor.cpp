@@ -8,6 +8,7 @@ import elmd.core.selection;
 import elmd.core.transaction;
 import elmd.core.utf;
 import elmd.core.source_structure;
+import elmd.core.table_edit;
 
 using namespace elmd;
 
@@ -155,6 +156,239 @@ ELMD_TEST(test_table_move_column_left) {
     Command c; c.kind = CommandKind::MoveTableColumnLeft;
     e.execute_command(c);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| B   | A   |\n| --- | --- |\n| D   | C   |\n"));
+}
+
+ELMD_TEST(test_table_column_alignment_is_preserved_by_structural_edits) {
+    Editor e("| A | B |\n| --- | --- |\n| 1 | 2 |\n");
+    e.set_caret(CharOffset(6));
+    Command align; align.kind = CommandKind::SetTableColumnAlignment; align.table_alignment = TableAlignment::Right;
+    e.execute_command(align);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A   | B   |\n| --- | --: |\n| 1   | 2   |\n"));
+    ELMD_CHECK_EQ(e.selection().head().v, 8u);
+    Command move; move.kind = CommandKind::MoveTableColumnLeft;
+    e.execute_command(move);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| B   | A   |\n| --: | --- |\n| 2   | 1   |\n"));
+}
+
+ELMD_TEST(test_normalize_table_canonicalizes_widths_without_losing_alignment) {
+    Editor e("|Long|B|\n|:--|--:|\n|1|2|\n");
+    e.set_caret(CharOffset(2));
+    Command c; c.kind = CommandKind::NormalizeTable;
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| Long | B   |\n| :--- | --: |\n| 1    | 2   |\n"));
+}
+
+ELMD_TEST(test_table_insert_row_and_column_at_visual_boundaries) {
+    Editor e("| A | B |\n| --- | --- |\n| 1 | 2 |\n");
+    e.set_caret(CharOffset(2));
+    Command row; row.kind = CommandKind::InsertTableRowAt; row.table_index = 1;
+    e.execute_command(row);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A   | B   |\n| --- | --- |\n|     |     |\n| 1   | 2   |\n"));
+    Command column; column.kind = CommandKind::InsertTableColumnAt; column.table_index = 1;
+    e.execute_command(column);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A   |     | B   |\n| --- | --- | --- |\n|     |     |     |\n| 1   |     | 2   |\n"));
+}
+
+ELMD_TEST(test_table_drag_moves_row_and_column_atomically) {
+    Editor e("| A | B |\n| --- | --- |\n| 1 | 2 |\n");
+    e.set_caret(CharOffset(29));
+    Command row; row.kind = CommandKind::MoveTableRowTo; row.table_index = 0;
+    e.execute_command(row);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| 1   | 2   |\n| --- | --- |\n| A   | B   |\n"));
+    e.set_caret(CharOffset(8));
+    Command column; column.kind = CommandKind::MoveTableColumnTo; column.table_index = 0;
+    e.execute_command(column);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| 2   | 1   |\n| --- | --- |\n| B   | A   |\n"));
+}
+
+ELMD_TEST(test_typing_into_empty_table_cell_updates_source_and_ast) {
+    Editor e("| A | B |\n| --- | --- |\n|   | 2 |\n");
+    auto table = table_source_at(e.text_cps(), 0);
+    ELMD_CHECK(table.has_value());
+    ELMD_CHECK(table && table->rows.size() == 3);
+    if (!table || table->rows.size() != 3) return;
+    ELMD_CHECK(table->rows[2].cells[0].text.empty());
+    ELMD_CHECK_EQ(table->rows[2].cells[0].content_range.len(), 0u);
+    auto emptyCellOffset = table->rows[2].cells[0].content_range.start;
+    e.set_caret(emptyCellOffset);
+    e.execute_command(Command::InsertText(U"x"));
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A | B |\n| --- | --- |\n| x  | 2 |\n"));
+    ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
+    ELMD_CHECK(e.document().blocks[0].kind == BlockKind::Table);
+    auto const& row = e.document().blocks[0].table_rows[0];
+    ELMD_CHECK_EQ(row.cells.size(), 2u);
+    ELMD_CHECK_EQ(cps_to_utf8(block_inline_text_content(row.cells[0].children)), std::string("x"));
+}
+
+ELMD_TEST(test_enter_at_end_of_table_exits_after_closing_pipe) {
+    Editor e("| H1 | H2 |\n| --- | --- |\n| A | B |");
+    auto table = table_source_at(e.text_cps(), 0);
+    ELMD_CHECK(table.has_value());
+    if (!table) return;
+    auto const& last_cell = table->rows.back().cells.back();
+    e.set_caret(last_cell.content_range.end);
+    Command command;
+    command.kind = CommandKind::InsertNewline;
+    e.execute_command(command);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| H1 | H2 |\n| --- | --- |\n| A | B |\n\n"));
+    ELMD_CHECK_EQ(e.selection().head().v, e.text_cps().size());
+}
+
+ELMD_TEST(test_enter_at_end_of_table_reuses_trailing_newline) {
+    Editor e("| H |\n| --- |\n| A |\n");
+    auto table = table_source_at(e.text_cps(), 0);
+    ELMD_CHECK(table.has_value());
+    if (!table) return;
+    e.set_caret(table->rows.back().cells.back().content_range.end);
+    Command command;
+    command.kind = CommandKind::InsertNewline;
+    e.execute_command(command);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| H |\n| --- |\n| A |\n\n"));
+    ELMD_CHECK_EQ(e.selection().head().v, e.text_cps().size());
+}
+
+ELMD_TEST(test_enter_in_table_moves_to_same_column_of_next_row) {
+    Editor e("| H1 | H2 |\n| --- | --- |\n| A1 | A2 |\n| B1 | B2 |");
+    auto table = table_source_at(e.text_cps(), 0);
+    ELMD_CHECK(table.has_value());
+    if (!table) return;
+    auto source_before = e.buffer().text_utf8();
+    e.set_caret(table->rows[2].cells[1].content_range.end);
+    Command command;
+    command.kind = CommandKind::InsertNewline;
+    e.execute_command(command);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), source_before);
+    ELMD_CHECK_EQ(e.selection().head().v, table->rows[3].cells[1].content_range.start.v);
+}
+
+ELMD_TEST(test_enter_in_table_header_skips_separator_row) {
+    Editor e("| H1 | H2 |\n| --- | --- |\n| A1 | A2 |");
+    auto table = table_source_at(e.text_cps(), 0);
+    ELMD_CHECK(table.has_value());
+    if (!table) return;
+    auto source_before = e.buffer().text_utf8();
+    e.set_caret(table->rows[0].cells[0].content_range.start);
+    Command command;
+    command.kind = CommandKind::InsertNewline;
+    e.execute_command(command);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), source_before);
+    ELMD_CHECK_EQ(e.selection().head().v, table->rows[2].cells[0].content_range.start.v);
+}
+
+ELMD_TEST(test_enter_in_any_cell_of_last_table_row_exits_table) {
+    Editor e("| H1 | H2 |\n| --- | --- |\n| A1 | A2 |");
+    auto table = table_source_at(e.text_cps(), 0);
+    ELMD_CHECK(table.has_value());
+    if (!table) return;
+    e.set_caret(table->rows.back().cells[0].content_range.start);
+    Command command;
+    command.kind = CommandKind::InsertNewline;
+    e.execute_command(command);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| H1 | H2 |\n| --- | --- |\n| A1 | A2 |\n\n"));
+    ELMD_CHECK_EQ(e.selection().head().v, e.text_cps().size());
+}
+
+ELMD_TEST(test_empty_table_cell_has_zero_width_content_after_leading_padding) {
+    Editor e("| H |\n| --- |\n|     |");
+    auto table = table_source_at(e.text_cps(), 0);
+    ELMD_CHECK(table.has_value());
+    if (!table) return;
+    auto const& cell = table->rows.back().cells.front();
+    ELMD_CHECK_EQ(cell.content_range.len(), 0u);
+    ELMD_CHECK_EQ(cell.content_range.start.v, cell.content_range.end.v);
+    ELMD_CHECK_EQ(cell.content_range.start.v, table->rows.back().line_range.start.v + 2);
+    ELMD_CHECK(e.text_cps()[cell.content_range.start.v - 1] == U' ');
+    ELMD_CHECK(e.text_cps()[cell.content_range.start.v] == U' ');
+}
+
+ELMD_TEST(test_backspace_and_delete_do_not_remove_empty_table_padding_or_pipe) {
+    Editor e("| H |\n| --- |\n|     |");
+    auto table = table_source_at(e.text_cps(), 0);
+    ELMD_CHECK(table.has_value());
+    if (!table) return;
+    auto offset = table->rows.back().cells.front().content_range.start;
+    auto source = e.buffer().text_utf8();
+    e.set_caret(offset);
+    Command backward;
+    backward.kind = CommandKind::DeleteBackward;
+    ELMD_CHECK(!e.execute_command(backward).has_value());
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), source);
+    Command forward;
+    forward.kind = CommandKind::DeleteForward;
+    ELMD_CHECK(!e.execute_command(forward).has_value());
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), source);
+}
+
+ELMD_TEST(test_table_character_delete_stays_inside_cell_content) {
+    Editor e("| H |\n| --- |\n| ABC |");
+    auto table = table_source_at(e.text_cps(), 0);
+    ELMD_CHECK(table.has_value());
+    if (!table) return;
+    auto cell = table->rows.back().cells.front();
+    e.set_caret(cell.content_range.end);
+    Command backward;
+    backward.kind = CommandKind::DeleteBackward;
+    e.execute_command(backward);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| H |\n| --- |\n| AB |"));
+    table = table_source_at(e.text_cps(), 0);
+    ELMD_CHECK(table.has_value());
+    if (!table) return;
+    e.set_caret(table->rows.back().cells.front().content_range.start);
+    Command forward;
+    forward.kind = CommandKind::DeleteForward;
+    e.execute_command(forward);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| H |\n| --- |\n| B |"));
+    ELMD_CHECK(e.document().blocks[0].kind == BlockKind::Table);
+}
+
+ELMD_TEST(test_deleting_last_table_cell_character_keeps_empty_caret_stable) {
+    Editor e("| H |\n| --- |\n| X |");
+    auto table = table_source_at(e.text_cps(), 0);
+    ELMD_CHECK(table.has_value());
+    if (!table) return;
+    e.set_caret(table->rows.back().cells.front().content_range.end);
+    Command command;
+    command.kind = CommandKind::DeleteBackward;
+    e.execute_command(command);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| H |\n| --- |\n|  |"));
+    table = table_source_at(e.text_cps(), 0);
+    ELMD_CHECK(table.has_value());
+    if (!table) return;
+    auto const& empty = table->rows.back().cells.front();
+    ELMD_CHECK_EQ(empty.content_range.len(), 0u);
+    ELMD_CHECK_EQ(e.selection().head().v, empty.content_range.start.v);
+    ELMD_CHECK(e.document().blocks[0].kind == BlockKind::Table);
+}
+
+ELMD_TEST(test_delete_from_adjacent_paragraph_does_not_consume_table_boundary) {
+    Editor e("| H |\n| --- |\n| A |\n\nafter");
+    auto table = table_source_at(e.text_cps(), 0);
+    ELMD_CHECK(table.has_value());
+    if (!table) return;
+    auto source = e.buffer().text_utf8();
+    e.set_caret(CharOffset(table->range.end.v));
+    Command command;
+    command.kind = CommandKind::DeleteBackward;
+    ELMD_CHECK(!e.execute_command(command).has_value());
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), source);
+    ELMD_CHECK(e.document().blocks[0].kind == BlockKind::Table);
+}
+
+ELMD_TEST(test_table_cross_cell_selection_delete_preserves_structure) {
+    Editor e("| H1 | H2 |\n| --- | --- |\n| A1 | A2 |");
+    auto table = table_source_at(e.text_cps(), 0);
+    ELMD_CHECK(table.has_value());
+    if (!table) return;
+    auto const& row = table->rows.back();
+    Selection selection;
+    selection.anchor = row.cells[0].content_range.start;
+    selection.active = row.cells[1].content_range.end;
+    e.set_selection(selection);
+    Command command;
+    command.kind = CommandKind::DeleteSelection;
+    e.execute_command(command);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| H1 | H2 |\n| --- | --- |\n|  |  |"));
+    ELMD_CHECK(e.document().blocks[0].kind == BlockKind::Table);
 }
 
 ELMD_TEST(test_insert_toc_contains_marker) {

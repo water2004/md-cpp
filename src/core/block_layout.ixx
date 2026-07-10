@@ -149,6 +149,123 @@ inline std::pair<LayoutBlock, float> layout_code_block(const RenderBlock& rb, fl
     return {std::move(lb), h};
 }
 
+inline std::u32string table_cell_layout_text(const std::vector<InlineRenderItem>& items) {
+    std::u32string text;
+    for (const auto& item : items) {
+        if (item.kind == InlineRenderItem::Kind::Math) {
+            text.push_back(U'$');
+            text += item.text;
+            text.push_back(U'$');
+        }
+        else {
+            text += item.text;
+        }
+    }
+    return text;
+}
+
+inline CharRange table_cell_layout_range(const std::vector<InlineRenderItem>& items, CharRange fallback) {
+    if (items.empty()) return fallback;
+    CharRange range = items.front().source_range;
+    for (const auto& item : items) {
+        if (item.source_range.start < range.start) range.start = item.source_range.start;
+        if (item.source_range.end > range.end) range.end = item.source_range.end;
+    }
+    return range;
+}
+
+inline std::pair<LayoutBlock, float> layout_table_block(const RenderBlock& rb, float y, float viewport_width, float scale, TextMeasurer& measurer, LogicalPoint origin) {
+    const auto& style = rb.block_style;
+    float font_size = 16.0f * scale;
+    float line_height = font_size * 1.5f;
+    float margin_top = style.margin_top * scale;
+    float margin_bottom = style.margin_bottom * scale;
+    float cell_padding = 8.0f * scale;
+    std::size_t columns = (std::max)(std::size_t{1}, rb.column_count);
+    std::size_t rows = (std::max)(std::size_t{1}, rb.row_count);
+    std::vector<float> widths(columns, 48.0f * scale);
+    for (std::size_t row = 0; row < rows; ++row) {
+        for (std::size_t column = 0; column < columns; ++column) {
+            auto index = row * columns + column;
+            if (index >= rb.table_cells.size()) continue;
+            auto text = table_cell_layout_text(rb.table_cells[index]);
+            auto shape = measurer.measure(text, font_size, InlineStyle::plain());
+            widths[column] = (std::max)(widths[column], shape.width + cell_padding * 2.0f);
+        }
+    }
+    float available = (std::max)(viewport_width - style.padding_left * scale - style.padding_right * scale, 1.0f);
+    float total_width = 0.0f;
+    for (auto width : widths) total_width += width;
+    if (total_width > available) {
+        float scale_down = available / total_width;
+        for (auto& width : widths) width *= scale_down;
+        total_width = available;
+    }
+
+    LayoutBlock block(rb.id, rb.source_range, {LayoutBlockKind::Table}, style);
+    TableLayout table;
+    table.id = rb.id;
+    table.source_range = rb.source_range;
+    table.rect = LogicalRect(origin.x + style.padding_left * scale, y + margin_top, total_width, rows * line_height);
+    for (std::size_t column = 0; column < columns; ++column) {
+        TableLayoutColumn layout_column;
+        layout_column.width = widths[column];
+        layout_column.alignment = column < rb.table_aligns.size() ? rb.table_aligns[column] : TableAlignment::None;
+        table.columns.push_back(layout_column);
+    }
+
+    for (std::size_t row = 0; row < rows; ++row) {
+        TableLayoutRow layout_row;
+        layout_row.is_header = row == 0;
+        layout_row.rect = LogicalRect(table.rect.x, table.rect.y + row * line_height, total_width, line_height);
+        float x = table.rect.x;
+        for (std::size_t column = 0; column < columns; ++column) {
+            auto index = row * columns + column;
+            const std::vector<InlineRenderItem>* items = index < rb.table_cells.size() ? &rb.table_cells[index] : nullptr;
+            CharRange source_range = items ? table_cell_layout_range(*items, rb.content_range) : rb.content_range;
+            TableLayoutCell cell;
+            cell.source_range = source_range;
+            cell.rect = LogicalRect(x, layout_row.rect.y, widths[column], line_height);
+            TextLineLayout line(source_range);
+            line.rect = cell.rect;
+            line.baseline = line.rect.y + font_size;
+            std::u32string text = items ? table_cell_layout_text(*items) : U"";
+            InlineStyle text_style = InlineStyle::plain();
+            if (row == 0) text_style.bold = true;
+            auto shape = measurer.measure(text, font_size, text_style);
+            float text_x = x + cell_padding;
+            float inner_width = (std::max)(0.0f, widths[column] - cell_padding * 2.0f);
+            auto alignment = column < rb.table_aligns.size() ? rb.table_aligns[column] : TableAlignment::None;
+            if (alignment == TableAlignment::Right) text_x += (std::max)(0.0f, inner_width - shape.width);
+            if (alignment == TableAlignment::Center) text_x += (std::max)(0.0f, (inner_width - shape.width) * 0.5f);
+            GlyphRunLayout run;
+            run.source_range = source_range;
+            run.text = std::move(text);
+            run.glyphs = std::move(shape.glyphs);
+            run.style = text_style;
+            run.origin = LogicalPoint(text_x, 0.0f);
+            run.width = shape.width;
+            run.height = line_height;
+            run.marker_visibility = MarkerVisibility::Always;
+            line.runs.push_back(std::move(run));
+            LayoutItem line_item;
+            line_item.kind = LayoutItem::Kind::Line;
+            line_item.line = std::move(line);
+            cell.content.push_back(std::move(line_item));
+            layout_row.cells.push_back(std::move(cell));
+            x += widths[column];
+        }
+        table.rows.push_back(std::move(layout_row));
+    }
+    block.rect = LogicalRect(origin.x, y + margin_top, viewport_width, rows * line_height);
+    LayoutItem item;
+    item.kind = LayoutItem::Kind::Table;
+    item.table = std::move(table);
+    block.children.push_back(std::move(item));
+    float height = margin_top + rows * line_height + margin_bottom;
+    return {std::move(block), height};
+}
+
 inline std::pair<LayoutBlock, float> layout_math_block(const RenderBlock& rb, float y, float viewport_width, float scale, TextMeasurer& measurer) {
     float font_size = 14.0f * scale;
     float line_height = font_size * 1.5f;
@@ -254,6 +371,9 @@ inline LayoutTree layout_blocks(const std::vector<RenderBlock>& blocks, float vi
                 break;
             case RenderBlockKind::Math:
                 pr = layout_math_block(rb, y, viewport_width, scale, measurer);
+                break;
+            case RenderBlockKind::Table:
+                pr = layout_table_block(rb, y, viewport_width, scale, measurer, origin);
                 break;
 case RenderBlockKind::Toc:
                 pr = layout_toc_block(rb, y, viewport_width, scale, measurer, outline);

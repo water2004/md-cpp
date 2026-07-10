@@ -799,28 +799,41 @@ public:
     // ---- table ----
     std::optional<BlockNode> try_parse_table() {
         std::size_t save = pos;
+        std::size_t range_count = source_ranges.size();
+        std::uint64_t node_count = node_counter;
+        auto fail = [&]() -> std::optional<BlockNode> {
+            pos = save;
+            source_ranges.resize(range_count);
+            node_counter = node_count;
+            return std::nullopt;
+        };
         auto [header_line, _] = rest_of_line();
-        if (header_line.find(U'|') == std::u32string::npos) { pos = save; return std::nullopt; }
+        if (header_line.find(U'|') == std::u32string::npos) return fail();
         auto header_row = parse_table_row();
-        if (!header_row) { pos = save; return std::nullopt; }
-        if (peek1() == '\n') advance();
-        std::size_t save2 = pos;
-        auto [sep_line, _2] = rest_of_line();
-        bool sep_has_pipe = (sep_line.find(U'|') != std::u32string::npos);
-        bool sep_has_dash = (sep_line.find(U'-') != std::u32string::npos);
-        if (!sep_has_pipe || !sep_has_dash) { pos = save; return std::nullopt; }
-        pos = save2;
-        auto alignments = parse_table_separator();
-        if (!alignments) { pos = save; return std::nullopt; }
-        if (peek1() == '\n') advance();
+        if (!header_row) return fail();
+        auto [separator_line, separator_length] = rest_of_line();
+        auto alignments = parse_table_separator(separator_line);
+        if (!alignments || alignments->size() != header_row->cells.size()) return fail();
+        advance_n(separator_length);
+        if (peek1() == U'\n') advance();
         std::vector<TableRow> rows;
         while (!eof()) {
-            std::size_t save3 = pos;
-            auto [line, _l] = rest_of_line();
+            std::size_t row_start = pos;
+            auto [line, row_length] = rest_of_line();
             if (line.find(U'|') == std::u32string::npos) break;
-            pos = save3;
-            if (auto r = parse_table_row()) rows.push_back(std::move(*r)); else break;
-            if (peek1() == '\n') advance();
+            auto row = parse_table_row(header_row->cells.size());
+            if (!row) break;
+            while (row->cells.size() < header_row->cells.size()) {
+                TableCell cell;
+                cell.id = next_node_id();
+                NodeId text_id = next_node_id();
+                cell.children.push_back(InlineNode::text_node(text_id, U""));
+                auto offset = CharOffset(row_start + row_length);
+                push_range(cell.id, CharRange(offset, offset), CharRange(offset, offset));
+                push_range(text_id, CharRange(offset, offset), CharRange(offset, offset));
+                row->cells.push_back(std::move(cell));
+            }
+            rows.push_back(std::move(*row));
         }
         NodeId id = next_node_id();
         push_range(id, CharRange(CharOffset(save), cur()), CharRange(CharOffset(save), cur()));
@@ -831,66 +844,80 @@ public:
         return b;
     }
 
-    std::optional<TableRow> parse_table_row() {
-        std::size_t row_start = pos;
-        auto [line, _] = rest_of_line();
-        std::vector<TableCell> cells;
-        std::u32string cell_text;
-        for (char32_t ch : line) {
-            if (ch == '|') {
-                if (!cell_text.empty() || !cells.empty()) {
-                    TableCell c; c.id = next_node_id();
-                    auto t = trim_cps_(cell_text);
-                    c.children.push_back(InlineNode::text_node(next_node_id(), std::move(t)));
-                    cells.push_back(std::move(c));
-                    cell_text.clear();
-                }
-            } else {
-                cell_text.push_back(ch); advance();
+    std::vector<std::pair<std::size_t, std::size_t>> table_cell_segments(const std::u32string& line) const {
+        std::vector<std::pair<std::size_t, std::size_t>> segments;
+        std::size_t start = line.empty() || line.front() != U'|' ? 0 : 1;
+        for (std::size_t index = start; index < line.size(); ++index) {
+            if (line[index] == U'\\' && index + 1 < line.size()) {
+                ++index;
+                continue;
             }
+            if (line[index] != U'|') continue;
+            segments.push_back({start, index});
+            start = index + 1;
         }
-        pos = row_start + line.size() + 1; // skip newline
-        if (cells.empty()) return std::nullopt;
-        TableRow r; r.id = next_node_id(); r.cells = std::move(cells);
+        if (start < line.size()) segments.push_back({start, line.size()});
+        return segments;
+    }
+
+    std::optional<TableRow> parse_table_row(std::size_t maximum_cells = (std::numeric_limits<std::size_t>::max)()) {
+        std::size_t row_start = pos;
+        auto [line, length] = rest_of_line();
+        auto segments = table_cell_segments(line);
+        if (segments.empty()) return std::nullopt;
+        std::vector<TableCell> cells;
+        cells.reserve(segments.size());
+        for (auto const& segment : segments) {
+            if (cells.size() >= maximum_cells) break;
+            std::size_t content_start = segment.first;
+            std::size_t content_end = segment.second;
+            while (content_start < content_end && (line[content_start] == U' ' || line[content_start] == U'\t')) ++content_start;
+            while (content_end > content_start && (line[content_end - 1] == U' ' || line[content_end - 1] == U'\t')) --content_end;
+            if (content_start == segment.second) {
+                content_start = segment.first;
+                if (content_start < segment.second && (line[content_start] == U' ' || line[content_start] == U'\t')) ++content_start;
+                content_end = content_start;
+            }
+            NodeId cell_id = next_node_id();
+            NodeId text_id = next_node_id();
+            auto source_start = CharOffset(row_start + segment.first);
+            auto source_end = CharOffset(row_start + segment.second);
+            auto text_start = CharOffset(row_start + content_start);
+            auto text_end = CharOffset(row_start + content_end);
+            TableCell cell;
+            cell.id = cell_id;
+            cell.children.push_back(InlineNode::text_node(text_id, std::u32string(line.substr(content_start, content_end - content_start))));
+            push_range(cell_id, CharRange(source_start, source_end), CharRange(text_start, text_end));
+            push_range(text_id, CharRange(text_start, text_end), CharRange(text_start, text_end));
+            cells.push_back(std::move(cell));
+        }
+        advance_n(length);
+        if (peek1() == U'\n') advance();
+        NodeId row_id = next_node_id();
+        push_range(row_id, CharRange(CharOffset(row_start), cur()), CharRange(CharOffset(row_start), CharOffset(row_start + length)));
+        TableRow r; r.id = row_id; r.cells = std::move(cells);
         return r;
     }
 
-    std::optional<std::vector<TableAlignment>> parse_table_separator() {
-        std::size_t save = pos;
-        auto [line, _] = rest_of_line();
-        pos = save;
+    std::optional<std::vector<TableAlignment>> parse_table_separator(const std::u32string& line) const {
+        auto segments = table_cell_segments(line);
+        if (segments.empty()) return std::nullopt;
         std::vector<TableAlignment> alignments;
-        // split on '|'
-        std::vector<std::u32string> parts;
-        std::u32string acc;
-        for (char32_t c : line) {
-            if (c == '|') { parts.push_back(acc); acc.clear(); }
-            else acc.push_back(c);
+        for (auto const& segment : segments) {
+            auto marker = trim_cps_(line.substr(segment.first, segment.second - segment.first));
+            if (marker.empty()) return std::nullopt;
+            bool leading_colon = marker.front() == U':';
+            bool trailing_colon = marker.back() == U':';
+            std::size_t begin = leading_colon ? 1 : 0;
+            std::size_t end = marker.size() - (trailing_colon ? 1 : 0);
+            if (begin >= end) return std::nullopt;
+            for (std::size_t index = begin; index < end; ++index) if (marker[index] != U'-') return std::nullopt;
+            TableAlignment alignment = TableAlignment::None;
+            if (leading_colon && trailing_colon) alignment = TableAlignment::Center;
+            else if (leading_colon) alignment = TableAlignment::Left;
+            else if (trailing_colon) alignment = TableAlignment::Right;
+            alignments.push_back(alignment);
         }
-        parts.push_back(acc);
-        for (auto& p : parts) {
-            auto tr = trim_cps_(p);
-            if (tr.empty()) continue;
-            // skip empty parts that are all spaces/`.`/`:`
-            bool skip = true;
-            for (char32_t c : tr) if (c != ' ' && c != '.' && c != ':') { skip = false; break; }
-            if (skip) {
-                // consume those chars from the buffer (advance pos as we go)
-                continue;
-            }
-            bool starts = (!tr.empty() && tr.front() == ':');
-            bool ends   = (!tr.empty() && tr.back() == ':');
-            for (std::size_t i = 0; i < p.size(); ++i) advance();
-            TableAlignment a = TableAlignment::None;
-            if (starts && ends) a = TableAlignment::Center;
-            else if (starts) a = TableAlignment::Left;
-            else if (ends) a = TableAlignment::Right;
-            alignments.push_back(a);
-        }
-        // drain remaining separator-line chars
-        while (peek1() == '|' || peek1() == ' ' || peek1() == '-' || peek1() == ':') advance();
-        if (peek1() == '\n') advance();
-        if (alignments.empty()) return std::nullopt;
         return alignments;
     }
 

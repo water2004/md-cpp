@@ -69,6 +69,15 @@ namespace winrt::ElMd::implementation
             HandlePointerReleased(args);
         });
 
+        EditorSurface().PointerExited([this](auto const&, auto const&)
+        {
+            if (!tableDrag)
+            {
+                editorRenderer.ClearPointer();
+                RenderEditorSurface();
+            }
+        });
+
         EditorSurface().PointerWheelChanged([this](auto const&, Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
         {
             HandlePointerWheel(args);
@@ -677,6 +686,46 @@ namespace winrt::ElMd::implementation
         EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Pointer);
         caretGoalX = -1.0f;
         auto point = args.GetCurrentPoint(EditorSurface()).Position();
+        editorRenderer.UpdatePointer(static_cast<float>(point.X), static_cast<float>(point.Y));
+        if (auto action = editorRenderer.TableActionAt(static_cast<float>(point.X), static_cast<float>(point.Y)))
+        {
+            if (action->kind == winrt::ElMd::EditorSurfaceRenderer::TableActionKind::DragRow || action->kind == winrt::ElMd::EditorSurfaceRenderer::TableActionKind::DragColumn)
+            {
+                tableDrag = action;
+                auto rows = action->kind == winrt::ElMd::EditorSurfaceRenderer::TableActionKind::DragRow;
+                tableDropIndex = editorRenderer.TableDropIndexAt(static_cast<float>(point.X), static_cast<float>(point.Y), rows);
+                editorRenderer.SetTableDrag(tableDrag, tableDropIndex);
+                EditorSurface().CapturePointer(args.Pointer());
+                RenderEditorSurface();
+                args.Handled(true);
+                return;
+            }
+
+            editorSession.SetSelection(action->sourceOffset, action->sourceOffset);
+            NotifyTextInputSelectionChanged();
+            elmd::Command command;
+            command.table_index = action->index;
+            switch (action->kind)
+            {
+                case winrt::ElMd::EditorSurfaceRenderer::TableActionKind::InsertRow:
+                    command.kind = elmd::CommandKind::InsertTableRowAt;
+                    break;
+                case winrt::ElMd::EditorSurfaceRenderer::TableActionKind::InsertColumn:
+                    command.kind = elmd::CommandKind::InsertTableColumnAt;
+                    break;
+                case winrt::ElMd::EditorSurfaceRenderer::TableActionKind::DeleteRow:
+                    command.kind = elmd::CommandKind::DeleteTableRow;
+                    break;
+                case winrt::ElMd::EditorSurfaceRenderer::TableActionKind::DeleteColumn:
+                    command.kind = elmd::CommandKind::DeleteTableColumn;
+                    break;
+                default:
+                    return;
+            }
+            ExecuteEditorCommand(command);
+            args.Handled(true);
+            return;
+        }
         bool hitUpstream = false;
         auto hit = editorRenderer.HitTest(static_cast<float>(point.X), static_cast<float>(point.Y), &hitUpstream);
         if (!hit)
@@ -701,12 +750,22 @@ namespace winrt::ElMd::implementation
 
     void MainWindow::HandlePointerMoved(Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
     {
-        if (!pointerSelecting)
+        auto point = args.GetCurrentPoint(EditorSurface()).Position();
+        editorRenderer.UpdatePointer(static_cast<float>(point.X), static_cast<float>(point.Y));
+        if (tableDrag)
         {
+            auto rows = tableDrag->kind == winrt::ElMd::EditorSurfaceRenderer::TableActionKind::DragRow;
+            tableDropIndex = editorRenderer.TableDropIndexAt(static_cast<float>(point.X), static_cast<float>(point.Y), rows);
+            editorRenderer.SetTableDrag(tableDrag, tableDropIndex);
+            RenderEditorSurface();
+            args.Handled(true);
             return;
         }
-
-        auto point = args.GetCurrentPoint(EditorSurface()).Position();
+        if (!pointerSelecting)
+        {
+            RenderEditorSurface();
+            return;
+        }
         bool hitUpstream = false;
         auto hit = editorRenderer.HitTest(static_cast<float>(point.X), static_cast<float>(point.Y), &hitUpstream);
         if (!hit)
@@ -722,6 +781,32 @@ namespace winrt::ElMd::implementation
 
     void MainWindow::HandlePointerReleased(Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
     {
+        if (tableDrag)
+        {
+            auto action = *tableDrag;
+            auto dropIndex = tableDropIndex;
+            tableDrag.reset();
+            tableDropIndex.reset();
+            editorRenderer.SetTableDrag(std::nullopt, std::nullopt);
+            EditorSurface().ReleasePointerCapture(args.Pointer());
+            if (dropIndex)
+            {
+                editorSession.SetSelection(action.sourceOffset, action.sourceOffset);
+                NotifyTextInputSelectionChanged();
+                elmd::Command command;
+                command.kind = action.kind == winrt::ElMd::EditorSurfaceRenderer::TableActionKind::DragRow
+                    ? elmd::CommandKind::MoveTableRowTo
+                    : elmd::CommandKind::MoveTableColumnTo;
+                command.table_index = *dropIndex;
+                ExecuteEditorCommand(command);
+            }
+            else
+            {
+                RenderEditorSurface();
+            }
+            args.Handled(true);
+            return;
+        }
         if (pointerSelecting)
         {
             pointerSelecting = false;

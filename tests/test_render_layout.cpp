@@ -69,6 +69,36 @@ ELMD_TEST(builds_table_block) {
     ELMD_CHECK(m.blocks[0].column_count >= 2);
 }
 
+ELMD_TEST(table_render_cells_keep_their_own_source_ranges) {
+    auto m = build_model("| A | B |\n| :--- | ---: |\n| 1 | 2 |\n");
+    ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Table);
+    ELMD_CHECK_EQ(m.blocks[0].table_cells.size(), 4u);
+    ELMD_CHECK(!m.blocks[0].table_cells[0].empty());
+    ELMD_CHECK(!m.blocks[0].table_cells[1].empty());
+    if (!m.blocks[0].table_cells[0].empty() && !m.blocks[0].table_cells[1].empty()) {
+        ELMD_CHECK_EQ(m.blocks[0].table_cells[0][0].source_range.start.v, 2u);
+        ELMD_CHECK_EQ(m.blocks[0].table_cells[1][0].source_range.start.v, 6u);
+    }
+}
+
+ELMD_TEST(layout_table_builds_rows_columns_and_cells) {
+    StubMeasurer ms(8.0f);
+    auto m = build_model("| A | B |\n| :--- | ---: |\n| 1 | 2 |\n");
+    auto t = layout_blocks(m.blocks, 800.0f, 1.0f, ms, std::nullopt, LogicalPoint(0, 0), Outline::empty(1));
+    ELMD_CHECK_EQ(t.blocks.size(), 1u);
+    ELMD_CHECK(t.blocks[0].kind.kind == LayoutBlockKind::Table);
+    ELMD_CHECK_EQ(t.blocks[0].children.size(), 1u);
+    ELMD_CHECK(t.blocks[0].children[0].kind == LayoutItem::Kind::Table);
+    auto const& table = t.blocks[0].children[0].table;
+    ELMD_CHECK_EQ(table.columns.size(), 2u);
+    ELMD_CHECK_EQ(table.rows.size(), 2u);
+    ELMD_CHECK_EQ(table.rows[0].cells.size(), 2u);
+    ELMD_CHECK(table.rows[0].is_header);
+    ELMD_CHECK(table.columns[0].alignment == TableAlignment::Left);
+    ELMD_CHECK(table.columns[1].alignment == TableAlignment::Right);
+    ELMD_CHECK_EQ(table.rows[0].cells[0].source_range.start.v, 2u);
+}
+
 ELMD_TEST(builds_text_blocks_from_ast_paragraphs) {
     auto trailing = build_model("Hello\n");
     ELMD_CHECK_EQ(trailing.blocks.size(), 1u);

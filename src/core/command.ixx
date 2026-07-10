@@ -3,6 +3,7 @@
 // (unimplemented in v1) and are handled at the editor/UI layer (HANDOFF).
 export module elmd.core.command;
 import std;
+import elmd.core.dialect;
 
 export namespace elmd {
 
@@ -19,6 +20,8 @@ enum class CommandKind {
     MoveTableCellNext, MoveTableCellPrevious,
     InsertTableRowAbove, InsertTableRowBelow, DeleteTableRow, MoveTableRowUp, MoveTableRowDown,
     InsertTableColumnLeft, InsertTableColumnRight, DeleteTableColumn, MoveTableColumnLeft, MoveTableColumnRight,
+    SetTableColumnAlignment, NormalizeTable,
+    InsertTableRowAt, InsertTableColumnAt, MoveTableRowTo, MoveTableColumnTo,
     ToggleCallout, ExtensionCmd,
     Undo, Redo, Cut, Copy, Paste,
 };
@@ -30,6 +33,8 @@ struct Command {
     std::uint8_t level = 0;               // SetHeading
     std::optional<std::u32string> lang;    // InsertCodeBlock
     std::size_t rows = 0, cols = 0;       // InsertTable
+    TableAlignment table_alignment = TableAlignment::None;
+    std::size_t table_index = 0;
     std::u32string path, alt;              // InsertImage
     std::u32string href;                   // InsertLink
     std::optional<std::u32string> title;    // InsertLink

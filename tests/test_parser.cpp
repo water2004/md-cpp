@@ -320,6 +320,64 @@ ELMD_TEST(test_gfm_table_parsed) {
     ELMD_CHECK(blocks_has_kind(out.document.blocks, BlockKind::Table));
 }
 
+ELMD_TEST(test_gfm_table_cell_ranges_and_alignments) {
+    std::string source = "| A | B |\n| :--- | ---: |\n| 1 | 2 |\n";
+    auto out = parse_text(1, source);
+    auto* table = first_of(out.document.blocks, BlockKind::Table);
+    ELMD_CHECK(table != nullptr);
+    if (table) {
+        ELMD_CHECK_EQ(table->table_header.size(), 2u);
+        ELMD_CHECK_EQ(table->table_rows.size(), 1u);
+        ELMD_CHECK_EQ(table->table_aligns.size(), 2u);
+        ELMD_CHECK(table->table_aligns[0] == TableAlignment::Left);
+        ELMD_CHECK(table->table_aligns[1] == TableAlignment::Right);
+        auto* first_cell = out.document.source_map.find_node_by_id(table->table_header[0].id);
+        auto* second_cell = out.document.source_map.find_node_by_id(table->table_header[1].id);
+        ELMD_CHECK(first_cell != nullptr);
+        ELMD_CHECK(second_cell != nullptr);
+        if (first_cell && second_cell) {
+            ELMD_CHECK_EQ(first_cell->content_range.start.v, 2u);
+            ELMD_CHECK_EQ(first_cell->content_range.end.v, 3u);
+            ELMD_CHECK_EQ(second_cell->content_range.start.v, 6u);
+            ELMD_CHECK_EQ(second_cell->content_range.end.v, 7u);
+        }
+    }
+}
+
+ELMD_TEST(test_gfm_table_escaped_pipe_stays_in_its_cell) {
+    auto out = parse_text(1, "| A\\|B | C |\n| --- | --- |\n| 1 | 2 |\n");
+    auto* table = first_of(out.document.blocks, BlockKind::Table);
+    ELMD_CHECK(table != nullptr);
+    if (table) {
+        ELMD_CHECK_EQ(table->table_header.size(), 2u);
+        ELMD_CHECK_EQ(cps_to_utf8(block_inline_text_content(table->table_header[0].children)), std::string("A\\|B"));
+    }
+}
+
+ELMD_TEST(test_invalid_table_probe_does_not_leave_orphan_source_ranges) {
+    auto out = parse_text(1, "| A | B |\nnot a separator\n");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    ELMD_CHECK(out.document.blocks[0].kind == BlockKind::Paragraph);
+    ELMD_CHECK_EQ(out.document.source_map.node_ranges.size(), 2u);
+    auto* paragraph = out.document.source_map.find_node_by_id(out.document.blocks[0].id);
+    ELMD_CHECK(paragraph != nullptr);
+    if (paragraph) {
+        ELMD_CHECK_EQ(paragraph->source_range.start.v, 0u);
+        ELMD_CHECK_EQ(paragraph->source_range.end.v, 26u);
+    }
+}
+
+ELMD_TEST(test_table_body_cells_are_capped_at_header_columns) {
+    auto out = parse_text(1, "| A | B |\n| --- | --- |\n| 1 | 2 | 3 |\n");
+    auto* table = first_of(out.document.blocks, BlockKind::Table);
+    ELMD_CHECK(table != nullptr);
+    if (table) {
+        ELMD_CHECK_EQ(table->table_header.size(), 2u);
+        ELMD_CHECK_EQ(table->table_rows.size(), 1u);
+        ELMD_CHECK_EQ(table->table_rows[0].cells.size(), 2u);
+    }
+}
+
 ELMD_TEST(test_wiki_link) {
     auto out = parse_text(1, "[[Page Name]]\n");
     auto* p = first_of(out.document.blocks, BlockKind::Paragraph);

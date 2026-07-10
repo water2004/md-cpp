@@ -57,6 +57,8 @@ namespace winrt::ElMd::implementation
         std::u32string pendingCharacterText;
         bool pointerSelecting = false;
         std::size_t pointerAnchor = 0;
+        std::optional<winrt::ElMd::EditorSurfaceRenderer::TableAction> tableDrag;
+        std::optional<std::size_t> tableDropIndex;
         float caretGoalX = -1.0f;
         bool MoveCaretVerticalStep(bool down, bool extend);
         std::vector<std::size_t> outlineOffsets;
