@@ -1,6 +1,7 @@
 #pragma once
 
 #include "MathJaxRenderer.h"
+#include "MermaidRenderer.h"
 
 namespace winrt::ElMd
 {
@@ -21,6 +22,8 @@ namespace winrt::ElMd
         void Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height);
         void Render(detail::EditorSessionCore const& sessionCore);
         void SetTheme(Theme value);
+        void SetInvalidateCallback(std::function<void()> callback);
+        void InitializeMermaid(winrt::Microsoft::UI::Xaml::Controls::WebView2 const& webView);
 
         struct CaretMove
         {
@@ -118,6 +121,15 @@ namespace winrt::ElMd
             std::vector<VisualTableCell> cells;
         };
 
+        struct VisualMathHit
+        {
+            D2D1_RECT_F rect{};
+            std::size_t sourceStart = 0;
+            std::size_t sourceEnd = 0;
+            float progressStart = 0.0f;
+            float progressEnd = 1.0f;
+        };
+
         std::optional<std::size_t> LineIndexFor(std::size_t sourceOffset, bool upstream) const;
         std::optional<D2D1_RECT_F> CaretRectOnLine(VisualLine const& line, std::size_t sourceOffset, bool upstream) const;
 
@@ -177,11 +189,15 @@ namespace winrt::ElMd
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> selectionBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> caretBrush;
         MathJaxRenderer mathJax;
+        MermaidRenderer mermaid;
+        std::function<void()> invalidateCallback;
+        std::atomic_bool mathInvalidationQueued = false;
         Theme theme = Theme::Dark;
         EditorStyleSheet styleSheet = CreateStyleSheet(Theme::Dark);
         std::vector<VisualBlock> visualBlocks;
         std::vector<VisualLine> visualLines;
         std::vector<VisualTable> visualTables;
+        std::vector<VisualMathHit> visualMathHits;
         std::optional<D2D1_POINT_2F> pointerPosition;
         std::optional<TableAction> draggedTableAction;
         std::optional<std::size_t> tableDropIndex;

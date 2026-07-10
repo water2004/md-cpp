@@ -103,13 +103,60 @@ namespace winrt::ElMd
         struct MathOverlay
         {
             std::uint32_t displayStart = 0;
-            MathJaxSvg svg;
+            MathJaxSvgFragment fragment;
+            float leadingSpace = 0.0f;
+            std::size_t sourceStart = 0;
+            std::size_t sourceEnd = 0;
+            float progressStart = 0.0f;
+            float progressEnd = 1.0f;
         };
 
         std::u32string text;
         std::vector<std::size_t> displayToSource;
         std::vector<InlineStyleRange> ranges;
         std::vector<MathOverlay> mathOverlays;
+        std::vector<MathJaxSvg> mathPreviews;
+    };
+
+    class MathInlineObject final : public ::Microsoft::WRL::RuntimeClass<::Microsoft::WRL::RuntimeClassFlags<::Microsoft::WRL::ClassicCom>, IDWriteInlineObject>
+    {
+    public:
+        MathInlineObject(float width, float height, float baseline) : width(width), height(height), baseline(baseline) {}
+
+        IFACEMETHODIMP Draw(void*, IDWriteTextRenderer*, FLOAT, FLOAT, BOOL, BOOL, IUnknown*) override
+        {
+            return S_OK;
+        }
+
+        IFACEMETHODIMP GetMetrics(DWRITE_INLINE_OBJECT_METRICS* metrics) override
+        {
+            if (!metrics) return E_POINTER;
+            metrics->width = width;
+            metrics->height = height;
+            metrics->baseline = baseline;
+            metrics->supportsSideways = FALSE;
+            return S_OK;
+        }
+
+        IFACEMETHODIMP GetOverhangMetrics(DWRITE_OVERHANG_METRICS* overhangs) override
+        {
+            if (!overhangs) return E_POINTER;
+            *overhangs = {};
+            return S_OK;
+        }
+
+        IFACEMETHODIMP GetBreakConditions(DWRITE_BREAK_CONDITION* before, DWRITE_BREAK_CONDITION* after) override
+        {
+            if (!before || !after) return E_POINTER;
+            *before = DWRITE_BREAK_CONDITION_NEUTRAL;
+            *after = DWRITE_BREAK_CONDITION_NEUTRAL;
+            return S_OK;
+        }
+
+    private:
+        float width;
+        float height;
+        float baseline;
     };
 
     bool IsStyleMarker(elmd::InlineRenderItem const& item)
@@ -134,6 +181,14 @@ namespace winrt::ElMd
             }
         }
         return true;
+    }
+
+    bool IsMermaidLanguage(std::optional<std::string> const& language)
+    {
+        if (!language) return false;
+        std::string normalized = *language;
+        std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+        return normalized == "mermaid";
     }
 
     bool CaretTouchesRange(std::size_t caret, elmd::CharRange const& range)
@@ -222,6 +277,50 @@ namespace winrt::ElMd
         }
     }
 
+    void AppendMathFragments(DisplayInlineText& display, MathJaxSvg const& math, std::size_t sourceStart, std::size_t sourceEnd, bool editing)
+    {
+        if (editing)
+        {
+            AppendDisplayText(display, U"\u2003", sourceEnd, elmd::InlineStyle::plain(), false);
+        }
+        float progress = 0.0f;
+        for (std::size_t index = 0; index < math.fragments.size(); ++index)
+        {
+            auto const& fragment = math.fragments[index];
+            auto length = sourceEnd - sourceStart;
+            auto mappedOffset = editing || math.width <= 0.0f
+                ? sourceEnd
+                : sourceStart + static_cast<std::size_t>(std::floor((progress / math.width) * static_cast<float>(length)));
+            if (index > 0 && fragment.breakBefore)
+            {
+                AppendDisplayText(display, U"\u200B", mappedOffset, elmd::InlineStyle::plain(), false);
+            }
+            auto start = static_cast<UINT32>(display.text.size());
+            display.text.push_back(U'\uFFFC');
+            display.displayToSource.push_back(mappedOffset);
+            display.ranges.push_back(InlineStyleRange{ start, 1, elmd::InlineStyle::plain(), false });
+            auto fragmentStart = math.width > 0.0f ? progress / math.width : 0.0f;
+            progress += fragment.breakSpace + fragment.width;
+            auto fragmentEnd = math.width > 0.0f ? progress / math.width : 1.0f;
+            display.mathOverlays.push_back(DisplayInlineText::MathOverlay{ start, fragment, fragment.breakSpace, sourceStart, sourceEnd, fragmentStart, fragmentEnd });
+        }
+    }
+
+    void ApplyMathInlineObjects(IDWriteTextLayout* layout, std::vector<DisplayInlineText::MathOverlay> const& overlays)
+    {
+        if (!layout) return;
+        for (auto const& overlay : overlays)
+        {
+            auto const& fragment = overlay.fragment;
+            auto baseline = (std::clamp)(fragment.height + fragment.verticalAlign, 0.0f, fragment.height);
+            auto object = ::Microsoft::WRL::Make<MathInlineObject>(overlay.leadingSpace + fragment.width, fragment.height, baseline);
+            if (object)
+            {
+                layout->SetInlineObject(object.Get(), DWRITE_TEXT_RANGE{ overlay.displayStart, 1 });
+            }
+        }
+    }
+
     DisplayInlineText BuildDisplayInlineText(
         std::vector<elmd::InlineRenderItem> const& items,
         std::size_t caret,
@@ -230,7 +329,8 @@ namespace winrt::ElMd
         MathJaxRenderer& mathJax,
         float fontSize,
         float containerWidth,
-        bool svgSupported)
+        bool svgSupported,
+        bool requestMath)
     {
         DisplayInlineText display;
         auto markerVisibility = RevealedStyleMarkers(items, caret);
@@ -252,9 +352,9 @@ namespace winrt::ElMd
                     AppendSourceText(display, sourceText, item.source_range.start.v, item.source_range.end.v, item.style, false);
                     continue;
                 }
-                auto math = mathJax.Render(elmd::cps_to_utf8(item.text), false, fontSize, containerWidth);
+                auto math = mathJax.GetOrQueue(elmd::cps_to_utf8(item.text), false, fontSize, containerWidth, requestMath);
                 auto editing = CaretTouchesRange(caret, item.source_range);
-                if (!math)
+                if (!math || !static_cast<bool>(*math))
                 {
                     AppendSourceText(display, sourceText, item.source_range.start.v, item.source_range.end.v, item.style, false);
                     continue;
@@ -263,11 +363,10 @@ namespace winrt::ElMd
                 if (editing)
                 {
                     AppendSourceText(display, sourceText, item.source_range.start.v, item.source_range.end.v, item.style, false);
+                    display.mathPreviews.push_back(*math);
+                    continue;
                 }
-                auto overlayStart = static_cast<UINT32>(display.text.size());
-                auto placeholderCount = static_cast<std::size_t>((std::max)(1.0f, std::ceil(math.width / (fontSize * 0.55f)))) + 1;
-                AppendMathPlaceholder(display, placeholderCount, item.source_range.end.v);
-                display.mathOverlays.push_back(DisplayInlineText::MathOverlay{ overlayStart, std::move(math) });
+                AppendMathFragments(display, *math, item.source_range.start.v, item.source_range.end.v, false);
                 continue;
             }
             AppendDisplayText(display, InlineText(item), item.source_range.start.v, item.style, item.kind == elmd::InlineRenderItem::Kind::Marker);
@@ -448,6 +547,28 @@ namespace winrt::ElMd
         ResetBrushes();
     }
 
+    void EditorSurfaceRenderer::SetInvalidateCallback(std::function<void()> callback)
+    {
+        invalidateCallback = std::move(callback);
+    }
+
+    void EditorSurfaceRenderer::InitializeMermaid(winrt::Microsoft::UI::Xaml::Controls::WebView2 const& webView)
+    {
+        auto dispatcher = webView.DispatcherQueue();
+        mermaid.Initialize(webView, [this, dispatcher]
+        {
+            if (mathInvalidationQueued.exchange(true)) return;
+            if (!dispatcher.TryEnqueue([this]
+            {
+                mathInvalidationQueued = false;
+                if (invalidateCallback) invalidateCallback();
+            }))
+            {
+                mathInvalidationQueued = false;
+            }
+        });
+    }
+
     void EditorSurfaceRenderer::Initialize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel)
     {
         if (swapChain)
@@ -528,6 +649,19 @@ namespace winrt::ElMd
 
         surfaceWidth = width;
         surfaceHeight = height;
+        auto dispatcher = panel.DispatcherQueue();
+        mathJax.SetCompletionCallback([this, dispatcher]
+        {
+            if (mathInvalidationQueued.exchange(true)) return;
+            if (!dispatcher.TryEnqueue([this]
+            {
+                mathInvalidationQueued = false;
+                if (invalidateCallback) invalidateCallback();
+            }))
+            {
+                mathInvalidationQueued = false;
+            }
+        });
     }
 
     void EditorSurfaceRenderer::Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height)
@@ -564,6 +698,7 @@ namespace winrt::ElMd
         visualBlocks.clear();
         visualLines.clear();
         visualTables.clear();
+        visualMathHits.clear();
         auto documentLeft = styleSheet.horizontalPadding;
         auto documentTop = styleSheet.verticalPadding;
         auto documentRight = (std::min)(surfaceWidthDip - styleSheet.horizontalPadding, documentLeft + styleSheet.documentWidth);
@@ -574,15 +709,14 @@ namespace winrt::ElMd
         ::Microsoft::WRL::ComPtr<ID2D1DeviceContext5> svgContext;
         auto svgSupported = SUCCEEDED(d2dContext.As(&svgContext)) && svgContext;
 
-        auto drawMathSvg = [&](MathJaxSvg const& math, D2D1_POINT_2F origin, D2D1_COLOR_F color)
+        auto drawSvg = [&](std::string const& source, float width, float height, D2D1_POINT_2F origin)
         {
-            if (!math || !svgSupported)
+            if (source.empty() || width <= 0.0f || height <= 0.0f || !svgSupported)
             {
                 return;
             }
 
-            auto svg = RecolorMathSvg(math.svg, color);
-            auto allocation = GlobalAlloc(GMEM_MOVEABLE, svg.size());
+            auto allocation = GlobalAlloc(GMEM_MOVEABLE, source.size());
             if (!allocation)
             {
                 return;
@@ -593,7 +727,7 @@ namespace winrt::ElMd
                 GlobalFree(allocation);
                 return;
             }
-            std::memcpy(bytes, svg.data(), svg.size());
+            std::memcpy(bytes, source.data(), source.size());
             GlobalUnlock(allocation);
 
             ::Microsoft::WRL::ComPtr<IStream> stream;
@@ -603,7 +737,7 @@ namespace winrt::ElMd
                 return;
             }
             ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> document;
-            if (FAILED(svgContext->CreateSvgDocument(stream.Get(), D2D1::SizeF(math.width, math.height), document.GetAddressOf())) || !document)
+            if (FAILED(svgContext->CreateSvgDocument(stream.Get(), D2D1::SizeF(width, height), document.GetAddressOf())) || !document)
             {
                 return;
             }
@@ -612,6 +746,11 @@ namespace winrt::ElMd
             svgContext->SetTransform(D2D1::Matrix3x2F::Translation(origin.x, origin.y) * transform);
             svgContext->DrawSvgDocument(document.Get());
             svgContext->SetTransform(transform);
+        };
+
+        auto drawMathSvg = [&](MathJaxSvgFragment const& fragment, D2D1_POINT_2F origin, D2D1_COLOR_F color)
+        {
+            drawSvg(RecolorMathSvg(fragment.svg, color), fragment.width, fragment.height, origin);
         };
 
         auto createLayout = [&](std::wstring const& text, IDWriteTextFormat* format, float width)
@@ -885,6 +1024,7 @@ namespace winrt::ElMd
                 }
             }
             IDWriteTextFormat* format = textFormat.Get();
+            auto requestEmbedded = y >= -surfaceHeightDip * 2.0f && y <= surfaceHeightDip * 3.0f;
             ID2D1Brush* brush = textBrush.Get();
             float height = 48.0f;
             float inset = 0.0f;
@@ -895,8 +1035,11 @@ namespace winrt::ElMd
             std::vector<InlineStyleRange> inlineRanges;
             std::vector<std::size_t> displayToSource;
             std::vector<DisplayInlineText::MathOverlay> inlineMathOverlays;
+            std::vector<MathJaxSvg> inlineMathPreviews;
             std::optional<MathJaxSvg> blockMath;
             bool showRawMath = false;
+            std::optional<MermaidSvg> blockMermaid;
+            bool showRawMermaid = false;
 
             switch (block.kind)
             {
@@ -918,11 +1061,13 @@ namespace winrt::ElMd
                         mathJax,
                         styleSheet.body.size,
                         documentRight - documentLeft,
-                        svgSupported);
+                        svgSupported,
+                        requestEmbedded);
                     text = std::move(display.text);
                     inlineRanges = std::move(display.ranges);
                     displayToSource = std::move(display.displayToSource);
                     inlineMathOverlays = std::move(display.mathOverlays);
+                    inlineMathPreviews = std::move(display.mathPreviews);
                     if (block.block_style.margin_top >= 24.0f)
                     {
                         format = heading1Format.Get();
@@ -941,7 +1086,27 @@ namespace winrt::ElMd
                 }
                 case elmd::RenderBlockKind::Code:
                 {
-                    auto display = BuildCodeBlockText(block, caret, sourceText);
+                    DisplayInlineText display;
+                    if (IsMermaidLanguage(block.language))
+                    {
+                        blockMermaid = svgSupported
+                            ? mermaid.GetOrQueue(elmd::cps_to_utf8(block.code_text), theme == Theme::Dark, requestEmbedded)
+                            : std::nullopt;
+                        showRawMermaid = block.source_range.start.v <= caret && caret <= block.source_range.end.v;
+                        if (showRawMermaid || !blockMermaid || !static_cast<bool>(*blockMermaid))
+                        {
+                            display = BuildCodeBlockText(block, caret, sourceText);
+                        }
+                        else
+                        {
+                            AppendMathPlaceholder(display, 1, block.source_range.start.v);
+                            display.displayToSource.push_back(block.source_range.end.v);
+                        }
+                    }
+                    else
+                    {
+                        display = BuildCodeBlockText(block, caret, sourceText);
+                    }
                     text = std::move(display.text);
                     inlineRanges = std::move(display.ranges);
                     displayToSource = std::move(display.displayToSource);
@@ -956,11 +1121,11 @@ namespace winrt::ElMd
                 case elmd::RenderBlockKind::Math:
                 {
                     blockMath = svgSupported
-                        ? mathJax.Render(elmd::cps_to_utf8(block.tex), true, styleSheet.body.size, documentRight - documentLeft)
-                        : MathJaxSvg{};
+                        ? mathJax.GetOrQueue(elmd::cps_to_utf8(block.tex), true, styleSheet.body.size, documentRight - documentLeft, requestEmbedded)
+                        : std::nullopt;
                     showRawMath = block.source_range.start.v <= caret && caret <= block.source_range.end.v;
                     DisplayInlineText display;
-                    if (showRawMath || !static_cast<bool>(*blockMath))
+                    if (showRawMath || !blockMath || !static_cast<bool>(*blockMath))
                     {
                         auto visibleEnd = block.source_range.end.v;
                         if (visibleEnd > block.source_range.start.v && visibleEnd <= sourceText.size() && sourceText[visibleEnd - 1] == U'\n')
@@ -1012,11 +1177,13 @@ namespace winrt::ElMd
                         mathJax,
                         styleSheet.body.size,
                         documentRight - documentLeft,
-                        svgSupported);
+                        svgSupported,
+                        requestEmbedded);
                     text = std::move(display.text);
                     inlineRanges = std::move(display.ranges);
                     displayToSource = std::move(display.displayToSource);
                     inlineMathOverlays = std::move(display.mathOverlays);
+                    inlineMathPreviews = std::move(display.mathPreviews);
                     brush = mutedBrush.Get();
                     break;
                 }
@@ -1054,12 +1221,53 @@ namespace winrt::ElMd
             auto textWidth = (std::max)(1.0f, documentRight - documentLeft - inset * 2.0f);
             auto layout = createLayout(wide, format, textWidth);
             applyInlineStyles(layout.Get(), inlineRanges);
+            ApplyMathInlineObjects(layout.Get(), inlineMathOverlays);
             std::optional<D2D1_POINT_2F> blockMathOrigin;
+            std::vector<std::vector<D2D1_POINT_2F>> inlineMathPreviewOrigins;
+            std::optional<D2D1_POINT_2F> blockMermaidOrigin;
+            float blockMermaidWidth = 0.0f;
+            float blockMermaidHeight = 0.0f;
             if (measureHeight)
             {
                 auto fallbackHeight = format == codeFormat.Get() ? styleSheet.code.lineHeight : styleSheet.body.lineHeight;
                 auto bottomPadding = fillPanel ? 16.0f : 8.0f;
                 height = textTop + measureTextHeight(layout.Get(), fallbackHeight) + bottomPadding;
+            }
+            if (!inlineMathPreviews.empty())
+            {
+                auto availableWidth = (std::max)(1.0f, documentRight - documentLeft - inset * 2.0f);
+                auto previewY = y + textTop + measureTextHeight(layout.Get(), styleSheet.body.lineHeight) + 8.0f;
+                inlineMathPreviewOrigins.reserve(inlineMathPreviews.size());
+                for (auto const& preview : inlineMathPreviews)
+                {
+                    std::vector<D2D1_POINT_2F> origins;
+                    origins.reserve(preview.fragments.size());
+                    auto previewX = documentLeft + inset;
+                    auto lineTop = previewY;
+                    auto lineHeight = 0.0f;
+                    for (auto const& fragment : preview.fragments)
+                    {
+                        if (fragment.breakBefore && previewX > documentLeft + inset)
+                        {
+                            lineTop += lineHeight + 4.0f;
+                            previewX = documentLeft + inset;
+                            lineHeight = 0.0f;
+                        }
+                        if (previewX + fragment.breakSpace + fragment.width > documentLeft + inset + availableWidth && previewX > documentLeft + inset)
+                        {
+                            lineTop += lineHeight + 4.0f;
+                            previewX = documentLeft + inset;
+                            lineHeight = 0.0f;
+                        }
+                        previewX += fragment.breakSpace;
+                        origins.push_back(D2D1::Point2F(previewX, lineTop));
+                        previewX += fragment.width;
+                        lineHeight = (std::max)(lineHeight, fragment.height);
+                    }
+                    previewY = lineTop + lineHeight + 8.0f;
+                    inlineMathPreviewOrigins.push_back(std::move(origins));
+                }
+                height = (std::max)(height, previewY - y + 8.0f);
             }
             if (block.kind == elmd::RenderBlockKind::Math && blockMath && static_cast<bool>(*blockMath))
             {
@@ -1076,6 +1284,26 @@ namespace winrt::ElMd
                 {
                     height = blockMath->height + 32.0f;
                     blockMathOrigin = D2D1::Point2F(previewX, y + 16.0f);
+                }
+            }
+            if (block.kind == elmd::RenderBlockKind::Code && blockMermaid && static_cast<bool>(*blockMermaid))
+            {
+                auto availableWidth = (std::max)(1.0f, documentRight - documentLeft - inset * 2.0f);
+                auto scale = (std::min)(1.0f, availableWidth / blockMermaid->width);
+                blockMermaidWidth = blockMermaid->width * scale;
+                blockMermaidHeight = blockMermaid->height * scale;
+                auto previewX = documentLeft + (documentRight - documentLeft - blockMermaidWidth) * 0.5f;
+                if (showRawMermaid)
+                {
+                    auto rawHeight = measureTextHeight(layout.Get(), styleSheet.code.lineHeight);
+                    auto previewY = y + textTop + rawHeight + 10.0f;
+                    height = textTop + rawHeight + 10.0f + blockMermaidHeight + 16.0f;
+                    blockMermaidOrigin = D2D1::Point2F(previewX, previewY);
+                }
+                else
+                {
+                    height = blockMermaidHeight + 32.0f;
+                    blockMermaidOrigin = D2D1::Point2F(previewX, y + 16.0f);
                 }
             }
             auto sourceStart = displayToSource.empty() ? SourceStart(block) : displayToSource.front();
@@ -1142,13 +1370,40 @@ namespace winrt::ElMd
                     DWRITE_HIT_TEST_METRICS metrics{};
                     if (SUCCEEDED(layout->HitTestTextPosition(overlay.displayStart, FALSE, &pointX, &pointY, &metrics)))
                     {
-                        auto mathY = origin.y + pointY + (metrics.height - overlay.svg.height) * 0.5f;
-                        drawMathSvg(overlay.svg, D2D1::Point2F(origin.x + pointX, mathY), styleSheet.textColor);
+                        auto mathY = origin.y + metrics.top;
+                        auto mathX = origin.x + pointX + overlay.leadingSpace;
+                        drawMathSvg(overlay.fragment, D2D1::Point2F(mathX, mathY), styleSheet.textColor);
+                        visualMathHits.push_back(VisualMathHit{
+                            D2D1::RectF(mathX, mathY, mathX + overlay.fragment.width, mathY + overlay.fragment.height),
+                            overlay.sourceStart,
+                            overlay.sourceEnd,
+                            overlay.progressStart,
+                            overlay.progressEnd,
+                        });
+                    }
+                }
+                for (std::size_t previewIndex = 0; previewIndex < inlineMathPreviews.size(); ++previewIndex)
+                {
+                    auto const& preview = inlineMathPreviews[previewIndex];
+                    auto const& origins = inlineMathPreviewOrigins[previewIndex];
+                    for (std::size_t fragmentIndex = 0; fragmentIndex < preview.fragments.size() && fragmentIndex < origins.size(); ++fragmentIndex)
+                    {
+                        drawMathSvg(preview.fragments[fragmentIndex], origins[fragmentIndex], styleSheet.textColor);
                     }
                 }
                 if (blockMathOrigin && blockMath)
                 {
-                    drawMathSvg(*blockMath, *blockMathOrigin, styleSheet.textColor);
+                    auto mathX = blockMathOrigin->x;
+                    for (auto const& fragment : blockMath->fragments)
+                    {
+                        mathX += fragment.breakSpace;
+                        drawMathSvg(fragment, D2D1::Point2F(mathX, blockMathOrigin->y), styleSheet.textColor);
+                        mathX += fragment.width;
+                    }
+                }
+                if (blockMermaidOrigin && blockMermaid)
+                {
+                    drawSvg(blockMermaid->svg, blockMermaidWidth, blockMermaidHeight, *blockMermaidOrigin);
                 }
 
                 VisualBlock visualBlock;
@@ -1584,6 +1839,19 @@ namespace winrt::ElMd
         if (outUpstream)
         {
             *outUpstream = false;
+        }
+        for (auto hit = visualMathHits.rbegin(); hit != visualMathHits.rend(); ++hit)
+        {
+            if (x < hit->rect.left || x > hit->rect.right || y < hit->rect.top || y > hit->rect.bottom)
+            {
+                continue;
+            }
+            auto width = (std::max)(1.0f, hit->rect.right - hit->rect.left);
+            auto local = (std::clamp)((x - hit->rect.left) / width, 0.0f, 1.0f);
+            auto progress = hit->progressStart + local * (hit->progressEnd - hit->progressStart);
+            auto length = hit->sourceEnd - hit->sourceStart;
+            auto offset = hit->sourceStart + static_cast<std::size_t>(std::llround(progress * static_cast<float>(length)));
+            return (std::min)(offset, hit->sourceEnd);
         }
         if (visualLines.empty())
         {

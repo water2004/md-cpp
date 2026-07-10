@@ -893,7 +893,7 @@ namespace winrt::ElMd::implementation
             ++pos;
         }
 
-        if (pos + 5 >= text.size() || text[pos] != U'-' || text[pos + 1] != U' ' || text[pos + 2] != U'[' || text[pos + 4] != U']' || text[pos + 5] != U' ')
+        if (pos + 5 >= text.size() || (text[pos] != U'-' && text[pos] != U'*' && text[pos] != U'+') || text[pos + 1] != U' ' || text[pos + 2] != U'[' || text[pos + 4] != U']' || text[pos + 5] != U' ')
         {
             return false;
         }
@@ -1064,6 +1064,8 @@ namespace winrt::ElMd::implementation
     void MainWindow::InitializeEditorSurface()
     {
         UpdateTheme();
+        editorRenderer.SetInvalidateCallback([this] { RenderEditorSurface(); });
+        editorRenderer.InitializeMermaid(MermaidWebView());
         editorRenderer.Initialize(EditorSurface());
         RenderEditorSurface();
         EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Programmatic);

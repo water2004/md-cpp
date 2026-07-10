@@ -110,6 +110,7 @@
     <ClInclude Include="EditorSession.h" />
     <ClInclude Include="EditorSurfaceRenderer.h" />
     <ClInclude Include="MathJaxRenderer.h" />
+    <ClInclude Include="MermaidRenderer.h" />
     <ClInclude Include="App.xaml.h">
       <DependentUpon>App.xaml</DependentUpon>
     </ClInclude>
@@ -215,6 +216,7 @@
     <ClCompile Include="EditorSession.cpp" />
     <ClCompile Include="EditorSurfaceRenderer.cpp" />
     <ClCompile Include="MathJaxRenderer.cpp" />
+    <ClCompile Include="MermaidRenderer.cpp" />
     <ClCompile Include="App.xaml.cpp">
       <DependentUpon>App.xaml</DependentUpon>
     </ClCompile>
@@ -234,7 +236,19 @@
     <None Include="Assets\mathjax\mathjax-quickjs.js">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="Assets\mathjax\font\*.js">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="Assets\mathjax\LICENSE-MathJax.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Assets\mermaid\mermaid.min.js">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Assets\mermaid\renderer.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Assets\mermaid\LICENSE-Mermaid.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

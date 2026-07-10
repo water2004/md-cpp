@@ -299,6 +299,34 @@ ELMD_TEST(test_parse_task_list) {
     ELMD_CHECK(blocks_has_kind(out.document.blocks, BlockKind::TaskList));
 }
 
+ELMD_TEST(test_parse_consecutive_unordered_list_as_one_block) {
+    auto out = parse_text(1, "- alpha\n- beta\n- gamma\n");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    ELMD_CHECK(out.document.blocks[0].kind == BlockKind::List);
+    ELMD_CHECK_EQ(out.document.blocks[0].list_items.size(), 3u);
+    ELMD_CHECK(!out.document.blocks[0].list_ordered);
+}
+
+ELMD_TEST(test_parse_ordered_list_preserves_numbers_and_delimiter) {
+    auto out = parse_text(1, "9) alpha\n10) beta\n");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    ELMD_CHECK(out.document.blocks[0].kind == BlockKind::List);
+    ELMD_CHECK(out.document.blocks[0].list_ordered);
+    ELMD_CHECK_EQ(out.document.blocks[0].list_start, 9ull);
+    ELMD_CHECK_EQ(out.document.blocks[0].list_delimiter, U')');
+    ELMD_CHECK_EQ(out.document.blocks[0].list_items.size(), 2u);
+    ELMD_CHECK_EQ(out.document.blocks[0].list_items[1].marker, std::u32string(U"10) "));
+}
+
+ELMD_TEST(test_parse_consecutive_task_list_states) {
+    auto out = parse_text(1, "- [ ] alpha\n- [x] beta\n");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    ELMD_CHECK(out.document.blocks[0].kind == BlockKind::TaskList);
+    ELMD_CHECK_EQ(out.document.blocks[0].task_items.size(), 2u);
+    ELMD_CHECK(!out.document.blocks[0].task_items[0].checked);
+    ELMD_CHECK(out.document.blocks[0].task_items[1].checked);
+}
+
 ELMD_TEST(test_parse_frontmatter_yaml) {
     auto out = parse_text(1, "---\ntitle: Hello\ntags: [rust]\n---\n\nContent\n");
     ELMD_CHECK(blocks_has_kind(out.document.blocks, BlockKind::Frontmatter));

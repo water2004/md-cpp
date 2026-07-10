@@ -35,6 +35,33 @@ ELMD_TEST(test_editor_incremental_unclosed_bracket_math) {
     ELMD_CHECK(model.blocks[0].kind == RenderBlockKind::Math);
 }
 
+ELMD_TEST(test_editor_incremental_inline_math_keeps_exact_source_mapping) {
+    Editor e;
+    for (char32_t ch : std::u32string_view(U"$y=x$")) {
+        ELMD_CHECK(e.execute_command(Command::InsertText(std::u32string(1, ch))) != std::nullopt);
+    }
+    auto model = build_render_model(e.document(), e.buffer().text_utf8(), e.outline());
+    ELMD_CHECK_EQ(model.blocks.size(), 1u);
+    auto item = std::find_if(model.blocks[0].inline_items.begin(), model.blocks[0].inline_items.end(), [](auto const& candidate) {
+        return candidate.kind == InlineRenderItem::Kind::Math;
+    });
+    ELMD_CHECK(item != model.blocks[0].inline_items.end());
+    ELMD_CHECK_EQ(item->text, std::u32string(U"y=x"));
+    ELMD_CHECK_EQ(item->source_range.start.v, 0u);
+    ELMD_CHECK_EQ(item->source_range.end.v, 5u);
+
+    e.set_selection(Selection::caret(CharOffset(0)));
+    for (std::size_t expected = 1; expected <= 5; ++expected) {
+        ELMD_CHECK(e.execute_command(Command::MoveRight(false)) != std::nullopt);
+        ELMD_CHECK_EQ(e.selection().active.v, expected);
+    }
+    for (std::size_t expected = 4; expected < 5; --expected) {
+        ELMD_CHECK(e.execute_command(Command::MoveLeft(false)) != std::nullopt);
+        ELMD_CHECK_EQ(e.selection().active.v, expected);
+        if (expected == 0) break;
+    }
+}
+
 ELMD_TEST(test_editor_undo_redo) {
     Editor e;
     e.execute_command(Command::InsertText(U"hello"));
@@ -560,6 +587,15 @@ ELMD_TEST(test_enter_continues_ordered_list) {
     ELMD_CHECK_EQ(e.selection().head().v, 13u);
 }
 
+ELMD_TEST(test_enter_continues_task_list_unchecked) {
+    Editor e("- [x] alpha");
+    e.set_caret(CharOffset(11));
+    Command c; c.kind = CommandKind::InsertNewline;
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- [x] alpha\n- [ ] "));
+    ELMD_CHECK_EQ(e.selection().head().v, 18u);
+}
+
 ELMD_TEST(test_enter_continues_blockquote) {
     Editor e("> alpha");
     e.set_caret(CharOffset(7));
@@ -616,4 +652,25 @@ ELMD_TEST(test_toggle_task_checkbox) {
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- [x] alpha"));
     e.execute_command(c);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- [ ] alpha"));
+}
+
+ELMD_TEST(test_toggle_ordered_list_across_selected_lines) {
+    Editor e("alpha\nbeta\ngamma");
+    e.set_selection(Selection{CharOffset(0), CharOffset(16), TextAffinity::Downstream});
+    Command c; c.kind = CommandKind::ToggleOrderedList;
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("1. alpha\n2. beta\n3. gamma"));
+    ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
+    ELMD_CHECK(e.document().blocks[0].list_ordered);
+    ELMD_CHECK_EQ(e.document().blocks[0].list_items.size(), 3u);
+}
+
+ELMD_TEST(test_toggle_task_list_across_selected_lines_and_remove) {
+    Editor e("alpha\nbeta");
+    e.set_selection(Selection{CharOffset(0), CharOffset(10), TextAffinity::Downstream});
+    Command c; c.kind = CommandKind::ToggleTaskList;
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- [ ] alpha\n- [ ] beta"));
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha\nbeta"));
 }

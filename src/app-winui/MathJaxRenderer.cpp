@@ -34,6 +34,20 @@ namespace
         return path.substr(0, separator + 1) + L"Assets\\mathjax\\mathjax-quickjs.js";
     }
 
+    std::wstring MathJaxFontPath(std::string_view module)
+    {
+        auto separator = module.find_last_of('/');
+        auto name = module.substr(separator == std::string_view::npos ? 0 : separator + 1);
+        if (name.empty() || name.size() > 64) return {};
+        for (auto value : name)
+        {
+            if (!(std::isalnum(static_cast<unsigned char>(value)) || value == '-' || value == '.')) return {};
+        }
+        auto bundle = MathJaxBundlePath();
+        auto directory = bundle.substr(0, bundle.find_last_of(L"\\/"));
+        return directory + L"\\font\\" + std::wstring(name.begin(), name.end());
+    }
+
     float ParseLength(std::string_view value, float em)
     {
         std::size_t consumed = 0;
@@ -76,159 +90,321 @@ namespace
         if (end == std::string_view::npos) end = svg.size();
         return ParseLength(svg.substr(start, end - start), em);
     }
+
+    float BreakSpacing(std::string_view markup, float em)
+    {
+        auto sizeStart = markup.find("size=\"");
+        if (sizeStart != std::string_view::npos)
+        {
+            sizeStart += std::string_view("size=\"").size();
+            auto sizeEnd = markup.find('"', sizeStart);
+            if (sizeEnd != std::string_view::npos)
+            {
+                auto value = markup.substr(sizeStart, sizeEnd - sizeStart);
+                constexpr std::array<float, 6> spaces{ 0.0f, 2.0f / 18.0f, 3.0f / 18.0f, 4.0f / 18.0f, 5.0f / 18.0f, 6.0f / 18.0f };
+                if (value.size() == 1 && value.front() >= '0' && value.front() <= '5')
+                {
+                    return spaces[static_cast<std::size_t>(value.front() - '0')] * em;
+                }
+            }
+        }
+        auto spacingStart = markup.find("letter-spacing:");
+        if (spacingStart == std::string_view::npos)
+        {
+            return 0.0f;
+        }
+        spacingStart += std::string_view("letter-spacing:").size();
+        while (spacingStart < markup.size() && markup[spacingStart] == ' ') ++spacingStart;
+        auto spacingEnd = markup.find_first_of(";\"", spacingStart);
+        if (spacingEnd == std::string_view::npos) spacingEnd = markup.size();
+        return (std::max)(0.0f, ParseLength(markup.substr(spacingStart, spacingEnd - spacingStart), em) + em);
+    }
 }
 
 namespace winrt::ElMd
 {
     struct MathJaxRenderer::State
     {
+        struct Request
+        {
+            std::string key;
+            std::string tex;
+            bool display = false;
+            float em = 0.0f;
+            float containerWidth = 0.0f;
+            std::uint64_t generation = 0;
+        };
+
+        std::mutex mutex;
+        std::condition_variable_any ready;
+        std::deque<Request> requests;
+        std::unordered_set<std::string> queued;
+        std::unordered_map<std::string, MathJaxSvg> cache;
+        std::deque<std::string> cacheOrder;
+        std::size_t cacheBytes = 0;
+        std::uint64_t generation = 0;
+        std::function<void()> completion;
         JSRuntime* runtime = nullptr;
         JSContext* context = nullptr;
         std::chrono::steady_clock::time_point deadline{};
-        std::unordered_map<std::string, MathJaxSvg> cache;
+        bool initializationAttempted = false;
+        std::jthread worker;
+
+        static int Interrupt(JSRuntime*, void* opaque)
+        {
+            auto self = static_cast<State*>(opaque);
+            return std::chrono::steady_clock::now() >= self->deadline;
+        }
+
+        static JSValue LoadFontModule(JSContext* context, JSValueConst, int count, JSValueConst* arguments)
+        {
+            if (count != 1) return JS_ThrowTypeError(context, "Expected one MathJax font module name");
+            auto name = JS_ToCString(context, arguments[0]);
+            if (!name) return JS_EXCEPTION;
+            auto path = MathJaxFontPath(name);
+            JS_FreeCString(context, name);
+            auto source = path.empty() ? std::string{} : ReadUtf8File(path);
+            if (source.empty()) return JS_ThrowReferenceError(context, "MathJax font module is unavailable");
+            auto result = JS_Eval(context, source.data(), source.size(), "mathjax-font.js", JS_EVAL_TYPE_GLOBAL);
+            if (JS_IsException(result)) return result;
+            JS_FreeValue(context, result);
+            return JS_UNDEFINED;
+        }
+
+        std::string ExceptionText()
+        {
+            auto exception = JS_GetException(context);
+            auto message = JS_ToCString(context, exception);
+            std::string text = message ? message : "MathJax evaluation failed";
+            if (message) JS_FreeCString(context, message);
+            JS_FreeValue(context, exception);
+            return text;
+        }
+
+        bool InitializeRuntime()
+        {
+            if (context) return true;
+            if (initializationAttempted) return false;
+            initializationAttempted = true;
+            auto bundle = ReadUtf8File(MathJaxBundlePath());
+            if (bundle.empty()) return false;
+            runtime = JS_NewRuntime();
+            if (!runtime) return false;
+            JS_SetMemoryLimit(runtime, 24 * 1024 * 1024);
+            JS_SetMaxStackSize(runtime, 8 * 1024 * 1024);
+            JS_SetInterruptHandler(runtime, Interrupt, this);
+            context = JS_NewContext(runtime);
+            if (!context)
+            {
+                ShutdownRuntime();
+                return false;
+            }
+            auto global = JS_GetGlobalObject(context);
+            JS_SetPropertyStr(context, global, "ElMdLoadMathJaxModule", JS_NewCFunction(context, LoadFontModule, "ElMdLoadMathJaxModule", 1));
+            JS_FreeValue(context, global);
+            deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            auto result = JS_Eval(context, bundle.data(), bundle.size(), "mathjax-quickjs.js", JS_EVAL_TYPE_GLOBAL);
+            if (JS_IsException(result))
+            {
+                JS_FreeValue(context, result);
+                ShutdownRuntime();
+                return false;
+            }
+            JS_FreeValue(context, result);
+            return true;
+        }
+
+        void ShutdownRuntime()
+        {
+            if (context)
+            {
+                JS_FreeContext(context);
+                context = nullptr;
+            }
+            if (runtime)
+            {
+                JS_FreeRuntime(runtime);
+                runtime = nullptr;
+            }
+        }
+
+        MathJaxSvg RenderNow(Request const& request)
+        {
+            MathJaxSvg rendered;
+            rendered.display = request.display;
+            if (!InitializeRuntime())
+            {
+                rendered.error = "MathJax runtime could not be initialized";
+                return rendered;
+            }
+            auto global = JS_GetGlobalObject(context);
+            auto api = JS_GetPropertyStr(context, global, "ElMdMathJax");
+            auto function = JS_GetPropertyStr(context, api, "render");
+            JSValue arguments[] = {
+                JS_NewStringLen(context, request.tex.data(), request.tex.size()),
+                JS_NewBool(context, request.display),
+                JS_NewFloat64(context, request.em),
+                JS_NewFloat64(context, request.containerWidth),
+            };
+            deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+            auto result = JS_Call(context, function, api, static_cast<int>(std::size(arguments)), arguments);
+            for (auto& argument : arguments) JS_FreeValue(context, argument);
+            JS_FreeValue(context, function);
+            JS_FreeValue(context, api);
+            JS_FreeValue(context, global);
+            if (JS_IsException(result))
+            {
+                rendered.error = ExceptionText();
+                JS_FreeValue(context, result);
+                return rendered;
+            }
+            std::string output;
+            auto svg = JS_ToCString(context, result);
+            if (svg)
+            {
+                output = svg;
+                JS_FreeCString(context, svg);
+            }
+            JS_FreeValue(context, result);
+
+            std::size_t cursor = 0;
+            std::size_t previousEnd = 0;
+            float ascent = 0.0f;
+            float descent = 0.0f;
+            while (true)
+            {
+                auto svgStart = output.find("<svg", cursor);
+                if (svgStart == std::string::npos) break;
+                auto svgEnd = output.find("</svg>", svgStart);
+                if (svgEnd == std::string::npos) break;
+                svgEnd += std::string_view("</svg>").size();
+                MathJaxSvgFragment fragment;
+                fragment.svg = output.substr(svgStart, svgEnd - svgStart);
+                fragment.width = AttributeLength(fragment.svg, "width", request.em);
+                fragment.height = AttributeLength(fragment.svg, "height", request.em);
+                fragment.verticalAlign = VerticalAlignment(fragment.svg, request.em);
+                if (!rendered.fragments.empty())
+                {
+                    auto between = std::string_view(output).substr(previousEnd, svgStart - previousEnd);
+                    fragment.breakBefore = between.find("<mjx-break") != std::string_view::npos;
+                    fragment.breakSpace = BreakSpacing(between, request.em);
+                }
+                if (fragment.width > 0.0f && fragment.height > 0.0f)
+                {
+                    rendered.width += fragment.breakSpace + fragment.width;
+                    auto baseline = (std::clamp)(fragment.height + fragment.verticalAlign, 0.0f, fragment.height);
+                    ascent = (std::max)(ascent, baseline);
+                    descent = (std::max)(descent, fragment.height - baseline);
+                    rendered.fragments.push_back(std::move(fragment));
+                }
+                previousEnd = svgEnd;
+                cursor = svgEnd;
+            }
+            rendered.height = ascent + descent;
+            rendered.verticalAlign = -descent;
+            if (!rendered) rendered.error = "MathJax returned an invalid SVG";
+            return rendered;
+        }
+
+        static std::size_t ResultBytes(MathJaxSvg const& result)
+        {
+            std::size_t bytes = sizeof(result);
+            for (auto const& fragment : result.fragments) bytes += sizeof(fragment) + fragment.svg.size();
+            return bytes + result.error.size();
+        }
+
+        void Store(Request const& request, MathJaxSvg result)
+        {
+            constexpr std::size_t budget = 16 * 1024 * 1024;
+            auto bytes = ResultBytes(result);
+            while ((!cacheOrder.empty()) && (cacheBytes + bytes > budget || cache.size() >= 128))
+            {
+                auto oldest = std::move(cacheOrder.front());
+                cacheOrder.pop_front();
+                auto found = cache.find(oldest);
+                if (found == cache.end()) continue;
+                cacheBytes -= ResultBytes(found->second);
+                cache.erase(found);
+            }
+            if (bytes <= budget)
+            {
+                cacheBytes += bytes;
+                cacheOrder.push_back(request.key);
+                cache.emplace(request.key, std::move(result));
+            }
+        }
+
+        void Run(std::stop_token stop)
+        {
+            while (!stop.stop_requested())
+            {
+                Request request;
+                {
+                    std::unique_lock lock(mutex);
+                    if (!ready.wait(lock, stop, [&] { return !requests.empty(); })) break;
+                    request = std::move(requests.front());
+                    requests.pop_front();
+                }
+                auto result = RenderNow(request);
+                std::function<void()> notify;
+                {
+                    std::scoped_lock lock(mutex);
+                    queued.erase(request.key);
+                    if (request.generation == generation)
+                    {
+                        Store(request, std::move(result));
+                        notify = completion;
+                    }
+                }
+                if (notify) notify();
+            }
+            ShutdownRuntime();
+        }
     };
 
-    MathJaxRenderer::MathJaxRenderer() = default;
+    MathJaxRenderer::MathJaxRenderer() : state(std::make_unique<State>())
+    {
+        auto current = state.get();
+        state->worker = std::jthread([current](std::stop_token stop) { current->Run(stop); });
+    }
 
     MathJaxRenderer::~MathJaxRenderer()
     {
-        Clear();
+        if (!state) return;
+        state->worker.request_stop();
+        state->ready.notify_all();
+        if (state->worker.joinable()) state->worker.join();
     }
 
     void MathJaxRenderer::Clear()
     {
-        if (!state)
-        {
-            return;
-        }
+        if (!state) return;
+        std::scoped_lock lock(state->mutex);
+        ++state->generation;
+        state->requests.clear();
+        state->queued.clear();
         state->cache.clear();
-        if (state->context)
-        {
-            JS_FreeContext(state->context);
-            state->context = nullptr;
-        }
-        if (state->runtime)
-        {
-            JS_FreeRuntime(state->runtime);
-            state->runtime = nullptr;
-        }
-        state.reset();
+        state->cacheOrder.clear();
+        state->cacheBytes = 0;
     }
 
-    int MathJaxRenderer::Interrupt(JSRuntime*, void* opaque)
+    void MathJaxRenderer::SetCompletionCallback(std::function<void()> callback)
     {
-        auto renderer = static_cast<MathJaxRenderer*>(opaque);
-        return !renderer->state || std::chrono::steady_clock::now() >= renderer->state->deadline;
+        std::scoped_lock lock(state->mutex);
+        state->completion = std::move(callback);
     }
 
-    std::string MathJaxRenderer::ExceptionText()
+    std::optional<MathJaxSvg> MathJaxRenderer::GetOrQueue(std::string_view tex, bool display, float em, float containerWidth, bool allowQueue)
     {
-        auto exception = JS_GetException(state->context);
-        auto message = JS_ToCString(state->context, exception);
-        std::string text = message ? message : "MathJax evaluation failed";
-        if (message) JS_FreeCString(state->context, message);
-        JS_FreeValue(state->context, exception);
-        return text;
-    }
-
-    bool MathJaxRenderer::Initialize()
-    {
-        if (state && state->context)
-        {
-            return true;
-        }
-        Clear();
-        auto bundle = ReadUtf8File(MathJaxBundlePath());
-        if (bundle.empty())
-        {
-            return false;
-        }
-        state = std::make_unique<State>();
-        state->runtime = JS_NewRuntime();
-        if (!state->runtime)
-        {
-            state.reset();
-            return false;
-        }
-        JS_SetMemoryLimit(state->runtime, 128 * 1024 * 1024);
-        JS_SetMaxStackSize(state->runtime, 8 * 1024 * 1024);
-        JS_SetInterruptHandler(state->runtime, Interrupt, this);
-        state->context = JS_NewContext(state->runtime);
-        if (!state->context)
-        {
-            Clear();
-            return false;
-        }
-        state->deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-        auto result = JS_Eval(state->context, bundle.data(), bundle.size(), "mathjax-quickjs.js", JS_EVAL_TYPE_GLOBAL);
-        if (JS_IsException(result))
-        {
-            JS_FreeValue(state->context, result);
-            Clear();
-            return false;
-        }
-        JS_FreeValue(state->context, result);
-        return true;
-    }
-
-    MathJaxSvg MathJaxRenderer::Render(std::string_view tex, bool display, float em, float containerWidth)
-    {
-        MathJaxSvg rendered;
-        rendered.display = display;
-        if (!Initialize())
-        {
-            rendered.error = "MathJax runtime could not be initialized";
-            return rendered;
-        }
         auto key = std::string(tex) + '\x1f' + (display ? "1" : "0") + '\x1f' + std::to_string(em) + '\x1f' + std::to_string(containerWidth);
-        if (auto found = state->cache.find(key); found != state->cache.end())
+        std::scoped_lock lock(state->mutex);
+        if (auto found = state->cache.find(key); found != state->cache.end()) return found->second;
+        if (!allowQueue) return std::nullopt;
+        if (state->queued.insert(key).second)
         {
-            return found->second;
+            state->requests.push_back(State::Request{ key, std::string(tex), display, em, containerWidth, state->generation });
+            state->ready.notify_one();
         }
-        auto global = JS_GetGlobalObject(state->context);
-        auto api = JS_GetPropertyStr(state->context, global, "ElMdMathJax");
-        auto function = JS_GetPropertyStr(state->context, api, "render");
-        JSValue arguments[] = {
-            JS_NewStringLen(state->context, tex.data(), tex.size()),
-            JS_NewBool(state->context, display),
-            JS_NewFloat64(state->context, em),
-            JS_NewFloat64(state->context, containerWidth),
-        };
-        state->deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
-        auto result = JS_Call(state->context, function, api, static_cast<int>(std::size(arguments)), arguments);
-        for (auto& argument : arguments) JS_FreeValue(state->context, argument);
-        JS_FreeValue(state->context, function);
-        JS_FreeValue(state->context, api);
-        JS_FreeValue(state->context, global);
-        if (JS_IsException(result))
-        {
-            rendered.error = ExceptionText();
-            JS_FreeValue(state->context, result);
-            return rendered;
-        }
-        auto svg = JS_ToCString(state->context, result);
-        if (svg)
-        {
-            rendered.svg = svg;
-            JS_FreeCString(state->context, svg);
-        }
-        JS_FreeValue(state->context, result);
-        auto svgStart = rendered.svg.find("<svg");
-        auto svgEnd = rendered.svg.rfind("</svg>");
-        if (svgStart != std::string::npos && svgEnd != std::string::npos && svgEnd >= svgStart)
-        {
-            rendered.svg = rendered.svg.substr(svgStart, svgEnd + std::string_view("</svg>").size() - svgStart);
-        }
-        rendered.width = AttributeLength(rendered.svg, "width", em);
-        rendered.height = AttributeLength(rendered.svg, "height", em);
-        rendered.verticalAlign = VerticalAlignment(rendered.svg, em);
-        if (!rendered)
-        {
-            rendered.error = "MathJax returned an invalid SVG";
-            return rendered;
-        }
-        if (state->cache.size() >= 256) state->cache.erase(state->cache.begin());
-        state->cache.emplace(std::move(key), rendered);
-        return rendered;
+        return std::nullopt;
     }
 }

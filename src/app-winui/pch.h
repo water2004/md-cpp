@@ -13,26 +13,37 @@
 #include <microsoft.ui.xaml.media.dxinterop.h>
 #include <shobjidl_core.h>
 #include <wrl/client.h>
+#include <wrl/implements.h>
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <chrono>
+#include <cctype>
+#include <condition_variable>
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
+#include <deque>
 #include <limits>
 #include <fstream>
 #include <iterator>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #undef GetCurrentTime
 
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
+#include <winrt/Windows.Data.Json.h>
 #include <winrt/Windows.ApplicationModel.DataTransfer.h>
 #include <winrt/Windows.ApplicationModel.Activation.h>
 #include <winrt/Windows.Storage.h>
@@ -52,4 +63,5 @@
 #include <winrt/Microsoft.UI.Xaml.Navigation.h>
 #include <winrt/Microsoft.UI.Xaml.Shapes.h>
 #include <winrt/Microsoft.UI.Dispatching.h>
+#include <winrt/Microsoft.Web.WebView2.Core.h>
 #include <wil/cppwinrt_helpers.h>

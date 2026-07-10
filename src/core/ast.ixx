@@ -20,8 +20,8 @@ struct BlockNode;
 using InlineVec = std::vector<InlineNode>;
 using BlockVec = std::vector<BlockNode>;
 
-struct ListItem     { NodeId id{}; BlockVec children; };
-struct TaskListItem { NodeId id{}; bool checked = false; BlockVec children; };
+struct ListItem     { NodeId id{}; std::u32string marker; BlockVec children; };
+struct TaskListItem { NodeId id{}; bool checked = false; std::u32string marker; BlockVec children; };
 struct TableCell    { NodeId id{}; InlineVec children; };
 struct TableRow     { NodeId id{}; std::vector<TableCell> cells; };
 
@@ -71,6 +71,9 @@ struct BlockNode {
     std::string slug;                   // Heading
     std::vector<ListItem> list_items;    // List
     std::vector<TaskListItem> task_items;// TaskList
+    bool list_ordered = false;
+    std::uint64_t list_start = 1;
+    char32_t list_delimiter = U'.';
     std::optional<std::string> language; // CodeBlock
     std::u32string code_text;           // CodeBlock
     std::u32string tex;                 // MathBlock

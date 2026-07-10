@@ -55,7 +55,11 @@ inline std::optional<MarkdownNewlineEdit> markdown_newline_edit(const std::u32st
     }
 
     std::u32string marker;
-    if (pos + 1 < line.size() && (line[pos] == U'-' || line[pos] == U'*' || line[pos] == U'+') && line[pos + 1] == U' ') {
+    if (pos + 5 < line.size() && (line[pos] == U'-' || line[pos] == U'*' || line[pos] == U'+') && line[pos + 1] == U' ' && line[pos + 2] == U'[' && (line[pos + 3] == U' ' || line[pos + 3] == U'x' || line[pos + 3] == U'X') && line[pos + 4] == U']' && line[pos + 5] == U' ') {
+        marker.push_back(line[pos]);
+        marker += U" [ ] ";
+        pos += 6;
+    } else if (pos + 1 < line.size() && (line[pos] == U'-' || line[pos] == U'*' || line[pos] == U'+') && line[pos + 1] == U' ') {
         marker.push_back(line[pos]);
         marker.push_back(U' ');
         pos += 2;
@@ -93,7 +97,7 @@ inline std::optional<MarkdownNewlineEdit> markdown_newline_edit(const std::u32st
 inline std::size_t markdown_line_prefix_end(const std::u32string& line) {
     std::size_t pos = 0;
     while (pos < line.size() && is_space_or_tab(line[pos])) ++pos;
-    if (pos + 5 < line.size() && line[pos] == U'-' && line[pos + 1] == U' ' && line[pos + 2] == U'[' && (line[pos + 3] == U' ' || line[pos + 3] == U'x' || line[pos + 3] == U'X') && line[pos + 4] == U']' && line[pos + 5] == U' ') return pos + 6;
+    if (pos + 5 < line.size() && (line[pos] == U'-' || line[pos] == U'*' || line[pos] == U'+') && line[pos + 1] == U' ' && line[pos + 2] == U'[' && (line[pos + 3] == U' ' || line[pos + 3] == U'x' || line[pos + 3] == U'X') && line[pos + 4] == U']' && line[pos + 5] == U' ') return pos + 6;
     if (pos + 1 < line.size() && (line[pos] == U'-' || line[pos] == U'*' || line[pos] == U'+') && line[pos + 1] == U' ') return pos + 2;
     std::size_t number_start = pos;
     while (pos < line.size() && line[pos] >= U'0' && line[pos] <= U'9') ++pos;
@@ -104,26 +108,66 @@ inline std::size_t markdown_line_prefix_end(const std::u32string& line) {
 inline std::optional<Transaction> list_toggle_transaction(const Command& cmd, const std::u32string& text_cps, const Selection& selection, std::uint64_t revision) {
     auto sel = selection.normalized_range();
     std::size_t ls = find_line_start(text_cps, sel.start.v);
-    std::size_t le = find_line_end(text_cps, sel.end.v);
-    std::u32string line(text_cps.begin() + ls, text_cps.begin() + le);
-    std::size_t indent_end = 0;
-    while (indent_end < line.size() && is_space_or_tab(line[indent_end])) ++indent_end;
-    std::size_t prefix_end = markdown_line_prefix_end(line);
-    std::u32string body(line.begin() + prefix_end, line.end());
-    std::u32string prefix(line.begin(), line.begin() + indent_end);
-    bool already_unordered = prefix_end == indent_end + 2 && indent_end + 1 < line.size() && (line[indent_end] == U'-' || line[indent_end] == U'*' || line[indent_end] == U'+') && line[indent_end + 1] == U' ';
-    bool already_task = prefix_end == indent_end + 6 && indent_end + 5 < line.size() && line[indent_end] == U'-' && line[indent_end + 1] == U' ' && line[indent_end + 2] == U'[' && line[indent_end + 4] == U']' && line[indent_end + 5] == U' ';
-    bool already_ordered = prefix_end > indent_end + 2 && prefix_end <= line.size() && (line[prefix_end - 2] == U'.' || line[prefix_end - 2] == U')') && line[prefix_end - 1] == U' ';
-    std::u32string new_line;
-    if ((cmd.kind == CommandKind::ToggleUnorderedList && already_unordered) || (cmd.kind == CommandKind::ToggleOrderedList && already_ordered) || (cmd.kind == CommandKind::ToggleTaskList && already_task)) new_line = prefix + body;
-    else if (cmd.kind == CommandKind::ToggleOrderedList) new_line = prefix + U"1. " + body;
-    else if (cmd.kind == CommandKind::ToggleTaskList) new_line = prefix + U"- [ ] " + body;
-    else new_line = prefix + U"- " + body;
-    std::size_t new_prefix_len = new_line.size() - body.size();
-    std::size_t body_offset = selection.head().v > ls + prefix_end ? (std::min)(selection.head().v - ls - prefix_end, body.size()) : 0;
-    std::size_t new_pos = ls + new_prefix_len + body_offset;
-    Transaction t(revision, selection, Selection::caret(CharOffset(new_pos)), TransactionReason::StructuralCommand);
-    t.with_edit(CharRange(CharOffset(ls), CharOffset(le)), std::move(new_line));
+    auto last = sel.end.v;
+    if (last > sel.start.v && last > 0 && text_cps[last - 1] == U'\n') --last;
+    std::size_t le = find_line_end(text_cps, last);
+    struct LineInfo {
+        std::u32string line;
+        std::u32string indent;
+        std::u32string body;
+        std::size_t prefix_end = 0;
+        bool unordered = false;
+        bool ordered = false;
+        bool task = false;
+    };
+    std::vector<LineInfo> lines;
+    std::size_t cursor = ls;
+    while (cursor <= le) {
+        auto end = find_line_end(text_cps, cursor);
+        LineInfo info;
+        info.line = std::u32string(text_cps.begin() + cursor, text_cps.begin() + end);
+        std::size_t indent_end = 0;
+        while (indent_end < info.line.size() && is_space_or_tab(info.line[indent_end])) ++indent_end;
+        info.prefix_end = markdown_line_prefix_end(info.line);
+        info.indent = std::u32string(info.line.begin(), info.line.begin() + indent_end);
+        info.body = std::u32string(info.line.begin() + info.prefix_end, info.line.end());
+        info.unordered = info.prefix_end == indent_end + 2 && indent_end + 1 < info.line.size() && (info.line[indent_end] == U'-' || info.line[indent_end] == U'*' || info.line[indent_end] == U'+') && info.line[indent_end + 1] == U' ';
+        info.task = info.prefix_end == indent_end + 6 && indent_end + 5 < info.line.size() && (info.line[indent_end] == U'-' || info.line[indent_end] == U'*' || info.line[indent_end] == U'+') && info.line[indent_end + 1] == U' ' && info.line[indent_end + 2] == U'[' && info.line[indent_end + 4] == U']' && info.line[indent_end + 5] == U' ';
+        info.ordered = info.prefix_end > indent_end + 2 && info.prefix_end <= info.line.size() && (info.line[info.prefix_end - 2] == U'.' || info.line[info.prefix_end - 2] == U')') && info.line[info.prefix_end - 1] == U' ';
+        lines.push_back(std::move(info));
+        if (end >= le) break;
+        cursor = end + 1;
+    }
+    auto is_target = [&](LineInfo const& line) {
+        if (cmd.kind == CommandKind::ToggleOrderedList) return line.ordered;
+        if (cmd.kind == CommandKind::ToggleTaskList) return line.task;
+        return line.unordered && !line.task;
+    };
+    auto remove = !lines.empty() && std::all_of(lines.begin(), lines.end(), is_target);
+    std::u32string replacement;
+    std::size_t ordered_number = 1;
+    for (std::size_t index = 0; index < lines.size(); ++index) {
+        auto const& line = lines[index];
+        replacement += line.indent;
+        if (!remove) {
+            if (cmd.kind == CommandKind::ToggleOrderedList) replacement += utf8_to_cps(std::to_string(ordered_number++)) + U". ";
+            else if (cmd.kind == CommandKind::ToggleTaskList) replacement += U"- [ ] ";
+            else replacement += U"- ";
+        }
+        replacement += line.body;
+        if (index + 1 < lines.size()) replacement.push_back(U'\n');
+    }
+    Selection after;
+    if (selection.is_caret() && lines.size() == 1) {
+        auto const& line = lines.front();
+        auto body_offset = selection.head().v > ls + line.prefix_end ? (std::min)(selection.head().v - ls - line.prefix_end, line.body.size()) : 0;
+        auto new_prefix = replacement.size() - line.body.size();
+        after = Selection::caret(CharOffset(ls + new_prefix + body_offset));
+    } else {
+        after = Selection{CharOffset(ls), CharOffset(ls + replacement.size()), selection.affinity};
+    }
+    Transaction t(revision, selection, after, TransactionReason::StructuralCommand);
+    t.with_edit(CharRange(CharOffset(ls), CharOffset(le)), std::move(replacement));
     return t;
 }
 
@@ -134,7 +178,7 @@ inline std::optional<Transaction> task_checkbox_transaction(const std::u32string
     std::u32string line(text_cps.begin() + ls, text_cps.begin() + le);
     std::size_t pos = 0;
     while (pos < line.size() && is_space_or_tab(line[pos])) ++pos;
-    if (pos + 5 >= line.size() || line[pos] != U'-' || line[pos + 1] != U' ' || line[pos + 2] != U'[' || line[pos + 4] != U']' || line[pos + 5] != U' ') return std::nullopt;
+    if (pos + 5 >= line.size() || (line[pos] != U'-' && line[pos] != U'*' && line[pos] != U'+') || line[pos + 1] != U' ' || line[pos + 2] != U'[' || line[pos + 4] != U']' || line[pos + 5] != U' ') return std::nullopt;
     if (line[pos + 3] != U' ' && line[pos + 3] != U'x' && line[pos + 3] != U'X') return std::nullopt;
     auto replacement = line[pos + 3] == U' ' ? U"x" : U" ";
     Transaction t(revision, selection, selection, TransactionReason::StructuralCommand);

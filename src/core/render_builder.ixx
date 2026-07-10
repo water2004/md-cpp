@@ -309,13 +309,26 @@ struct Builder {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::paragraph());
                 std::size_t cursor = base_range().start.v;
                 for (std::size_t i = 0; i < b.list_items.size(); ++i) {
-                    std::u32string m = (i == 0 ? U"- " : U"- "); // ordered lists get "N. " in v2
-                    push_marker(rb.inline_items, cursor, m);
+                    const auto& item = b.list_items[i];
+                    const auto* item_range = sm ? sm->find_node_by_id(item.id) : nullptr;
+                    if (item_range) cursor = item_range->source_range.start.v;
+                    auto marker = item.marker;
+                    if (marker.empty()) {
+                        marker = b.list_ordered
+                            ? utf8_to_cps(std::to_string(b.list_start + i)) + std::u32string(1, b.list_delimiter) + U" "
+                            : U"- ";
+                    }
+                    push_marker(rb.inline_items, cursor, std::move(marker));
                     for (const auto& ch : b.list_items[i].children) {
                         if (ch.kind == BlockKind::Paragraph) {
-                            auto items = build_inlines(ch.children, cursor, InlineStyle::plain());
-                            for (auto& it : items) { cursor += it.source_range.len(); rb.inline_items.push_back(std::move(it)); }
+                            auto content_start = item_range ? item_range->content_range.start.v : cursor;
+                            auto items = build_inlines(ch.children, content_start, InlineStyle::plain());
+                            for (auto& it : items) rb.inline_items.push_back(std::move(it));
                         }
+                    }
+                    if (item_range && item_range->source_range.end.v > item_range->content_range.end.v) {
+                        cursor = item_range->source_range.end.v - 1;
+                        push_marker(rb.inline_items, cursor, U"\n");
                     }
                 }
                 return with_content_range(std::move(rb));
@@ -324,13 +337,20 @@ struct Builder {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::paragraph());
                 std::size_t cursor = base_range().start.v;
                 for (const auto& ti : b.task_items) {
-                    std::u32string m = ti.checked ? U"[x] " : U"[ ] ";
-                    push_marker(rb.inline_items, cursor, m);
+                    const auto* item_range = sm ? sm->find_node_by_id(ti.id) : nullptr;
+                    if (item_range) cursor = item_range->source_range.start.v;
+                    auto marker = ti.marker.empty() ? (ti.checked ? U"- [x] " : U"- [ ] ") : ti.marker;
+                    push_marker(rb.inline_items, cursor, std::move(marker));
                     for (const auto& ch : ti.children) {
                         if (ch.kind == BlockKind::Paragraph) {
-                            auto items = build_inlines(ch.children, cursor, InlineStyle::plain());
-                            for (auto& it : items) { cursor += it.source_range.len(); rb.inline_items.push_back(std::move(it)); }
+                            auto content_start = item_range ? item_range->content_range.start.v : cursor;
+                            auto items = build_inlines(ch.children, content_start, InlineStyle::plain());
+                            for (auto& it : items) rb.inline_items.push_back(std::move(it));
                         }
+                    }
+                    if (item_range && item_range->source_range.end.v > item_range->content_range.end.v) {
+                        cursor = item_range->source_range.end.v - 1;
+                        push_marker(rb.inline_items, cursor, U"\n");
                     }
                 }
                 return with_content_range(std::move(rb));

@@ -80,6 +80,18 @@ ELMD_TEST(builds_table_block) {
     ELMD_CHECK(m.blocks[0].column_count >= 2);
 }
 
+ELMD_TEST(builds_ordered_list_with_source_markers_and_line_breaks) {
+    auto m = build_model("9. alpha\n10. beta\n");
+    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    std::u32string markers;
+    for (auto const& item : m.blocks[0].inline_items) {
+        if (item.kind == InlineRenderItem::Kind::Marker) markers += item.text;
+    }
+    ELMD_CHECK(markers.find(U"9. ") != std::u32string::npos);
+    ELMD_CHECK(markers.find(U"10. ") != std::u32string::npos);
+    ELMD_CHECK(markers.find(U"\n") != std::u32string::npos);
+}
+
 ELMD_TEST(table_render_cells_keep_their_own_source_ranges) {
     auto m = build_model("| A | B |\n| :--- | ---: |\n| 1 | 2 |\n");
     ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Table);

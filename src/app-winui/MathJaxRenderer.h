@@ -1,26 +1,34 @@
 #pragma once
 
 #include <memory>
+#include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
-
-extern "C"
-{
-    typedef struct JSRuntime JSRuntime;
-}
+#include <vector>
 
 namespace winrt::ElMd
 {
-    struct MathJaxSvg
+    struct MathJaxSvgFragment
     {
         std::string svg;
+        float width = 0.0f;
+        float height = 0.0f;
+        float verticalAlign = 0.0f;
+        float breakSpace = 0.0f;
+        bool breakBefore = false;
+    };
+
+    struct MathJaxSvg
+    {
+        std::vector<MathJaxSvgFragment> fragments;
         std::string error;
         float width = 0.0f;
         float height = 0.0f;
         float verticalAlign = 0.0f;
         bool display = false;
 
-        explicit operator bool() const { return error.empty() && !svg.empty() && width > 0.0f && height > 0.0f; }
+        explicit operator bool() const { return error.empty() && !fragments.empty() && width > 0.0f && height > 0.0f; }
     };
 
     class MathJaxRenderer
@@ -31,15 +39,12 @@ namespace winrt::ElMd
         MathJaxRenderer(MathJaxRenderer const&) = delete;
         MathJaxRenderer& operator=(MathJaxRenderer const&) = delete;
 
-        MathJaxSvg Render(std::string_view tex, bool display, float em, float containerWidth);
+        std::optional<MathJaxSvg> GetOrQueue(std::string_view tex, bool display, float em, float containerWidth, bool allowQueue = true);
+        void SetCompletionCallback(std::function<void()> callback);
         void Clear();
 
     private:
         struct State;
-
-        bool Initialize();
-        std::string ExceptionText();
-        static int Interrupt(JSRuntime*, void* opaque);
 
         std::unique_ptr<State> state;
     };

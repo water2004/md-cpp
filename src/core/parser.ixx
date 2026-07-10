@@ -953,58 +953,101 @@ public:
 
     // ---- list / task ----
     std::optional<BlockNode> try_parse_list_or_task() {
-        std::size_t save = pos;
-        std::size_t start = pos;
-        bool is_ordered = false, is_task = false;
-        char32_t c = peek1();
-        if (c == '-' || c == '*' || c == '+') { advance(); }
-        else if (is_ascii_digit_(c)) {
-            is_ordered = true;
-            while (is_ascii_digit_(peek1())) advance();
-            if (peek1() != '.') { pos = save; return std::nullopt; }
-            advance();
-        } else { pos = save; return std::nullopt; }
-        if (peek1() != ' ') { pos = save; return std::nullopt; }
-        advance();
-        std::size_t save2 = pos;
-        ListItem head_item;
-        TaskListItem head_task;
-        bool checked = false;
-        if (peek1() == '[' && (peek2() == ' ' || peek2() == 'x' || peek2() == 'X') && peek(2) == ']') {
-            is_task = true;
-            checked = (peek2() == 'x' || peek2() == 'X');
-            advance_n(3);
-            if (peek1() == ' ') advance();
-            save2 = pos;
-        } else {
-            pos = save2;
-        }
-        auto [content, content_len] = rest_of_line();
-        advance_n(content_len);
-        std::size_t content_end = pos;
-        NodeId item_id = next_node_id();
-        NodeId para_id = next_node_id();
-        BlockNode para; para.id = para_id; para.kind = BlockKind::Paragraph;
-        NodeId text_id = next_node_id();
-        para.children.push_back(InlineNode::text_node(text_id, content));
-        std::vector<BlockNode> para_children; para_children.push_back(std::move(para));
-        if (peek1() == '\n') advance();
+        struct Marker {
+            bool ordered = false;
+            bool task = false;
+            bool checked = false;
+            std::uint64_t number = 1;
+            char32_t delimiter = U'.';
+            std::size_t start = 0;
+            std::size_t content_start = 0;
+            std::size_t content_end = 0;
+            std::size_t source_end = 0;
+            std::u32string text;
+        };
+        auto inspect = [&](std::size_t at) -> std::optional<Marker> {
+            if (at >= cps.size() || (at > 0 && cps[at - 1] != U'\n')) return std::nullopt;
+            Marker marker;
+            marker.start = at;
+            std::size_t cursor = at;
+            if (cps[cursor] == U'-' || cps[cursor] == U'*' || cps[cursor] == U'+') {
+                ++cursor;
+            } else if (is_ascii_digit_(cps[cursor])) {
+                marker.ordered = true;
+                marker.number = 0;
+                while (cursor < cps.size() && is_ascii_digit_(cps[cursor])) {
+                    marker.number = marker.number * 10 + static_cast<std::uint64_t>(cps[cursor] - U'0');
+                    ++cursor;
+                }
+                if (cursor >= cps.size() || (cps[cursor] != U'.' && cps[cursor] != U')')) return std::nullopt;
+                marker.delimiter = cps[cursor++];
+            } else {
+                return std::nullopt;
+            }
+            if (cursor >= cps.size() || cps[cursor] != U' ') return std::nullopt;
+            ++cursor;
+            if (!marker.ordered && cursor + 2 < cps.size() && cps[cursor] == U'[' && (cps[cursor + 1] == U' ' || cps[cursor + 1] == U'x' || cps[cursor + 1] == U'X') && cps[cursor + 2] == U']') {
+                marker.task = true;
+                marker.checked = cps[cursor + 1] == U'x' || cps[cursor + 1] == U'X';
+                cursor += 3;
+                if (cursor < cps.size() && cps[cursor] == U' ') ++cursor;
+            }
+            marker.content_start = cursor;
+            while (cursor < cps.size() && cps[cursor] != U'\n') ++cursor;
+            marker.content_end = cursor;
+            marker.source_end = cursor < cps.size() && cps[cursor] == U'\n' ? cursor + 1 : cursor;
+            marker.text = std::u32string(cps.begin() + marker.start, cps.begin() + marker.content_start);
+            return marker;
+        };
 
+        auto first = inspect(pos);
+        if (!first) return std::nullopt;
+        auto start = pos;
+        auto first_content = first->content_start;
+        auto last_content = first->content_end;
         NodeId list_id = next_node_id();
-        push_range(text_id, CharRange(CharOffset(save2), CharOffset(content_end)), CharRange(CharOffset(save2), CharOffset(content_end)));
-        push_range(para_id, CharRange(CharOffset(save2), CharOffset(content_end)), CharRange(CharOffset(save2), CharOffset(content_end)));
-        push_range(item_id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(save2), CharOffset(content_end)));
-        push_range(list_id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(save2), CharOffset(content_end)));
-        if (is_task) {
-            TaskListItem ti; ti.id = item_id; ti.checked = checked; ti.children = std::move(para_children);
-            BlockNode b; b.id = list_id; b.kind = BlockKind::TaskList; b.task_items.push_back(std::move(ti));
-            return b;
-        } else {
-            ListItem li; li.id = item_id; li.children = std::move(para_children);
-            BlockNode b; b.id = list_id; b.kind = BlockKind::List; b.list_items.push_back(std::move(li));
-            (void)start;
-            return b;
+        BlockNode result;
+        result.id = list_id;
+        result.kind = first->task ? BlockKind::TaskList : BlockKind::List;
+        result.list_ordered = first->ordered;
+        result.list_start = first->number;
+        result.list_delimiter = first->delimiter;
+
+        while (auto marker = inspect(pos)) {
+            if (marker->task != first->task || marker->ordered != first->ordered) break;
+            auto content = std::u32string(cps.begin() + marker->content_start, cps.begin() + marker->content_end);
+            NodeId item_id = next_node_id();
+            NodeId para_id = next_node_id();
+            NodeId text_id = next_node_id();
+            BlockNode paragraph;
+            paragraph.id = para_id;
+            paragraph.kind = BlockKind::Paragraph;
+            paragraph.children.push_back(InlineNode::text_node(text_id, std::move(content)));
+            BlockVec children;
+            children.push_back(std::move(paragraph));
+            push_range(text_id, CharRange(CharOffset(marker->content_start), CharOffset(marker->content_end)), CharRange(CharOffset(marker->content_start), CharOffset(marker->content_end)));
+            push_range(para_id, CharRange(CharOffset(marker->content_start), CharOffset(marker->content_end)), CharRange(CharOffset(marker->content_start), CharOffset(marker->content_end)));
+            push_range(item_id, CharRange(CharOffset(marker->start), CharOffset(marker->source_end)), CharRange(CharOffset(marker->content_start), CharOffset(marker->content_end)));
+            if (marker->task) {
+                TaskListItem item;
+                item.id = item_id;
+                item.checked = marker->checked;
+                item.marker = marker->text;
+                item.children = std::move(children);
+                result.task_items.push_back(std::move(item));
+            } else {
+                ListItem item;
+                item.id = item_id;
+                item.marker = marker->text;
+                item.children = std::move(children);
+                result.list_items.push_back(std::move(item));
+            }
+            last_content = marker->content_end;
+            pos = marker->source_end;
+            if (pos >= cps.size()) break;
         }
+        push_range(list_id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(first_content), CharOffset(last_content)));
+        return result;
     }
 
     // ---- blockquote / callout ----

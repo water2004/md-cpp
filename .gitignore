@@ -17,6 +17,7 @@ CMakeSettings.json
 tools/mathjax-bundle/node_modules/
 tools/mathjax-bundle/quickjs-smoke.exe
 tools/mathjax-bundle/quickjs-smoke.obj
+tools/mermaid-bundle/node_modules/
 !el-md.sln
 !src/app-winui/el-md.vcxproj
 !src/app-winui/el-md.vcxproj.filters
