@@ -269,18 +269,21 @@ public:
         return std::nullopt;
     }
 
-    // ---- paragraph (inline state machine) ----
-    std::optional<BlockNode> parse_paragraph(std::optional<std::size_t> stop_at = std::nullopt) {
-        std::size_t start = pos;
-        std::size_t content_end = pos;
+    struct InlineParseResult {
         InlineVec inlines;
+        std::size_t content_end = 0;
+    };
+
+    InlineParseResult parse_inline_sequence(std::optional<std::size_t> stop_at = std::nullopt) {
+        InlineParseResult result;
+        result.content_end = pos;
         std::u32string buf;
         auto flush = [&]() {
-            if (!buf.empty()) { inlines.push_back(InlineNode::text_node(next_node_id(), buf)); buf.clear(); }
+            if (!buf.empty()) { result.inlines.push_back(InlineNode::text_node(next_node_id(), buf)); buf.clear(); }
         };
         while (!eof() && (!stop_at || pos < *stop_at)) {
             if (peek1() == '\n') {
-                content_end = pos;
+                result.content_end = pos;
                 std::size_t newline_pos = pos;
                 advance();
                 if (eof() || peek1() == '\n') break;
@@ -291,148 +294,156 @@ public:
                 InlineNode soft_break;
                 soft_break.id = id;
                 soft_break.kind = InlineKind::SoftBreak;
-                inlines.push_back(std::move(soft_break));
-                content_end = pos;
+                result.inlines.push_back(std::move(soft_break));
+                result.content_end = pos;
                 continue;
             }
             // inline constructs — exact order
             if (peek1() == '$') {
-                if (auto n = try_parse_inline_math()) { flush(); inlines.push_back(std::move(*n)); content_end = pos; continue; }
+                if (auto n = try_parse_inline_math(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
             }
             if (peek1() == '\\' && peek2() == '(') {
-                if (auto n = try_parse_inline_paren_math()) { flush(); inlines.push_back(std::move(*n)); content_end = pos; continue; }
+                if (auto n = try_parse_inline_paren_math(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
             }
             if (peek1() == '*' && peek2() == '*') {
-                if (!delimiter_exists_before_newline(pos + 2, {'*','*'})) {
+                if (!delimiter_exists_before_newline(pos + 2, {'*','*'}, stop_at)) {
                     buf.push_back('*');
                     buf.push_back('*');
                     advance_n(2);
-                    content_end = pos;
+                    result.content_end = pos;
                     continue;
                 }
                 flush();
                 std::size_t inner_start = pos + 2;
                 advance_n(2);
-                InlineVec ch = parse_inlines_until({'*','*'});
+                InlineVec ch = parse_inlines_until({'*','*'}, stop_at);
                 std::size_t end_mark = pos; advance_n(2);
                 NodeId id = next_node_id();
                 push_range(id, CharRange(CharOffset(inner_start), CharOffset(end_mark)), CharRange(CharOffset(inner_start), CharOffset(end_mark)));
                 InlineNode n; n.id = id; n.kind = InlineKind::Strong; n.children = std::move(ch);
-                inlines.push_back(std::move(n));
-                content_end = pos;
+                result.inlines.push_back(std::move(n));
+                result.content_end = pos;
                 continue;
             }
             if (peek1() == '*' && peek2() != ' ' && peek2() != '*') {
-                if (!delimiter_exists_before_newline(pos + 1, {'*'})) {
+                if (!delimiter_exists_before_newline(pos + 1, {'*'}, stop_at)) {
                     buf.push_back('*');
                     advance();
-                    content_end = pos;
+                    result.content_end = pos;
                     continue;
                 }
                 flush();
                 std::size_t inner_start = pos + 1;
                 advance();
-                InlineVec ch = parse_inlines_until({'*'});
+                InlineVec ch = parse_inlines_until({'*'}, stop_at);
                 std::size_t end_mark = pos; advance();
                 NodeId id = next_node_id();
                 push_range(id, CharRange(CharOffset(inner_start), CharOffset(end_mark)), CharRange(CharOffset(inner_start), CharOffset(end_mark)));
                 InlineNode n; n.id = id; n.kind = InlineKind::Emphasis; n.children = std::move(ch);
-                inlines.push_back(std::move(n));
-                content_end = pos;
+                result.inlines.push_back(std::move(n));
+                result.content_end = pos;
                 continue;
             }
             if (peek1() == '_' && peek2() == '_' && peek2next_is_nonspace_underscore_()) {
-                if (!delimiter_exists_before_newline(pos + 2, {'_','_'})) {
+                if (!delimiter_exists_before_newline(pos + 2, {'_','_'}, stop_at)) {
                     buf.push_back('_');
                     buf.push_back('_');
                     advance_n(2);
-                    content_end = pos;
+                    result.content_end = pos;
                     continue;
                 }
                 flush();
                 std::size_t inner_start = pos + 2;
                 advance_n(2);
-                InlineVec ch = parse_inlines_until({'_','_'});
+                InlineVec ch = parse_inlines_until({'_','_'}, stop_at);
                 std::size_t end_mark = pos; advance_n(2);
                 NodeId id = next_node_id();
                 push_range(id, CharRange(CharOffset(inner_start), CharOffset(end_mark)), CharRange(CharOffset(inner_start), CharOffset(end_mark)));
                 InlineNode n; n.id = id; n.kind = InlineKind::Strong; n.children = std::move(ch);
-                inlines.push_back(std::move(n));
-                content_end = pos;
+                result.inlines.push_back(std::move(n));
+                result.content_end = pos;
                 continue;
             }
             if (peek1() == '_' && peek2() != ' ' && peek2() != '_') {
-                if (!delimiter_exists_before_newline(pos + 1, {'_'})) {
+                if (!delimiter_exists_before_newline(pos + 1, {'_'}, stop_at)) {
                     buf.push_back('_');
                     advance();
-                    content_end = pos;
+                    result.content_end = pos;
                     continue;
                 }
                 flush();
                 std::size_t inner_start = pos + 1;
                 advance();
-                InlineVec ch = parse_inlines_until({'_'});
+                InlineVec ch = parse_inlines_until({'_'}, stop_at);
                 std::size_t end_mark = pos; advance();
                 NodeId id = next_node_id();
                 push_range(id, CharRange(CharOffset(inner_start), CharOffset(end_mark)), CharRange(CharOffset(inner_start), CharOffset(end_mark)));
                 InlineNode n; n.id = id; n.kind = InlineKind::Emphasis; n.children = std::move(ch);
-                inlines.push_back(std::move(n));
-                content_end = pos;
+                result.inlines.push_back(std::move(n));
+                result.content_end = pos;
                 continue;
             }
             if (peek1() == '~' && peek2() == '~' && peek2next2() != ' ') {
-                if (!delimiter_exists_before_newline(pos + 2, {'~','~'})) {
+                if (!delimiter_exists_before_newline(pos + 2, {'~','~'}, stop_at)) {
                     buf.push_back('~');
                     buf.push_back('~');
                     advance_n(2);
-                    content_end = pos;
+                    result.content_end = pos;
                     continue;
                 }
                 flush();
                 std::size_t inner_start = pos + 2;
                 advance_n(2);
-                InlineVec ch = parse_inlines_until({'~','~'});
+                InlineVec ch = parse_inlines_until({'~','~'}, stop_at);
                 std::size_t end_mark = pos; advance_n(2);
                 NodeId id = next_node_id();
                 push_range(id, CharRange(CharOffset(inner_start), CharOffset(end_mark)), CharRange(CharOffset(inner_start), CharOffset(end_mark)));
                 InlineNode n; n.id = id; n.kind = InlineKind::Strike; n.children = std::move(ch);
-                inlines.push_back(std::move(n));
-                content_end = pos;
+                result.inlines.push_back(std::move(n));
+                result.content_end = pos;
                 continue;
             }
             if (peek1() == '`') {
-                if (auto n = try_parse_inline_code(stop_at)) { flush(); inlines.push_back(std::move(*n)); content_end = pos; continue; }
+                if (auto n = try_parse_inline_code(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
             }
             if (peek1() == '!' && peek2() == '[') {
-                if (auto n = try_parse_link_or_image(stop_at)) { flush(); inlines.push_back(std::move(*n)); content_end = pos; continue; }
+                if (auto n = try_parse_link_or_image(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
             }
             if (peek1() == '[') {
                 if (peek2() == '^') {
-                    if (auto n = try_parse_footnote_ref()) { flush(); inlines.push_back(std::move(*n)); content_end = pos; continue; }
+                    if (auto n = try_parse_footnote_ref(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
                 }
                 if (peek(1) == '[') {
-                    if (auto n = try_parse_wiki_link()) { flush(); inlines.push_back(std::move(*n)); content_end = pos; continue; }
+                    if (auto n = try_parse_wiki_link(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
                 }
-                if (auto n = try_parse_link_or_image(stop_at)) { flush(); inlines.push_back(std::move(*n)); content_end = pos; continue; }
+                if (auto n = try_parse_link_or_image(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
             }
             if (peek1() == '<') {
-                if (auto n = try_parse_raw_html_inline()) { flush(); inlines.push_back(std::move(*n)); content_end = pos; continue; }
+                if (auto n = try_parse_raw_html_inline(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
             }
-            buf.push_back(peek1()); advance(); content_end = pos;
+            buf.push_back(peek1()); advance(); result.content_end = pos;
         }
         flush();
-        if (inlines.empty()) return std::nullopt;
+        return result;
+    }
+
+    // ---- paragraph (inline state machine) ----
+    std::optional<BlockNode> parse_paragraph(std::optional<std::size_t> stop_at = std::nullopt) {
+        std::size_t start = pos;
+        auto parsed = parse_inline_sequence(stop_at);
+        if (parsed.inlines.empty()) return std::nullopt;
         NodeId id = next_node_id();
-        push_range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(content_end)));
-        BlockNode b; b.id = id; b.kind = BlockKind::Paragraph; b.children = std::move(inlines);
+        push_range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(parsed.content_end)));
+        BlockNode b; b.id = id; b.kind = BlockKind::Paragraph; b.children = std::move(parsed.inlines);
         return b;
     }
 
     bool peek2next_is_nonspace_underscore_() { char32_t c = peek2(); return c != ' ' && c != '_' && c != 0; }
     char32_t peek2next2() { return peek2(); }
 
-    bool delimiter_exists_before_newline(std::size_t from, std::vector<char32_t> del) const {
-        for (std::size_t i = from; i + del.size() <= cps.size(); ++i) {
+    bool delimiter_exists_before_newline(std::size_t from, std::vector<char32_t> del, std::optional<std::size_t> stop_at = std::nullopt) const {
+        auto end = (std::min)(cps.size(), stop_at.value_or(cps.size()));
+        for (std::size_t i = from; i + del.size() <= end; ++i) {
             if (cps[i] == '\n') return false;
             bool matched = true;
             for (std::size_t j = 0; j < del.size(); ++j) {
@@ -445,13 +456,13 @@ public:
 
     // parse_inlines_until(del) — collect text until a run of `del` chars.
     // Delimiters DO NOT cross newlines.
-    InlineVec parse_inlines_until(std::vector<char32_t> del) {
+    InlineVec parse_inlines_until(std::vector<char32_t> del, std::optional<std::size_t> stop_at = std::nullopt) {
         InlineVec out;
         std::u32string buf;
         auto flush = [&]() {
             if (!buf.empty()) { out.push_back(InlineNode::text_node(next_node_id(), buf)); buf.clear(); }
         };
-        while (!eof()) {
+        while (!eof() && (!stop_at || pos < *stop_at)) {
             if (peek1() == '\n') break;
             bool matched = false;
             if (pos + del.size() <= cps.size()) {
@@ -461,14 +472,14 @@ public:
             }
             if (matched) break;
             if (peek1() == U'$') {
-                if (auto node = try_parse_inline_math()) {
+                if (auto node = try_parse_inline_math(stop_at)) {
                     flush();
                     out.push_back(std::move(*node));
                     continue;
                 }
             }
             if (peek1() == U'\\' && peek2() == U'(') {
-                if (auto node = try_parse_inline_paren_math()) {
+                if (auto node = try_parse_inline_paren_math(stop_at)) {
                     flush();
                     out.push_back(std::move(*node));
                     continue;
@@ -481,13 +492,13 @@ public:
     }
 
     // ---- inline math `$...$` ----
-    std::optional<InlineNode> try_parse_inline_math() {
+    std::optional<InlineNode> try_parse_inline_math(std::optional<std::size_t> stop_at = std::nullopt) {
         if (!input->dialect.math.inline_dollar) return std::nullopt;
         std::size_t start = pos;
         advance(); // consume $
         if (peek1() == '$') { pos = start; return std::nullopt; } // $$ belongs to block path
         std::u32string tex;
-        while (!eof() && peek1() != '$' && peek1() != '\n') { tex.push_back(peek1()); advance(); }
+        while (!eof() && (!stop_at || pos < *stop_at) && peek1() != '$' && peek1() != '\n') { tex.push_back(peek1()); advance(); }
         if (peek1() != '$') {
             pos = start;
             diagnostics.push_back(make_diagnostic(DiagnosticSeverity::Warning,
@@ -502,16 +513,16 @@ public:
         return n;
     }
 
-    std::optional<InlineNode> try_parse_inline_paren_math() {
+    std::optional<InlineNode> try_parse_inline_paren_math(std::optional<std::size_t> stop_at = std::nullopt) {
         if (!input->dialect.math.inline_paren) return std::nullopt;
         std::size_t start = pos;
         advance_n(2);
         std::u32string tex;
-        while (!eof() && !(peek1() == '\\' && peek2() == ')') && peek1() != '\n') {
+        while (!eof() && (!stop_at || pos < *stop_at) && !(peek1() == '\\' && peek2() == ')' && (!stop_at || pos + 2 <= *stop_at)) && peek1() != '\n') {
             tex.push_back(peek1());
             advance();
         }
-        if (!(peek1() == '\\' && peek2() == ')')) {
+        if (!(peek1() == '\\' && peek2() == ')' && (!stop_at || pos + 2 <= *stop_at))) {
             pos = start;
             diagnostics.push_back(make_diagnostic(DiagnosticSeverity::Warning,
                 "Unclosed inline math delimiter \\(",
@@ -622,13 +633,14 @@ public:
     }
 
     // ---- footnote ref ----
-    std::optional<InlineNode> try_parse_footnote_ref() {
+    std::optional<InlineNode> try_parse_footnote_ref(std::optional<std::size_t> stop_at = std::nullopt) {
         std::size_t start = pos;
+        auto limit = stop_at.value_or(cps.size());
         if (!(peek1() == '[' && peek2() == '^')) return std::nullopt;
         advance_n(2);
         std::u32string label;
-        while (!eof() && peek1() != ']' && peek1() != '\n') { label.push_back(peek1()); advance(); }
-        if (peek1() != ']') { pos = start; return std::nullopt; }
+        while (!eof() && pos < limit && peek1() != ']' && peek1() != '\n') { label.push_back(peek1()); advance(); }
+        if (pos >= limit || peek1() != ']') { pos = start; return std::nullopt; }
         advance();
         NodeId id = next_node_id();
         push_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(start + 2), cur()));
@@ -637,19 +649,20 @@ public:
     }
 
     // ---- wiki link ----
-    std::optional<InlineNode> try_parse_wiki_link() {
+    std::optional<InlineNode> try_parse_wiki_link(std::optional<std::size_t> stop_at = std::nullopt) {
         std::size_t start = pos;
+        auto limit = stop_at.value_or(cps.size());
         if (!(peek1() == '[' && peek2() == '[')) return std::nullopt;
         advance_n(2);
         std::u32string target;
         std::optional<std::string> alias;
-        while (!eof() && peek1() != '\n') {
-            if (peek1() == ']' && peek2() == ']') { advance_n(2); break; }
+        while (!eof() && pos < limit && peek1() != '\n') {
+            if (peek1() == ']' && peek2() == ']' && pos + 2 <= limit) { advance_n(2); break; }
             if (peek1() == '|') {
                 advance();
                 std::u32string a;
-                while (!eof() && peek1() != '\n') {
-                    if (peek1() == ']' && peek2() == ']') { advance_n(2); break; }
+                while (!eof() && pos < limit && peek1() != '\n') {
+                    if (peek1() == ']' && peek2() == ']' && pos + 2 <= limit) { advance_n(2); break; }
                     a.push_back(peek1()); advance();
                 }
                 alias = cps_to_utf8(a);
@@ -665,13 +678,14 @@ public:
     }
 
     // ---- raw html inline → UnsupportedMarkup ----
-    std::optional<InlineNode> try_parse_raw_html_inline() {
+    std::optional<InlineNode> try_parse_raw_html_inline(std::optional<std::size_t> stop_at = std::nullopt) {
         std::size_t save = pos;
+        auto limit = stop_at.value_or(cps.size());
         std::u32string tag; tag.push_back('<'); advance();
         if (peek1() == '/') { tag.push_back('/'); advance(); }
-        while (!eof() && is_alnum_(peek1())) { tag.push_back(peek1()); advance(); }
-        while (!eof() && peek1() != '>' && peek1() != '\n') { tag.push_back(peek1()); advance(); }
-        if (peek1() != '>') { pos = save; return std::nullopt; }
+        while (!eof() && pos < limit && is_alnum_(peek1())) { tag.push_back(peek1()); advance(); }
+        while (!eof() && pos < limit && peek1() != '>' && peek1() != '\n') { tag.push_back(peek1()); advance(); }
+        if (pos >= limit || peek1() != '>') { pos = save; return std::nullopt; }
         tag.push_back('>'); advance();
         NodeId id = next_node_id();
         push_range(id, CharRange(CharOffset(save), cur()), CharRange(CharOffset(save), cur()));
@@ -935,16 +949,23 @@ public:
                 content_end = content_start;
             }
             NodeId cell_id = next_node_id();
-            NodeId text_id = next_node_id();
             auto source_start = CharOffset(row_start + segment.first);
             auto source_end = CharOffset(row_start + segment.second);
             auto text_start = CharOffset(row_start + content_start);
             auto text_end = CharOffset(row_start + content_end);
+            auto row_position = pos;
+            pos = text_start.v;
+            auto parsed = parse_inline_sequence(text_end.v);
+            pos = row_position;
             TableCell cell;
             cell.id = cell_id;
-            cell.children.push_back(InlineNode::text_node(text_id, std::u32string(line.substr(content_start, content_end - content_start))));
+            cell.children = std::move(parsed.inlines);
+            if (cell.children.empty()) {
+                NodeId text_id = next_node_id();
+                cell.children.push_back(InlineNode::text_node(text_id, U""));
+                push_range(text_id, CharRange(text_start, text_end), CharRange(text_start, text_end));
+            }
             push_range(cell_id, CharRange(source_start, source_end), CharRange(text_start, text_end));
-            push_range(text_id, CharRange(text_start, text_end), CharRange(text_start, text_end));
             cells.push_back(std::move(cell));
         }
         advance_n(length);

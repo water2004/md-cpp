@@ -1172,6 +1172,7 @@ namespace winrt::ElMd
             auto estimatedHeight = estimatedBlockHeight(block);
             auto caretInside = block.source_range.start.v <= caret && caret <= block.source_range.end.v;
             auto insidePrefetch = y + estimatedHeight >= -surfaceHeightDip && y <= surfaceHeightDip * 2.0f;
+            auto requestEmbedded = y >= -surfaceHeightDip * 2.0f && y <= surfaceHeightDip * 3.0f;
             if (!caretInside && !insidePrefetch)
             {
                 VisualBlock placeholder;
@@ -1199,6 +1200,8 @@ namespace winrt::ElMd
                     auto tableWidth = (std::max)(1.0f, documentRight - documentLeft);
                     auto columnWidth = tableWidth / static_cast<float>(table.columnCount);
                     std::vector<float> rowHeights(table.rowCount, styleSheet.body.lineHeight + 16.0f);
+                    std::vector<DisplayInlineText> tableDisplays;
+                    tableDisplays.reserve(table.rowCount * table.columnCount);
 
                     for (std::size_t row = 0; row < table.rowCount; ++row)
                     {
@@ -1208,21 +1211,42 @@ namespace winrt::ElMd
                         {
                             auto sourceStart = sourceRow.line_range.end.v;
                             auto sourceEnd = sourceStart;
-                            std::u32string cellText;
                             if (column < sourceRow.cells.size())
                             {
                                 auto const& sourceCell = sourceRow.cells[column];
                                 sourceStart = sourceCell.content_range.start.v;
                                 sourceEnd = sourceCell.content_range.end.v;
-                                cellText = sourceCell.text;
                             }
-                            auto displayText = cellText;
-                            auto wide = ToWide(displayText);
+                            DisplayInlineText display;
+                            auto renderCellIndex = row * table.columnCount + column;
+                            if (renderCellIndex < block.table_cells.size())
+                            {
+                                display = BuildDisplayInlineText(
+                                    block.table_cells[renderCellIndex],
+                                    caret,
+                                    sourceEnd,
+                                    sourceText,
+                                    mathJax,
+                                    svgNormalizer,
+                                    styleSheet.textColor,
+                                    styleSheet.body.size,
+                                    (std::max)(1.0f, columnWidth - 20.0f),
+                                    svgSupported,
+                                    requestEmbedded);
+                            }
+                            else
+                            {
+                                AppendSourceText(display, sourceText, sourceStart, sourceEnd, elmd::InlineStyle::plain(), false);
+                                display.displayToSource.push_back(sourceEnd);
+                            }
+                            auto wide = ToWide(display.text);
                             auto layout = createLayout(wide, textFormat.Get(), (std::max)(1.0f, columnWidth - 20.0f));
                             auto cellTextHeight = styleSheet.body.lineHeight;
                             if (layout)
                             {
                                 layout->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+                                applyInlineStyles(layout.Get(), display.ranges);
+                                ApplyMathInlineObjects(layout.Get(), display.mathOverlays);
                                 if (row == 0)
                                 {
                                     layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_RANGE{0, static_cast<UINT32>(wide.size())});
@@ -1243,14 +1267,11 @@ namespace winrt::ElMd
                             cell.sourceEnd = sourceEnd;
                             cell.row = row;
                             cell.column = column;
-                            cell.text = std::move(displayText);
+                            cell.text = std::move(display.text);
+                            cell.displayToSource = std::move(display.displayToSource);
                             cell.textHeight = cellTextHeight;
                             cell.layout = std::move(layout);
-                            for (std::size_t index = 0; index < cell.text.size(); ++index)
-                            {
-                                cell.displayToSource.push_back((std::min)(sourceStart + index, sourceEnd));
-                            }
-                            cell.displayToSource.push_back(sourceEnd);
+                            tableDisplays.push_back(std::move(display));
                             table.cells.push_back(std::move(cell));
                         }
                     }
@@ -1289,24 +1310,111 @@ namespace winrt::ElMd
                     for (std::size_t cellIndex = 0; cellIndex < visualTable.cells.size(); ++cellIndex)
                     {
                         auto& cell = visualTable.cells[cellIndex];
+                        auto& cellDisplay = tableDisplays[cellIndex];
                         if (!selection.is_empty() && selection.start.v < cell.sourceEnd && cell.sourceStart < selection.end.v)
                         {
                             d2dContext->FillRectangle(cell.rect, selectionBrush.Get());
                         }
                         if (cell.layout)
                         {
+                            for (auto const& range : cellDisplay.ranges)
+                            {
+                                if (!range.style.code || range.length == 0) continue;
+                                UINT32 actualCount = 0;
+                                auto hr = cell.layout->HitTestTextRange(range.start, range.length, cell.textOrigin.x, cell.textOrigin.y, nullptr, 0, &actualCount);
+                                if (hr != E_NOT_SUFFICIENT_BUFFER || actualCount == 0) continue;
+                                std::vector<DWRITE_HIT_TEST_METRICS> metrics(actualCount);
+                                if (FAILED(cell.layout->HitTestTextRange(range.start, range.length, cell.textOrigin.x, cell.textOrigin.y, metrics.data(), actualCount, &actualCount))) continue;
+                                for (UINT32 index = 0; index < actualCount; ++index)
+                                {
+                                    auto const& metric = metrics[index];
+                                    d2dContext->FillRoundedRectangle(
+                                        D2D1::RoundedRect(
+                                            D2D1::RectF(metric.left - 3.0f, metric.top + 2.0f, metric.left + metric.width + 3.0f, metric.top + metric.height - 1.0f),
+                                            4.0f,
+                                            4.0f),
+                                        panelBrush.Get());
+                                }
+                            }
                             d2dContext->DrawTextLayout(cell.textOrigin, cell.layout.Get(), textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                            for (auto const& overlay : cellDisplay.mathOverlays)
+                            {
+                                float pointX = 0.0f;
+                                float pointY = 0.0f;
+                                DWRITE_HIT_TEST_METRICS metrics{};
+                                if (FAILED(cell.layout->HitTestTextPosition(overlay.displayStart, FALSE, &pointX, &pointY, &metrics))) continue;
+                                auto mathY = cell.textOrigin.y + metrics.top;
+                                auto mathX = cell.textOrigin.x + pointX + overlay.leadingSpace;
+                                if (!drawMathSvg(overlay.fragment, D2D1::Point2F(mathX, mathY), styleSheet.textColor))
+                                {
+                                    drawMathFallback(overlay.sourceStart, overlay.sourceEnd, D2D1::Point2F(mathX, mathY));
+                                }
+                                if (overlay.strikethrough)
+                                {
+                                    auto strikeY = mathY + overlay.fragment.height * 0.52f;
+                                    d2dContext->DrawLine(D2D1::Point2F(cell.textOrigin.x + pointX, strikeY), D2D1::Point2F(mathX + overlay.fragment.width, strikeY), textBrush.Get(), 1.5f);
+                                }
+                                visualMathHits.push_back(VisualMathHit{
+                                    D2D1::RectF(mathX, mathY, mathX + overlay.fragment.width, mathY + overlay.fragment.height),
+                                    overlay.sourceStart,
+                                    overlay.sourceEnd,
+                                    overlay.progressStart,
+                                    overlay.progressEnd,
+                                });
+                            }
                         }
-                        VisualLine line;
-                        line.blockIndex = visualBlockIndex;
-                        line.tableIndex = tableIndex;
-                        line.cellIndex = cellIndex;
-                        line.sourceStart = cell.sourceStart;
-                        line.sourceEnd = cell.sourceEnd;
-                        line.displayStart = 0;
-                        line.displayEnd = static_cast<std::uint32_t>(cell.text.size());
-                        line.rect = cell.rect;
-                        visualLines.push_back(line);
+                        bool addedVisualLine = false;
+                        if (cell.layout && !cell.displayToSource.empty())
+                        {
+                            UINT32 lineCount = 0;
+                            auto hr = cell.layout->GetLineMetrics(nullptr, 0, &lineCount);
+                            if (hr == E_NOT_SUFFICIENT_BUFFER && lineCount > 0)
+                            {
+                                std::vector<DWRITE_LINE_METRICS> metrics(lineCount);
+                                if (SUCCEEDED(cell.layout->GetLineMetrics(metrics.data(), lineCount, &lineCount)))
+                                {
+                                    UINT32 textPosition = 0;
+                                    UINT32 previousNewlineLength = 0;
+                                    float lineTop = cell.textOrigin.y;
+                                    for (UINT32 lineIndex = 0; lineIndex < lineCount; ++lineIndex)
+                                    {
+                                        auto const& metric = metrics[lineIndex];
+                                        auto lineEndPosition = textPosition + metric.length;
+                                        auto visibleEndPosition = lineEndPosition >= metric.newlineLength ? lineEndPosition - metric.newlineLength : lineEndPosition;
+                                        auto startIndex = (std::min)(static_cast<std::size_t>(textPosition), cell.displayToSource.size() - 1);
+                                        auto endIndex = (std::min)(static_cast<std::size_t>(visibleEndPosition), cell.displayToSource.size() - 1);
+                                        VisualLine line;
+                                        line.blockIndex = visualBlockIndex;
+                                        line.tableIndex = tableIndex;
+                                        line.cellIndex = cellIndex;
+                                        line.sourceStart = cell.displayToSource[startIndex];
+                                        line.sourceEnd = cell.displayToSource[endIndex];
+                                        line.displayStart = textPosition;
+                                        line.displayEnd = visibleEndPosition;
+                                        line.wrapContinuation = lineIndex > 0 && previousNewlineLength == 0;
+                                        line.rect = D2D1::RectF(cell.rect.left, lineTop, cell.rect.right, lineTop + metric.height);
+                                        visualLines.push_back(std::move(line));
+                                        addedVisualLine = true;
+                                        textPosition = lineEndPosition;
+                                        lineTop += metric.height;
+                                        previousNewlineLength = metric.newlineLength;
+                                    }
+                                }
+                            }
+                        }
+                        if (!addedVisualLine)
+                        {
+                            VisualLine line;
+                            line.blockIndex = visualBlockIndex;
+                            line.tableIndex = tableIndex;
+                            line.cellIndex = cellIndex;
+                            line.sourceStart = cell.sourceStart;
+                            line.sourceEnd = cell.sourceEnd;
+                            line.displayStart = 0;
+                            line.displayEnd = static_cast<std::uint32_t>(cell.text.size());
+                            line.rect = cell.rect;
+                            visualLines.push_back(std::move(line));
+                        }
                     }
                     for (auto boundary : visualTable.columnBoundaries)
                     {
@@ -1323,7 +1431,6 @@ namespace winrt::ElMd
                 }
             }
             IDWriteTextFormat* format = textFormat.Get();
-            auto requestEmbedded = y >= -surfaceHeightDip * 2.0f && y <= surfaceHeightDip * 3.0f;
             ID2D1Brush* brush = textBrush.Get();
             float height = 48.0f;
             float inset = 0.0f;
@@ -2521,7 +2628,18 @@ namespace winrt::ElMd
         {
             auto const& table = visualTables[currentLine.tableIndex];
             auto const& cell = table.cells[currentLine.cellIndex];
-            if (down && cell.row + 1 < table.rowCount)
+            auto adjacentIsSameCell = down
+                ? *current + 1 < visualLines.size()
+                    && visualLines[*current + 1].tableIndex == currentLine.tableIndex
+                    && visualLines[*current + 1].cellIndex == currentLine.cellIndex
+                : *current > 0
+                    && visualLines[*current - 1].tableIndex == currentLine.tableIndex
+                    && visualLines[*current - 1].cellIndex == currentLine.cellIndex;
+            if (adjacentIsSameCell)
+            {
+                targetIndex = down ? *current + 1 : *current - 1;
+            }
+            else if (down && cell.row + 1 < table.rowCount)
             {
                 auto targetCell = (cell.row + 1) * table.columnCount + cell.column;
                 for (std::size_t index = 0; index < visualLines.size(); ++index)
@@ -2532,9 +2650,9 @@ namespace winrt::ElMd
             else if (!down && cell.row > 0)
             {
                 auto targetCell = (cell.row - 1) * table.columnCount + cell.column;
-                for (std::size_t index = 0; index < visualLines.size(); ++index)
+                for (std::size_t index = visualLines.size(); index > 0; --index)
                 {
-                    if (visualLines[index].tableIndex == currentLine.tableIndex && visualLines[index].cellIndex == targetCell) { targetIndex = index; break; }
+                    if (visualLines[index - 1].tableIndex == currentLine.tableIndex && visualLines[index - 1].cellIndex == targetCell) { targetIndex = index - 1; break; }
                 }
             }
             else if (down)

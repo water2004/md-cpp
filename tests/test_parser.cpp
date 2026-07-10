@@ -488,6 +488,28 @@ ELMD_TEST(test_gfm_table_escaped_pipe_stays_in_its_cell) {
     }
 }
 
+ELMD_TEST(test_gfm_table_cells_parse_inline_semantics) {
+    auto out = parse_text(1, "| **bold** | $x$ |\n| --- | --- |\n| `code` | ~~gone~~ |\n");
+    auto* table = first_of(out.document.blocks, BlockKind::Table);
+    ELMD_CHECK(table != nullptr);
+    if (table) {
+        ELMD_CHECK(inlines_have_kind(table->table_header[0].children, InlineKind::Strong));
+        ELMD_CHECK(inlines_have_kind(table->table_header[1].children, InlineKind::InlineMath));
+        ELMD_CHECK(inlines_have_kind(table->table_rows[0].cells[0].children, InlineKind::InlineCode));
+        ELMD_CHECK(inlines_have_kind(table->table_rows[0].cells[1].children, InlineKind::Strike));
+    }
+}
+
+ELMD_TEST(test_gfm_table_inline_delimiters_do_not_cross_cells) {
+    auto out = parse_text(1, "| *left | right* |\n| --- | --- |\n");
+    auto* table = first_of(out.document.blocks, BlockKind::Table);
+    ELMD_CHECK(table != nullptr);
+    if (table) {
+        ELMD_CHECK(!inlines_have_kind(table->table_header[0].children, InlineKind::Emphasis));
+        ELMD_CHECK(!inlines_have_kind(table->table_header[1].children, InlineKind::Emphasis));
+    }
+}
+
 ELMD_TEST(test_invalid_table_probe_does_not_leave_orphan_source_ranges) {
     auto out = parse_text(1, "| A | B |\nnot a separator\n");
     ELMD_CHECK_EQ(out.document.blocks.size(), 1u);

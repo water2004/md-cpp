@@ -200,6 +200,21 @@ ELMD_TEST(table_render_cells_keep_their_own_source_ranges) {
     }
 }
 
+ELMD_TEST(table_render_cells_preserve_inline_styles) {
+    auto m = build_model("| **bold** | plain |\n| --- | --- |\n| `code` | ~~gone~~ |\n");
+    ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Table);
+    ELMD_CHECK_EQ(m.blocks[0].table_cells.size(), 4u);
+    bool bold = false;
+    bool code = false;
+    bool strike = false;
+    for (auto const& item : m.blocks[0].table_cells[0]) bold = bold || item.style.bold;
+    for (auto const& item : m.blocks[0].table_cells[2]) code = code || item.style.code;
+    for (auto const& item : m.blocks[0].table_cells[3]) strike = strike || item.style.strikethrough;
+    ELMD_CHECK(bold);
+    ELMD_CHECK(code);
+    ELMD_CHECK(strike);
+}
+
 ELMD_TEST(layout_table_builds_rows_columns_and_cells) {
     StubMeasurer ms(8.0f);
     auto m = build_model("| A | B |\n| :--- | ---: |\n| 1 | 2 |\n");
