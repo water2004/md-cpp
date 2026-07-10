@@ -17,11 +17,12 @@ static RenderModel build_model(const std::string& src) {
     return build_render_model(out.document, src, out.outline);
 }
 
-ELMD_TEST(test_empty_document_yields_empty_model) {
+ELMD_TEST(test_empty_document_yields_editable_blank_model) {
     MarkdownDocument doc = MarkdownDocument::empty(1);
     Outline o = Outline::empty(1);
     auto m = build_render_model(doc, "", o);
-    ELMD_CHECK_EQ(m.blocks.size(), 0u);
+    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Blank);
     ELMD_CHECK_EQ(m.revision, 1ull);
 }
 
@@ -66,6 +67,47 @@ ELMD_TEST(builds_table_block) {
     ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Table);
     ELMD_CHECK(m.blocks[0].row_count >= 2);
     ELMD_CHECK(m.blocks[0].column_count >= 2);
+}
+
+ELMD_TEST(builds_text_blocks_from_ast_paragraphs) {
+    auto trailing = build_model("Hello\n");
+    ELMD_CHECK_EQ(trailing.blocks.size(), 1u);
+
+    auto between = build_model("Hello\n\nWorld");
+    ELMD_CHECK_EQ(between.blocks.size(), 2u);
+
+    auto empty_after_break = build_model("Hello\n\n");
+    ELMD_CHECK_EQ(empty_after_break.blocks.size(), 2u);
+    ELMD_CHECK(empty_after_break.blocks[1].kind == RenderBlockKind::Blank);
+    ELMD_CHECK_EQ(empty_after_break.blocks[1].content_range.start.v, 7u);
+    ELMD_CHECK_EQ(empty_after_break.blocks[1].content_range.end.v, 7u);
+
+    auto one_blank_between = build_model("Hello\n\n\nWorld");
+    ELMD_CHECK_EQ(one_blank_between.blocks.size(), 3u);
+    ELMD_CHECK(one_blank_between.blocks[0].kind == RenderBlockKind::Text);
+    ELMD_CHECK(one_blank_between.blocks[1].kind == RenderBlockKind::Blank);
+    ELMD_CHECK(one_blank_between.blocks[2].kind == RenderBlockKind::Text);
+}
+
+ELMD_TEST(layout_blank_block_has_one_caret_line) {
+    StubMeasurer ms;
+    auto m = build_model("Hello\n\n");
+    auto t = layout_blocks(m.blocks, 800.0f, 1.0f, ms, CharOffset(7), LogicalPoint(0, 0), Outline::empty(1));
+    ELMD_CHECK_EQ(t.blocks.size(), 2u);
+    ELMD_CHECK(t.blocks[1].kind.kind == LayoutBlockKind::Blank);
+    ELMD_CHECK_EQ(t.blocks[1].children.size(), 1u);
+    auto caret = compute_caret_geometry(t, CharOffset(7));
+    ELMD_CHECK(caret.has_value());
+}
+
+ELMD_TEST(renders_soft_break_as_space) {
+    auto m = build_model("Hello\nWorld");
+    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    std::u32string text;
+    for (const auto& item : m.blocks[0].inline_items) {
+        if (item.kind == InlineRenderItem::Kind::Text) text += item.text;
+    }
+    ELMD_CHECK(text == U"Hello World");
 }
 
 ELMD_TEST(raw_html_becomes_unsupported) {

@@ -2,7 +2,6 @@
 #include "EditorSession.h"
 
 import elmd.core.editor;
-import elmd.core.parser;
 import elmd.core.render_builder;
 import elmd.core.render_model;
 import elmd.core.utf;
@@ -47,22 +46,23 @@ namespace winrt::ElMd
 
     void EditorSession::RebuildRenderModel()
     {
-        auto parsed = elmd::parse_text(core_->editor.revision(), core_->sourceText);
-        core_->renderModel = elmd::build_render_model(parsed.document, core_->sourceText, parsed.outline);
+        core_->renderModel = elmd::build_render_model(core_->editor.document(), core_->sourceText, core_->editor.outline());
     }
 
     bool EditorSession::ExecuteCommand(elmd::Command const& command)
     {
         if (command.kind == elmd::CommandKind::Undo)
         {
-            if (!core_->editor.undo())
+            auto undone = core_->editor.undo();
+            if (!undone)
             {
                 return false;
             }
         }
         else if (command.kind == elmd::CommandKind::Redo)
         {
-            if (!core_->editor.redo())
+            auto redone = core_->editor.redo();
+            if (!redone)
             {
                 return false;
             }
@@ -74,7 +74,8 @@ namespace winrt::ElMd
         }
         else
         {
-            if (!core_->editor.execute_command(command))
+            auto executed = core_->editor.execute_command(command);
+            if (!executed)
             {
                 return false;
             }
@@ -87,12 +88,13 @@ namespace winrt::ElMd
         return true;
     }
 
-    void EditorSession::SetSelection(std::size_t anchor, std::size_t active)
+    void EditorSession::SetSelection(std::size_t anchor, std::size_t active, elmd::TextAffinity affinity)
     {
         auto length = core_->editor.text_cps().size();
         elmd::Selection selection;
         selection.anchor = elmd::CharOffset((std::min)(anchor, length));
         selection.active = elmd::CharOffset((std::min)(active, length));
+        selection.affinity = affinity;
         core_->editor.set_selection(selection);
     }
 

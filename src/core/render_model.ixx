@@ -128,7 +128,7 @@ struct InlineRenderItem {
 };
 
 enum class RenderBlockKind {
-    Text, Code, Math, Table, Image, Toc, Callout, Frontmatter, Footnote, Unsupported, Extension,
+    Text, Blank, Code, Math, Table, Image, Toc, Callout, Frontmatter, Footnote, Unsupported, Extension,
 };
 
 struct RenderBlock {

@@ -105,6 +105,20 @@ inline std::pair<LayoutBlock, float> layout_text_block(const RenderBlock& rb, fl
     return {std::move(lb), block_height};
 }
 
+inline std::pair<LayoutBlock, float> layout_blank_block(const RenderBlock& rb, float y, float viewport_width, float scale, LogicalPoint origin) {
+    float line_height = 24.0f * scale;
+    LayoutBlock block(rb.id, rb.source_range, {LayoutBlockKind::Blank}, rb.block_style);
+    block.rect = LogicalRect(origin.x, y, viewport_width, line_height);
+    TextLineLayout line{rb.content_range};
+    line.rect = block.rect;
+    line.baseline = y + 16.0f * scale;
+    LayoutItem item;
+    item.kind = LayoutItem::Kind::Line;
+    item.line = std::move(line);
+    block.children.push_back(std::move(item));
+    return {std::move(block), line_height};
+}
+
 inline std::pair<LayoutBlock, float> layout_code_block(const RenderBlock& rb, float y, float viewport_width, float scale, TextMeasurer& measurer) {
     float font_size = 14.0f * scale;
     float line_height = font_size * 1.4f;
@@ -231,6 +245,9 @@ inline LayoutTree layout_blocks(const std::vector<RenderBlock>& blocks, float vi
         switch (rb.kind) {
             case RenderBlockKind::Text:
                 pr = layout_text_block(rb, y, viewport_width, scale, measurer, caret, origin);
+                break;
+            case RenderBlockKind::Blank:
+                pr = layout_blank_block(rb, y, viewport_width, scale, origin);
                 break;
             case RenderBlockKind::Code:
                 pr = layout_code_block(rb, y, viewport_width, scale, measurer);

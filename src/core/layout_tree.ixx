@@ -71,7 +71,7 @@ struct LayoutItem {
 };
 
 enum class LayoutBlockKind {
-    Paragraph, Heading, CodeBlock, MathBlock, Table, Image,
+    Paragraph, Blank, Heading, CodeBlock, MathBlock, Table, Image,
     Callout, Toc, Frontmatter, Footnote, UnsupportedMarkup, Extension,
 };
 struct LayoutBlockKindVal { LayoutBlockKind kind; std::uint8_t level{}; std::string extension; };

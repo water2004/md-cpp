@@ -256,8 +256,10 @@ namespace winrt::ElMd::implementation
             try
             {
                 auto request = args.Request();
-                auto caret = editorSession.Core().editor.selection().active.v;
-                auto caretBounds = editorRenderer.CaretBounds(caret);
+                auto selectionState = editorSession.Core().editor.selection();
+                auto caret = selectionState.active.v;
+                auto caretUpstream = selectionState.affinity == elmd::TextAffinity::Upstream;
+                auto caretBounds = editorRenderer.CaretBounds(caret, caretUpstream);
                 auto textRect = winrt::Windows::Foundation::Rect{ 0.0f, 0.0f, 1.0f, 24.0f };
                 auto controlRect = winrt::Windows::Foundation::Rect{ 0.0f, 0.0f, static_cast<float>(EditorSurface().ActualWidth()), static_cast<float>(EditorSurface().ActualHeight()) };
                 auto transform = EditorSurface().TransformToVisual(nullptr);
@@ -374,6 +376,7 @@ namespace winrt::ElMd::implementation
 
     bool MainWindow::ExecuteEditorCommand(elmd::Command const& command)
     {
+        caretGoalX = -1.0f;
         auto oldTextLength = editorSession.Core().editor.text_cps().size();
         if (!editorSession.ExecuteCommand(command))
         {
@@ -396,7 +399,18 @@ namespace winrt::ElMd::implementation
     {
         pendingCharacterTextUpdate = false;
         elmd::Command command;
-        command.kind = elmd::CommandKind::InsertNewline;
+        auto keyState = [](winrt::Windows::System::VirtualKey virtualKey)
+        {
+            return winrt::Microsoft::UI::Input::InputKeyboardSource::GetKeyStateForCurrentThread(virtualKey);
+        };
+        auto isDown = [&](winrt::Windows::System::VirtualKey virtualKey)
+        {
+            return (static_cast<std::uint32_t>(keyState(virtualKey)) & 0x1u) != 0;
+        };
+        auto shift = isDown(winrt::Windows::System::VirtualKey::Shift)
+            || isDown(winrt::Windows::System::VirtualKey::LeftShift)
+            || isDown(winrt::Windows::System::VirtualKey::RightShift);
+        command.kind = shift ? elmd::CommandKind::InsertSoftBreak : elmd::CommandKind::InsertNewline;
         return ExecuteEditorCommand(command);
     }
 
@@ -576,43 +590,53 @@ namespace winrt::ElMd::implementation
             case winrt::Windows::System::VirtualKey::Left:
                 command.kind = elmd::CommandKind::MoveLeft;
                 command.extend_selection = shift;
+                caretGoalX = -1.0f;
                 break;
             case winrt::Windows::System::VirtualKey::Right:
                 command.kind = elmd::CommandKind::MoveRight;
                 command.extend_selection = shift;
+                caretGoalX = -1.0f;
                 break;
             case winrt::Windows::System::VirtualKey::Up:
-                if (auto offset = editorRenderer.MoveCaretVertically(editorSession.Core().editor.selection().active.v, false))
-                {
-                    auto selection = editorSession.Core().editor.selection();
-                    editorSession.SetSelection(shift ? selection.anchor.v : *offset, *offset);
-                    NotifyTextInputSelectionChanged();
-                    RenderEditorSurface();
-                    editorRenderer.ScrollToSourceOffset(*offset);
-                    RenderEditorSurface();
-                    return true;
-                }
-                return false;
+                return MoveCaretVerticalStep(false, shift);
             case winrt::Windows::System::VirtualKey::Down:
-                if (auto offset = editorRenderer.MoveCaretVertically(editorSession.Core().editor.selection().active.v, true))
+                return MoveCaretVerticalStep(true, shift);
+            case winrt::Windows::System::VirtualKey::Home:
+            {
+                caretGoalX = -1.0f;
+                auto selection = editorSession.Core().editor.selection();
+                auto upstream = selection.affinity == elmd::TextAffinity::Upstream;
+                if (auto offset = editorRenderer.VisualLineStart(selection.active.v, upstream))
                 {
-                    auto selection = editorSession.Core().editor.selection();
-                    editorSession.SetSelection(shift ? selection.anchor.v : *offset, *offset);
+                    editorSession.SetSelection(shift ? selection.anchor.v : *offset, *offset, elmd::TextAffinity::Downstream);
                     NotifyTextInputSelectionChanged();
                     RenderEditorSurface();
                     editorRenderer.ScrollToSourceOffset(*offset);
                     RenderEditorSurface();
                     return true;
                 }
-                return false;
-            case winrt::Windows::System::VirtualKey::Home:
                 command.kind = elmd::CommandKind::MoveLineStart;
                 command.extend_selection = shift;
                 break;
+            }
             case winrt::Windows::System::VirtualKey::End:
+            {
+                caretGoalX = -1.0f;
+                auto selection = editorSession.Core().editor.selection();
+                auto upstream = selection.affinity == elmd::TextAffinity::Upstream;
+                if (auto offset = editorRenderer.VisualLineEnd(selection.active.v, upstream))
+                {
+                    editorSession.SetSelection(shift ? selection.anchor.v : *offset, *offset, elmd::TextAffinity::Upstream);
+                    NotifyTextInputSelectionChanged();
+                    RenderEditorSurface();
+                    editorRenderer.ScrollToSourceOffset(*offset);
+                    RenderEditorSurface();
+                    return true;
+                }
                 command.kind = elmd::CommandKind::MoveLineEnd;
                 command.extend_selection = shift;
                 break;
+            }
             case winrt::Windows::System::VirtualKey::Tab:
                 command.kind = shift ? elmd::CommandKind::MoveTableCellPrevious : elmd::CommandKind::MoveTableCellNext;
                 if (!ExecuteEditorCommand(command))
@@ -628,11 +652,33 @@ namespace winrt::ElMd::implementation
         return true;
     }
 
+    bool MainWindow::MoveCaretVerticalStep(bool down, bool extend)
+    {
+        auto selection = editorSession.Core().editor.selection();
+        auto upstream = selection.affinity == elmd::TextAffinity::Upstream;
+        auto move = editorRenderer.MoveCaretVertically(selection.active.v, upstream, down, caretGoalX);
+        if (!move)
+        {
+            caretGoalX = -1.0f;
+            return false;
+        }
+
+        auto affinity = move->upstream ? elmd::TextAffinity::Upstream : elmd::TextAffinity::Downstream;
+        editorSession.SetSelection(extend ? selection.anchor.v : move->offset, move->offset, affinity);
+        NotifyTextInputSelectionChanged();
+        RenderEditorSurface();
+        editorRenderer.ScrollToSourceOffset(move->offset);
+        RenderEditorSurface();
+        return true;
+    }
+
     void MainWindow::HandlePointerPressed(Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
     {
         EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Pointer);
+        caretGoalX = -1.0f;
         auto point = args.GetCurrentPoint(EditorSurface()).Position();
-        auto hit = editorRenderer.HitTest(static_cast<float>(point.X), static_cast<float>(point.Y));
+        bool hitUpstream = false;
+        auto hit = editorRenderer.HitTest(static_cast<float>(point.X), static_cast<float>(point.Y), &hitUpstream);
         if (!hit)
         {
             return;
@@ -646,7 +692,7 @@ namespace winrt::ElMd::implementation
 
         pointerSelecting = true;
         pointerAnchor = *hit;
-        editorSession.SetSelection(pointerAnchor, pointerAnchor);
+        editorSession.SetSelection(pointerAnchor, pointerAnchor, hitUpstream ? elmd::TextAffinity::Upstream : elmd::TextAffinity::Downstream);
         NotifyTextInputSelectionChanged();
         EditorSurface().CapturePointer(args.Pointer());
         RenderEditorSurface();
@@ -661,13 +707,14 @@ namespace winrt::ElMd::implementation
         }
 
         auto point = args.GetCurrentPoint(EditorSurface()).Position();
-        auto hit = editorRenderer.HitTest(static_cast<float>(point.X), static_cast<float>(point.Y));
+        bool hitUpstream = false;
+        auto hit = editorRenderer.HitTest(static_cast<float>(point.X), static_cast<float>(point.Y), &hitUpstream);
         if (!hit)
         {
             return;
         }
 
-        editorSession.SetSelection(pointerAnchor, *hit);
+        editorSession.SetSelection(pointerAnchor, *hit, hitUpstream ? elmd::TextAffinity::Upstream : elmd::TextAffinity::Downstream);
         NotifyTextInputSelectionChanged();
         RenderEditorSurface();
         args.Handled(true);

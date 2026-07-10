@@ -138,8 +138,10 @@ namespace winrt::ElMd
 
     bool IsStyleMarker(elmd::InlineRenderItem const& item)
     {
-        return item.kind == elmd::InlineRenderItem::Kind::Marker
-            && (item.text == U"*" || item.text == U"**" || item.text == U"~~" || item.text == U"`");
+        if (item.kind != elmd::InlineRenderItem::Kind::Marker) return false;
+        bool backticks = !item.text.empty();
+        for (char32_t ch : item.text) if (ch != U'`') backticks = false;
+        return item.text == U"*" || item.text == U"**" || item.text == U"~~" || backticks;
     }
 
     bool IsHeadingMarker(elmd::InlineRenderItem const& item)
@@ -215,6 +217,13 @@ namespace winrt::ElMd
         }
     }
 
+    void AppendSourceText(DisplayInlineText& display, std::u32string const& sourceText, std::size_t start, std::size_t end, elmd::InlineStyle style, bool marker)
+    {
+        start = (std::min)(start, sourceText.size());
+        end = (std::min)((std::max)(end, start), sourceText.size());
+        AppendDisplayText(display, std::u32string(sourceText.begin() + start, sourceText.begin() + end), start, style, marker);
+    }
+
     DisplayInlineText BuildDisplayInlineText(std::vector<elmd::InlineRenderItem> const& items, std::size_t caret, std::size_t sourceEnd)
     {
         DisplayInlineText display;
@@ -236,36 +245,35 @@ namespace winrt::ElMd
         return display;
     }
 
-    DisplayInlineText BuildCodeBlockText(elmd::RenderBlock const& block, std::size_t caret)
+    DisplayInlineText BuildCodeBlockText(elmd::RenderBlock const& block, std::size_t caret, std::u32string const& sourceText)
     {
         DisplayInlineText display;
         auto showFence = block.source_range.start.v <= caret && caret <= block.source_range.end.v;
         if (showFence)
         {
-            std::u32string opening = U"```";
-            if (block.language)
-            {
-                opening += elmd::utf8_to_cps(*block.language);
-            }
-            opening.push_back(U'\n');
-            AppendDisplayText(display, opening, block.source_range.start.v, elmd::InlineStyle::plain(), true);
+            AppendSourceText(display, sourceText, block.source_range.start.v, block.content_range.start.v, elmd::InlineStyle::plain(), true);
         }
-        AppendDisplayText(display, block.code_text, block.content_range.start.v, elmd::InlineStyle::plain(), false);
+        std::size_t contentVisibleEnd = block.content_range.end.v;
+        if (!showFence && contentVisibleEnd > block.content_range.start.v && contentVisibleEnd <= sourceText.size() && sourceText[contentVisibleEnd - 1] == U'\n') --contentVisibleEnd;
+        AppendSourceText(display, sourceText, block.content_range.start.v, contentVisibleEnd, elmd::InlineStyle::plain(), false);
+        std::size_t visibleEnd = contentVisibleEnd;
         if (showFence)
         {
-            AppendDisplayText(display, U"```", block.content_range.end.v, elmd::InlineStyle::plain(), true);
+            visibleEnd = block.source_range.end.v;
+            if (visibleEnd > block.content_range.end.v && visibleEnd <= sourceText.size() && sourceText[visibleEnd - 1] == U'\n') --visibleEnd;
+            AppendSourceText(display, sourceText, block.content_range.end.v, visibleEnd, elmd::InlineStyle::plain(), true);
         }
-        display.displayToSource.push_back(showFence ? block.source_range.end.v : block.content_range.end.v);
+        display.displayToSource.push_back(visibleEnd);
         return display;
     }
 
     EditorSurfaceRenderer::EditorStyleSheet EditorSurfaceRenderer::CreateStyleSheet(Theme value)
     {
         EditorStyleSheet sheet;
-        sheet.body = FontStyle{ L"Microsoft YaHei UI", 18.0f, 31.0f, DWRITE_FONT_WEIGHT_NORMAL };
-        sheet.heading1 = FontStyle{ L"Microsoft YaHei UI", 38.0f, 50.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD };
-        sheet.heading2 = FontStyle{ L"Microsoft YaHei UI", 30.0f, 42.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD };
-        sheet.heading3 = FontStyle{ L"Microsoft YaHei UI", 24.0f, 35.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD };
+        sheet.body = FontStyle{ L"Microsoft YaHei UI", 18.0f, 29.0f, DWRITE_FONT_WEIGHT_NORMAL };
+        sheet.heading1 = FontStyle{ L"Microsoft YaHei UI", 38.0f, 46.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD };
+        sheet.heading2 = FontStyle{ L"Microsoft YaHei UI", 30.0f, 37.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD };
+        sheet.heading3 = FontStyle{ L"Microsoft YaHei UI", 24.0f, 30.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD };
         sheet.code = FontStyle{ L"Cascadia Code", 15.0f, 24.0f, DWRITE_FONT_WEIGHT_NORMAL };
 
         if (value == Theme::Light)
@@ -319,6 +327,7 @@ namespace winrt::ElMd
         (void)text;
         return block.content_range.end.v;
     }
+
 
     float EditorSurfaceRenderer::CompositionScaleX(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const
     {
@@ -619,6 +628,7 @@ namespace winrt::ElMd
 
             UINT32 textPosition = 0;
             float lineTop = block.textOrigin.y;
+            UINT32 prevNewlineLength = 0;
             for (UINT32 lineIndex = 0; lineIndex < lineCount; ++lineIndex)
             {
                 auto const& line = metrics[lineIndex];
@@ -630,10 +640,14 @@ namespace winrt::ElMd
                 visualLine.blockIndex = blockIndex;
                 visualLine.sourceStart = block.displayToSource[startIndex];
                 visualLine.sourceEnd = block.displayToSource[endIndex];
+                visualLine.displayStart = textPosition;
+                visualLine.displayEnd = visibleEndPosition;
+                visualLine.wrapContinuation = lineIndex > 0 && prevNewlineLength == 0;
                 visualLine.rect = D2D1::RectF(block.textOrigin.x, lineTop, block.textOrigin.x + block.textWidth, lineTop + line.height);
                 visualLines.push_back(visualLine);
                 textPosition = lineEndPosition;
                 lineTop += line.height;
+                prevNewlineLength = line.newlineLength;
             }
         };
 
@@ -645,9 +659,22 @@ namespace winrt::ElMd
             return;
         }
 
+        bool previousBlank = false;
         for (std::size_t blockIndex = 0; blockIndex < sessionCore.renderModel.blocks.size(); ++blockIndex)
         {
             auto const& block = sessionCore.renderModel.blocks[blockIndex];
+            bool currentBlank = block.kind == elmd::RenderBlockKind::Blank;
+            if (blockIndex > 0 && !(previousBlank && currentBlank))
+            {
+                if (previousBlank || currentBlank)
+                {
+                    y += styleSheet.blockGap * 0.5f;
+                }
+                else
+                {
+                    y += styleSheet.blockGap;
+                }
+            }
             IDWriteTextFormat* format = textFormat.Get();
             ID2D1Brush* brush = textBrush.Get();
             float height = 48.0f;
@@ -661,6 +688,14 @@ namespace winrt::ElMd
 
             switch (block.kind)
             {
+                case elmd::RenderBlockKind::Blank:
+                    text = U" ";
+                    displayToSource.push_back(block.content_range.start.v);
+                    displayToSource.push_back(block.content_range.start.v);
+                    height = styleSheet.body.lineHeight;
+                    textTop = 0.0f;
+                    measureHeight = false;
+                    break;
                 case elmd::RenderBlockKind::Text:
                 {
                     auto display = BuildDisplayInlineText(block.inline_items, caret, block.content_range.end.v);
@@ -685,7 +720,7 @@ namespace winrt::ElMd
                 }
                 case elmd::RenderBlockKind::Code:
                 {
-                    auto display = BuildCodeBlockText(block, caret);
+                    auto display = BuildCodeBlockText(block, caret, sourceText);
                     text = std::move(display.text);
                     inlineRanges = std::move(display.ranges);
                     displayToSource = std::move(display.displayToSource);
@@ -744,12 +779,29 @@ namespace winrt::ElMd
             if (displayToSource.empty())
             {
                 auto sourceStart = SourceStart(block);
-                displayToSource.reserve(text.size() + 1);
-                for (std::size_t index = 0; index < text.size(); ++index)
+                if (text.empty())
                 {
-                    displayToSource.push_back(sourceStart + index);
+                    text = U" ";
+                    displayToSource.push_back(sourceStart);
+                    displayToSource.push_back(SourceEnd(block, text));
                 }
-                displayToSource.push_back(SourceEnd(block, text));
+                else
+                {
+                    displayToSource.reserve(text.size() + 1);
+                    for (std::size_t index = 0; index < text.size(); ++index)
+                    {
+                        displayToSource.push_back(sourceStart + index);
+                    }
+                    displayToSource.push_back(SourceEnd(block, text));
+                }
+            }
+            if (text.empty())
+            {
+                auto sourceOffset = displayToSource.empty() ? SourceStart(block) : displayToSource.front();
+                text = U" ";
+                displayToSource.clear();
+                displayToSource.push_back(sourceOffset);
+                displayToSource.push_back(sourceOffset);
             }
 
             auto wide = ToWide(text);
@@ -762,6 +814,8 @@ namespace winrt::ElMd
                 auto bottomPadding = fillPanel ? 16.0f : 8.0f;
                 height = textTop + measureTextHeight(layout.Get(), fallbackHeight) + bottomPadding;
             }
+            auto sourceStart = displayToSource.empty() ? SourceStart(block) : displayToSource.front();
+            auto sourceEnd = displayToSource.empty() ? SourceEnd(block, text) : displayToSource.back();
             if (fillPanel)
             {
                 d2dContext->FillRectangle(D2D1::RectF(documentLeft, y, documentRight, y + height), panelBrush.Get());
@@ -769,8 +823,6 @@ namespace winrt::ElMd
             auto origin = D2D1::Point2F(documentLeft + inset, y + textTop);
             if (layout)
             {
-                auto sourceStart = displayToSource.empty() ? SourceStart(block) : displayToSource.front();
-                auto sourceEnd = displayToSource.empty() ? SourceEnd(block, text) : displayToSource.back();
                 for (auto const& range : inlineRanges)
                 {
                     if (!range.style.code || range.length == 0)
@@ -819,21 +871,6 @@ namespace winrt::ElMd
 
                 d2dContext->DrawTextLayout(origin, layout.Get(), brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
 
-                auto caretAtHiddenBlockNewline = caret == sourceEnd && sourceEnd > sourceStart && sourceEnd <= sourceText.size() && sourceText[sourceEnd - 1] == U'\n';
-                if (sourceStart <= caret && caret <= sourceEnd && !caretAtHiddenBlockNewline)
-                {
-                    auto caretPosition = DisplayPositionForSource(displayToSource, caret);
-                    FLOAT caretX = 0.0f;
-                    FLOAT caretY = 0.0f;
-                    DWRITE_HIT_TEST_METRICS caretMetrics{};
-                    if (SUCCEEDED(layout->HitTestTextPosition(static_cast<UINT32>(caretPosition), false, &caretX, &caretY, &caretMetrics)))
-                    {
-                        auto x = origin.x + caretX;
-                        auto top = origin.y + caretY;
-                        d2dContext->DrawLine(D2D1::Point2F(x, top), D2D1::Point2F(x, top + caretMetrics.height), caretBrush.Get(), 1.5f);
-                    }
-                }
-
                 VisualBlock visualBlock;
                 visualBlock.rect = D2D1::RectF(documentLeft, y, documentRight, y + height);
                 visualBlock.textOrigin = origin;
@@ -847,10 +884,20 @@ namespace winrt::ElMd
                 visualBlocks.push_back(std::move(visualBlock));
                 addVisualLinesForBlock(visualBlocks.size() - 1);
             }
-            y += height + styleSheet.blockGap;
+            y += height;
+            previousBlank = currentBlank;
         }
 
         totalDocumentHeight = y + scrollOffset + styleSheet.verticalPadding;
+
+        if (sessionCore.editor.selection().is_caret())
+        {
+            auto upstream = sessionCore.editor.selection().affinity == elmd::TextAffinity::Upstream;
+            if (auto rect = CaretBounds(caret, upstream))
+            {
+                d2dContext->DrawLine(D2D1::Point2F(rect->left, rect->top), D2D1::Point2F(rect->left, rect->bottom), caretBrush.Get(), 1.5f);
+            }
+        }
     }
 
     void EditorSurfaceRenderer::ScrollBy(float delta)
@@ -887,108 +934,263 @@ namespace winrt::ElMd
         }
     }
 
-    std::optional<std::size_t> EditorSurfaceRenderer::HitTest(float x, float y) const
+    std::optional<std::size_t> EditorSurfaceRenderer::LineIndexFor(std::size_t sourceOffset, bool upstream) const
     {
-        for (auto const& block : visualBlocks)
-        {
-            if (y < block.rect.top)
-            {
-                return block.sourceStart;
-            }
-
-            if (x < block.rect.left || x > block.rect.right || y < block.rect.top || y > block.rect.bottom || !block.layout)
-            {
-                continue;
-            }
-
-            BOOL isTrailingHit = false;
-            BOOL isInside = false;
-            DWRITE_HIT_TEST_METRICS metrics{};
-            if (SUCCEEDED(block.layout->HitTestPoint(x - block.textOrigin.x, y - block.textOrigin.y, &isTrailingHit, &isInside, &metrics)))
-            {
-                auto position = static_cast<std::size_t>(metrics.textPosition + (isTrailingHit ? metrics.length : 0));
-                if (position < block.displayToSource.size())
-                {
-                    return (std::min)(block.sourceEnd, block.displayToSource[position]);
-                }
-                return block.sourceEnd;
-            }
-        }
-
-        if (!visualBlocks.empty())
-        {
-            if (y < visualBlocks.front().rect.top)
-            {
-                return visualBlocks.front().sourceStart;
-            }
-            return visualBlocks.back().sourceEnd;
-        }
-
-        return std::nullopt;
-    }
-
-    std::optional<std::size_t> EditorSurfaceRenderer::MoveCaretVertically(std::size_t sourceOffset, bool down) const
-    {
-        auto caretBounds = CaretBounds(sourceOffset);
-        if (!caretBounds || visualLines.empty())
+        if (visualLines.empty())
         {
             return std::nullopt;
         }
 
-        auto x = caretBounds->left;
-        auto caretCenterY = (caretBounds->top + caretBounds->bottom) * 0.5f;
-        auto currentLineIndex = std::optional<std::size_t>{};
+        std::optional<std::size_t> firstContaining;
+        std::optional<std::size_t> lastContaining;
         for (std::size_t index = 0; index < visualLines.size(); ++index)
         {
             auto const& line = visualLines[index];
-            if (line.rect.top <= caretCenterY && caretCenterY <= line.rect.bottom && line.sourceStart <= sourceOffset && sourceOffset <= line.sourceEnd)
+            if (line.sourceStart <= sourceOffset && sourceOffset <= line.sourceEnd)
             {
-                currentLineIndex = index;
+                if (!firstContaining)
+                {
+                    firstContaining = index;
+                }
+                lastContaining = index;
+            }
+        }
+        if (firstContaining)
+        {
+            return upstream ? firstContaining : lastContaining;
+        }
+
+        std::optional<std::size_t> prev;
+        std::optional<std::size_t> next;
+        for (std::size_t index = 0; index < visualLines.size(); ++index)
+        {
+            if (visualLines[index].sourceEnd <= sourceOffset)
+            {
+                prev = index;
+            }
+            if (!next && visualLines[index].sourceStart >= sourceOffset)
+            {
+                next = index;
+            }
+        }
+        if (prev && next)
+        {
+            auto distPrev = sourceOffset - visualLines[*prev].sourceEnd;
+            auto distNext = visualLines[*next].sourceStart - sourceOffset;
+            if (distPrev == distNext)
+            {
+                return upstream ? prev : next;
+            }
+            return distPrev <= distNext ? prev : next;
+        }
+        if (prev)
+        {
+            return prev;
+        }
+        return next;
+    }
+
+    std::optional<D2D1_RECT_F> EditorSurfaceRenderer::CaretRectOnLine(VisualLine const& line, std::size_t sourceOffset, bool upstream) const
+    {
+        if (line.blockIndex >= visualBlocks.size())
+        {
+            return std::nullopt;
+        }
+        auto const& block = visualBlocks[line.blockIndex];
+        auto clamped = (std::min)((std::max)(sourceOffset, line.sourceStart), line.sourceEnd);
+        if (!block.layout)
+        {
+            return D2D1::RectF(line.rect.left, line.rect.top, line.rect.left + 2.0f, line.rect.bottom);
+        }
+
+        auto displayPos = DisplayPositionForSource(block.displayToSource, clamped);
+        displayPos = (std::min)((std::max)(displayPos, static_cast<std::size_t>(line.displayStart)), static_cast<std::size_t>(line.displayEnd));
+
+        UINT32 hitPos = static_cast<UINT32>(displayPos);
+        BOOL trailing = FALSE;
+        bool atLineEnd = displayPos == line.displayEnd;
+        if (atLineEnd && upstream && displayPos > line.displayStart)
+        {
+            hitPos = static_cast<UINT32>(displayPos - 1);
+            trailing = TRUE;
+        }
+
+        FLOAT caretX = 0.0f;
+        FLOAT caretY = 0.0f;
+        DWRITE_HIT_TEST_METRICS metrics{};
+        if (SUCCEEDED(block.layout->HitTestTextPosition(hitPos, trailing, &caretX, &caretY, &metrics)))
+        {
+            auto left = block.textOrigin.x + caretX;
+            auto top = line.rect.top;
+            auto bottom = line.rect.bottom;
+            return D2D1::RectF(left, top, left + 2.0f, bottom);
+        }
+        return D2D1::RectF(line.rect.left, line.rect.top, line.rect.left + 2.0f, line.rect.bottom);
+    }
+
+    std::optional<D2D1_RECT_F> EditorSurfaceRenderer::CaretBounds(std::size_t sourceOffset, bool upstream) const
+    {
+        auto index = LineIndexFor(sourceOffset, upstream);
+        if (!index)
+        {
+            return std::nullopt;
+        }
+        return CaretRectOnLine(visualLines[*index], sourceOffset, upstream);
+    }
+
+    std::optional<std::size_t> EditorSurfaceRenderer::VisualLineStart(std::size_t sourceOffset, bool upstream) const
+    {
+        auto index = LineIndexFor(sourceOffset, upstream);
+        if (!index)
+        {
+            return std::nullopt;
+        }
+        return visualLines[*index].sourceStart;
+    }
+
+    std::optional<std::size_t> EditorSurfaceRenderer::VisualLineEnd(std::size_t sourceOffset, bool upstream) const
+    {
+        auto index = LineIndexFor(sourceOffset, upstream);
+        if (!index)
+        {
+            return std::nullopt;
+        }
+        return visualLines[*index].sourceEnd;
+    }
+
+    std::optional<std::size_t> EditorSurfaceRenderer::HitTest(float x, float y, bool* outUpstream) const
+    {
+        if (outUpstream)
+        {
+            *outUpstream = false;
+        }
+        if (visualLines.empty())
+        {
+            return std::nullopt;
+        }
+
+        std::size_t best = 0;
+        float bestDist = (std::numeric_limits<float>::max)();
+        for (std::size_t index = 0; index < visualLines.size(); ++index)
+        {
+            auto const& rect = visualLines[index].rect;
+            float dist = 0.0f;
+            if (y < rect.top)
+            {
+                dist = rect.top - y;
+            }
+            else if (y > rect.bottom)
+            {
+                dist = y - rect.bottom;
+            }
+            if (dist < bestDist)
+            {
+                bestDist = dist;
+                best = index;
+            }
+            if (dist == 0.0f)
+            {
                 break;
             }
         }
 
-        if (!currentLineIndex)
+        auto const& line = visualLines[best];
+        auto const& block = visualBlocks[line.blockIndex];
+        if (!block.layout)
+        {
+            if (outUpstream)
+            {
+                *outUpstream = false;
+            }
+            return line.sourceStart;
+        }
+
+        BOOL isTrailingHit = FALSE;
+        BOOL isInside = FALSE;
+        DWRITE_HIT_TEST_METRICS metrics{};
+        float localX = x - block.textOrigin.x;
+        float localY = (line.rect.top + line.rect.bottom) * 0.5f - block.textOrigin.y;
+        if (SUCCEEDED(block.layout->HitTestPoint(localX, localY, &isTrailingHit, &isInside, &metrics)))
+        {
+            auto displayPos = static_cast<std::size_t>(metrics.textPosition + (isTrailingHit ? metrics.length : 0));
+            displayPos = (std::min)((std::max)(displayPos, static_cast<std::size_t>(line.displayStart)), static_cast<std::size_t>(line.displayEnd));
+            std::size_t srcOff = displayPos < block.displayToSource.size() ? block.displayToSource[displayPos] : line.sourceEnd;
+            srcOff = (std::min)((std::max)(srcOff, line.sourceStart), line.sourceEnd);
+            if (outUpstream)
+            {
+                bool nextIsWrap = best + 1 < visualLines.size()
+                    && visualLines[best + 1].blockIndex == line.blockIndex
+                    && visualLines[best + 1].wrapContinuation
+                    && visualLines[best + 1].displayStart == line.displayEnd;
+                *outUpstream = srcOff == line.sourceEnd && nextIsWrap;
+            }
+            return srcOff;
+        }
+
+        if (outUpstream)
+        {
+            *outUpstream = false;
+        }
+        return line.sourceStart;
+    }
+
+    std::optional<EditorSurfaceRenderer::CaretMove> EditorSurfaceRenderer::MoveCaretVertically(std::size_t sourceOffset, bool upstream, bool down, float& goalX) const
+    {
+        auto current = LineIndexFor(sourceOffset, upstream);
+        if (!current || visualLines.empty())
         {
             return std::nullopt;
         }
-        if (!down && *currentLineIndex == 0)
-        {
-            return visualLines.front().sourceStart;
-        }
-        if (down && *currentLineIndex + 1 >= visualLines.size())
-        {
-            return visualLines.back().sourceEnd;
-        }
 
-        auto const& targetLine = visualLines[*currentLineIndex + (down ? 1 : -1)];
-        auto targetX = (std::min)((std::max)(x, targetLine.rect.left), targetLine.rect.right - 1.0f);
-        auto targetY = (targetLine.rect.top + targetLine.rect.bottom) * 0.5f;
-        return HitTest(targetX, targetY);
-    }
-
-    std::optional<D2D1_RECT_F> EditorSurfaceRenderer::CaretBounds(std::size_t sourceOffset) const
-    {
-        for (auto const& block : visualBlocks)
+        float x = goalX;
+        if (x < 0.0f)
         {
-            if (sourceOffset < block.sourceStart || sourceOffset > block.sourceEnd || !block.layout)
+            if (auto rect = CaretRectOnLine(visualLines[*current], sourceOffset, upstream))
             {
-                continue;
+                x = rect->left;
             }
+            else
+            {
+                x = visualLines[*current].rect.left;
+            }
+            goalX = x;
+        }
 
-            FLOAT caretX = 0.0f;
-            FLOAT caretY = 0.0f;
+        if (!down && *current == 0)
+        {
+            return CaretMove{ visualLines.front().sourceStart, false };
+        }
+        if (down && *current + 1 >= visualLines.size())
+        {
+            return CaretMove{ visualLines.back().sourceEnd, true };
+        }
+
+        std::size_t targetIndex = down ? *current + 1 : *current - 1;
+        auto const& target = visualLines[targetIndex];
+        auto const& block = visualBlocks[target.blockIndex];
+
+        std::size_t srcOff = target.sourceStart;
+        if (block.layout)
+        {
+            float targetX = (std::min)((std::max)(x, target.rect.left), target.rect.right - 1.0f);
+            float localX = targetX - block.textOrigin.x;
+            float localY = (target.rect.top + target.rect.bottom) * 0.5f - block.textOrigin.y;
+            BOOL isTrailingHit = FALSE;
+            BOOL isInside = FALSE;
             DWRITE_HIT_TEST_METRICS metrics{};
-            auto position = DisplayPositionForSource(block.displayToSource, sourceOffset);
-            if (SUCCEEDED(block.layout->HitTestTextPosition(static_cast<UINT32>(position), false, &caretX, &caretY, &metrics)))
+            if (SUCCEEDED(block.layout->HitTestPoint(localX, localY, &isTrailingHit, &isInside, &metrics)))
             {
-                auto left = block.textOrigin.x + caretX;
-                auto top = block.textOrigin.y + caretY;
-                return D2D1::RectF(left, top, left + 2.0f, top + metrics.height);
+                auto displayPos = static_cast<std::size_t>(metrics.textPosition + (isTrailingHit ? metrics.length : 0));
+                displayPos = (std::min)((std::max)(displayPos, static_cast<std::size_t>(target.displayStart)), static_cast<std::size_t>(target.displayEnd));
+                srcOff = displayPos < block.displayToSource.size() ? block.displayToSource[displayPos] : target.sourceEnd;
             }
         }
-
-        return std::nullopt;
+        srcOff = (std::min)((std::max)(srcOff, target.sourceStart), target.sourceEnd);
+        bool newUpstream = false;
+        auto downstreamLine = LineIndexFor(srcOff, false);
+        auto upstreamLine = LineIndexFor(srcOff, true);
+        if ((!downstreamLine || *downstreamLine != targetIndex) && upstreamLine && *upstreamLine == targetIndex) newUpstream = true;
+        return CaretMove{ srcOff, newUpstream };
     }
 
     void EditorSurfaceRenderer::Render(detail::EditorSessionCore const& sessionCore)

@@ -9,6 +9,7 @@ import elmd.core.ids;
 import elmd.core.dialect;
 import elmd.core.ast;
 import elmd.core.source_map;
+import elmd.core.source_structure;
 import elmd.core.document;
 import elmd.core.outline;
 import elmd.core.diagnostics;
@@ -116,8 +117,29 @@ struct Builder {
                 return;
             }
             case K::InlineCode: {
-                auto sr = range_for(node.id, cursor + node.text.size() + 2);
-                (void)sr;
+                const auto* range = sm ? sm->find_node_by_id(node.id) : nullptr;
+                if (range && range->marker_ranges.size() == 2) {
+                    InlineRenderItem opening;
+                    opening.kind = InlineRenderItem::Kind::Marker;
+                    opening.source_range = range->marker_ranges[0];
+                    opening.text = std::u32string(opening.source_range.len(), U'`');
+                    opening.marker_style = MarkerStyle{true, {}};
+                    opening.visibility = MarkerVisibility::Always;
+                    out.push_back(std::move(opening));
+                    InlineStyle cs = style; cs.code = true;
+                    InlineRenderItem content = InlineRenderItem::plain_text(node.text, range->content_range);
+                    content.style = cs;
+                    out.push_back(std::move(content));
+                    InlineRenderItem closing;
+                    closing.kind = InlineRenderItem::Kind::Marker;
+                    closing.source_range = range->marker_ranges[1];
+                    closing.text = std::u32string(closing.source_range.len(), U'`');
+                    closing.marker_style = MarkerStyle{true, {}};
+                    closing.visibility = MarkerVisibility::Always;
+                    out.push_back(std::move(closing));
+                    cursor = range->source_range.end.v;
+                    return;
+                }
                 push_marker(out, cursor, U"`");
                 InlineStyle cs = style; cs.code = true;
                 InlineRenderItem it = InlineRenderItem::plain_text(node.text, CharRange(CharOffset(cursor), CharOffset(cursor + node.text.size())));
@@ -196,7 +218,7 @@ struct Builder {
             }
             case K::SoftBreak: {
                 auto sr = range_for(node.id, cursor + 1);
-                InlineRenderItem it = InlineRenderItem::plain_text(U"\n", sr);
+                InlineRenderItem it = InlineRenderItem::plain_text(U" ", sr);
                 it.style = style;
                 out.push_back(std::move(it));
                 cursor += 1;
@@ -401,11 +423,25 @@ struct Builder {
 };
 
 inline RenderModel build_render_model(const MarkdownDocument& doc,
-                                      const std::string& /*source_text*/,
+                                      const std::string& source_text,
                                       const Outline& outline) {
     Builder bd; bd.sm = &doc.source_map;
     std::vector<RenderBlock> blocks;
-    for (const auto& b : doc.blocks) blocks.push_back(bd.build_block(b));
+    auto source = utf8_to_cps(source_text);
+    auto structure = build_source_structure(doc, source);
+    for (const auto& span : structure.blocks) {
+        if (span.kind == SourceBlockKind::Semantic && span.document_block_index && *span.document_block_index < doc.blocks.size()) {
+            blocks.push_back(bd.build_block(doc.blocks[*span.document_block_index]));
+            continue;
+        }
+        RenderBlock blank;
+        blank.kind = RenderBlockKind::Blank;
+        blank.id = NodeId(0x8000000000000000ull | (span.content_range.start.v & 0x7fffffffffffffffull));
+        blank.source_range = span.source_range;
+        blank.content_range = span.content_range;
+        blank.block_style = BlockStyle::paragraph();
+        blocks.push_back(std::move(blank));
+    }
     std::vector<RenderDiagnostic> diags;
     for (const auto& d : doc.diagnostics) diags.push_back(convert_diagnostic(d));
     RenderModel m; m.revision = doc.revision; m.blocks = std::move(blocks);

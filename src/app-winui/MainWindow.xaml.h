@@ -57,6 +57,8 @@ namespace winrt::ElMd::implementation
         std::u32string pendingCharacterText;
         bool pointerSelecting = false;
         std::size_t pointerAnchor = 0;
+        float caretGoalX = -1.0f;
+        bool MoveCaretVerticalStep(bool down, bool extend);
         std::vector<std::size_t> outlineOffsets;
         std::vector<std::size_t> diagnosticOffsets;
     };

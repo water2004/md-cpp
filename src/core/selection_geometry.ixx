@@ -64,6 +64,13 @@ inline std::optional<CaretGeometry> compute_caret_geometry(const LayoutTree& tre
                     return cg;
                 }
             }
+            if (ch.line.runs.empty() && ch.line.source_range.start == pos) {
+                CaretGeometry cg;
+                cg.position = pos;
+                cg.rect = LogicalRect(ch.line.rect.x, ch.line.rect.y, 2.0f, ch.line.rect.height);
+                cg.affinity = TextAffinity::Downstream;
+                return cg;
+            }
         }
     }
     return std::nullopt;

@@ -9,21 +9,29 @@ import elmd.core.theme;
 import elmd.core.buffer;
 import elmd.core.selection;
 import elmd.core.command;
+import elmd.core.semantic_edit;
 import elmd.core.transaction;
 import elmd.core.undo;
 import elmd.core.input;
 import elmd.core.utf;
 import elmd.core.dialect;
+import elmd.core.document;
+import elmd.core.symbols;
+import elmd.core.outline;
+import elmd.core.parser;
 
 export namespace elmd {
 
 class Editor {
 public:
-    Editor() = default;
-    explicit Editor(std::string text) { buffer_ = TextBuffer::from_text(std::move(text)); }
+    Editor() { rebuild_document_full_(); }
+    explicit Editor(std::string text) { buffer_ = TextBuffer::from_text(std::move(text)); rebuild_document_full_(); }
 
     const TextBuffer& buffer() const { return buffer_; }
     TextBuffer& mutable_buffer() { return buffer_; }
+    const MarkdownDocument& document() const { return document_; }
+    const DocumentSymbolIndex& symbols() const { return symbols_; }
+    const Outline& outline() const { return outline_; }
     std::u32string text_cps() const { return std::u32string(buffer_.text_cps()); }
     Selection selection() const { return selection_; }
     std::uint64_t revision() const { return buffer_.revision(); }
@@ -38,7 +46,7 @@ public:
     // Apply a Command. Returns the transaction if it produced a change.
     std::optional<Transaction> execute_command(const Command& cmd) {
         std::u32string text(buffer_.text_cps());
-        auto txn = to_transaction(cmd, text, selection_, buffer_.revision());
+        auto txn = semantic_transaction(cmd, text, document_, selection_, buffer_.revision());
         if (!txn) return std::nullopt;
         // no-op gate
         if (txn->is_empty() &&
@@ -47,12 +55,16 @@ public:
             return std::nullopt;
         }
         if (!txn->edits.empty()) {
+            auto old_text = buffer_.text_utf8();
+            auto old_document = document_;
+            auto old_symbols = symbols_;
             // populate `original` for reversibility
             for (auto& e : txn->edits) {
                 std::size_t s = e.range.start.v, fn = e.range.end.v;
                 if (s < fn) e.original = buffer_.text_range(CharRange(CharOffset(s), CharOffset(fn)));
             }
             buffer_.apply_delta(txn->to_delta());
+            refresh_document_after_delta_(old_text, old_document, old_symbols, txn->to_delta());
             undo_.push(*txn);
         }
         selection_ = txn->selection_after;
@@ -62,15 +74,28 @@ public:
     std::optional<Transaction> undo() {
         auto txn = undo_.undo();
         if (!txn) return std::nullopt;
+        auto old_text = buffer_.text_utf8();
+        auto old_document = document_;
+        auto old_symbols = symbols_;
         auto rev = txn->to_reverse_delta();
-        if (!rev.edits.empty()) buffer_.apply_delta(rev);
+        if (!rev.edits.empty()) {
+            buffer_.apply_delta(rev);
+            refresh_document_after_delta_(old_text, old_document, old_symbols, rev);
+        }
         selection_ = txn->selection_before;
         return txn;
     }
     std::optional<Transaction> redo() {
         auto txn = undo_.redo();
         if (!txn) return std::nullopt;
-        if (!txn->edits.empty()) buffer_.apply_delta(txn->to_delta());
+        if (!txn->edits.empty()) {
+            auto old_text = buffer_.text_utf8();
+            auto old_document = document_;
+            auto old_symbols = symbols_;
+            auto delta = txn->to_delta();
+            buffer_.apply_delta(delta);
+            refresh_document_after_delta_(old_text, old_document, old_symbols, delta);
+        }
         selection_ = txn->selection_after;
         return txn;
     }
@@ -126,10 +151,34 @@ public:
 
 private:
     TextBuffer buffer_;
+    MarkdownDocument document_;
+    DocumentSymbolIndex symbols_;
+    Outline outline_;
     Selection selection_;
     UndoManager undo_{1000};
     Theme theme_ = Theme::Dark;
     float scale_factor_ = 1.0f;
+
+    void rebuild_document_full_() {
+        auto parsed = parse_text(buffer_.revision(), buffer_.text_utf8());
+        document_ = std::move(parsed.document);
+        symbols_ = std::move(parsed.symbols);
+        outline_ = std::move(parsed.outline);
+    }
+
+    void refresh_document_after_delta_(const std::string& old_text, const MarkdownDocument& old_document, const DocumentSymbolIndex& old_symbols, const TextDelta& delta) {
+        if (delta.edits.size() == 1) {
+            IncrementalParseEdit edit;
+            edit.old_range = delta.edits[0].range;
+            edit.replacement = delta.edits[0].replacement;
+            auto parsed = parse_incremental(ParseInput(buffer_.revision(), buffer_.text_utf8()), old_document, old_symbols, old_text, edit);
+            document_ = std::move(parsed.document);
+            symbols_ = std::move(parsed.symbols);
+            outline_ = std::move(parsed.outline);
+            return;
+        }
+        rebuild_document_full_();
+    }
 };
 
 } // namespace elmd

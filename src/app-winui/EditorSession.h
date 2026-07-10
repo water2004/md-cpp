@@ -29,7 +29,7 @@ namespace winrt::ElMd
         void SaveAs(winrt::Windows::Storage::StorageFile const& file);
         void SetText(winrt::hstring const& text);
         bool ExecuteCommand(elmd::Command const& command);
-        void SetSelection(std::size_t anchor, std::size_t active);
+        void SetSelection(std::size_t anchor, std::size_t active, elmd::TextAffinity affinity = elmd::TextAffinity::Downstream);
         bool HasSelection() const;
         std::string SelectedTextUtf8() const;
         bool HasFile() const;

@@ -19,9 +19,18 @@ namespace winrt::ElMd
         void Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height);
         void Render(detail::EditorSessionCore const& sessionCore);
         void SetTheme(Theme value);
-        std::optional<std::size_t> HitTest(float x, float y) const;
-        std::optional<D2D1_RECT_F> CaretBounds(std::size_t sourceOffset) const;
-        std::optional<std::size_t> MoveCaretVertically(std::size_t sourceOffset, bool down) const;
+
+        struct CaretMove
+        {
+            std::size_t offset = 0;
+            bool upstream = false;
+        };
+
+        std::optional<std::size_t> HitTest(float x, float y, bool* outUpstream = nullptr) const;
+        std::optional<D2D1_RECT_F> CaretBounds(std::size_t sourceOffset, bool upstream = false) const;
+        std::optional<CaretMove> MoveCaretVertically(std::size_t sourceOffset, bool upstream, bool down, float& goalX) const;
+        std::optional<std::size_t> VisualLineStart(std::size_t sourceOffset, bool upstream) const;
+        std::optional<std::size_t> VisualLineEnd(std::size_t sourceOffset, bool upstream) const;
         void ScrollBy(float delta);
         void ScrollToSourceOffset(std::size_t sourceOffset);
 
@@ -50,8 +59,14 @@ namespace winrt::ElMd
             std::size_t blockIndex = 0;
             std::size_t sourceStart = 0;
             std::size_t sourceEnd = 0;
+            std::uint32_t displayStart = 0;
+            std::uint32_t displayEnd = 0;
+            bool wrapContinuation = false;
             D2D1_RECT_F rect{};
         };
+
+        std::optional<std::size_t> LineIndexFor(std::size_t sourceOffset, bool upstream) const;
+        std::optional<D2D1_RECT_F> CaretRectOnLine(VisualLine const& line, std::size_t sourceOffset, bool upstream) const;
 
         struct FontStyle
         {
@@ -80,7 +95,7 @@ namespace winrt::ElMd
             float documentWidth = 900.0f;
             float horizontalPadding = 48.0f;
             float verticalPadding = 40.0f;
-            float blockGap = 8.0f;
+            float blockGap = 6.0f;
         };
 
         void RebuildTextFormats();

@@ -51,6 +51,74 @@ ELMD_TEST(test_parse_paragraph) {
     ELMD_CHECK(!p->children.empty());
 }
 
+ELMD_TEST(test_single_newline_inside_plain_text_is_soft_break) {
+    auto out = parse_text(1, "Hello\nWorld");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    ELMD_CHECK(out.document.blocks[0].kind == BlockKind::Paragraph);
+    ELMD_CHECK(inlines_have_kind(out.document.blocks[0].children, InlineKind::SoftBreak));
+    ELMD_CHECK(cps_to_utf8(block_inline_text_content(out.document.blocks[0].children)) == "Hello\nWorld");
+}
+
+ELMD_TEST(test_trailing_blank_lines_are_not_ast_blocks) {
+    auto out = parse_text(1, "Hello\n\n");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    ELMD_CHECK(out.document.blocks[0].kind == BlockKind::Paragraph);
+}
+
+ELMD_TEST(test_parse_block_break_between_paragraphs_is_separator_no_empty_block) {
+    auto out = parse_text(1, "Hello\n\nWorld");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 2u);
+    ELMD_CHECK(!out.document.blocks[0].children.empty());
+    ELMD_CHECK(!out.document.blocks[1].children.empty());
+}
+
+ELMD_TEST(test_consecutive_blank_lines_remain_source_trivia) {
+    auto out = parse_text(1, "Hello\n\n\nWorld");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 2u);
+    ELMD_CHECK(!out.document.blocks[0].children.empty());
+    ELMD_CHECK(!out.document.blocks[1].children.empty());
+}
+
+ELMD_TEST(test_parse_trailing_consecutive_blank_lines_as_trivia) {
+    auto out = parse_text(1, "Hello\n\n\n");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+}
+
+ELMD_TEST(test_incremental_enter_rescans_from_previous_block_and_keeps_suffix) {
+    std::string old_text = "one\n\ntwo\n\nthree";
+    auto old_out = parse_text(1, old_text);
+    std::string new_text = "one\n\ntwo\n\n\nthree";
+    IncrementalParseEdit edit{CharRange(CharOffset(8), CharOffset(8)), U"\n"};
+    auto out = parse_incremental(ParseInput(2, new_text), old_out.document, old_out.symbols, old_text, edit);
+    ELMD_CHECK_EQ(out.document.blocks.size(), 3u);
+    ELMD_CHECK(!out.document.blocks[0].children.empty());
+    ELMD_CHECK(!out.document.blocks[1].children.empty());
+    ELMD_CHECK(!out.document.blocks[2].children.empty());
+    ELMD_CHECK(out.document.blocks[2].id == old_out.document.blocks[2].id);
+    auto* suffix_range = out.document.source_map.find_node_by_id(out.document.blocks[2].id);
+    ELMD_CHECK(suffix_range != nullptr);
+    ELMD_CHECK_EQ(suffix_range->source_range.start.v, 11u);
+}
+
+ELMD_TEST(test_incremental_trailing_enter_keeps_ast_semantic) {
+    std::string old_text = "alpha";
+    auto old_out = parse_text(1, old_text);
+    std::string new_text = "alpha\n";
+    IncrementalParseEdit edit{CharRange(CharOffset(5), CharOffset(5)), U"\n"};
+    auto out = parse_incremental(ParseInput(2, new_text), old_out.document, old_out.symbols, old_text, edit);
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    ELMD_CHECK(out.document.blocks[0].kind == BlockKind::Paragraph);
+}
+
+ELMD_TEST(test_incremental_repeated_trailing_enter_keeps_ast_semantic) {
+    std::string old_text = "alpha\n\n";
+    auto old_out = parse_text(1, old_text);
+    std::string new_text = "alpha\n\n\n";
+    IncrementalParseEdit edit{CharRange(CharOffset(7), CharOffset(7)), U"\n"};
+    auto out = parse_incremental(ParseInput(2, new_text), old_out.document, old_out.symbols, old_text, edit);
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+}
+
 ELMD_TEST(test_parse_strong) {
     auto out = parse_text(1, "Hello **world**\n");
     auto* p = first_of(out.document.blocks, BlockKind::Paragraph);
@@ -69,9 +137,46 @@ ELMD_TEST(test_parse_inline_code) {
     ELMD_CHECK(p && inlines_have_kind(p->children, InlineKind::InlineCode));
 }
 
+ELMD_TEST(test_inline_code_requires_equal_complete_backtick_runs) {
+    auto out = parse_text(1, "x ``cpp ``` y\n");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    ELMD_CHECK(out.document.blocks[0].kind == BlockKind::Paragraph);
+    ELMD_CHECK(!inlines_have_kind(out.document.blocks[0].children, InlineKind::InlineCode));
+    ELMD_CHECK_EQ(cps_to_utf8(block_inline_text_content(out.document.blocks[0].children)), std::string("x ``cpp ``` y"));
+}
+
+ELMD_TEST(test_inline_code_preserves_exact_multi_backtick_marker_ranges) {
+    auto out = parse_text(1, "``code ` tick``\n");
+    auto* paragraph = first_of(out.document.blocks, BlockKind::Paragraph);
+    ELMD_CHECK(paragraph != nullptr);
+    const InlineNode* code = nullptr;
+    if (paragraph) for (const auto& child : paragraph->children) if (child.kind == InlineKind::InlineCode) code = &child;
+    ELMD_CHECK(code != nullptr);
+    if (code) {
+        ELMD_CHECK_EQ(cps_to_utf8(code->text), std::string("code ` tick"));
+        auto* range = out.document.source_map.find_node_by_id(code->id);
+        ELMD_CHECK(range != nullptr);
+        if (range) {
+            ELMD_CHECK_EQ(range->marker_ranges.size(), 2u);
+            ELMD_CHECK_EQ(range->marker_ranges[0].len(), 2u);
+            ELMD_CHECK_EQ(range->marker_ranges[1].len(), 2u);
+        }
+    }
+}
+
+ELMD_TEST(test_inline_code_normalizes_single_newline_to_space) {
+    auto out = parse_text(1, "``a\nb``\n");
+    auto* paragraph = first_of(out.document.blocks, BlockKind::Paragraph);
+    ELMD_CHECK(paragraph != nullptr);
+    const InlineNode* code = nullptr;
+    if (paragraph) for (const auto& child : paragraph->children) if (child.kind == InlineKind::InlineCode) code = &child;
+    ELMD_CHECK(code != nullptr);
+    if (code) ELMD_CHECK_EQ(cps_to_utf8(code->text), std::string("a b"));
+}
+
 ELMD_TEST(test_unmatched_inline_delimiters_are_text) {
     auto out = parse_text(1, "Hello **world\nnext ~~line\nplain *text\ncode `span\n");
-    ELMD_CHECK_EQ(out.document.blocks.size(), 4u);
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
     for (auto const& block : out.document.blocks) {
         ELMD_CHECK(block.kind == BlockKind::Paragraph);
         ELMD_CHECK(!inlines_have_kind(block.children, InlineKind::Strong));
@@ -79,10 +184,7 @@ ELMD_TEST(test_unmatched_inline_delimiters_are_text) {
         ELMD_CHECK(!inlines_have_kind(block.children, InlineKind::Strike));
         ELMD_CHECK(!inlines_have_kind(block.children, InlineKind::InlineCode));
     }
-    ELMD_CHECK(cps_to_utf8(block_inline_text_content(out.document.blocks[0].children)) == "Hello **world");
-    ELMD_CHECK(cps_to_utf8(block_inline_text_content(out.document.blocks[1].children)) == "next ~~line");
-    ELMD_CHECK(cps_to_utf8(block_inline_text_content(out.document.blocks[2].children)) == "plain *text");
-    ELMD_CHECK(cps_to_utf8(block_inline_text_content(out.document.blocks[3].children)) == "code `span");
+    ELMD_CHECK(cps_to_utf8(block_inline_text_content(out.document.blocks[0].children)) == "Hello **world\nnext ~~line\nplain *text\ncode `span");
 }
 
 ELMD_TEST(test_parse_inline_math) {
@@ -97,11 +199,19 @@ ELMD_TEST(test_parse_block_math) {
 }
 
 ELMD_TEST(test_parse_code_block) {
-    auto out = parse_text(1, "```rust\nfn main() {}\n```\n");
+    std::string source = "```rust\nfn main() {}\n```\n";
+    auto out = parse_text(1, source);
     auto* cb = first_of(out.document.blocks, BlockKind::CodeBlock);
     ELMD_CHECK(cb != nullptr);
     ELMD_CHECK(cb->language && *cb->language == "rust");
-    ELMD_CHECK(cps_to_utf8(cb->code_text).find("fn main") != std::string::npos);
+    ELMD_CHECK_EQ(cps_to_utf8(cb->code_text), std::string("fn main() {}\n"));
+    auto* range = out.document.source_map.find_node_by_id(cb->id);
+    ELMD_CHECK(range != nullptr);
+    ELMD_CHECK_EQ(range->source_range.start.v, 0u);
+    ELMD_CHECK_EQ(range->source_range.end.v, utf8_to_cps(source).size());
+    ELMD_CHECK_EQ(range->content_range.start.v, 8u);
+    ELMD_CHECK_EQ(range->content_range.end.v, 21u);
+    ELMD_CHECK_EQ(range->marker_ranges.size(), 2u);
 }
 
 ELMD_TEST(test_parse_code_block_inline_math_inert) {
@@ -109,6 +219,32 @@ ELMD_TEST(test_parse_code_block_inline_math_inert) {
     auto* cb = first_of(out.document.blocks, BlockKind::CodeBlock);
     ELMD_CHECK(cb != nullptr);
     ELMD_CHECK(cps_to_utf8(cb->code_text).find("$a+b$") != std::string::npos);
+}
+
+ELMD_TEST(test_parse_empty_code_block_closes_on_first_content_line) {
+    auto out = parse_text(1, "```cpp\n```\n");
+    auto* block = first_of(out.document.blocks, BlockKind::CodeBlock);
+    ELMD_CHECK(block != nullptr);
+    ELMD_CHECK(block->language && *block->language == "cpp");
+    ELMD_CHECK(block->code_text.empty());
+    auto* range = out.document.source_map.find_node_by_id(block->id);
+    ELMD_CHECK(range != nullptr);
+    ELMD_CHECK_EQ(range->content_range.start.v, range->content_range.end.v);
+    ELMD_CHECK_EQ(range->marker_ranges.size(), 2u);
+}
+
+ELMD_TEST(test_fenced_code_interrupts_paragraph_without_blank_line) {
+    auto out = parse_text(1, "before\n```cpp\n```\n");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 2u);
+    ELMD_CHECK(out.document.blocks[0].kind == BlockKind::Paragraph);
+    ELMD_CHECK(out.document.blocks[1].kind == BlockKind::CodeBlock);
+    ELMD_CHECK(out.document.blocks[1].language && *out.document.blocks[1].language == "cpp");
+    auto* range = out.document.source_map.find_node_by_id(out.document.blocks[1].id);
+    ELMD_CHECK(range != nullptr);
+    if (range) {
+        ELMD_CHECK_EQ(range->source_range.start.v, 7u);
+        ELMD_CHECK_EQ(range->marker_ranges.size(), 2u);
+    }
 }
 
 ELMD_TEST(test_parse_fenced_math) {
