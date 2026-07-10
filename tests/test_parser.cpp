@@ -371,6 +371,28 @@ ELMD_TEST(test_parse_list_items_with_full_inline_syntax) {
     ELMD_CHECK(!inlines_have_kind(bounded_first, InlineKind::InlineCode));
 }
 
+ELMD_TEST(test_parse_math_inside_emphasis_nodes) {
+    auto out = parse_text(1, "**before $x$ after** *\\(y\\)* ~~$z$~~\n");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    auto const& inlines = out.document.blocks[0].children;
+    auto strong = std::find_if(inlines.begin(), inlines.end(), [](auto const& node) { return node.kind == InlineKind::Strong; });
+    auto emphasis = std::find_if(inlines.begin(), inlines.end(), [](auto const& node) { return node.kind == InlineKind::Emphasis; });
+    auto strike = std::find_if(inlines.begin(), inlines.end(), [](auto const& node) { return node.kind == InlineKind::Strike; });
+    ELMD_CHECK(strong != inlines.end());
+    ELMD_CHECK(emphasis != inlines.end());
+    ELMD_CHECK(strike != inlines.end());
+    ELMD_CHECK(inlines_have_kind(strong->children, InlineKind::InlineMath));
+    ELMD_CHECK(inlines_have_kind(emphasis->children, InlineKind::InlineMath));
+    ELMD_CHECK(inlines_have_kind(strike->children, InlineKind::InlineMath));
+
+    auto quantified = parse_text(2, R"($\exists\delta>0,s.t. |x'-x_0|<\delta,0<|x''-x_0|<\delta$)");
+    ELMD_CHECK_EQ(quantified.document.blocks.size(), 1u);
+    ELMD_CHECK(inlines_have_kind(quantified.document.blocks[0].children, InlineKind::InlineMath));
+    auto formula = std::find_if(quantified.document.blocks[0].children.begin(), quantified.document.blocks[0].children.end(), [](auto const& node) { return node.kind == InlineKind::InlineMath; });
+    ELMD_CHECK(formula != quantified.document.blocks[0].children.end());
+    ELMD_CHECK(formula->text == UR"(\exists\delta>0,s.t. |x'-x_0|<\delta,0<|x''-x_0|<\delta)");
+}
+
 ELMD_TEST(test_parse_ordered_list_preserves_numbers_and_delimiter) {
     auto out = parse_text(1, "9) alpha\n10) beta\n");
     ELMD_CHECK_EQ(out.document.blocks.size(), 1u);

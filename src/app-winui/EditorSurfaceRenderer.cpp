@@ -59,6 +59,23 @@ namespace winrt::ElMd
             svg.replace(offset, needle.size(), replacement);
             offset += replacement.size();
         }
+        auto removeAttribute = [&](std::string_view name)
+        {
+            auto marker = " " + std::string(name) + "=\"";
+            std::size_t position = 0;
+            while ((position = svg.find(marker, position)) != std::string::npos)
+            {
+                auto end = svg.find('"', position + marker.size());
+                if (end == std::string::npos) break;
+                svg.erase(position, end - position + 1);
+            }
+        };
+        removeAttribute("style");
+        removeAttribute("role");
+        removeAttribute("focusable");
+        removeAttribute("data-mml-node");
+        removeAttribute("data-latex");
+        removeAttribute("data-c");
         return svg;
     }
 
@@ -116,6 +133,7 @@ namespace winrt::ElMd
             std::size_t sourceEnd = 0;
             float progressStart = 0.0f;
             float progressEnd = 1.0f;
+            bool strikethrough = false;
         };
 
         struct MathPreview
@@ -127,6 +145,7 @@ namespace winrt::ElMd
             std::size_t sourceEnd = 0;
             std::size_t contentStart = 0;
             std::size_t contentEnd = 0;
+            bool strikethrough = false;
         };
 
         std::u32string text;
@@ -327,11 +346,11 @@ namespace winrt::ElMd
         }
     }
 
-    void AppendMathFragments(DisplayInlineText& display, MathJaxSvg const& math, std::size_t sourceStart, std::size_t sourceEnd, bool editing)
+    void AppendMathFragments(DisplayInlineText& display, MathJaxSvg const& math, std::size_t sourceStart, std::size_t sourceEnd, bool editing, elmd::InlineStyle style)
     {
         if (editing)
         {
-            AppendDisplayText(display, U"\u2003", sourceEnd, elmd::InlineStyle::plain(), false);
+            AppendDisplayText(display, U"\u2003", sourceEnd, style, false);
         }
         float progress = 0.0f;
         for (std::size_t index = 0; index < math.fragments.size(); ++index)
@@ -343,16 +362,16 @@ namespace winrt::ElMd
                 : sourceStart + static_cast<std::size_t>(std::floor((progress / math.width) * static_cast<float>(length)));
             if (index > 0 && fragment.breakBefore)
             {
-                AppendDisplayText(display, U"\u200B", mappedOffset, elmd::InlineStyle::plain(), false);
+                AppendDisplayText(display, U"\u200B", mappedOffset, style, false);
             }
             auto start = static_cast<UINT32>(display.text.size());
             display.text.push_back(U'\uFFFC');
             display.displayToSource.push_back(mappedOffset);
-            display.ranges.push_back(InlineStyleRange{ start, 1, elmd::InlineStyle::plain(), false, SyntaxHighlightKind::None });
+            display.ranges.push_back(InlineStyleRange{ start, 1, style, false, SyntaxHighlightKind::None });
             auto fragmentStart = math.width > 0.0f ? progress / math.width : 0.0f;
             progress += fragment.breakSpace + fragment.width;
             auto fragmentEnd = math.width > 0.0f ? progress / math.width : 1.0f;
-            display.mathOverlays.push_back(DisplayInlineText::MathOverlay{ start, fragment, fragment.breakSpace, sourceStart, sourceEnd, fragmentStart, fragmentEnd });
+            display.mathOverlays.push_back(DisplayInlineText::MathOverlay{ start, fragment, fragment.breakSpace, sourceStart, sourceEnd, fragmentStart, fragmentEnd, style.strikethrough });
         }
     }
 
@@ -445,10 +464,11 @@ namespace winrt::ElMd
                         item.source_range.end.v,
                         contentStart,
                         contentEnd,
+                        item.style.strikethrough,
                     });
                     continue;
                 }
-                AppendMathFragments(display, *math, contentStart, contentEnd, false);
+                AppendMathFragments(display, *math, contentStart, contentEnd, false, item.style);
                 continue;
             }
             AppendDisplayText(display, InlineText(item), item.source_range.start.v, item.style, item.kind == elmd::InlineRenderItem::Kind::Marker);
@@ -850,26 +870,27 @@ namespace winrt::ElMd
         auto selection = sessionCore.editor.selection().normalized_range();
         auto caret = sessionCore.editor.selection().active.v;
         auto sourceText = sessionCore.editor.text_cps();
+        std::unordered_set<std::uint64_t> mathFallbacks;
         ::Microsoft::WRL::ComPtr<ID2D1DeviceContext5> svgContext;
         auto svgSupported = SUCCEEDED(d2dContext.As(&svgContext)) && svgContext;
 
-        auto drawSvg = [&](std::string const& source, float width, float height, D2D1_POINT_2F origin)
+        auto drawSvg = [&](std::string const& source, float width, float height, D2D1_POINT_2F origin) -> bool
         {
             if (source.empty() || width <= 0.0f || height <= 0.0f || !svgSupported)
             {
-                return;
+                return false;
             }
 
             auto allocation = GlobalAlloc(GMEM_MOVEABLE, source.size());
             if (!allocation)
             {
-                return;
+                return false;
             }
             auto bytes = static_cast<char*>(GlobalLock(allocation));
             if (!bytes)
             {
                 GlobalFree(allocation);
-                return;
+                return false;
             }
             std::memcpy(bytes, source.data(), source.size());
             GlobalUnlock(allocation);
@@ -878,23 +899,35 @@ namespace winrt::ElMd
             if (FAILED(CreateStreamOnHGlobal(allocation, TRUE, stream.GetAddressOf())) || !stream)
             {
                 GlobalFree(allocation);
-                return;
+                return false;
             }
             ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> document;
             if (FAILED(svgContext->CreateSvgDocument(stream.Get(), D2D1::SizeF(width, height), document.GetAddressOf())) || !document)
             {
-                return;
+                return false;
             }
             D2D1_MATRIX_3X2_F transform{};
             svgContext->GetTransform(&transform);
             svgContext->SetTransform(D2D1::Matrix3x2F::Translation(origin.x, origin.y) * transform);
             svgContext->DrawSvgDocument(document.Get());
             svgContext->SetTransform(transform);
+            return true;
         };
 
-        auto drawMathSvg = [&](MathJaxSvgFragment const& fragment, D2D1_POINT_2F origin, D2D1_COLOR_F color)
+        auto drawMathSvg = [&](MathJaxSvgFragment const& fragment, D2D1_POINT_2F origin, D2D1_COLOR_F color) -> bool
         {
-            drawSvg(RecolorMathSvg(fragment.svg, color), fragment.width, fragment.height, origin);
+            return drawSvg(RecolorMathSvg(fragment.svg, color), fragment.width, fragment.height, origin);
+        };
+
+        auto drawMathFallback = [&](std::size_t start, std::size_t end, D2D1_POINT_2F origin)
+        {
+            start = (std::min)(start, sourceText.size());
+            end = (std::min)((std::max)(end, start), sourceText.size());
+            auto key = static_cast<std::uint64_t>(start) * 1099511628211ull ^ static_cast<std::uint64_t>(end);
+            if (!mathFallbacks.insert(key).second) return;
+            auto fallback = ToWide(std::u32string_view(sourceText).substr(start, end - start));
+            if (fallback.empty()) fallback = L"formula";
+            d2dContext->DrawTextW(fallback.c_str(), static_cast<UINT32>(fallback.size()), codeFormat.Get(), D2D1::RectF(origin.x, origin.y, documentRight, origin.y + styleSheet.code.lineHeight * 3.0f), textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
         };
 
         auto createLayout = [&](std::wstring const& text, IDWriteTextFormat* format, float width)
@@ -1757,7 +1790,15 @@ namespace winrt::ElMd
                     {
                         auto mathY = origin.y + metrics.top;
                         auto mathX = origin.x + pointX + overlay.leadingSpace;
-                        drawMathSvg(overlay.fragment, D2D1::Point2F(mathX, mathY), styleSheet.textColor);
+                        if (!drawMathSvg(overlay.fragment, D2D1::Point2F(mathX, mathY), styleSheet.textColor))
+                        {
+                            drawMathFallback(overlay.sourceStart, overlay.sourceEnd, D2D1::Point2F(mathX, mathY));
+                        }
+                        if (overlay.strikethrough)
+                        {
+                            auto strikeY = mathY + overlay.fragment.height * 0.52f;
+                            d2dContext->DrawLine(D2D1::Point2F(origin.x + pointX, strikeY), D2D1::Point2F(mathX + overlay.fragment.width, strikeY), textBrush.Get(), 1.5f);
+                        }
                         visualMathHits.push_back(VisualMathHit{
                             D2D1::RectF(mathX, mathY, mathX + overlay.fragment.width, mathY + overlay.fragment.height),
                             overlay.sourceStart,
@@ -1779,6 +1820,11 @@ namespace winrt::ElMd
                         progress += fragment.breakSpace + fragment.width;
                         auto progressEnd = preview.svg.width > 0.0f ? progress / preview.svg.width : 1.0f;
                         drawMathSvg(fragment, origins[fragmentIndex], styleSheet.textColor);
+                        if (preview.strikethrough)
+                        {
+                            auto strikeY = origins[fragmentIndex].y + fragment.height * 0.52f;
+                            d2dContext->DrawLine(D2D1::Point2F(origins[fragmentIndex].x, strikeY), D2D1::Point2F(origins[fragmentIndex].x + fragment.width, strikeY), textBrush.Get(), 1.5f);
+                        }
                         visualMathHits.push_back(VisualMathHit{
                             D2D1::RectF(origins[fragmentIndex].x - 2.0f, origins[fragmentIndex].y - 2.0f, origins[fragmentIndex].x + fragment.width + 2.0f, origins[fragmentIndex].y + fragment.height + 2.0f),
                             preview.contentStart,
@@ -1794,7 +1840,10 @@ namespace winrt::ElMd
                     for (auto const& fragment : blockMath->fragments)
                     {
                         mathX += fragment.breakSpace;
-                        drawMathSvg(fragment, D2D1::Point2F(mathX, blockMathOrigin->y), styleSheet.textColor);
+                        if (!drawMathSvg(fragment, D2D1::Point2F(mathX, blockMathOrigin->y), styleSheet.textColor))
+                        {
+                            drawMathFallback(block.content_range.start.v, block.content_range.end.v, D2D1::Point2F(mathX, blockMathOrigin->y));
+                        }
                         mathX += fragment.width;
                     }
                 }

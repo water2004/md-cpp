@@ -160,6 +160,7 @@ struct Builder {
                                        ? MathDisplayMode::Block : MathDisplayMode::Inline;
                 InlineRenderItem it; it.kind = InlineRenderItem::Kind::Math;
                 it.id = node.id; it.source_range = sr; it.text = node.text; it.display = disp; it.math_delim = node.math_delim;
+                it.style.strikethrough = style.strikethrough;
                 out.push_back(std::move(it));
                 cursor = sr.end.v;
                 return;

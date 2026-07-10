@@ -460,6 +460,20 @@ public:
                     if (cps[pos + i] != del[i]) { matched = false; break; }
             }
             if (matched) break;
+            if (peek1() == U'$') {
+                if (auto node = try_parse_inline_math()) {
+                    flush();
+                    out.push_back(std::move(*node));
+                    continue;
+                }
+            }
+            if (peek1() == U'\\' && peek2() == U'(') {
+                if (auto node = try_parse_inline_paren_math()) {
+                    flush();
+                    out.push_back(std::move(*node));
+                    continue;
+                }
+            }
             buf.push_back(peek1()); advance();
         }
         flush();

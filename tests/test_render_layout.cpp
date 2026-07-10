@@ -164,6 +164,30 @@ ELMD_TEST(list_inline_math_reaches_the_render_model_with_exact_ranges) {
     ELMD_CHECK_EQ(math_ranges[1].end.v, 31u);
 }
 
+ELMD_TEST(math_inside_emphasis_renders_without_inheriting_text_style) {
+    auto m = build_model("**before $x$ after** *\\(y\\)* ~~$z$~~\n- **$q$**\n");
+    std::vector<InlineRenderItem> math;
+    for (auto const& block : m.blocks) {
+        for (auto const& item : block.inline_items) {
+            if (item.kind == InlineRenderItem::Kind::Math) math.push_back(item);
+        }
+    }
+    ELMD_CHECK_EQ(math.size(), 4u);
+    for (auto const& item : math) {
+        ELMD_CHECK(!item.style.bold);
+        ELMD_CHECK(!item.style.italic);
+    }
+    ELMD_CHECK(!math[0].style.strikethrough);
+    ELMD_CHECK(!math[1].style.strikethrough);
+    ELMD_CHECK(math[2].style.strikethrough);
+    ELMD_CHECK(!math[3].style.strikethrough);
+    bool bold_text = false;
+    for (auto const& item : m.blocks[0].inline_items) {
+        if (item.kind == InlineRenderItem::Kind::Text && item.style.bold) bold_text = true;
+    }
+    ELMD_CHECK(bold_text);
+}
+
 ELMD_TEST(table_render_cells_keep_their_own_source_ranges) {
     auto m = build_model("| A | B |\n| :--- | ---: |\n| 1 | 2 |\n");
     ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Table);

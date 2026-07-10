@@ -140,6 +140,7 @@ namespace winrt::ElMd
         std::deque<Request> requests;
         std::unordered_set<std::string> queued;
         std::unordered_map<std::string, MathJaxSvg> cache;
+        std::unordered_map<std::string, std::size_t> transientFailures;
         std::deque<std::string> cacheOrder;
         std::size_t cacheBytes = 0;
         std::uint64_t generation = 0;
@@ -149,6 +150,15 @@ namespace winrt::ElMd
         std::chrono::steady_clock::time_point deadline{};
         bool initializationAttempted = false;
         std::jthread worker;
+
+        static bool RetryableFailure(std::string_view error)
+        {
+            return error.find("interrupted") != std::string_view::npos
+                || error.find("out of memory") != std::string_view::npos
+                || error.find("stack overflow") != std::string_view::npos
+                || error.find("runtime could not be initialized") != std::string_view::npos
+                || error.find("font module is unavailable") != std::string_view::npos;
+        }
 
         static int Interrupt(JSRuntime*, void* opaque)
         {
@@ -187,9 +197,17 @@ namespace winrt::ElMd
             if (initializationAttempted) return false;
             initializationAttempted = true;
             auto bundle = ReadUtf8File(MathJaxBundlePath());
-            if (bundle.empty()) return false;
+            if (bundle.empty())
+            {
+                initializationAttempted = false;
+                return false;
+            }
             runtime = JS_NewRuntime();
-            if (!runtime) return false;
+            if (!runtime)
+            {
+                initializationAttempted = false;
+                return false;
+            }
             JS_SetMemoryLimit(runtime, 24 * 1024 * 1024);
             JS_SetMaxStackSize(runtime, 8 * 1024 * 1024);
             JS_SetInterruptHandler(runtime, Interrupt, this);
@@ -197,6 +215,7 @@ namespace winrt::ElMd
             if (!context)
             {
                 ShutdownRuntime();
+                initializationAttempted = false;
                 return false;
             }
             auto global = JS_GetGlobalObject(context);
@@ -208,6 +227,7 @@ namespace winrt::ElMd
             {
                 JS_FreeValue(context, result);
                 ShutdownRuntime();
+                initializationAttempted = false;
                 return false;
             }
             JS_FreeValue(context, result);
@@ -246,7 +266,7 @@ namespace winrt::ElMd
                 JS_NewFloat64(context, request.em),
                 JS_NewFloat64(context, request.containerWidth),
             };
-            deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+            deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
             auto result = JS_Call(context, function, api, static_cast<int>(std::size(arguments)), arguments);
             for (auto& argument : arguments) JS_FreeValue(context, argument);
             JS_FreeValue(context, function);
@@ -256,6 +276,11 @@ namespace winrt::ElMd
             {
                 rendered.error = ExceptionText();
                 JS_FreeValue(context, result);
+                if (RetryableFailure(rendered.error))
+                {
+                    ShutdownRuntime();
+                    initializationAttempted = false;
+                }
                 return rendered;
             }
             std::string output;
@@ -352,7 +377,19 @@ namespace winrt::ElMd
                     queued.erase(request.key);
                     if (request.generation == generation)
                     {
-                        Store(request, std::move(result));
+                        auto retryable = RetryableFailure(result.error);
+                        bool store = true;
+                        if (retryable)
+                        {
+                            auto [failure, first] = transientFailures.try_emplace(request.key, 1);
+                            if (first) store = false;
+                            else transientFailures.erase(failure);
+                        }
+                        else
+                        {
+                            transientFailures.erase(request.key);
+                        }
+                        if (store) Store(request, std::move(result));
                         notify = completion;
                     }
                 }
@@ -385,6 +422,7 @@ namespace winrt::ElMd
         state->queued.clear();
         state->cache.clear();
         state->cacheOrder.clear();
+        state->transientFailures.clear();
         state->cacheBytes = 0;
     }
 
