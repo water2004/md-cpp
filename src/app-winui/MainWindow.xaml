@@ -47,7 +47,7 @@
             </Grid>
         </Border>
 
-        <SwapChainPanel x:Name="EditorSurface" Grid.Row="1" Grid.Column="1">
+        <SwapChainPanel x:Name="EditorSurface" Grid.Row="1" Grid.Column="1" KeyboardAcceleratorPlacementMode="Hidden">
             <SwapChainPanel.ContextFlyout>
                 <MenuFlyout>
                     <MenuFlyoutItem x:Name="CutMenuItem" Text="Cut"/>
