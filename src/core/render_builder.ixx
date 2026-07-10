@@ -53,10 +53,12 @@ inline RenderBlock render_block_base(BlockKind k, NodeId id, TextRange<CharOffse
 }
 
 // Build a Marker inline item at the running cursor; advances `cursor`.
-inline void push_marker(std::vector<InlineRenderItem>& out, std::size_t& cursor, std::u32string text) {
+inline void push_marker(std::vector<InlineRenderItem>& out, std::size_t& cursor, std::u32string text,
+                        MarkerRole role = MarkerRole::Syntax, std::u32string display_text = {}) {
     InlineRenderItem m; m.kind = InlineRenderItem::Kind::Marker;
     m.source_range = CharRange(CharOffset(cursor), CharOffset(cursor + text.size()));
-    m.text = std::move(text); m.marker_style = MarkerStyle{true, {}}; m.visibility = MarkerVisibility::Always;
+    m.text = std::move(text); m.display_text = std::move(display_text); m.marker_role = role;
+    m.marker_style = MarkerStyle{true, {}}; m.visibility = MarkerVisibility::Always;
     out.push_back(std::move(m));
     cursor += out.back().text.size();
 }
@@ -288,6 +290,7 @@ struct Builder {
                 if (cursor + marker.size() <= cs) {
                     push_marker(rb.inline_items, cursor, std::move(marker));
                     rb.inline_items.back().style = s;
+                    rb.inline_items.back().marker_role = MarkerRole::Heading;
                 }
                 auto items = build_inlines(b.children, cs, s);
                 for (auto& it : items) rb.inline_items.push_back(std::move(it));
@@ -306,7 +309,7 @@ struct Builder {
                 return with_content_range(std::move(rb));
             }
             case BK::List: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::paragraph());
+                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::list());
                 std::size_t cursor = base_range().start.v;
                 for (std::size_t i = 0; i < b.list_items.size(); ++i) {
                     const auto& item = b.list_items[i];
@@ -318,7 +321,11 @@ struct Builder {
                             ? utf8_to_cps(std::to_string(b.list_start + i)) + std::u32string(1, b.list_delimiter) + U" "
                             : U"- ";
                     }
-                    push_marker(rb.inline_items, cursor, std::move(marker));
+                    if (b.list_ordered) {
+                        push_marker(rb.inline_items, cursor, std::move(marker), MarkerRole::ListNumber);
+                    } else {
+                        push_marker(rb.inline_items, cursor, std::move(marker), MarkerRole::ListBullet, U"\u2022 ");
+                    }
                     for (const auto& ch : b.list_items[i].children) {
                         if (ch.kind == BlockKind::Paragraph) {
                             auto content_start = item_range ? item_range->content_range.start.v : cursor;
@@ -328,19 +335,19 @@ struct Builder {
                     }
                     if (item_range && item_range->source_range.end.v > item_range->content_range.end.v) {
                         cursor = item_range->source_range.end.v - 1;
-                        push_marker(rb.inline_items, cursor, U"\n");
+                        push_marker(rb.inline_items, cursor, U"\n", MarkerRole::Structural);
                     }
                 }
                 return with_content_range(std::move(rb));
             }
             case BK::TaskList: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::paragraph());
+                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::list());
                 std::size_t cursor = base_range().start.v;
                 for (const auto& ti : b.task_items) {
                     const auto* item_range = sm ? sm->find_node_by_id(ti.id) : nullptr;
                     if (item_range) cursor = item_range->source_range.start.v;
                     auto marker = ti.marker.empty() ? (ti.checked ? U"- [x] " : U"- [ ] ") : ti.marker;
-                    push_marker(rb.inline_items, cursor, std::move(marker));
+                    push_marker(rb.inline_items, cursor, std::move(marker), MarkerRole::TaskCheckbox);
                     for (const auto& ch : ti.children) {
                         if (ch.kind == BlockKind::Paragraph) {
                             auto content_start = item_range ? item_range->content_range.start.v : cursor;
@@ -350,7 +357,7 @@ struct Builder {
                     }
                     if (item_range && item_range->source_range.end.v > item_range->content_range.end.v) {
                         cursor = item_range->source_range.end.v - 1;
-                        push_marker(rb.inline_items, cursor, U"\n");
+                        push_marker(rb.inline_items, cursor, U"\n", MarkerRole::Structural);
                     }
                 }
                 return with_content_range(std::move(rb));

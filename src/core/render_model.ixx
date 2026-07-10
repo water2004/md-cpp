@@ -14,6 +14,7 @@ export namespace elmd {
 
 enum class MathDisplayMode { Inline, Block };
 enum class MarkerVisibility { Always, WhenCaretInsideNode, WhenBlockFocused, HiddenButEditable };
+enum class MarkerRole { Syntax, Heading, ListBullet, ListNumber, TaskCheckbox, Structural };
 
 struct MathDiagnostic {
     enum class Sev { Info, Warning, Error };
@@ -61,6 +62,7 @@ struct BlockStyle {
     std::optional<BorderSide> border_left, border_right, border_top, border_bottom;
 
     static BlockStyle paragraph() { BlockStyle s; s.margin_bottom = 8; return s; }
+    static BlockStyle list() { BlockStyle s; s.margin_bottom = 8; s.padding_left = 20; return s; }
     static BlockStyle thematic_break() { BlockStyle s; s.margin_top = 8; s.margin_bottom = 8; return s; }
     static BlockStyle heading(std::uint8_t level) {
         BlockStyle s;
@@ -114,6 +116,7 @@ struct InlineRenderItem {
     Kind kind = Kind::Text;
     TextRange<CharOffset> source_range;
     std::u32string text;
+    std::u32string display_text;
     std::optional<NodeId> id;             // Math/Image/Link
     InlineStyle style;
     MathDisplayMode display = MathDisplayMode::Inline; // Math
@@ -121,6 +124,7 @@ struct InlineRenderItem {
     std::string href, src, alt;            // Image/Link
     MarkerStyle marker_style;
     MarkerVisibility visibility = MarkerVisibility::WhenCaretInsideNode;
+    MarkerRole marker_role = MarkerRole::Syntax;
     std::vector<InlineRenderItem> children; // Link children
 
     static InlineRenderItem plain_text(std::u32string t, TextRange<CharOffset> r) {

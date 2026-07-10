@@ -131,6 +131,25 @@ ELMD_TEST(builds_ordered_list_with_source_markers_and_line_breaks) {
     ELMD_CHECK(markers.find(U"\n") != std::u32string::npos);
 }
 
+ELMD_TEST(unordered_list_preserves_source_markers_and_presents_bullets) {
+    auto m = build_model("- alpha\n* beta\n+ gamma\n");
+    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    ELMD_CHECK_EQ(m.blocks[0].block_style.padding_left, 20.0f);
+    std::vector<std::u32string> source_markers;
+    std::vector<std::u32string> display_markers;
+    for (auto const& item : m.blocks[0].inline_items) {
+        if (item.kind != InlineRenderItem::Kind::Marker || item.marker_role != MarkerRole::ListBullet) continue;
+        source_markers.push_back(item.text);
+        display_markers.push_back(item.display_text);
+        ELMD_CHECK_EQ(item.source_range.len(), 2u);
+    }
+    ELMD_CHECK_EQ(source_markers.size(), 3u);
+    ELMD_CHECK(source_markers[0] == U"- ");
+    ELMD_CHECK(source_markers[1] == U"* ");
+    ELMD_CHECK(source_markers[2] == U"+ ");
+    for (auto const& marker : display_markers) ELMD_CHECK(marker == U"\u2022 ");
+}
+
 ELMD_TEST(table_render_cells_keep_their_own_source_ranges) {
     auto m = build_model("| A | B |\n| :--- | ---: |\n| 1 | 2 |\n");
     ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Table);

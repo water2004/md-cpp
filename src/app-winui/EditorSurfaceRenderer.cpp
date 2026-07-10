@@ -67,8 +67,9 @@ namespace winrt::ElMd
         switch (item.kind)
         {
             case elmd::InlineRenderItem::Kind::Text:
-            case elmd::InlineRenderItem::Kind::Marker:
                 return item.text;
+            case elmd::InlineRenderItem::Kind::Marker:
+                return item.display_text.empty() ? item.text : item.display_text;
             case elmd::InlineRenderItem::Kind::Math:
                 return U"$" + item.text + U"$";
             case elmd::InlineRenderItem::Kind::Image:
@@ -1263,6 +1264,7 @@ namespace winrt::ElMd
                     break;
                 case elmd::RenderBlockKind::Text:
                 {
+                    inset = block.block_style.padding_left;
                     auto display = BuildDisplayInlineText(
                         block.inline_items,
                         caret,
