@@ -76,6 +76,7 @@ struct BlockNode {
     char32_t list_delimiter = U'.';
     std::optional<std::string> language; // CodeBlock
     std::u32string code_text;           // CodeBlock
+    bool code_indented = false;
     std::u32string tex;                 // MathBlock
     MathDelimiter math_delim = MathDelimiter::BlockDollar; // MathBlock / InlineMath (in inline)
     std::vector<TableCell> table_header;

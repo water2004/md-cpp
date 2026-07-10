@@ -81,7 +81,8 @@ struct BlockStyle {
     }
     static BlockStyle blockquote() {
         BlockStyle s; s.margin_top = 8; s.margin_bottom = 8;
-        s.padding_left = 16; s.border_left = BorderSide{3.0f, {}};
+        s.padding_top = 6; s.padding_bottom = 6; s.padding_left = 18; s.padding_right = 8;
+        s.border_left = BorderSide{3.0f, {}};
         return s;
     }
     static BlockStyle math() {
@@ -134,7 +135,7 @@ struct InlineRenderItem {
 };
 
 enum class RenderBlockKind {
-    Text, Blank, Code, Math, Table, Image, ThematicBreak, Toc, Callout, Frontmatter, Footnote, Unsupported, Extension,
+    Text, Blank, Quote, Code, Math, Table, Image, ThematicBreak, Toc, Callout, Frontmatter, Footnote, Unsupported, Extension,
 };
 
 struct RenderBlock {
@@ -150,6 +151,8 @@ struct RenderBlock {
     std::optional<std::string> language;
     std::u32string code_text;
     std::size_t line_count = 0;
+    bool code_indented = false;
+    std::vector<TextRange<CharOffset>> code_marker_ranges;
     // MathBlock
     std::u32string tex;
     MathDelimiter math_delim = MathDelimiter::BlockDollar;
@@ -159,8 +162,9 @@ struct RenderBlock {
     std::vector<TableAlignment> table_aligns;
     std::size_t column_count = 0, row_count = 0;
     // Image block (block-level, alt-only)
-    // Callout / Footnote
+    // Quote / Callout / Footnote
     std::vector<RenderBlock> child_blocks;
+    std::size_t quote_depth = 0;
     std::string callout_kind;
     std::optional<std::vector<InlineRenderItem>> callout_title;
     std::string footnote_label;

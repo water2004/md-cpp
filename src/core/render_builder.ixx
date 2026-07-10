@@ -31,8 +31,9 @@ inline RenderBlock render_block_base(BlockKind k, NodeId id, TextRange<CharOffse
     RenderBlock b; b.kind = [&](BlockKind)->RenderBlockKind {
         switch (k) {
             case BlockKind::Paragraph: case BlockKind::Heading:
-            case BlockKind::BlockQuote: case BlockKind::List: case BlockKind::TaskList:
+            case BlockKind::List: case BlockKind::TaskList:
                 return RenderBlockKind::Text;
+            case BlockKind::BlockQuote: return RenderBlockKind::Quote;
             case BlockKind::CodeBlock: return RenderBlockKind::Code;
             case BlockKind::MathBlock: return RenderBlockKind::Math;
             case BlockKind::Table:     return RenderBlockKind::Table;
@@ -88,7 +89,7 @@ struct Builder {
                 InlineRenderItem it = InlineRenderItem::plain_text(node.text, sr);
                 it.style = style;
                 out.push_back(std::move(it));
-                cursor += len;
+                cursor = sr.end.v;
                 return;
             }
             case K::Strong: {
@@ -224,15 +225,16 @@ struct Builder {
                 InlineRenderItem it = InlineRenderItem::plain_text(U" ", sr);
                 it.style = style;
                 out.push_back(std::move(it));
-                cursor += 1;
+                cursor = sr.end.v;
                 return;
             }
             case K::HardBreak: {
-                auto sr = range_for(node.id, cursor + 3);
-                InlineRenderItem it = InlineRenderItem::plain_text(U"  \n", sr);
+                const auto* range = sm ? sm->find_node_by_id(node.id) : nullptr;
+                auto sr = range ? range->content_range : range_for(node.id, cursor + 1);
+                InlineRenderItem it = InlineRenderItem::plain_text(U"\n", sr);
                 it.style = style;
                 out.push_back(std::move(it));
-                cursor += 3;
+                cursor = sr.end.v;
                 return;
             }
             case K::UnsupportedMarkup: {
@@ -299,14 +301,35 @@ struct Builder {
             }
             case BK::BlockQuote: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::blockquote());
-                std::size_t cursor = base_range().start.v;
-                for (const auto& ch : b.quote_children) {
-                    if (ch.kind == BlockKind::Paragraph) {
-                        auto items = build_inlines(ch.children, cursor, InlineStyle::plain());
-                        for (auto& it : items) { cursor += it.source_range.len(); rb.inline_items.push_back(std::move(it)); }
-                        push_marker(rb.inline_items, cursor, U"\n");
+                std::function<void(const BlockNode&, std::size_t)> append_quote;
+                append_quote = [&](const BlockNode& quote, std::size_t depth) {
+                    for (const auto& child : quote.quote_children) {
+                        if (child.kind == BlockKind::BlockQuote) {
+                            append_quote(child, depth + 1);
+                            continue;
+                        }
+                        auto rendered = build_block(child);
+                        rendered.quote_depth = depth;
+                        rb.child_blocks.push_back(std::move(rendered));
                     }
-                }
+                    const auto* range = sm ? sm->find_node_by_id(quote.id) : nullptr;
+                    if (!range || range->marker_ranges.empty() || range->marker_ranges.back().end != range->content_range.end) return;
+                    bool covered = false;
+                    if (!rb.child_blocks.empty()) {
+                        auto const& last = rb.child_blocks.back();
+                        covered = last.quote_depth == depth && !last.inline_items.empty() && last.inline_items.back().kind == InlineRenderItem::Kind::Text && last.inline_items.back().text == U"\n";
+                    }
+                    if (covered) return;
+                    RenderBlock blank;
+                    blank.kind = RenderBlockKind::Blank;
+                    blank.id = NodeId(0x9000000000000000ull | ((range->content_range.end.v + depth) & 0x0fffffffffffffffull));
+                    blank.source_range = CharRange(range->content_range.end, range->content_range.end);
+                    blank.content_range = blank.source_range;
+                    blank.block_style = BlockStyle::paragraph();
+                    blank.quote_depth = depth;
+                    rb.child_blocks.push_back(std::move(blank));
+                };
+                append_quote(b, 0);
                 return with_content_range(std::move(rb));
             }
             case BK::List: {
@@ -334,7 +357,7 @@ struct Builder {
                             for (auto& it : items) rb.inline_items.push_back(std::move(it));
                         }
                     }
-                    if (item_range && item_range->source_range.end.v > item_range->content_range.end.v) {
+                    if (i + 1 < b.list_items.size() && item_range && item_range->source_range.end.v > item_range->content_range.end.v) {
                         cursor = item_range->source_range.end.v - 1;
                         push_marker(rb.inline_items, cursor, U"\n", MarkerRole::Structural);
                     }
@@ -344,7 +367,8 @@ struct Builder {
             case BK::TaskList: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::list());
                 std::size_t cursor = base_range().start.v;
-                for (const auto& ti : b.task_items) {
+                for (std::size_t i = 0; i < b.task_items.size(); ++i) {
+                    const auto& ti = b.task_items[i];
                     const auto* item_range = sm ? sm->find_node_by_id(ti.id) : nullptr;
                     if (item_range) cursor = item_range->source_range.start.v;
                     auto marker = ti.marker.empty() ? (ti.checked ? U"- [x] " : U"- [ ] ") : ti.marker;
@@ -356,7 +380,7 @@ struct Builder {
                             for (auto& it : items) rb.inline_items.push_back(std::move(it));
                         }
                     }
-                    if (item_range && item_range->source_range.end.v > item_range->content_range.end.v) {
+                    if (i + 1 < b.task_items.size() && item_range && item_range->source_range.end.v > item_range->content_range.end.v) {
                         cursor = item_range->source_range.end.v - 1;
                         push_marker(rb.inline_items, cursor, U"\n", MarkerRole::Structural);
                     }
@@ -367,6 +391,10 @@ struct Builder {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::code());
                 rb.language = b.language;
                 rb.code_text = b.code_text;
+                rb.code_indented = b.code_indented;
+                if (b.code_indented) {
+                    if (const auto* range = sm ? sm->find_node_by_id(b.id) : nullptr) rb.code_marker_ranges = range->marker_ranges;
+                }
                 std::size_t n = 1; for (char32_t c : b.code_text) if (c == '\n') ++n;
                 rb.line_count = n;
                 return with_content_range(std::move(rb));

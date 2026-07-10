@@ -102,6 +102,7 @@ ELMD_TEST(test_editor_delete_backward) {
     Command c; c.kind = CommandKind::DeleteBackward;
     e.execute_command(c);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("hell"));
+    ELMD_CHECK(e.selection().affinity == TextAffinity::Upstream);
 }
 
 ELMD_TEST(test_editor_insert_text_cursor_moves) {
@@ -523,6 +524,19 @@ ELMD_TEST(test_enter_inside_code_block_inserts_single_newline) {
     ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
 }
 
+ELMD_TEST(test_enter_inside_indented_code_block_preserves_indent) {
+    Editor e("    abc\n");
+    e.set_caret(CharOffset(7));
+    Command command;
+    command.kind = CommandKind::InsertNewline;
+    e.execute_command(command);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("    abc\n    \n"));
+    ELMD_CHECK_EQ(e.selection().head().v, 12u);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
+    ELMD_CHECK(e.document().blocks[0].kind == BlockKind::CodeBlock);
+    ELMD_CHECK(e.document().blocks[0].code_indented);
+}
+
 ELMD_TEST(test_soft_break_in_plain_paragraph_inserts_single_newline) {
     Editor e("alphaomega");
     e.set_caret(CharOffset(5));
@@ -601,8 +615,178 @@ ELMD_TEST(test_enter_continues_blockquote) {
     e.set_caret(CharOffset(7));
     Command c; c.kind = CommandKind::InsertNewline;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha\n> "));
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha  \n> "));
+    ELMD_CHECK_EQ(e.selection().head().v, 12u);
+}
+
+ELMD_TEST(test_second_enter_exits_empty_blockquote_line) {
+    Editor e("> alpha");
+    e.set_caret(CharOffset(7));
+    Command c; c.kind = CommandKind::InsertNewline;
+    e.execute_command(c);
+    e.execute_command(c);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha\n"));
+    ELMD_CHECK_EQ(e.selection().head().v, 8u);
+}
+
+ELMD_TEST(test_second_enter_removes_the_empty_quote_line_before_a_following_block) {
+    Editor e("> alpha\n\nafter");
+    e.set_caret(CharOffset(7));
+    Command newline; newline.kind = CommandKind::InsertNewline;
+    e.execute_command(newline);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha  \n> \n\nafter"));
+    e.execute_command(newline);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha\n\nafter"));
+    ELMD_CHECK_EQ(e.selection().head().v, 8u);
+    ELMD_CHECK(e.selection().affinity == TextAffinity::Downstream);
+}
+
+ELMD_TEST(test_enter_exits_nested_blockquotes_one_level_at_a_time) {
+    Editor e("> > alpha");
+    e.set_caret(CharOffset(9));
+    Command newline; newline.kind = CommandKind::InsertNewline;
+    e.execute_command(newline);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > alpha  \n> > "));
+    ELMD_CHECK_EQ(e.selection().head().v, 16u);
+    e.execute_command(newline);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > alpha\n> "));
+    ELMD_CHECK_EQ(e.selection().head().v, 12u);
+    ELMD_CHECK(e.selection().affinity == TextAffinity::Upstream);
+    e.execute_command(newline);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > alpha\n"));
     ELMD_CHECK_EQ(e.selection().head().v, 10u);
+    ELMD_CHECK(e.selection().affinity == TextAffinity::Downstream);
+}
+
+ELMD_TEST(test_backspace_exits_nested_blockquotes_one_level_at_a_time) {
+    Editor e("> > alpha  \n> > ");
+    e.set_caret(CharOffset(16));
+    Command backspace; backspace.kind = CommandKind::DeleteBackward;
+    e.execute_command(backspace);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > alpha\n> "));
+    ELMD_CHECK_EQ(e.selection().head().v, 12u);
+    ELMD_CHECK(e.selection().affinity == TextAffinity::Upstream);
+    e.execute_command(backspace);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > alpha"));
+    ELMD_CHECK_EQ(e.selection().head().v, 9u);
+}
+
+ELMD_TEST(test_backspace_at_first_quote_content_start_removes_exactly_one_level) {
+    Editor e("> > alpha");
+    e.set_caret(CharOffset(4));
+    Command backspace; backspace.kind = CommandKind::DeleteBackward;
+    e.execute_command(backspace);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha"));
+    ELMD_CHECK_EQ(e.selection().head().v, 2u);
+    ELMD_CHECK(e.selection().affinity == TextAffinity::Upstream);
+    e.execute_command(backspace);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha"));
+    ELMD_CHECK_EQ(e.selection().head().v, 0u);
+    ELMD_CHECK(e.selection().affinity == TextAffinity::Upstream);
+}
+
+ELMD_TEST(test_backspace_at_following_quote_line_start_joins_the_same_depth_first) {
+    Editor e("> > first\n> > second");
+    e.set_caret(CharOffset(14));
+    Command backspace; backspace.kind = CommandKind::DeleteBackward;
+    e.execute_command(backspace);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > firstsecond"));
+    ELMD_CHECK_EQ(e.selection().head().v, 9u);
+    ELMD_CHECK(e.selection().affinity == TextAffinity::Upstream);
+    auto line = quote_source_line_at(e.text_cps(), e.selection().head());
+    ELMD_CHECK(line.has_value());
+    if (line) ELMD_CHECK_EQ(line->marker_ranges.size(), 2u);
+}
+
+ELMD_TEST(test_backspace_join_removes_the_preceding_hard_break_marker) {
+    Editor e("> > first  \n> > second");
+    e.set_caret(CharOffset(16));
+    Command backspace; backspace.kind = CommandKind::DeleteBackward;
+    e.execute_command(backspace);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > firstsecond"));
+    ELMD_CHECK_EQ(e.selection().head().v, 9u);
+}
+
+ELMD_TEST(test_backspace_inside_nested_quote_content_never_touches_quote_markers) {
+    Editor e("> > abcdefghijklmnopqrstuvwxyz");
+    e.set_caret(CharOffset(18));
+    Command backspace; backspace.kind = CommandKind::DeleteBackward;
+    e.execute_command(backspace);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > abcdefghijklmopqrstuvwxyz"));
+    ELMD_CHECK_EQ(e.selection().head().v, 17u);
+    ELMD_CHECK(e.selection().affinity == TextAffinity::Upstream);
+    auto line = quote_source_line_at(e.text_cps(), e.selection().head());
+    ELMD_CHECK(line.has_value());
+    if (line) {
+        ELMD_CHECK_EQ(line->marker_ranges.size(), 2u);
+        ELMD_CHECK_EQ(line->content_range.start.v, 4u);
+    }
+}
+
+ELMD_TEST(test_quote_source_line_model_owns_each_marker_and_content_range) {
+    auto text = std::u32string(U"> > nested text\n");
+    auto line = quote_source_line_at(text, CharOffset(8));
+    ELMD_CHECK(line.has_value());
+    if (line) {
+        ELMD_CHECK_EQ(line->marker_ranges.size(), 2u);
+        ELMD_CHECK_EQ(line->marker_ranges[0].start.v, 0u);
+        ELMD_CHECK_EQ(line->marker_ranges[0].end.v, 2u);
+        ELMD_CHECK_EQ(line->marker_ranges[1].start.v, 2u);
+        ELMD_CHECK_EQ(line->marker_ranges[1].end.v, 4u);
+        ELMD_CHECK_EQ(line->content_range.start.v, 4u);
+        ELMD_CHECK_EQ(line->content_range.end.v, 15u);
+        ELMD_CHECK(!line->empty);
+    }
+}
+
+ELMD_TEST(test_blockquote_newline_with_following_block_keeps_an_editable_quote_line) {
+    Editor e("> alpha\n\nafter");
+    e.set_caret(CharOffset(7));
+    Command newline; newline.kind = CommandKind::InsertNewline;
+    e.execute_command(newline);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha  \n> \n\nafter"));
+    ELMD_CHECK_EQ(e.selection().head().v, 12u);
+    ELMD_CHECK(e.selection().affinity == TextAffinity::Upstream);
+    e.execute_command(Command::InsertText(U"11111"));
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha  \n> 11111\n\nafter"));
+    ELMD_CHECK_EQ(e.selection().head().v, 17u);
+    auto quote_edit = markdown_newline_edit(e.text_cps(), e.selection().normalized_range());
+    ELMD_CHECK(quote_edit.has_value());
+    if (quote_edit) ELMD_CHECK_EQ(quote_edit->text, std::u32string(U"\n> "));
+    e.execute_command(newline);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha  \n> 11111  \n> \n\nafter"));
+    ELMD_CHECK_EQ(e.selection().head().v, 22u);
+    ELMD_CHECK(e.selection().affinity == TextAffinity::Upstream);
+}
+
+ELMD_TEST(test_backspace_removes_an_empty_blockquote_prefix_atomically) {
+    Editor e("> alpha  \n> \n\nafter");
+    e.set_caret(CharOffset(12));
+    Command backspace; backspace.kind = CommandKind::DeleteBackward;
+    e.execute_command(backspace);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha\n\nafter"));
+    ELMD_CHECK_EQ(e.selection().head().v, 7u);
+}
+
+ELMD_TEST(test_enter_on_empty_indented_code_line_exits_the_code_block) {
+    Editor e("    alpha\n    \n\nafter");
+    e.set_caret(CharOffset(14));
+    Command newline; newline.kind = CommandKind::InsertNewline;
+    e.execute_command(newline);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("    alpha\n\n\nafter"));
+    ELMD_CHECK_EQ(e.selection().head().v, 10u);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
+    ELMD_CHECK(e.document().blocks[0].kind == BlockKind::CodeBlock);
+    ELMD_CHECK(e.document().blocks[1].kind == BlockKind::Paragraph);
+}
+
+ELMD_TEST(test_backspace_on_empty_indented_code_line_exits_the_code_block) {
+    Editor e("    alpha\n    \n\nafter");
+    e.set_caret(CharOffset(14));
+    Command backspace; backspace.kind = CommandKind::DeleteBackward;
+    e.execute_command(backspace);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("    alpha\n\nafter"));
+    ELMD_CHECK_EQ(e.selection().head().v, 9u);
 }
 
 ELMD_TEST(test_enter_on_empty_list_exits_list) {

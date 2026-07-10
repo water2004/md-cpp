@@ -108,8 +108,30 @@ public:
     bool line_starts_fenced_code() const {
         if (!peek_line_start()) return false;
         std::size_t i = pos;
-        while (i < cps.size() && cps[i] == U'`') ++i;
+        auto marker = peek1();
+        if (marker != U'`' && marker != U'~') return false;
+        while (i < cps.size() && cps[i] == marker) ++i;
         return i - pos >= 3;
+    }
+    bool line_starts_interrupting_block() const {
+        if (!peek_line_start()) return false;
+        if (peek1() == U'>' || line_starts_fenced_code()) return true;
+        if (peek1() == U'#') {
+            std::size_t cursor = pos;
+            while (cursor < cps.size() && cps[cursor] == U'#' && cursor - pos < 6) ++cursor;
+            if (cursor < cps.size() && cps[cursor] == U' ') return true;
+        }
+        if ((peek1() == U'$' && peek2() == U'$') || (peek1() == U'\\' && peek2() == U'[')) return true;
+        if ((peek1() == U'-' || peek1() == U'+' || peek1() == U'*') && peek2() == U' ') return true;
+        if (is_ascii_digit_(peek1())) {
+            std::size_t cursor = pos;
+            while (cursor < cps.size() && is_ascii_digit_(cps[cursor])) ++cursor;
+            if (cursor + 1 < cps.size() && (cps[cursor] == U'.' || cps[cursor] == U')') && cps[cursor + 1] == U' ') return true;
+        }
+        if ((peek1() == U'-' && peek(1) == U'-' && peek(2) == U'-') ||
+            (peek1() == U'*' && peek(1) == U'*' && peek(2) == U'*') ||
+            (peek1() == U'_' && peek(1) == U'_' && peek(2) == U'_')) return true;
+        return false;
     }
     // read current line up to \n (not consumed). Implementation note: READ-ONLY.
     std::pair<std::u32string, std::size_t> rest_of_line() const {
@@ -160,6 +182,7 @@ public:
             if (peek1() == '>') {
                 if (auto b = parse_blockquote_or_callout()) return b;
             }
+            if (auto b = try_parse_indented_code_block()) return b;
             if (auto b = try_parse_code_block())         return b;
             if (auto b = try_parse_math_block())         return b;
             if (auto b = try_parse_table())              return b;
@@ -285,9 +308,27 @@ public:
             if (peek1() == '\n') {
                 result.content_end = pos;
                 std::size_t newline_pos = pos;
+                bool hard_break = buf.size() >= 2 && buf[buf.size() - 1] == U' ' && buf[buf.size() - 2] == U' ';
+                if (hard_break) {
+                    buf.resize(buf.size() - 2);
+                    flush();
+                }
                 advance();
+                if (hard_break) {
+                    NodeId id = next_node_id();
+                    NodeSourceRange range(id, CharRange(CharOffset(newline_pos - 2), CharOffset(newline_pos + 1)), CharRange(CharOffset(newline_pos), CharOffset(newline_pos + 1)));
+                    range.marker_ranges.push_back(CharRange(CharOffset(newline_pos - 2), CharOffset(newline_pos)));
+                    source_ranges.push_back(std::move(range));
+                    InlineNode hard;
+                    hard.id = id;
+                    hard.kind = InlineKind::HardBreak;
+                    result.inlines.push_back(std::move(hard));
+                    result.content_end = pos;
+                    if (eof() || peek1() == U'\n' || line_starts_interrupting_block()) break;
+                    continue;
+                }
                 if (eof() || peek1() == '\n') break;
-                if (line_starts_fenced_code()) break;
+                if (line_starts_interrupting_block()) break;
                 flush();
                 NodeId id = next_node_id();
                 push_range(id, CharRange(CharOffset(newline_pos), CharOffset(newline_pos + 1)), CharRange(CharOffset(newline_pos), CharOffset(newline_pos + 1)));
@@ -775,6 +816,73 @@ public:
     }
 
     // ---- code fence / fenced math ----
+    std::optional<BlockNode> try_parse_indented_code_block() {
+        auto indentation_end = [&](std::size_t line_start) -> std::optional<std::size_t> {
+            if (line_start >= cps.size()) return std::nullopt;
+            if (cps[line_start] == U'\t') return line_start + 1;
+            auto cursor = line_start;
+            while (cursor < cps.size() && cursor - line_start < 4 && cps[cursor] == U' ') ++cursor;
+            if (cursor - line_start == 4) return cursor;
+            return std::nullopt;
+        };
+        auto start = pos;
+        if (!indentation_end(start)) return std::nullopt;
+        std::u32string text;
+        std::vector<CharRange> markers;
+        std::size_t content_start = start;
+        std::size_t content_end = start;
+        bool first_line = true;
+        while (pos < cps.size()) {
+            auto line_start = pos;
+            auto line_end = line_start;
+            while (line_end < cps.size() && cps[line_end] != U'\n') ++line_end;
+            auto indent_end = indentation_end(line_start);
+            if (!indent_end) {
+                bool blank = true;
+                for (auto cursor = line_start; cursor < line_end; ++cursor) {
+                    if (cps[cursor] != U' ' && cps[cursor] != U'\t') { blank = false; break; }
+                }
+                if (!blank) break;
+                auto next = line_end < cps.size() ? line_end + 1 : line_end;
+                while (next < cps.size()) {
+                    auto next_end = next;
+                    while (next_end < cps.size() && cps[next_end] != U'\n') ++next_end;
+                    bool next_blank = true;
+                    for (auto cursor = next; cursor < next_end; ++cursor) {
+                        if (cps[cursor] != U' ' && cps[cursor] != U'\t') { next_blank = false; break; }
+                    }
+                    if (!next_blank) break;
+                    next = next_end < cps.size() ? next_end + 1 : next_end;
+                }
+                if (next >= cps.size() || !indentation_end(next)) break;
+                markers.push_back(CharRange(CharOffset(line_start), CharOffset(line_end)));
+                text.push_back(U'\n');
+                pos = line_end < cps.size() ? line_end + 1 : line_end;
+                content_end = line_end;
+                continue;
+            }
+            markers.push_back(CharRange(CharOffset(line_start), CharOffset(*indent_end)));
+            if (first_line) content_start = *indent_end;
+            first_line = false;
+            text.append(cps.begin() + *indent_end, cps.begin() + line_end);
+            content_end = line_end;
+            if (line_end < cps.size()) text.push_back(U'\n');
+            pos = line_end < cps.size() ? line_end + 1 : line_end;
+        }
+        NodeId id = next_node_id();
+        NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(content_start), CharOffset(content_end)));
+        range.marker_ranges = std::move(markers);
+        auto line_count = range.marker_ranges.size();
+        source_ranges.push_back(std::move(range));
+        code_blocks.push_back({id, std::nullopt, line_count});
+        BlockNode block;
+        block.id = id;
+        block.kind = BlockKind::CodeBlock;
+        block.code_text = std::move(text);
+        block.code_indented = true;
+        return block;
+    }
+
     std::optional<BlockNode> try_parse_code_block() {
         std::size_t start = pos;
         std::size_t count = 0;
@@ -1102,25 +1210,74 @@ public:
     // ---- blockquote / callout ----
     std::optional<BlockNode> parse_blockquote_or_callout() {
         std::size_t start = pos;
-        advance(); // '>'
-        if (peek1() == ' ') advance();
-        std::size_t content_start = pos;
-        auto [first_line, _] = rest_of_line();
-        if (auto callout = try_parse_callout_from_line(first_line)) {
-            // emit the proper Callout with the freshly built id / src range / children
-            auto children = parse_blockquote_body();
-            std::size_t end = pos;
-            NodeId id = next_node_id();
-            push_range(id, CharRange(CharOffset(start), CharOffset(end)), CharRange(CharOffset(content_start), CharOffset(end)));
-            BlockNode& cb = *callout;
-            cb.id = id;
-            cb.quote_children = std::move(children);
+        std::u32string inner;
+        std::vector<std::size_t> offset_map;
+        std::vector<CharRange> marker_ranges;
+        std::size_t content_start = start;
+        std::size_t content_end = start;
+        bool first = true;
+        while (pos < cps.size() && peek_line_start() && peek1() == U'>') {
+            auto marker_start = pos;
+            advance();
+            if (peek1() == U' ') advance();
+            auto line_content_start = pos;
+            if (first) content_start = line_content_start;
+            first = false;
+            marker_ranges.push_back(CharRange(CharOffset(marker_start), CharOffset(line_content_start)));
+            while (!eof() && peek1() != U'\n') {
+                offset_map.push_back(pos);
+                inner.push_back(peek1());
+                advance();
+            }
+            content_end = pos;
+            if (peek1() == U'\n') {
+                offset_map.push_back(pos);
+                inner.push_back(U'\n');
+                advance();
+            }
+            if (!(pos < cps.size() && peek_line_start() && peek1() == U'>')) break;
+        }
+        auto source_end = pos;
+        offset_map.push_back(source_end);
+        auto first_newline = inner.find(U'\n');
+        auto first_line = first_newline == std::u32string::npos ? inner : inner.substr(0, first_newline);
+        auto callout = try_parse_callout_from_line(first_line);
+        auto body_start = callout ? (first_newline == std::u32string::npos ? inner.size() : first_newline + 1) : 0;
+        auto body = inner.substr(body_start);
+        ParseInput nested_input(input->revision, cps_to_utf8(body), input->dialect);
+        Parser nested(&nested_input);
+        nested.node_counter = node_counter;
+        auto children = nested.parse_blocks(nullptr);
+        node_counter = nested.node_counter;
+        auto remap = [&](CharOffset value) {
+            auto index = (std::min)(body_start + value.v, offset_map.size() - 1);
+            return CharOffset(offset_map[index]);
+        };
+        for (auto& range : nested.source_ranges) {
+            range.source_range = CharRange(remap(range.source_range.start), remap(range.source_range.end));
+            range.content_range = CharRange(remap(range.content_range.start), remap(range.content_range.end));
+            for (auto& marker : range.marker_ranges) marker = CharRange(remap(marker.start), remap(marker.end));
+            source_ranges.push_back(std::move(range));
+        }
+        for (auto& diagnostic : nested.diagnostics) {
+            if (diagnostic.source_range) diagnostic.source_range = CharRange(remap(diagnostic.source_range->start), remap(diagnostic.source_range->end));
+            diagnostics.push_back(std::move(diagnostic));
+        }
+        headings.insert(headings.end(), std::make_move_iterator(nested.headings.begin()), std::make_move_iterator(nested.headings.end()));
+        footnotes.insert(footnotes.end(), std::make_move_iterator(nested.footnotes.begin()), std::make_move_iterator(nested.footnotes.end()));
+        links.insert(links.end(), std::make_move_iterator(nested.links.begin()), std::make_move_iterator(nested.links.end()));
+        images.insert(images.end(), std::make_move_iterator(nested.images.begin()), std::make_move_iterator(nested.images.end()));
+        math_blocks.insert(math_blocks.end(), std::make_move_iterator(nested.math_blocks.begin()), std::make_move_iterator(nested.math_blocks.end()));
+        code_blocks.insert(code_blocks.end(), std::make_move_iterator(nested.code_blocks.begin()), std::make_move_iterator(nested.code_blocks.end()));
+        NodeId id = next_node_id();
+        NodeSourceRange quote_range(id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(content_start), CharOffset(content_end)));
+        quote_range.marker_ranges = std::move(marker_ranges);
+        source_ranges.push_back(std::move(quote_range));
+        if (callout) {
+            callout->id = id;
+            callout->quote_children = std::move(children);
             return callout;
         }
-        auto children = parse_blockquote_body();
-        std::size_t end = pos;
-        NodeId id = next_node_id();
-        push_range(id, CharRange(CharOffset(start), CharOffset(end)), CharRange(CharOffset(content_start), CharOffset(end)));
         BlockNode b; b.id = id; b.kind = BlockKind::BlockQuote; b.quote_children = std::move(children);
         return b;
     }
@@ -1145,24 +1302,6 @@ public:
             return b;
         }
         return std::nullopt;
-    }
-    std::vector<BlockNode> parse_blockquote_body() {
-        std::vector<BlockNode> blocks;
-        while (!eof()) {
-            if (peek_line_start() && peek1() == '>') {
-                advance();
-                if (peek1() == ' ') advance();
-            }
-            if (is_blank_line()) {
-                while (peek1() == ' ' || peek1() == '\t') advance();
-                if (peek1() == '\n') advance();
-                if (!peek_line_start() || peek1() != '>') break;
-                continue;
-            }
-            if (auto b = parse_block()) blocks.push_back(std::move(*b));
-            else break;
-        }
-        return blocks;
     }
 
     // ---- thematic break ----

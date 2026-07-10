@@ -174,6 +174,7 @@ namespace winrt::ElMd
             D2D1_COLOR_F accentColor{};
             D2D1_COLOR_F codeTextColor{};
             D2D1_COLOR_F panelColor{};
+            D2D1_COLOR_F nestedQuoteColor{};
             D2D1_COLOR_F selectionColor{};
             D2D1_COLOR_F caretColor{};
             std::array<D2D1_COLOR_F, 11> syntaxColors{};
@@ -207,6 +208,8 @@ namespace winrt::ElMd
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> accentBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> codeBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> panelBrush;
+        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> canvasBrush;
+        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> nestedQuoteBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> selectionBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> caretBrush;
         std::array<::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush>, 11> syntaxBrushes;

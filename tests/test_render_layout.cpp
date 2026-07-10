@@ -53,6 +53,21 @@ ELMD_TEST(builds_code_block) {
     ELMD_CHECK(m.blocks[0].line_count >= 1);
 }
 
+ELMD_TEST(builds_indented_code_block_with_source_markers) {
+    auto m = build_model("    alpha\n    beta\n");
+    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Code);
+    ELMD_CHECK(m.blocks[0].code_indented);
+    ELMD_CHECK_EQ(m.blocks[0].code_text, std::u32string(U"alpha\nbeta\n"));
+    ELMD_CHECK_EQ(m.blocks[0].code_marker_ranges.size(), 2u);
+    if (m.blocks[0].code_marker_ranges.size() >= 2) {
+        ELMD_CHECK_EQ(m.blocks[0].code_marker_ranges[0].start.v, 0u);
+        ELMD_CHECK_EQ(m.blocks[0].code_marker_ranges[0].end.v, 4u);
+        ELMD_CHECK_EQ(m.blocks[0].code_marker_ranges[1].start.v, 10u);
+        ELMD_CHECK_EQ(m.blocks[0].code_marker_ranges[1].end.v, 14u);
+    }
+}
+
 ELMD_TEST(thematic_break_remains_an_atomic_render_block) {
     auto model = build_model("---");
     ELMD_CHECK_EQ(model.blocks.size(), 1u);
@@ -213,6 +228,136 @@ ELMD_TEST(table_render_cells_preserve_inline_styles) {
     ELMD_CHECK(bold);
     ELMD_CHECK(code);
     ELMD_CHECK(strike);
+}
+
+ELMD_TEST(blockquote_render_model_contains_text_and_quote_style) {
+    auto m = build_model("> quoted text\n");
+    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Quote);
+    ELMD_CHECK_EQ(m.blocks[0].child_blocks.size(), 1u);
+    ELMD_CHECK(m.blocks[0].block_style.border_left.has_value());
+    bool hasText = false;
+    if (!m.blocks[0].child_blocks.empty()) {
+        ELMD_CHECK(!m.blocks[0].child_blocks[0].inline_items.empty());
+        for (auto const& item : m.blocks[0].child_blocks[0].inline_items) {
+            hasText = hasText || (item.kind == InlineRenderItem::Kind::Text && item.text == U"quoted text");
+        }
+    }
+    ELMD_CHECK(hasText);
+}
+
+ELMD_TEST(blockquote_render_model_preserves_nested_child_blocks) {
+    auto m = build_model("> paragraph\n> > nested\n");
+    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Quote);
+    ELMD_CHECK_EQ(m.blocks[0].child_blocks.size(), 2u);
+    if (m.blocks[0].child_blocks.size() >= 2) {
+        ELMD_CHECK(m.blocks[0].child_blocks[0].kind == RenderBlockKind::Text);
+        ELMD_CHECK(m.blocks[0].child_blocks[1].kind == RenderBlockKind::Text);
+        ELMD_CHECK_EQ(m.blocks[0].child_blocks[0].quote_depth, 0u);
+        ELMD_CHECK_EQ(m.blocks[0].child_blocks[1].quote_depth, 1u);
+    }
+}
+
+ELMD_TEST(nested_quote_flow_fragment_owns_only_its_visible_content) {
+    auto m = build_model("> > The Witch bade her clean the pots and kettles\n");
+    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    ELMD_CHECK_EQ(m.blocks[0].child_blocks.size(), 1u);
+    if (!m.blocks[0].child_blocks.empty()) {
+        auto const& fragment = m.blocks[0].child_blocks[0];
+        ELMD_CHECK_EQ(fragment.quote_depth, 1u);
+        ELMD_CHECK_EQ(fragment.content_range.start.v, 4u);
+        ELMD_CHECK_EQ(fragment.content_range.end.v, 49u);
+        ELMD_CHECK(!fragment.inline_items.empty());
+        if (!fragment.inline_items.empty()) {
+            ELMD_CHECK_EQ(fragment.inline_items.front().source_range.start.v, 4u);
+            ELMD_CHECK_EQ(fragment.inline_items.back().source_range.end.v, 49u);
+        }
+    }
+}
+
+ELMD_TEST(core_quote_layout_consumes_flat_fragment_depths) {
+    StubMeasurer measurer(8.0f);
+    auto model = build_model("> outer\n> > nested\n");
+    auto tree = layout_blocks(model.blocks, 600.0f, 1.0f, measurer, std::nullopt, LogicalPoint(0.0f, 0.0f), Outline::empty(1));
+    ELMD_CHECK_EQ(tree.blocks.size(), 1u);
+    ELMD_CHECK(tree.blocks[0].kind.kind == LayoutBlockKind::Quote);
+    ELMD_CHECK_EQ(tree.blocks[0].children.size(), 2u);
+    if (tree.blocks[0].children.size() >= 2) {
+        ELMD_CHECK(tree.blocks[0].children[0].kind == LayoutItem::Kind::Line);
+        ELMD_CHECK(tree.blocks[0].children[1].kind == LayoutItem::Kind::Line);
+        ELMD_CHECK(tree.blocks[0].children[1].line.rect.x > tree.blocks[0].children[0].line.rect.x);
+    }
+}
+
+ELMD_TEST(blockquote_multiline_text_ranges_skip_each_source_marker) {
+    auto m = build_model("> first line\n> second line\n");
+    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    ELMD_CHECK_EQ(m.blocks[0].child_blocks.size(), 1u);
+    if (!m.blocks[0].child_blocks.empty()) {
+        auto const& items = m.blocks[0].child_blocks[0].inline_items;
+        ELMD_CHECK_EQ(items.size(), 3u);
+        if (items.size() >= 3) {
+            ELMD_CHECK_EQ(items[0].source_range.start.v, 2u);
+            ELMD_CHECK_EQ(items[1].source_range.start.v, 12u);
+            ELMD_CHECK_EQ(items[1].source_range.end.v, 15u);
+            ELMD_CHECK_EQ(items[2].source_range.start.v, 15u);
+        }
+    }
+}
+
+ELMD_TEST(blockquote_hard_break_renders_a_newline_mapped_past_the_next_quote_marker) {
+    auto m = build_model("> alpha  \n> beta\n");
+    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    ELMD_CHECK_EQ(m.blocks[0].child_blocks.size(), 1u);
+    if (!m.blocks[0].child_blocks.empty()) {
+        auto const& items = m.blocks[0].child_blocks[0].inline_items;
+        auto hard = std::find_if(items.begin(), items.end(), [](auto const& item) { return item.kind == InlineRenderItem::Kind::Text && item.text == U"\n"; });
+        ELMD_CHECK(hard != items.end());
+        if (hard != items.end()) {
+            ELMD_CHECK_EQ(hard->source_range.start.v, 9u);
+            ELMD_CHECK_EQ(hard->source_range.end.v, 12u);
+        }
+    }
+}
+
+ELMD_TEST(trailing_blockquote_hard_break_has_a_zero_width_edit_anchor) {
+    auto m = build_model("> alpha  \n> \n\nafter");
+    ELMD_CHECK_EQ(m.blocks.size(), 2u);
+    ELMD_CHECK_EQ(m.blocks[0].child_blocks.size(), 1u);
+    if (!m.blocks[0].child_blocks.empty()) {
+        auto const& items = m.blocks[0].child_blocks[0].inline_items;
+        ELMD_CHECK(!items.empty());
+        ELMD_CHECK(items.back().text == U"\n");
+        ELMD_CHECK_EQ(items.back().source_range.end.v, 12u);
+    }
+}
+
+ELMD_TEST(blockquote_render_model_tracks_the_depth_of_a_trailing_empty_line) {
+    auto outerBlank = build_model("> > alpha\n> ");
+    ELMD_CHECK_EQ(outerBlank.blocks.size(), 1u);
+    ELMD_CHECK_EQ(outerBlank.blocks[0].child_blocks.size(), 2u);
+    if (outerBlank.blocks[0].child_blocks.size() >= 2) {
+        ELMD_CHECK(outerBlank.blocks[0].child_blocks[0].kind == RenderBlockKind::Text);
+        ELMD_CHECK_EQ(outerBlank.blocks[0].child_blocks[0].quote_depth, 1u);
+        ELMD_CHECK(outerBlank.blocks[0].child_blocks[1].kind == RenderBlockKind::Blank);
+        ELMD_CHECK_EQ(outerBlank.blocks[0].child_blocks[1].quote_depth, 0u);
+    }
+
+    auto nestedBlank = build_model("> > alpha  \n> > ");
+    ELMD_CHECK_EQ(nestedBlank.blocks.size(), 1u);
+    ELMD_CHECK_EQ(nestedBlank.blocks[0].child_blocks.size(), 1u);
+    if (!nestedBlank.blocks[0].child_blocks.empty()) {
+        ELMD_CHECK(nestedBlank.blocks[0].child_blocks[0].kind == RenderBlockKind::Text);
+        ELMD_CHECK_EQ(nestedBlank.blocks[0].child_blocks[0].quote_depth, 1u);
+    }
+}
+
+ELMD_TEST(list_render_model_has_no_synthetic_trailing_newline) {
+    auto m = build_model("- one\n- two\n");
+    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    ELMD_CHECK(!m.blocks[0].inline_items.empty());
+    if (!m.blocks[0].inline_items.empty()) ELMD_CHECK(m.blocks[0].inline_items.back().text != U"\n");
 }
 
 ELMD_TEST(layout_table_builds_rows_columns_and_cells) {

@@ -119,6 +119,39 @@ inline std::pair<LayoutBlock, float> layout_blank_block(const RenderBlock& rb, f
     return {std::move(block), line_height};
 }
 
+inline std::pair<LayoutBlock, float> layout_quote_block(const RenderBlock& rb, float y,
+                                                        float viewport_width, float scale,
+                                                        TextMeasurer& measurer,
+                                                        std::optional<CharOffset> caret,
+                                                        LogicalPoint origin) {
+    auto padding_top = rb.block_style.padding_top * scale;
+    auto padding_bottom = rb.block_style.padding_bottom * scale;
+    auto depth_inset = (rb.block_style.padding_left + 6.0f) * scale;
+    auto cursor = y + padding_top;
+    LayoutBlock result(rb.id, rb.source_range, {LayoutBlockKind::Quote}, rb.block_style);
+    for (std::size_t index = 0; index < rb.child_blocks.size(); ++index) {
+        auto const& child = rb.child_blocks[index];
+        if (index > 0) cursor += 8.0f * scale;
+        auto child_origin = LogicalPoint(origin.x + rb.block_style.padding_left * scale + child.quote_depth * depth_inset, origin.y);
+        auto child_width = (std::max)(1.0f, viewport_width - (child_origin.x - origin.x) - rb.block_style.padding_right * scale);
+        if (child.kind == RenderBlockKind::Blank) {
+            auto blank = layout_blank_block(child, cursor, child_width, scale, child_origin);
+            for (auto& item : blank.first.children) result.children.push_back(std::move(item));
+            cursor += blank.second;
+            continue;
+        }
+        auto text = child;
+        text.kind = RenderBlockKind::Text;
+        auto laid_out = layout_text_block(text, cursor, child_width, scale, measurer, caret, child_origin);
+        for (auto& item : laid_out.first.children) result.children.push_back(std::move(item));
+        cursor += laid_out.second;
+    }
+    if (rb.child_blocks.empty()) cursor += 24.0f * scale;
+    auto height = cursor - y + padding_bottom;
+    result.rect = LogicalRect(origin.x, y, viewport_width, height);
+    return {std::move(result), height};
+}
+
 inline std::pair<LayoutBlock, float> layout_thematic_break(const RenderBlock& rb, float y, float viewport_width, float scale, LogicalPoint origin) {
     auto height = 48.0f * scale;
     LayoutBlock block(rb.id, rb.source_range, {LayoutBlockKind::ThematicBreak}, rb.block_style);
@@ -372,6 +405,9 @@ inline LayoutTree layout_blocks(const std::vector<RenderBlock>& blocks, float vi
                 break;
             case RenderBlockKind::Blank:
                 pr = layout_blank_block(rb, y, viewport_width, scale, origin);
+                break;
+            case RenderBlockKind::Quote:
+                pr = layout_quote_block(rb, y, viewport_width, scale, measurer, caret, origin);
                 break;
             case RenderBlockKind::Code:
                 pr = layout_code_block(rb, y, viewport_width, scale, measurer);

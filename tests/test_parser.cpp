@@ -59,6 +59,26 @@ ELMD_TEST(test_single_newline_inside_plain_text_is_soft_break) {
     ELMD_CHECK(cps_to_utf8(block_inline_text_content(out.document.blocks[0].children)) == "Hello\nWorld");
 }
 
+ELMD_TEST(test_two_spaces_before_newline_are_a_hard_break) {
+    auto out = parse_text(1, "Hello  \nWorld");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    ELMD_CHECK(out.document.blocks[0].kind == BlockKind::Paragraph);
+    ELMD_CHECK(inlines_have_kind(out.document.blocks[0].children, InlineKind::HardBreak));
+    auto hard = std::find_if(out.document.blocks[0].children.begin(), out.document.blocks[0].children.end(), [](auto const& node) { return node.kind == InlineKind::HardBreak; });
+    ELMD_CHECK(hard != out.document.blocks[0].children.end());
+    if (hard != out.document.blocks[0].children.end()) {
+        auto range = out.document.source_map.find_node_by_id(hard->id);
+        ELMD_CHECK(range != nullptr);
+        if (range) {
+            ELMD_CHECK_EQ(range->source_range.start.v, 5u);
+            ELMD_CHECK_EQ(range->source_range.end.v, 8u);
+            ELMD_CHECK_EQ(range->content_range.start.v, 7u);
+            ELMD_CHECK_EQ(range->content_range.end.v, 8u);
+            ELMD_CHECK_EQ(range->marker_ranges.size(), 1u);
+        }
+    }
+}
+
 ELMD_TEST(test_trailing_blank_lines_are_not_ast_blocks) {
     auto out = parse_text(1, "Hello\n\n");
     ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
@@ -442,6 +462,93 @@ ELMD_TEST(test_markdown_image_supported) {
     auto out = parse_text(1, "![alt](a.png)\n");
     auto* p = first_of(out.document.blocks, BlockKind::Paragraph);
     ELMD_CHECK(p && inlines_have_kind(p->children, InlineKind::Image));
+}
+
+ELMD_TEST(test_indented_code_block_strips_one_indent_level) {
+    auto out = parse_text(1, "    > first\n    >\n    >> nested\n");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    ELMD_CHECK(out.document.blocks[0].kind == BlockKind::CodeBlock);
+    ELMD_CHECK(out.document.blocks[0].code_indented);
+    ELMD_CHECK_EQ(cps_to_utf8(out.document.blocks[0].code_text), std::string("> first\n>\n>> nested\n"));
+    auto* range = out.document.source_map.find_node_by_id(out.document.blocks[0].id);
+    ELMD_CHECK(range != nullptr);
+    if (range) ELMD_CHECK_EQ(range->marker_ranges.size(), 3u);
+}
+
+ELMD_TEST(test_indented_code_block_preserves_internal_blank_and_stops) {
+    auto out = parse_text(1, "    first\n\n    second\nafter\n");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 2u);
+    ELMD_CHECK(out.document.blocks[0].kind == BlockKind::CodeBlock);
+    ELMD_CHECK_EQ(cps_to_utf8(out.document.blocks[0].code_text), std::string("first\n\nsecond\n"));
+    ELMD_CHECK(out.document.blocks[1].kind == BlockKind::Paragraph);
+    ELMD_CHECK_EQ(cps_to_utf8(block_inline_text_content(out.document.blocks[1].children)), std::string("after"));
+}
+
+ELMD_TEST(test_tab_indented_code_block) {
+    auto out = parse_text(1, "\tcode\n");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    ELMD_CHECK(out.document.blocks[0].kind == BlockKind::CodeBlock);
+    ELMD_CHECK(out.document.blocks[0].code_indented);
+    ELMD_CHECK_EQ(cps_to_utf8(out.document.blocks[0].code_text), std::string("code\n"));
+}
+
+ELMD_TEST(test_blockquote_preserves_paragraph_text) {
+    auto out = parse_text(1, "> quoted text\n");
+    auto* quote = first_of(out.document.blocks, BlockKind::BlockQuote);
+    ELMD_CHECK(quote != nullptr);
+    if (quote) {
+        ELMD_CHECK_EQ(quote->quote_children.size(), 1u);
+        ELMD_CHECK(quote->quote_children[0].kind == BlockKind::Paragraph);
+        ELMD_CHECK_EQ(cps_to_utf8(block_inline_text_content(quote->quote_children[0].children)), std::string("quoted text"));
+    }
+}
+
+ELMD_TEST(test_blockquote_preserves_multiline_and_stops_before_following_text) {
+    auto out = parse_text(1, "> first line\n> second line\nafter\n");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 2u);
+    auto* quote = first_of(out.document.blocks, BlockKind::BlockQuote);
+    ELMD_CHECK(quote != nullptr);
+    if (quote) {
+        ELMD_CHECK_EQ(quote->quote_children.size(), 1u);
+        ELMD_CHECK(quote->quote_children[0].kind == BlockKind::Paragraph);
+        ELMD_CHECK_EQ(cps_to_utf8(block_inline_text_content(quote->quote_children[0].children)), std::string("first line\nsecond line"));
+    }
+    if (!out.document.blocks.empty()) {
+        ELMD_CHECK(out.document.blocks.back().kind == BlockKind::Paragraph);
+        ELMD_CHECK_EQ(cps_to_utf8(block_inline_text_content(out.document.blocks.back().children)), std::string("after"));
+    }
+}
+
+ELMD_TEST(test_blockquote_keeps_paragraphs_and_nested_blocks) {
+    auto out = parse_text(1, "> first\n>\n> second\n> > nested\n");
+    auto* quote = first_of(out.document.blocks, BlockKind::BlockQuote);
+    ELMD_CHECK(quote != nullptr);
+    if (quote) {
+        ELMD_CHECK_EQ(quote->quote_children.size(), 3u);
+        if (quote->quote_children.size() >= 3) {
+            ELMD_CHECK(quote->quote_children[0].kind == BlockKind::Paragraph);
+            ELMD_CHECK(quote->quote_children[1].kind == BlockKind::Paragraph);
+            ELMD_CHECK(quote->quote_children[2].kind == BlockKind::BlockQuote);
+            ELMD_CHECK_EQ(cps_to_utf8(block_inline_text_content(quote->quote_children[0].children)), std::string("first"));
+            ELMD_CHECK_EQ(cps_to_utf8(block_inline_text_content(quote->quote_children[1].children)), std::string("second"));
+            if (!quote->quote_children[2].quote_children.empty()) {
+                ELMD_CHECK_EQ(cps_to_utf8(block_inline_text_content(quote->quote_children[2].quote_children[0].children)), std::string("nested"));
+            }
+        }
+    }
+}
+
+ELMD_TEST(test_blockquote_preserves_heading_and_list_children) {
+    auto out = parse_text(1, "> # heading\n> - item\n");
+    auto* quote = first_of(out.document.blocks, BlockKind::BlockQuote);
+    ELMD_CHECK(quote != nullptr);
+    if (quote) {
+        ELMD_CHECK_EQ(quote->quote_children.size(), 2u);
+        if (quote->quote_children.size() >= 2) {
+            ELMD_CHECK(quote->quote_children[0].kind == BlockKind::Heading);
+            ELMD_CHECK(quote->quote_children[1].kind == BlockKind::List);
+        }
+    }
 }
 
 ELMD_TEST(test_html_table_not_parsed) {

@@ -497,6 +497,7 @@ namespace winrt::ElMd
             }
             AppendDisplayText(display, InlineText(item), item.source_range.start.v, item.style, item.kind == elmd::InlineRenderItem::Kind::Marker);
         }
+        if (!display.text.empty() && display.text.back() == U'\n') AppendGeneratedText(display, U"\u200B", sourceEnd, elmd::InlineStyle::plain());
         display.displayToSource.push_back(sourceEnd);
         return display;
     }
@@ -523,6 +524,23 @@ namespace winrt::ElMd
         return display;
     }
 
+    DisplayInlineText BuildIndentedCodeBlockText(elmd::RenderBlock const& block, std::u32string const& sourceText)
+    {
+        DisplayInlineText display;
+        for (std::size_t index = 0; index < block.code_marker_ranges.size(); ++index)
+        {
+            auto const& marker = block.code_marker_ranges[index];
+            auto contentStart = (std::min)(marker.end.v, sourceText.size());
+            auto contentEnd = contentStart;
+            while (contentEnd < sourceText.size() && sourceText[contentEnd] != U'\n') ++contentEnd;
+            AppendSourceText(display, sourceText, contentStart, contentEnd, elmd::InlineStyle::plain(), false);
+            if (index + 1 < block.code_marker_ranges.size()) AppendDisplayText(display, U"\n", contentEnd, elmd::InlineStyle::plain(), false);
+            else if (contentStart == contentEnd) AppendDisplayText(display, U" ", contentStart, elmd::InlineStyle::plain(), false);
+        }
+        display.displayToSource.push_back(block.content_range.end.v);
+        return display;
+    }
+
     EditorSurfaceRenderer::EditorStyleSheet EditorSurfaceRenderer::CreateStyleSheet(Theme value)
     {
         EditorStyleSheet sheet;
@@ -540,6 +558,7 @@ namespace winrt::ElMd
             sheet.accentColor = Rgba(0.145f, 0.388f, 0.922f);
             sheet.codeTextColor = Rgba(0.180f, 0.205f, 0.250f);
             sheet.panelColor = Rgba(0.940f, 0.945f, 0.955f);
+            sheet.nestedQuoteColor = Rgba(0.958f, 0.961f, 0.968f);
             sheet.selectionColor = Rgba(0.370f, 0.570f, 0.960f, 0.30f);
             sheet.caretColor = Rgba(0.065f, 0.075f, 0.090f);
             sheet.syntaxColors = { sheet.codeTextColor, Rgb(0xAF00DB), Rgb(0x267F99), Rgb(0x795E26), Rgb(0xA31515), Rgb(0x098658), Rgb(0x008000), Rgb(0x303030), Rgb(0x800080), Rgb(0x001080), Rgb(0x0070C1) };
@@ -552,6 +571,7 @@ namespace winrt::ElMd
         sheet.accentColor = Rgba(0.480f, 0.635f, 0.970f);
         sheet.codeTextColor = Rgba(0.875f, 0.895f, 0.925f);
         sheet.panelColor = Rgba(0.100f, 0.113f, 0.140f);
+        sheet.nestedQuoteColor = Rgba(0.085f, 0.096f, 0.119f);
         sheet.selectionColor = Rgba(0.255f, 0.390f, 0.700f, 0.44f);
         sheet.caretColor = Rgba(0.965f, 0.975f, 1.000f);
         sheet.syntaxColors = { sheet.codeTextColor, Rgb(0xC586C0), Rgb(0x4EC9B0), Rgb(0xDCDCAA), Rgb(0xCE9178), Rgb(0xB5CEA8), Rgb(0x6A9955), Rgb(0xD4D4D4), Rgb(0xC586C0), Rgb(0x9CDCFE), Rgb(0x4FC1FF) };
@@ -628,6 +648,8 @@ namespace winrt::ElMd
         accentBrush = nullptr;
         codeBrush = nullptr;
         panelBrush = nullptr;
+        canvasBrush = nullptr;
+        nestedQuoteBrush = nullptr;
         selectionBrush = nullptr;
         caretBrush = nullptr;
         for (auto& brush : syntaxBrushes) brush = nullptr;
@@ -1030,6 +1052,17 @@ namespace winrt::ElMd
                     layout->SetFontFamilyName(styleSheet.code.family.c_str(), textRange);
                     layout->SetFontSize(styleSheet.code.size, textRange);
                 }
+                if (range.style.heading_level)
+                {
+                    auto level = *range.style.heading_level;
+                    auto size = level == 1 ? styleSheet.heading1.size
+                        : level == 2 ? styleSheet.heading2.size
+                        : level == 3 ? styleSheet.heading3.size
+                        : level == 4 ? styleSheet.body.size * 1.15f
+                        : styleSheet.body.size;
+                    layout->SetFontSize(size, textRange);
+                    layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, textRange);
+                }
                 if (range.marker && !range.style.heading_level)
                 {
                     layout->SetFontSize(styleSheet.body.size * 0.82f, textRange);
@@ -1430,6 +1463,190 @@ namespace winrt::ElMd
                     continue;
                 }
             }
+            if (block.kind == elmd::RenderBlockKind::Quote)
+            {
+                struct QuoteBox
+                {
+                    D2D1_RECT_F rect{};
+                    std::size_t depth = 0;
+                    float borderWidth = 3.0f;
+                };
+                struct QuoteFragment
+                {
+                    DisplayInlineText display;
+                    ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+                    D2D1_POINT_2F origin{};
+                    D2D1_RECT_F rect{};
+                    float textWidth = 0.0f;
+                    std::size_t depth = 0;
+                    std::size_t sourceStart = 0;
+                    std::size_t sourceEnd = 0;
+                    bool code = false;
+                };
+                std::vector<QuoteBox> quoteBoxes;
+                std::vector<QuoteFragment> quoteFragments;
+                auto depthInset = block.block_style.padding_left + 6.0f;
+                auto cursorY = y + block.block_style.padding_top;
+                for (std::size_t childIndex = 0; childIndex < block.child_blocks.size(); ++childIndex)
+                {
+                    auto const& child = block.child_blocks[childIndex];
+                    if (childIndex > 0) cursorY += 8.0f;
+                    auto contentLeft = documentLeft + block.block_style.padding_left + static_cast<float>(child.quote_depth) * depthInset;
+                    auto contentRight = documentRight - block.block_style.padding_right;
+                    DisplayInlineText display;
+                    auto code = child.kind == elmd::RenderBlockKind::Code;
+                    if (child.kind == elmd::RenderBlockKind::Blank)
+                    {
+                        AppendGeneratedText(display, U"\u200B", child.content_range.start.v, elmd::InlineStyle::plain());
+                        display.displayToSource.push_back(child.content_range.end.v);
+                    }
+                    else if (code)
+                    {
+                        display = child.code_indented ? BuildIndentedCodeBlockText(child, sourceText) : BuildCodeBlockText(child, caret, sourceText);
+                    }
+                    else if (!child.inline_items.empty())
+                    {
+                        display = BuildDisplayInlineText(child.inline_items, caret, child.content_range.end.v, sourceText, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, contentRight - contentLeft, svgSupported, requestEmbedded);
+                    }
+                    else
+                    {
+                        AppendSourceText(display, sourceText, child.content_range.start.v, child.content_range.end.v, elmd::InlineStyle::plain(), false);
+                        display.displayToSource.push_back(child.content_range.end.v);
+                    }
+                    if (display.text.empty())
+                    {
+                        AppendGeneratedText(display, U"\u200B", child.content_range.start.v, elmd::InlineStyle::plain());
+                        display.displayToSource.push_back(child.content_range.end.v);
+                    }
+                    auto format = code ? codeFormat.Get() : textFormat.Get();
+                    auto horizontalPadding = code ? 12.0f : 0.0f;
+                    auto verticalPadding = code ? 8.0f : 0.0f;
+                    auto textWidth = (std::max)(1.0f, contentRight - contentLeft - horizontalPadding * 2.0f);
+                    auto layout = createLayout(ToWide(display.text), format, textWidth);
+                    applyInlineStyles(layout.Get(), display.ranges);
+                    ApplyMathInlineObjects(layout.Get(), display.mathOverlays);
+                    auto fallbackHeight = code ? styleSheet.code.lineHeight : styleSheet.body.lineHeight;
+                    auto fragmentHeight = measureTextHeight(layout.Get(), fallbackHeight) + verticalPadding * 2.0f;
+                    QuoteFragment fragment;
+                    fragment.origin = D2D1::Point2F(contentLeft + horizontalPadding, cursorY + verticalPadding);
+                    fragment.rect = D2D1::RectF(contentLeft, cursorY, contentRight, cursorY + fragmentHeight);
+                    fragment.textWidth = textWidth;
+                    fragment.depth = child.quote_depth;
+                    fragment.sourceStart = child.content_range.start.v;
+                    fragment.sourceEnd = child.content_range.end.v;
+                    fragment.code = code;
+                    fragment.display = std::move(display);
+                    fragment.layout = std::move(layout);
+                    quoteFragments.push_back(std::move(fragment));
+                    cursorY += fragmentHeight;
+                }
+                if (quoteFragments.empty()) cursorY += styleSheet.body.lineHeight;
+                auto quoteBottom = cursorY + block.block_style.padding_bottom;
+                auto borderWidth = block.block_style.border_left ? block.block_style.border_left->width : 3.0f;
+                quoteBoxes.push_back(QuoteBox{D2D1::RectF(documentLeft, y, documentRight, quoteBottom), 0, borderWidth});
+                std::size_t maxDepth = 0;
+                for (auto const& fragment : quoteFragments) maxDepth = (std::max)(maxDepth, fragment.depth);
+                for (std::size_t level = 1; level <= maxDepth; ++level)
+                {
+                    std::size_t index = 0;
+                    while (index < quoteFragments.size())
+                    {
+                        while (index < quoteFragments.size() && quoteFragments[index].depth < level) ++index;
+                        if (index >= quoteFragments.size()) break;
+                        auto first = index;
+                        while (index < quoteFragments.size() && quoteFragments[index].depth >= level) ++index;
+                        auto left = documentLeft + static_cast<float>(level) * depthInset;
+                        quoteBoxes.push_back(QuoteBox{D2D1::RectF(left, quoteFragments[first].rect.top - 4.0f, documentRight, quoteFragments[index - 1].rect.bottom + 4.0f), level, borderWidth});
+                    }
+                }
+                for (auto const& box : quoteBoxes)
+                {
+                    d2dContext->FillRectangle(box.rect, box.depth == 0 ? panelBrush.Get() : nestedQuoteBrush.Get());
+                    auto lineX = box.rect.left + box.borderWidth * 0.5f;
+                    d2dContext->DrawLine(D2D1::Point2F(lineX, box.rect.top + 4.0f), D2D1::Point2F(lineX, box.rect.bottom - 4.0f), mutedBrush.Get(), box.borderWidth);
+                }
+                for (auto& fragment : quoteFragments)
+                {
+                    auto sourceStart = fragment.sourceStart;
+                    auto sourceEnd = fragment.sourceEnd;
+                    if (fragment.code) d2dContext->FillRectangle(fragment.rect, canvasBrush.Get());
+                    if (fragment.layout)
+                    {
+                        for (auto const& range : fragment.display.ranges)
+                        {
+                            if (!range.style.code || range.length == 0) continue;
+                            UINT32 actualCount = 0;
+                            auto hr = fragment.layout->HitTestTextRange(range.start, range.length, fragment.origin.x, fragment.origin.y, nullptr, 0, &actualCount);
+                            if (hr != E_NOT_SUFFICIENT_BUFFER || actualCount == 0) continue;
+                            std::vector<DWRITE_HIT_TEST_METRICS> metrics(actualCount);
+                            if (FAILED(fragment.layout->HitTestTextRange(range.start, range.length, fragment.origin.x, fragment.origin.y, metrics.data(), actualCount, &actualCount))) continue;
+                            for (UINT32 metricIndex = 0; metricIndex < actualCount; ++metricIndex)
+                            {
+                                auto const& metric = metrics[metricIndex];
+                                d2dContext->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(metric.left - 3.0f, metric.top + 2.0f, metric.left + metric.width + 3.0f, metric.top + metric.height - 1.0f), 4.0f, 4.0f), panelBrush.Get());
+                            }
+                        }
+                        if (!selection.is_empty() && selection.end.v > sourceStart && selection.start.v < sourceEnd)
+                        {
+                            auto displayStart = DisplayPositionForSource(fragment.display.displayToSource, (std::max)(selection.start.v, sourceStart));
+                            auto displayEnd = DisplayPositionForSource(fragment.display.displayToSource, (std::min)(selection.end.v, sourceEnd));
+                            UINT32 actualCount = 0;
+                            auto hr = fragment.layout->HitTestTextRange(static_cast<UINT32>(displayStart), static_cast<UINT32>(displayEnd - displayStart), fragment.origin.x, fragment.origin.y, nullptr, 0, &actualCount);
+                            if (hr == E_NOT_SUFFICIENT_BUFFER && actualCount > 0)
+                            {
+                                std::vector<DWRITE_HIT_TEST_METRICS> metrics(actualCount);
+                                if (SUCCEEDED(fragment.layout->HitTestTextRange(static_cast<UINT32>(displayStart), static_cast<UINT32>(displayEnd - displayStart), fragment.origin.x, fragment.origin.y, metrics.data(), actualCount, &actualCount)))
+                                {
+                                    for (UINT32 metricIndex = 0; metricIndex < actualCount; ++metricIndex)
+                                    {
+                                        auto const& metric = metrics[metricIndex];
+                                        d2dContext->FillRectangle(D2D1::RectF(metric.left, metric.top, metric.left + metric.width, metric.top + metric.height), selectionBrush.Get());
+                                    }
+                                }
+                            }
+                        }
+                        d2dContext->DrawTextLayout(fragment.origin, fragment.layout.Get(), fragment.code ? codeBrush.Get() : textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                        for (auto const& overlay : fragment.display.mathOverlays)
+                        {
+                            float pointX = 0.0f;
+                            float pointY = 0.0f;
+                            DWRITE_HIT_TEST_METRICS metrics{};
+                            if (FAILED(fragment.layout->HitTestTextPosition(overlay.displayStart, FALSE, &pointX, &pointY, &metrics))) continue;
+                            auto mathX = fragment.origin.x + pointX + overlay.leadingSpace;
+                            auto mathY = fragment.origin.y + metrics.top;
+                            if (!drawMathSvg(overlay.fragment, D2D1::Point2F(mathX, mathY), styleSheet.textColor)) drawMathFallback(overlay.sourceStart, overlay.sourceEnd, D2D1::Point2F(mathX, mathY));
+                            visualMathHits.push_back(VisualMathHit{D2D1::RectF(mathX, mathY, mathX + overlay.fragment.width, mathY + overlay.fragment.height), overlay.sourceStart, overlay.sourceEnd, overlay.progressStart, overlay.progressEnd});
+                        }
+                    }
+                    VisualBlock visualBlock;
+                    visualBlock.rect = fragment.rect;
+                    visualBlock.textOrigin = fragment.origin;
+                    visualBlock.textWidth = fragment.textWidth;
+                    visualBlock.sourceStart = sourceStart;
+                    visualBlock.sourceEnd = sourceEnd;
+                    visualBlock.documentY = fragment.rect.top + scrollOffset;
+                    visualBlock.text = std::move(fragment.display.text);
+                    visualBlock.displayToSource = std::move(fragment.display.displayToSource);
+                    visualBlock.layout = std::move(fragment.layout);
+                    visualBlocks.push_back(std::move(visualBlock));
+                    addVisualLinesForBlock(visualBlocks.size() - 1);
+                }
+                if (quoteFragments.empty())
+                {
+                    VisualBlock placeholder;
+                    placeholder.rect = quoteBoxes.front().rect;
+                    placeholder.textOrigin = D2D1::Point2F(documentLeft + block.block_style.padding_left, y + block.block_style.padding_top);
+                    placeholder.textWidth = documentRight - placeholder.textOrigin.x;
+                    placeholder.sourceStart = block.source_range.start.v;
+                    placeholder.sourceEnd = block.source_range.end.v;
+                    placeholder.documentY = y + scrollOffset;
+                    visualBlocks.push_back(std::move(placeholder));
+                }
+                y = quoteBottom;
+                blockHeightCache[cacheKey] = y - blockStartY;
+                previousBlank = false;
+                continue;
+            }
             IDWriteTextFormat* format = textFormat.Get();
             ID2D1Brush* brush = textBrush.Get();
             float height = 48.0f;
@@ -1509,7 +1726,7 @@ namespace winrt::ElMd
                         showRawMermaid = block.source_range.start.v <= caret && caret <= block.source_range.end.v;
                         if (showRawMermaid || !blockMermaid || !static_cast<bool>(*blockMermaid))
                         {
-                            display = BuildCodeBlockText(block, caret, sourceText);
+                            display = block.code_indented ? BuildIndentedCodeBlockText(block, sourceText) : BuildCodeBlockText(block, caret, sourceText);
                         }
                         else
                         {
@@ -1519,7 +1736,7 @@ namespace winrt::ElMd
                     }
                     else
                     {
-                        display = BuildCodeBlockText(block, caret, sourceText);
+                        display = block.code_indented ? BuildIndentedCodeBlockText(block, sourceText) : BuildCodeBlockText(block, caret, sourceText);
                         if (requestEmbedded && block.language)
                         {
                             auto ranges = treeSitter.Highlight(*block.language, elmd::cps_to_utf8(block.code_text));
@@ -1590,21 +1807,32 @@ namespace winrt::ElMd
                         if (block.callout_title) label += U": " + InlineText(*block.callout_title);
                         AppendGeneratedText(display, label + U"\n", block.source_range.start.v, elmd::InlineStyle::plain());
                     }
-                    else
+                    else if (block.kind == elmd::RenderBlockKind::Footnote)
                     {
                         AppendGeneratedText(display, U"[" + elmd::utf8_to_cps(block.footnote_label) + U"] ", block.source_range.start.v, elmd::InlineStyle::plain());
                     }
-                    for (std::size_t childIndex = 0; childIndex < block.child_blocks.size(); ++childIndex)
-                    {
-                        auto const& child = block.child_blocks[childIndex];
+                    std::function<void(elmd::RenderBlock const&)> appendChild = [&](elmd::RenderBlock const& child) {
                         if (!child.inline_items.empty())
                         {
                             MergeDisplayText(display, BuildDisplayInlineText(child.inline_items, caret, child.content_range.end.v, sourceText, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, documentRight - documentLeft, svgSupported, requestEmbedded));
+                        }
+                        else if (!child.child_blocks.empty())
+                        {
+                            for (std::size_t nestedIndex = 0; nestedIndex < child.child_blocks.size(); ++nestedIndex)
+                            {
+                                appendChild(child.child_blocks[nestedIndex]);
+                                if (nestedIndex + 1 < child.child_blocks.size()) AppendGeneratedText(display, U"\n", child.child_blocks[nestedIndex].content_range.end.v, elmd::InlineStyle::plain());
+                            }
                         }
                         else
                         {
                             AppendSourceText(display, sourceText, child.content_range.start.v, child.content_range.end.v, elmd::InlineStyle::plain(), false);
                         }
+                    };
+                    for (std::size_t childIndex = 0; childIndex < block.child_blocks.size(); ++childIndex)
+                    {
+                        auto const& child = block.child_blocks[childIndex];
+                        appendChild(child);
                         if (childIndex + 1 < block.child_blocks.size()) AppendGeneratedText(display, U"\n", child.content_range.end.v, elmd::InlineStyle::plain());
                     }
                     display.displayToSource.push_back(block.content_range.end.v);
@@ -2750,6 +2978,8 @@ namespace winrt::ElMd
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.accentColor, accentBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.codeTextColor, codeBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.panelColor, panelBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.canvasColor, canvasBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.nestedQuoteColor, nestedQuoteBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.selectionColor, selectionBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.caretColor, caretBrush.GetAddressOf()));
             for (std::size_t index = 0; index < syntaxBrushes.size(); ++index)

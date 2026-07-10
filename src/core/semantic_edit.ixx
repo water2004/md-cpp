@@ -73,7 +73,7 @@ inline std::optional<MarkdownNewlineEdit> markdown_newline_edit(const std::u32st
             marker.push_back(line[pos]);
             marker.push_back(U' ');
             pos += 2;
-        }
+        } else pos = number_start;
     }
 
     if (base_prefix.empty() && marker.empty()) return std::nullopt;
@@ -92,6 +92,46 @@ inline std::optional<MarkdownNewlineEdit> markdown_newline_edit(const std::u32st
     insert += base_prefix;
     insert += marker;
     return MarkdownNewlineEdit{sel, insert, CharOffset(sel.start.v + insert.size())};
+}
+
+inline std::optional<QuoteSourceLine> empty_quote_line_at(const std::u32string& cps, CharRange sel) {
+    if (sel.start.v != sel.end.v) return std::nullopt;
+    auto result = quote_source_line_at(cps, sel.start);
+    if (!result || !result->empty || sel.start.v != result->content_range.end.v) return std::nullopt;
+    return result;
+}
+
+inline std::optional<MarkdownNewlineEdit> empty_container_backspace_edit(const std::u32string& cps, CharRange sel) {
+    if (sel.start.v != sel.end.v) return std::nullopt;
+    auto line_start = find_line_start(cps, sel.start.v);
+    auto line_end = find_line_end(cps, sel.start.v);
+    if (sel.start.v != line_end || line_start == line_end) return std::nullopt;
+    auto line = std::u32string_view(cps).substr(line_start, line_end - line_start);
+    if (line == U"\t" || line == U"    ") {
+        auto erase_start = line_start;
+        if (line_start > 0 && cps[line_start - 1] == U'\n') erase_start = line_start - 1;
+        return MarkdownNewlineEdit{CharRange(CharOffset(erase_start), CharOffset(line_end)), U"", CharOffset(erase_start)};
+    }
+
+    auto quote = empty_quote_line_at(cps, sel);
+    if (!quote) return std::nullopt;
+    auto const& innermost = quote->marker_ranges.back();
+    if (quote->marker_ranges.size() > 1) {
+        auto remaining = std::u32string(cps.begin() + quote->source_range.start.v, cps.begin() + innermost.start.v);
+        if (quote->hard_break_from_previous) {
+            auto edit_start = quote->source_range.start.v - 3;
+            auto replacement = std::u32string(U"\n") + remaining;
+            return MarkdownNewlineEdit{CharRange(CharOffset(edit_start), quote->content_range.end), replacement, CharOffset(edit_start + replacement.size())};
+        }
+        return MarkdownNewlineEdit{CharRange(innermost.start, quote->content_range.end), U"", innermost.start};
+    }
+    auto erase_start = innermost.start.v;
+    if (line_start > 0 && cps[line_start - 1] == U'\n') {
+        erase_start = line_start - 1;
+        if (erase_start >= 2 && cps[erase_start - 1] == U' ' && cps[erase_start - 2] == U' ') erase_start -= 2;
+    }
+    auto erase_end = line_start + line.size();
+    return MarkdownNewlineEdit{CharRange(CharOffset(erase_start), CharOffset(erase_end)), U"", CharOffset(erase_start)};
 }
 
 inline std::size_t markdown_line_prefix_end(const std::u32string& line) {
@@ -322,8 +362,21 @@ inline std::optional<Transaction> semantic_newline_transaction(const std::u32str
     auto plan = plan_newline(text_cps, document, selection);
     switch (plan.intent) {
         case SemanticEditIntent::InsertCodeLineBreak: {
-            Transaction transaction(revision, selection, caret_after(CharOffset(sel.start.v + 1)), TransactionReason::Typing);
-            transaction.with_edit(sel, U"\n");
+            if (plan.block_index && document.blocks[*plan.block_index].code_indented && selection.is_caret()) {
+                auto line_start = find_line_start(text_cps, sel.start.v);
+                auto line_end = find_line_end(text_cps, sel.start.v);
+                bool empty_indented_line = sel.start.v == line_end && line_end > line_start;
+                for (auto index = line_start; empty_indented_line && index < line_end; ++index) empty_indented_line = is_space_or_tab(text_cps[index]);
+                if (empty_indented_line) {
+                    Transaction transaction(revision, selection, caret_after(CharOffset(line_start)), TransactionReason::StructuralCommand);
+                    transaction.with_edit(CharRange(CharOffset(line_start), CharOffset(line_end)), U"");
+                    return transaction;
+                }
+            }
+            auto insertion = std::u32string(U"\n");
+            if (plan.block_index && document.blocks[*plan.block_index].code_indented) insertion += U"    ";
+            Transaction transaction(revision, selection, caret_after(CharOffset(sel.start.v + insertion.size())), TransactionReason::Typing);
+            transaction.with_edit(sel, std::move(insertion));
             return transaction;
         }
         case SemanticEditIntent::InsertEmptySiblingBlock: {
@@ -370,7 +423,45 @@ inline std::optional<Transaction> semantic_newline_transaction(const std::u32str
         }
         case SemanticEditIntent::ContinueContainerLine: {
             auto markdown_edit = markdown_newline_edit(text_cps, sel);
-            Transaction transaction(revision, selection, caret_after(markdown_edit ? markdown_edit->caret : CharOffset(sel.start.v + 1)), TransactionReason::StructuralCommand);
+            bool quote_block = markdown_edit && plan.block_index && document.blocks[*plan.block_index].kind == BlockKind::BlockQuote;
+            bool continued_quote = quote_block && markdown_edit->range.start.v == sel.start.v && markdown_edit->range.end.v == sel.end.v && markdown_edit->text.starts_with(U"\n");
+            if (continued_quote) {
+                markdown_edit->text.insert(markdown_edit->text.begin(), 2, U' ');
+                markdown_edit->caret = CharOffset(sel.start.v + markdown_edit->text.size());
+            }
+            auto empty_quote = quote_block && markdown_edit->text.empty() ? empty_quote_line_at(text_cps, sel) : std::nullopt;
+            if (empty_quote && empty_quote->marker_ranges.size() > 1) {
+                auto const& innermost = empty_quote->marker_ranges.back();
+                auto remaining = std::u32string(text_cps.begin() + empty_quote->source_range.start.v, text_cps.begin() + innermost.start.v);
+                if (empty_quote->hard_break_from_previous) {
+                    auto edit_start = empty_quote->source_range.start.v - 3;
+                    auto replacement = std::u32string(U"\n") + remaining;
+                    auto after = caret_after(CharOffset(edit_start + replacement.size()));
+                    after.affinity = TextAffinity::Upstream;
+                    Transaction transaction(revision, selection, after, TransactionReason::StructuralCommand);
+                    transaction.with_edit(CharRange(CharOffset(edit_start), empty_quote->content_range.end), replacement);
+                    return transaction;
+                }
+                auto after = caret_after(innermost.start);
+                after.affinity = TextAffinity::Upstream;
+                Transaction transaction(revision, selection, after, TransactionReason::StructuralCommand);
+                transaction.with_edit(CharRange(innermost.start, empty_quote->content_range.end), U"");
+                return transaction;
+            }
+            bool exits_hard_break_quote = quote_block && markdown_edit->text.empty() && markdown_edit->range.start.v >= 3
+                && text_cps[markdown_edit->range.start.v - 1] == U'\n'
+                && text_cps[markdown_edit->range.start.v - 2] == U' '
+                && text_cps[markdown_edit->range.start.v - 3] == U' ';
+            if (exits_hard_break_quote) {
+                auto edit_start = markdown_edit->range.start.v - 3;
+                auto has_terminating_newline = markdown_edit->range.end.v < text_cps.size() && text_cps[markdown_edit->range.end.v] == U'\n';
+                Transaction transaction(revision, selection, caret_after(CharOffset(edit_start + 1)), TransactionReason::StructuralCommand);
+                transaction.with_edit(CharRange(CharOffset(edit_start), markdown_edit->range.end), has_terminating_newline ? U"" : U"\n");
+                return transaction;
+            }
+            auto after = caret_after(markdown_edit ? markdown_edit->caret : CharOffset(sel.start.v + 1));
+            if (continued_quote) after.affinity = TextAffinity::Upstream;
+            Transaction transaction(revision, selection, after, TransactionReason::StructuralCommand);
             if (markdown_edit) transaction.with_edit(markdown_edit->range, markdown_edit->text);
             else transaction.with_edit(sel, U"\n");
             return transaction;
@@ -406,6 +497,7 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
     auto sel = selection.normalized_range();
     std::size_t len = text_cps.size();
     auto caret_after = [&](CharOffset p) { return Selection::caret(p); };
+    auto backward_caret = [&](CharOffset p) { auto result = Selection::caret(p); result.affinity = TextAffinity::Upstream; return result; };
     auto extend_after = [&](CharOffset p) {
         Selection s; s.anchor = selection.anchor; s.active = p;
         s.affinity = (p.v < selection.anchor.v) ? TextAffinity::Upstream : TextAffinity::Downstream;
@@ -448,7 +540,7 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
                 auto cell = table_content_cell_at(*table, sel.start.v);
                 if (!cell || sel.start.v <= cell->content_range.start.v || sel.start.v > cell->content_range.end.v) return std::nullopt;
                 auto previous = (std::max)(prev_grapheme_boundary_char(text_cps, sel.start.v), cell->content_range.start.v);
-                Transaction transaction(revision, selection, caret_after(CharOffset(previous)), TransactionReason::Delete);
+                Transaction transaction(revision, selection, backward_caret(CharOffset(previous)), TransactionReason::Delete);
                 transaction.with_edit(CharRange(CharOffset(previous), sel.start), U"");
                 return transaction;
             }
@@ -458,11 +550,31 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
                 t.with_edit(sel, U"");
                 return t;
             }
+            if (auto quote_line = quote_source_line_at(text_cps, sel.start); quote_line && !quote_line->empty && sel.start == quote_line->content_range.start && !quote_line->marker_ranges.empty()) {
+                std::optional<QuoteSourceLine> previous_line;
+                if (quote_line->source_range.start.v > 0) previous_line = quote_source_line_at(text_cps, CharOffset(quote_line->source_range.start.v - 1));
+                if (previous_line && previous_line->marker_ranges.size() == quote_line->marker_ranges.size()) {
+                    auto edit_start = previous_line->content_range.end.v;
+                    if (edit_start >= 2 && text_cps[edit_start - 1] == U' ' && text_cps[edit_start - 2] == U' ') edit_start -= 2;
+                    Transaction transaction(revision, selection, backward_caret(CharOffset(edit_start)), TransactionReason::StructuralCommand);
+                    transaction.with_edit(CharRange(CharOffset(edit_start), quote_line->content_range.start), U"");
+                    return transaction;
+                }
+                auto const& innermost = quote_line->marker_ranges.back();
+                Transaction transaction(revision, selection, backward_caret(innermost.start), TransactionReason::StructuralCommand);
+                transaction.with_edit(innermost, U"");
+                return transaction;
+            }
+            if (auto container_edit = empty_container_backspace_edit(text_cps, sel)) {
+                Transaction transaction(revision, selection, backward_caret(container_edit->caret), TransactionReason::StructuralCommand);
+                transaction.with_edit(container_edit->range, container_edit->text);
+                return transaction;
+            }
             std::size_t pos = sel.start.v;
             if (pos == 0) return std::nullopt;
             std::size_t prev = prev_grapheme_boundary_char(text_cps, pos);
             if (table_source_at(text_cps, prev)) return std::nullopt;
-            Transaction t(revision, selection, caret_after(CharOffset(prev)), TransactionReason::Delete);
+            Transaction t(revision, selection, backward_caret(CharOffset(prev)), TransactionReason::Delete);
             t.with_edit(CharRange(CharOffset(prev), CharOffset(pos)), U"");
             return t;
         }
