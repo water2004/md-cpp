@@ -343,6 +343,34 @@ ELMD_TEST(test_parse_consecutive_unordered_list_as_one_block) {
     ELMD_CHECK(!out.document.blocks[0].list_ordered);
 }
 
+ELMD_TEST(test_parse_list_items_with_full_inline_syntax) {
+    auto out = parse_text(1, "- before $x^2$ and **bold** and `code`\n- next \\(y\\)\n");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    auto const& list = out.document.blocks[0];
+    ELMD_CHECK(list.kind == BlockKind::List);
+    ELMD_CHECK_EQ(list.list_items.size(), 2u);
+    auto const& first = list.list_items[0].children[0].children;
+    auto const& second = list.list_items[1].children[0].children;
+    ELMD_CHECK(inlines_have_kind(first, InlineKind::InlineMath));
+    ELMD_CHECK(inlines_have_kind(first, InlineKind::Strong));
+    ELMD_CHECK(inlines_have_kind(first, InlineKind::InlineCode));
+    ELMD_CHECK(inlines_have_kind(second, InlineKind::InlineMath));
+    auto math = std::find_if(first.begin(), first.end(), [](auto const& node) { return node.kind == InlineKind::InlineMath; });
+    ELMD_CHECK(math != first.end());
+    auto range = out.document.source_map.find_node_by_id(math->id);
+    ELMD_CHECK(range != nullptr);
+    ELMD_CHECK_EQ(range->source_range.start.v, 9u);
+    ELMD_CHECK_EQ(range->source_range.end.v, 14u);
+    ELMD_CHECK_EQ(range->content_range.start.v, 10u);
+    ELMD_CHECK_EQ(range->content_range.end.v, 13u);
+
+    auto bounded = parse_text(2, "- `open\n- close`\n");
+    ELMD_CHECK_EQ(bounded.document.blocks.size(), 1u);
+    ELMD_CHECK_EQ(bounded.document.blocks[0].list_items.size(), 2u);
+    auto const& bounded_first = bounded.document.blocks[0].list_items[0].children[0].children;
+    ELMD_CHECK(!inlines_have_kind(bounded_first, InlineKind::InlineCode));
+}
+
 ELMD_TEST(test_parse_ordered_list_preserves_numbers_and_delimiter) {
     auto out = parse_text(1, "9) alpha\n10) beta\n");
     ELMD_CHECK_EQ(out.document.blocks.size(), 1u);

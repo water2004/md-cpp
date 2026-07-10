@@ -150,6 +150,20 @@ ELMD_TEST(unordered_list_preserves_source_markers_and_presents_bullets) {
     for (auto const& marker : display_markers) ELMD_CHECK(marker == U"\u2022 ");
 }
 
+ELMD_TEST(list_inline_math_reaches_the_render_model_with_exact_ranges) {
+    auto m = build_model("- before $x^2$ after\n- next $y$\n");
+    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    std::vector<CharRange> math_ranges;
+    for (auto const& item : m.blocks[0].inline_items) {
+        if (item.kind == InlineRenderItem::Kind::Math) math_ranges.push_back(item.source_range);
+    }
+    ELMD_CHECK_EQ(math_ranges.size(), 2u);
+    ELMD_CHECK_EQ(math_ranges[0].start.v, 9u);
+    ELMD_CHECK_EQ(math_ranges[0].end.v, 14u);
+    ELMD_CHECK_EQ(math_ranges[1].start.v, 28u);
+    ELMD_CHECK_EQ(math_ranges[1].end.v, 31u);
+}
+
 ELMD_TEST(table_render_cells_keep_their_own_source_ranges) {
     auto m = build_model("| A | B |\n| :--- | ---: |\n| 1 | 2 |\n");
     ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Table);
