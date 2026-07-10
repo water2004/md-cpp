@@ -113,8 +113,34 @@ public:
         while (i < cps.size() && cps[i] == marker) ++i;
         return i - pos >= 3;
     }
+    bool line_is_thematic_break(std::size_t start, std::size_t* end = nullptr) const {
+        std::size_t line_end = start;
+        while (line_end < cps.size() && cps[line_end] != U'\n') ++line_end;
+        std::size_t cursor = start;
+        std::size_t leading_spaces = 0;
+        while (cursor < line_end && cps[cursor] == U' ' && leading_spaces < 4) {
+            ++cursor;
+            ++leading_spaces;
+        }
+        if (leading_spaces > 3 || cursor >= line_end) return false;
+        auto marker = cps[cursor];
+        if (marker != U'-' && marker != U'*' && marker != U'_') return false;
+        std::size_t count = 0;
+        for (; cursor < line_end; ++cursor) {
+            auto value = cps[cursor];
+            if (value == marker) {
+                ++count;
+                continue;
+            }
+            if (value != U' ' && value != U'\t') return false;
+        }
+        if (count < 3) return false;
+        if (end) *end = line_end;
+        return true;
+    }
     bool line_starts_interrupting_block() const {
         if (!peek_line_start()) return false;
+        if (line_is_thematic_break(pos)) return true;
         if (peek1() == U'>' || line_starts_fenced_code()) return true;
         if (peek1() == U'#') {
             std::size_t cursor = pos;
@@ -128,9 +154,6 @@ public:
             while (cursor < cps.size() && is_ascii_digit_(cps[cursor])) ++cursor;
             if (cursor + 1 < cps.size() && (cps[cursor] == U'.' || cps[cursor] == U')') && cps[cursor + 1] == U' ') return true;
         }
-        if ((peek1() == U'-' && peek(1) == U'-' && peek(2) == U'-') ||
-            (peek1() == U'*' && peek(1) == U'*' && peek(2) == U'*') ||
-            (peek1() == U'_' && peek(1) == U'_' && peek(2) == U'_')) return true;
         return false;
     }
     // read current line up to \n (not consumed). Implementation note: READ-ONLY.
@@ -201,21 +224,23 @@ public:
 
     // ---- frontmatter ----
     std::optional<BlockNode> try_parse_frontmatter() {
-        if (!(peek1()=='-' && peek(1)=='-' && peek(2)=='-')) return std::nullopt;
-        std::size_t save = pos;
-        advance_n(3);
+        if (pos != 0) return std::nullopt;
+        auto [opening_line, opening_length] = rest_of_line();
+        auto opening = trim_utf8(cps_to_utf8(opening_line));
         FrontmatterFormat fmt = FrontmatterFormat::Yaml;
-        auto [first_line, _] = rest_of_line();
-        auto t = cps_to_utf8(first_line);
-        auto tr = trim_utf8(t);
-        if (tr == "toml") fmt = FrontmatterFormat::Toml;
-        else if (tr == "json") fmt = FrontmatterFormat::Json;
-        else if (!tr.empty()) {} // default yaml
+        if (opening == "---") fmt = FrontmatterFormat::Yaml;
+        else if (opening == "---toml" || opening == "--- toml") fmt = FrontmatterFormat::Toml;
+        else if (opening == "---json" || opening == "--- json") fmt = FrontmatterFormat::Json;
+        else return std::nullopt;
+        std::size_t save = pos;
+        advance_n(opening_length);
+        if (peek1() == U'\n') advance();
         while (true) {
             if (eof()) { pos = save; return std::nullopt; }
-            if (peek_line_start() && peek1()=='-' && peek(1)=='-' && peek(2)=='-') {
+            auto [closing_line, closing_length] = rest_of_line();
+            if (peek_line_start() && trim_utf8(cps_to_utf8(closing_line)) == "---") {
                 std::size_t closing_start = pos;
-                advance_n(3);
+                advance_n(closing_length);
                 if (peek1() == '\n') advance();
                 std::size_t content_end = closing_start;
                 // slice by CHAR indices into UTF8 — safe for CJK
@@ -1307,27 +1332,8 @@ public:
     // ---- thematic break ----
     std::optional<BlockNode> try_parse_thematic_break() {
         std::size_t start = pos;
-        std::size_t line_end = pos;
-        while (line_end < cps.size() && cps[line_end] != U'\n') ++line_end;
-        std::size_t cursor = start;
-        std::size_t leading_spaces = 0;
-        while (cursor < line_end && cps[cursor] == U' ' && leading_spaces < 4) {
-            ++cursor;
-            ++leading_spaces;
-        }
-        if (leading_spaces > 3 || cursor >= line_end) return std::nullopt;
-        char32_t marker = cps[cursor];
-        if (marker != U'-' && marker != U'*' && marker != U'_') return std::nullopt;
-        std::size_t count = 0;
-        for (; cursor < line_end; ++cursor) {
-            auto value = cps[cursor];
-            if (value == marker) {
-                ++count;
-                continue;
-            }
-            if (value != U' ' && value != U'\t') return std::nullopt;
-        }
-        if (count < 3) return std::nullopt;
+        std::size_t line_end = start;
+        if (!line_is_thematic_break(start, &line_end)) return std::nullopt;
         pos = line_end;
         if (peek1() == '\n') advance();
         NodeId id = next_node_id();

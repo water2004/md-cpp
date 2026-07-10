@@ -254,6 +254,39 @@ ELMD_TEST(test_thematic_break_allows_commonmark_marker_spacing) {
     }
 }
 
+ELMD_TEST(test_thematic_break_accepts_arbitrarily_long_matching_marker_runs) {
+    for (auto const& source : {std::string("----"), std::string("******"), std::string("_________________")}) {
+        auto out = parse_text(1, source);
+        ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+        ELMD_CHECK(out.document.blocks[0].kind == BlockKind::ThematicBreak);
+    }
+}
+
+ELMD_TEST(test_thematic_break_with_spacing_interrupts_a_paragraph) {
+    auto out = parse_text(1, "before\n_ _ _ _\nafter");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 3u);
+    ELMD_CHECK(out.document.blocks[0].kind == BlockKind::Paragraph);
+    ELMD_CHECK(out.document.blocks[1].kind == BlockKind::ThematicBreak);
+    ELMD_CHECK(out.document.blocks[2].kind == BlockKind::Paragraph);
+}
+
+ELMD_TEST(test_long_dash_rules_are_not_frontmatter_delimiters) {
+    auto out = parse_text(1, "------\nbody\n------");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 3u);
+    ELMD_CHECK(out.document.blocks[0].kind == BlockKind::ThematicBreak);
+    ELMD_CHECK(out.document.blocks[1].kind == BlockKind::Paragraph);
+    ELMD_CHECK(out.document.blocks[2].kind == BlockKind::ThematicBreak);
+    ELMD_CHECK(!blocks_has_kind(out.document.blocks, BlockKind::Frontmatter));
+}
+
+ELMD_TEST(test_frontmatter_is_only_recognized_at_document_start) {
+    auto out = parse_text(1, "body\n---\ntitle: nope\n---");
+    ELMD_CHECK(!blocks_has_kind(out.document.blocks, BlockKind::Frontmatter));
+    ELMD_CHECK_EQ(std::count_if(out.document.blocks.begin(), out.document.blocks.end(), [](auto const& block) {
+        return block.kind == BlockKind::ThematicBreak;
+    }), 2);
+}
+
 ELMD_TEST(test_parse_inline_paren_math) {
     auto out = parse_text(1, "Speed \\(v=\\frac{d}{t}\\) now\n");
     auto* p = first_of(out.document.blocks, BlockKind::Paragraph);
