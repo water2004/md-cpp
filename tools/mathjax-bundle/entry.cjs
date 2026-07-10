@@ -48,6 +48,6 @@ globalThis.ElMdMathJax = {
       ex: (Number(em) || 16) * 0.5,
       containerWidth: Number(width) || 1280
     });
-    return adaptor.outerHTML(node);
+    return adaptor.serializeXML(node);
   }
 };

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <functional>
 #include <optional>
@@ -11,7 +12,8 @@ namespace winrt::ElMd
 {
     struct MathJaxSvgFragment
     {
-        std::string svg;
+        std::uint64_t renderId = 0;
+        std::shared_ptr<std::string const> svg;
         float width = 0.0f;
         float height = 0.0f;
         float verticalAlign = 0.0f;

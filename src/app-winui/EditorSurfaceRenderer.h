@@ -2,6 +2,7 @@
 
 #include "MathJaxRenderer.h"
 #include "MermaidRenderer.h"
+#include "SvgNormalizer.h"
 #include "TreeSitterHighlighter.h"
 
 namespace winrt::ElMd
@@ -74,6 +75,12 @@ namespace winrt::ElMd
             ::Microsoft::WRL::ComPtr<ID2D1Bitmap1> bitmap;
             float width = 0.0f;
             float height = 0.0f;
+            std::size_t bytes = 0;
+        };
+
+        struct CachedSvgDocument
+        {
+            ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> document;
             std::size_t bytes = 0;
         };
 
@@ -205,6 +212,7 @@ namespace winrt::ElMd
         std::array<::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush>, 11> syntaxBrushes;
         MathJaxRenderer mathJax;
         MermaidRenderer mermaid;
+        SvgNormalizer svgNormalizer;
         TreeSitterHighlighter treeSitter;
         std::function<void()> invalidateCallback;
         std::atomic_bool mathInvalidationQueued = false;
@@ -218,6 +226,9 @@ namespace winrt::ElMd
         std::unordered_map<std::wstring, CachedRasterImage> rasterImageCache;
         std::deque<std::wstring> rasterImageCacheOrder;
         std::size_t rasterImageCacheBytes = 0;
+        std::unordered_map<std::uint64_t, CachedSvgDocument> svgDocumentCache;
+        std::deque<std::uint64_t> svgDocumentCacheOrder;
+        std::size_t svgDocumentCacheBytes = 0;
         std::optional<D2D1_POINT_2F> pointerPosition;
         std::optional<TableAction> draggedTableAction;
         std::optional<std::size_t> tableDropIndex;

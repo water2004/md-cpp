@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -10,6 +11,7 @@ namespace winrt::ElMd
 {
     struct MermaidSvg
     {
+        std::uint64_t renderId = 0;
         std::string svg;
         std::string error;
         float width = 0.0f;

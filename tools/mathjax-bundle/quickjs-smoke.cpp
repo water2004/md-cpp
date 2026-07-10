@@ -1,8 +1,11 @@
 #include <chrono>
+#include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -69,6 +72,86 @@ struct SvgValidator
     }
 };
 
+struct SvgNormalizerRuntime
+{
+    using Create = void* (*)();
+    using Destroy = void (*)(void*);
+    using Normalize = std::int32_t (*)(void*, std::uint8_t const*, std::size_t, float, std::uint8_t**, std::size_t*);
+    using FreeBuffer = void (*)(std::uint8_t*, std::size_t);
+
+    HMODULE module = nullptr;
+    void* context = nullptr;
+    Destroy destroy = nullptr;
+    Normalize normalize = nullptr;
+    FreeBuffer freeBuffer = nullptr;
+
+    SvgNormalizerRuntime()
+    {
+        module = LoadLibraryW(L"../../src/app-winui/third_party/usvg-normalizer/bin/x64/elmd_svg_normalizer.dll");
+        if (!module) return;
+        auto create = reinterpret_cast<Create>(GetProcAddress(module, "elmd_svg_normalizer_create"));
+        destroy = reinterpret_cast<Destroy>(GetProcAddress(module, "elmd_svg_normalizer_destroy"));
+        normalize = reinterpret_cast<Normalize>(GetProcAddress(module, "elmd_svg_normalize"));
+        freeBuffer = reinterpret_cast<FreeBuffer>(GetProcAddress(module, "elmd_svg_buffer_destroy"));
+        if (create && destroy && normalize && freeBuffer) context = create();
+    }
+
+    ~SvgNormalizerRuntime()
+    {
+        if (context && destroy) destroy(context);
+        if (module) FreeLibrary(module);
+    }
+
+    bool Process(std::string_view source, std::string& output) const
+    {
+        if (!context) return false;
+        std::uint8_t* data = nullptr;
+        std::size_t length = 0;
+        auto status = normalize(context, reinterpret_cast<std::uint8_t const*>(source.data()), source.size(), 18.0f, &data, &length);
+        if (data && length > 0) output.assign(reinterpret_cast<char const*>(data), length);
+        if (data) freeBuffer(data, length);
+        return status == 0 && !output.empty();
+    }
+};
+
+std::size_t SvgElementEnd(std::string_view markup, std::size_t start)
+{
+    std::size_t depth = 0;
+    auto cursor = start;
+    while (cursor < markup.size())
+    {
+        auto open = markup.find("<svg", cursor);
+        auto close = markup.find("</svg>", cursor);
+        if (close == std::string_view::npos) return std::string_view::npos;
+        if (open != std::string_view::npos && open < close)
+        {
+            auto tagEnd = markup.find('>', open + 4);
+            if (tagEnd == std::string_view::npos) return std::string_view::npos;
+            if (tagEnd == open || markup[tagEnd - 1] != '/') ++depth;
+            cursor = tagEnd + 1;
+            continue;
+        }
+        if (depth == 0) return std::string_view::npos;
+        --depth;
+        cursor = close + std::string_view("</svg>").size();
+        if (depth == 0) return cursor;
+    }
+    return std::string_view::npos;
+}
+
+std::optional<std::string_view> SvgAttribute(std::string_view source, std::string_view name)
+{
+    auto rootEnd = source.find('>');
+    if (rootEnd == std::string_view::npos) return std::nullopt;
+    auto marker = std::string(name) + "=\"";
+    auto start = source.find(marker);
+    if (start == std::string_view::npos || start >= rootEnd) return std::nullopt;
+    start += marker.size();
+    auto end = source.find('"', start);
+    if (end == std::string_view::npos || end > rootEnd) return std::nullopt;
+    return source.substr(start, end - start);
+}
+
 JSValue LoadFontModule(JSContext* context, JSValueConst, int count, JSValueConst* arguments)
 {
     if (count != 1) return JS_ThrowTypeError(context, "Expected one module");
@@ -116,6 +199,8 @@ int main()
     auto api = JS_GetPropertyStr(context, global, "ElMdMathJax");
     auto render = JS_GetPropertyStr(context, api, "render");
     SvgValidator svgValidator;
+    SvgNormalizerRuntime svgNormalizer;
+    if (!svgNormalizer.context) return 7;
     std::vector<std::string> formulas{
         R"(\exists\delta>0,s.t. |x'-x_0|<\delta,0<|x''-x_0|<\delta)",
         "y=x",
@@ -156,58 +241,51 @@ int main()
         {
             auto text = JS_ToCString(context, result);
             if (!text || std::string_view(text).find("<svg") == std::string_view::npos) return 2;
-            if (index == 0)
+            std::string_view output(text);
+            auto first = output.find("<svg");
+            if (first == std::string_view::npos) return 3;
+            std::size_t cursor = 0;
+            std::size_t fragment = 0;
+            while ((cursor = output.find("<svg", cursor)) != std::string_view::npos)
             {
-                std::string_view output(text);
-                auto first = output.find("<svg");
-                if (first == std::string_view::npos || output.find("<svg", first + 4) == std::string_view::npos) return 3;
-                std::size_t cursor = 0;
-                std::size_t fragment = 0;
-                while ((cursor = output.find("<svg", cursor)) != std::string_view::npos)
+                auto end = SvgElementEnd(output, cursor);
+                if (end == std::string_view::npos) return 5;
+                std::string compatible(output.substr(cursor, end - cursor));
+                std::size_t color = 0;
+                while ((color = compatible.find("currentColor", color)) != std::string::npos)
                 {
-                    auto end = output.find("</svg>", cursor);
-                    if (end == std::string_view::npos) return 5;
-                    end += std::string_view("</svg>").size();
-                    auto source = output.substr(cursor, end - cursor);
-                    std::string compatible(source);
-                    std::size_t color = 0;
-                    while ((color = compatible.find("currentColor", color)) != std::string::npos)
-                    {
-                        compatible.replace(color, std::string_view("currentColor").size(), "#000000");
-                        color += 7;
-                    }
-                    auto style = compatible.find(" style=\"");
-                    if (style != std::string::npos)
-                    {
-                        auto endStyle = compatible.find('"', style + 8);
-                        if (endStyle != std::string::npos) compatible.erase(style, endStyle - style + 1);
-                    }
-                    auto removeAttribute = [&](std::string_view name)
-                    {
-                        auto marker = " " + std::string(name) + "=\"";
-                        std::size_t position = 0;
-                        while ((position = compatible.find(marker, position)) != std::string::npos)
-                        {
-                            auto endAttribute = compatible.find('"', position + marker.size());
-                            if (endAttribute == std::string::npos) break;
-                            compatible.erase(position, endAttribute - position + 1);
-                        }
-                    };
-                    removeAttribute("role");
-                    removeAttribute("focusable");
-                    removeAttribute("data-mml-node");
-                    removeAttribute("data-latex");
-                    removeAttribute("data-c");
-                    auto validation = svgValidator.Validate(compatible);
-                    if (FAILED(validation))
-                    {
-                        std::cerr << "D2D SVG fragment " << fragment << " failed: 0x" << std::hex << static_cast<unsigned long>(validation) << '\n';
-                        std::ofstream("quickjs-failed.svg", std::ios::binary) << source;
-                        return 6;
-                    }
-                    cursor = end;
-                    ++fragment;
+                    compatible.replace(color, std::string_view("currentColor").size(), "#000000");
+                    color += 7;
                 }
+                std::string normalized;
+                if (!svgNormalizer.Process(compatible, normalized))
+                {
+                    std::cerr << "SVG normalization failed at formula " << index << ", fragment " << fragment << ": " << normalized << '\n';
+                    std::ofstream("quickjs-failed.svg", std::ios::binary) << compatible;
+                    return 8;
+                }
+                if (index == 0 && fragment == 0)
+                {
+                    auto sourceWidth = SvgAttribute(compatible, "width");
+                    auto normalizedWidth = SvgAttribute(normalized, "width");
+                    if (!sourceWidth || !sourceWidth->ends_with("ex") || !normalizedWidth) return 9;
+                    auto expected = std::stof(std::string(sourceWidth->substr(0, sourceWidth->size() - 2))) * 18.0f * 0.5f;
+                    auto actual = std::stof(std::string(*normalizedWidth));
+                    if (std::abs(expected - actual) > 0.02f)
+                    {
+                        std::cerr << "SVG font-size conversion failed: expected " << expected << ", got " << actual << '\n';
+                        return 10;
+                    }
+                }
+                auto validation = svgValidator.Validate(normalized);
+                if (FAILED(validation))
+                {
+                    std::cerr << "D2D SVG fragment " << fragment << " failed: 0x" << std::hex << static_cast<unsigned long>(validation) << '\n';
+                    std::ofstream("quickjs-failed.svg", std::ios::binary) << normalized;
+                    return 6;
+                }
+                cursor = end;
+                ++fragment;
             }
             JS_FreeCString(context, text);
         }

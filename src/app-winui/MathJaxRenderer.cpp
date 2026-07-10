@@ -119,6 +119,31 @@ namespace
         if (spacingEnd == std::string_view::npos) spacingEnd = markup.size();
         return (std::max)(0.0f, ParseLength(markup.substr(spacingStart, spacingEnd - spacingStart), em) + em);
     }
+
+    std::optional<std::size_t> SvgElementEnd(std::string_view markup, std::size_t start)
+    {
+        std::size_t depth = 0;
+        auto cursor = start;
+        while (cursor < markup.size())
+        {
+            auto open = markup.find("<svg", cursor);
+            auto close = markup.find("</svg>", cursor);
+            if (close == std::string_view::npos) return std::nullopt;
+            if (open != std::string_view::npos && open < close)
+            {
+                auto tagEnd = markup.find('>', open + 4);
+                if (tagEnd == std::string_view::npos) return std::nullopt;
+                if (tagEnd == open || markup[tagEnd - 1] != '/') ++depth;
+                cursor = tagEnd + 1;
+                continue;
+            }
+            if (depth == 0) return std::nullopt;
+            --depth;
+            cursor = close + std::string_view("</svg>").size();
+            if (depth == 0) return cursor;
+        }
+        return std::nullopt;
+    }
 }
 
 namespace winrt::ElMd
@@ -300,14 +325,13 @@ namespace winrt::ElMd
             {
                 auto svgStart = output.find("<svg", cursor);
                 if (svgStart == std::string::npos) break;
-                auto svgEnd = output.find("</svg>", svgStart);
-                if (svgEnd == std::string::npos) break;
-                svgEnd += std::string_view("</svg>").size();
+                auto svgEnd = SvgElementEnd(output, svgStart);
+                if (!svgEnd) break;
                 MathJaxSvgFragment fragment;
-                fragment.svg = output.substr(svgStart, svgEnd - svgStart);
-                fragment.width = AttributeLength(fragment.svg, "width", request.em);
-                fragment.height = AttributeLength(fragment.svg, "height", request.em);
-                fragment.verticalAlign = VerticalAlignment(fragment.svg, request.em);
+                fragment.svg = std::make_shared<std::string const>(output.substr(svgStart, *svgEnd - svgStart));
+                fragment.width = AttributeLength(*fragment.svg, "width", request.em);
+                fragment.height = AttributeLength(*fragment.svg, "height", request.em);
+                fragment.verticalAlign = VerticalAlignment(*fragment.svg, request.em);
                 if (!rendered.fragments.empty())
                 {
                     auto between = std::string_view(output).substr(previousEnd, svgStart - previousEnd);
@@ -322,8 +346,8 @@ namespace winrt::ElMd
                     descent = (std::max)(descent, fragment.height - baseline);
                     rendered.fragments.push_back(std::move(fragment));
                 }
-                previousEnd = svgEnd;
-                cursor = svgEnd;
+                previousEnd = *svgEnd;
+                cursor = *svgEnd;
             }
             rendered.height = ascent + descent;
             rendered.verticalAlign = -descent;
@@ -334,21 +358,21 @@ namespace winrt::ElMd
         static std::size_t ResultBytes(MathJaxSvg const& result)
         {
             std::size_t bytes = sizeof(result);
-            for (auto const& fragment : result.fragments) bytes += sizeof(fragment) + fragment.svg.size();
+            for (auto const& fragment : result.fragments) bytes += sizeof(fragment) + (fragment.svg ? fragment.svg->size() : 0);
             return bytes + result.error.size();
         }
 
         void Store(Request const& request, MathJaxSvg result)
         {
             constexpr std::size_t budget = 16 * 1024 * 1024;
-            auto bytes = ResultBytes(result);
-            while ((!cacheOrder.empty()) && (cacheBytes + bytes > budget || cache.size() >= 128))
+            auto bytes = request.key.size() + ResultBytes(result);
+            while ((!cacheOrder.empty()) && (cacheBytes + bytes > budget || cache.size() >= 4096))
             {
                 auto oldest = std::move(cacheOrder.front());
                 cacheOrder.pop_front();
                 auto found = cache.find(oldest);
                 if (found == cache.end()) continue;
-                cacheBytes -= ResultBytes(found->second);
+                cacheBytes -= found->first.size() + ResultBytes(found->second);
                 cache.erase(found);
             }
             if (bytes <= budget)
@@ -440,6 +464,11 @@ namespace winrt::ElMd
         if (!allowQueue) return std::nullopt;
         if (state->queued.insert(key).second)
         {
+            while (state->requests.size() >= 256)
+            {
+                state->queued.erase(state->requests.front().key);
+                state->requests.pop_front();
+            }
             state->requests.push_back(State::Request{ key, std::string(tex), display, em, containerWidth, state->generation });
             state->ready.notify_one();
         }

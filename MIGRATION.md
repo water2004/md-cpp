@@ -16,8 +16,9 @@
 
 WebView2 / 浏览器引擎 / DOM / CSS 布局不得作为编辑区或参与文本布局；唯一例外是两个
 隔离、排队、只输出 SVG 的嵌入内容转换器：单 QuickJS worker 运行 MathJax 4，单隐藏
-WebView2 运行 Mermaid。生成的 SVG 交回 WinUI 3 + Direct2D 原生绘制，转换器不接收
-键鼠输入，也不保存 Markdown 状态。
+WebView2 运行 Mermaid。两路 SVG 进入同一个后台 usvg 标准化队列，把文字、marker 和
+不兼容节点规范为 path-only SVG，再交回 WinUI 3 的 `ID2D1SvgDocument` 原生矢量绘制；
+转换器不接收键鼠输入，也不保存 Markdown 状态。
 
 RichEditBox / TextBox / RichTextBlock 作为编辑区 / 把 Markdown 转 HTML 显示 /
 HtmlBlock / HtmlInline / HtmlFallbackBlock / HTML parser-sanitizer-renderer /
@@ -34,7 +35,7 @@ script 执行 / iframe / 把 `<img>` 当图片 / 把 `<table>` 当表格 /
 | markdown-parse | `src/core/parser.ixx` | ✅ CommonMark/GFM、连续列表/任务列表、表格、数学、脚注、callout、TOC、frontmatter |
 | editor-core | `src/core/{editor,command,transaction,undo,selection,input,scheduler,caret}.ixx` | ✅ 已迁移（命令 nullopt 项与 Rust 保持一致，editor 层处理） |
 | editor-outline | `src/core/{outline,slug}.ixx` | ✅ 已迁移 |
-| math-render | `src/core/math_renderer.ixx` + `src/app-winui/MathJaxRenderer.*` | ✅ fallback + 单 QuickJS 队列/cache + MathJax 4/NewCM 动态字体 |
+| math-render | `src/core/math_renderer.ixx` + `src/app-winui/{MathJaxRenderer,SvgNormalizer}.*` | ✅ fallback + MathJax 4/NewCM 动态字体 + usvg path-only 标准化 |
 | editor-render | `src/core/{render_model,render_builder}.ixx` | ✅ 已迁移 |
 | editor-layout | core layout + `src/app-winui/EditorSurfaceRenderer.*` | ✅ DirectWrite 测量/命中测试、视口虚拟化、高度缓存、原生嵌入块绘制 |
 | storage | `src/core/storage.ixx` | ✅ 新增（file_io+assets） |
@@ -136,14 +137,15 @@ core 侧只接收规范定义的 `TextInputEvent`，不碰 Windows API。
 打开文件后在后台线程构建文档；编辑走增量 parser。ParseOutput/RenderModel/LayoutTree
 均带 revision，旧 revision 结果丢弃。原生 renderer 只为 viewport 及预取区建立
 DirectWrite layout，离屏块复用高度缓存；Tree-sitter 只高亮可见代码块。MathJax 与
-Mermaid 各自单队列去重并缓存 SVG，避免每个公式/图表创建 runtime。
+Mermaid 各自单队列去重生成 SVG，再进入共享的单 usvg 队列；队列、字符串缓存和
+Direct2D SVG 文档缓存都有硬预算，只有屏幕内 SVG 才创建原生文档。
 
 ## 13. 禁止实现的类型/模块
 
 `HtmlFallbackBlock/HtmlRenderBlock/HtmlInlineRenderItem/HtmlLayoutBlock/
 HtmlSanitizer/HtmlParser/HtmlRenderer` 一律不得实现。
 
-## 14. 现有 C++ 测试覆盖（180 个，全过）
+## 14. 现有 C++ 测试覆盖（193 个，全过）
 
 `tests/test_buffer.cpp`(13)、`test_parser.cpp`(53)、`test_outline.cpp`(6)、
 `test_math.cpp`(5)、`test_editor.cpp`(64)、`test_render_layout.cpp`(25)、
@@ -154,7 +156,7 @@ HtmlSanitizer/HtmlParser/HtmlRenderer` 一律不得实现。
 
 ## 15. 回归覆盖
 
-180 项 core 测试覆盖增量编辑、Unicode/光标、CommonMark/GFM parser、数学分隔符、
+193 项 core 测试覆盖增量编辑、Unicode/光标、CommonMark/GFM parser、数学分隔符、
 列表/任务、表格结构编辑、outline、render/source map、导出安全和大文档增量修改。
 另有 MathJax QuickJS 500 公式压力用例，以及 Tree-sitter 十种语言的原生解析 smoke。
 
@@ -162,7 +164,8 @@ HtmlSanitizer/HtmlParser/HtmlRenderer` 一律不得实现。
 
 应用使用 WinUI 3 + C++/WinRT 壳和 `SwapChainPanel` 自绘编辑面，D3D11/DXGI、
 Direct2D/DirectWrite、WIC 图片、TSF/IME、clipboard、DPI、光标、主题、outline、
-diagnostics、状态栏和文件对话框均已接入。MathJax/Mermaid 仅生成 SVG；代码块由
+diagnostics、状态栏和文件对话框均已接入。MathJax/Mermaid 生成的 SVG 统一经 usvg
+转换为 Direct2D 可消费的 path-only SVG，并由有界 LRU 原生矢量缓存绘制；代码块由
 Tree-sitter 0.26.9 在视口内高亮 C/C++、JavaScript、TypeScript、Python、Rust、Go、
 Java、JSON、HTML 和 CSS。
 

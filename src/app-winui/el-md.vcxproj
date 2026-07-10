@@ -114,6 +114,7 @@
     <ClInclude Include="EditorSurfaceRenderer.h" />
     <ClInclude Include="MathJaxRenderer.h" />
     <ClInclude Include="MermaidRenderer.h" />
+    <ClInclude Include="SvgNormalizer.h" />
     <ClInclude Include="TreeSitterHighlighter.h" />
     <ClInclude Include="App.xaml.h">
       <DependentUpon>App.xaml</DependentUpon>
@@ -221,6 +222,7 @@
     <ClCompile Include="EditorSurfaceRenderer.cpp" />
     <ClCompile Include="MathJaxRenderer.cpp" />
     <ClCompile Include="MermaidRenderer.cpp" />
+    <ClCompile Include="SvgNormalizer.cpp" />
     <ClCompile Include="TreeSitterHighlighter.cpp">
       <AdditionalIncludeDirectories>third_party\tree-sitter\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
@@ -274,6 +276,12 @@
     <None Include="Assets\mermaid\LICENSE-Mermaid.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="third_party\usvg-normalizer\Cargo.toml" />
+    <None Include="third_party\usvg-normalizer\Cargo.lock" />
+    <None Include="third_party\usvg-normalizer\src\lib.rs" />
+    <None Include="third_party\usvg-normalizer\include\elmd_svg_normalizer.h" />
+    <None Include="third_party\usvg-normalizer\LICENSE-MIT" />
+    <None Include="third_party\usvg-normalizer\bin\x64\elmd_svg_normalizer.dll" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="Assets\LockScreenLogo.scale-200.png" />
@@ -317,6 +325,9 @@
     <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\clang-cl.exe&quot; /nologo /MD /DNDEBUG /TC /std:c17 /D_CRT_SECURE_NO_WARNINGS /U__SIZEOF_INT128__ -Wno-microsoft-enum-forward-reference /clang:-mno-ms-bitfields /c &quot;$(ProjectDir)third_party\quickjs\libunicode.c&quot; /Fo&quot;$(IntDir)quickjs\libunicode.obj&quot;" />
     <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\clang-cl.exe&quot; /nologo /MD /DNDEBUG /TC /std:c17 /D_CRT_SECURE_NO_WARNINGS /U__SIZEOF_INT128__ -Wno-microsoft-enum-forward-reference /clang:-mno-ms-bitfields /c &quot;$(ProjectDir)third_party\quickjs\quickjs.c&quot; /Fo&quot;$(IntDir)quickjs\quickjs.obj&quot;" />
     <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\llvm-lib.exe&quot; /nologo /OUT:&quot;$(IntDir)quickjs\quickjs.lib&quot; &quot;$(IntDir)quickjs\cutils.obj&quot; &quot;$(IntDir)quickjs\dtoa.obj&quot; &quot;$(IntDir)quickjs\libregexp.obj&quot; &quot;$(IntDir)quickjs\libunicode.obj&quot; &quot;$(IntDir)quickjs\quickjs.obj&quot;" />
+  </Target>
+  <Target Name="CopySvgNormalizer" AfterTargets="Build">
+    <Copy SourceFiles="$(ProjectDir)third_party\usvg-normalizer\bin\x64\elmd_svg_normalizer.dll" DestinationFiles="$(OutDir)elmd_svg_normalizer.dll" SkipUnchangedFiles="true" />
   </Target>
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>

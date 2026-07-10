@@ -68,6 +68,9 @@
     <ClCompile Include="MermaidRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="SvgNormalizer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="TreeSitterHighlighter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -98,6 +101,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="MermaidRenderer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SvgNormalizer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="TreeSitterHighlighter.h">

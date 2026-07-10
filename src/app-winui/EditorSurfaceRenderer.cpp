@@ -49,7 +49,7 @@ namespace winrt::ElMd
         return result;
     }
 
-    std::string RecolorMathSvg(std::string svg, D2D1_COLOR_F color)
+    std::string ResolveSvgColor(std::string svg, D2D1_COLOR_F color)
     {
         auto replacement = SvgColor(color);
         constexpr std::string_view needle = "currentColor";
@@ -59,24 +59,45 @@ namespace winrt::ElMd
             svg.replace(offset, needle.size(), replacement);
             offset += replacement.size();
         }
-        auto removeAttribute = [&](std::string_view name)
-        {
-            auto marker = " " + std::string(name) + "=\"";
-            std::size_t position = 0;
-            while ((position = svg.find(marker, position)) != std::string::npos)
-            {
-                auto end = svg.find('"', position + marker.size());
-                if (end == std::string::npos) break;
-                svg.erase(position, end - position + 1);
-            }
-        };
-        removeAttribute("style");
-        removeAttribute("role");
-        removeAttribute("focusable");
-        removeAttribute("data-mml-node");
-        removeAttribute("data-latex");
-        removeAttribute("data-c");
         return svg;
+    }
+
+    std::optional<MathJaxSvg> NormalizeMathJaxSvg(MathJaxSvg const& source, SvgNormalizer& normalizer, D2D1_COLOR_F color, float fontSize, bool allowQueue)
+    {
+        MathJaxSvg result = source;
+        for (auto& fragment : result.fragments)
+        {
+            if (!fragment.svg) return std::nullopt;
+            auto normalized = normalizer.GetOrQueue(ResolveSvgColor(*fragment.svg, color), fontSize, allowQueue);
+            if (!normalized) return std::nullopt;
+            if (!static_cast<bool>(*normalized))
+            {
+                result.fragments.clear();
+                result.error = normalized->error;
+                return result;
+            }
+            fragment.renderId = normalized->id;
+            fragment.svg = normalized->svg;
+        }
+        return result;
+    }
+
+    std::optional<MermaidSvg> NormalizeMermaidSvg(MermaidSvg const& source, SvgNormalizer& normalizer, bool allowQueue)
+    {
+        auto normalized = normalizer.GetOrQueue(source.svg, 16.0f, allowQueue);
+        if (!normalized) return std::nullopt;
+        MermaidSvg result = source;
+        if (static_cast<bool>(*normalized))
+        {
+            result.renderId = normalized->id;
+            result.svg = *normalized->svg;
+        }
+        else
+        {
+            result.svg.clear();
+            result.error = normalized->error;
+        }
+        return result;
     }
 
     std::u32string InlineText(elmd::InlineRenderItem const& item)
@@ -396,6 +417,8 @@ namespace winrt::ElMd
         std::size_t sourceEnd,
         std::u32string const& sourceText,
         MathJaxRenderer& mathJax,
+        SvgNormalizer& svgNormalizer,
+        D2D1_COLOR_F svgColor,
         float fontSize,
         float containerWidth,
         bool svgSupported,
@@ -422,7 +445,7 @@ namespace winrt::ElMd
                 }
                 else
                 {
-                    MergeDisplayText(display, BuildDisplayInlineText(item.children, caret, item.source_range.end.v, sourceText, mathJax, fontSize, containerWidth, svgSupported, requestMath));
+                    MergeDisplayText(display, BuildDisplayInlineText(item.children, caret, item.source_range.end.v, sourceText, mathJax, svgNormalizer, svgColor, fontSize, containerWidth, svgSupported, requestMath));
                 }
                 continue;
             }
@@ -439,7 +462,8 @@ namespace winrt::ElMd
                     AppendSourceText(display, sourceText, item.source_range.start.v, item.source_range.end.v, item.style, false);
                     continue;
                 }
-                auto math = mathJax.GetOrQueue(elmd::cps_to_utf8(item.text), false, fontSize, containerWidth, requestMath);
+                auto rawMath = mathJax.GetOrQueue(elmd::cps_to_utf8(item.text), false, fontSize, containerWidth, requestMath);
+                auto math = rawMath ? NormalizeMathJaxSvg(*rawMath, svgNormalizer, svgColor, fontSize, requestMath) : std::nullopt;
                 auto editing = CaretTouchesRange(caret, item.source_range);
                 auto delimiterLength = item.math_delim == elmd::MathDelimiter::InlineParen ? std::size_t{2} : std::size_t{1};
                 auto contentStart = (std::min)(item.source_range.start.v + delimiterLength, item.source_range.end.v);
@@ -649,6 +673,9 @@ namespace winrt::ElMd
         theme = value;
         styleSheet = CreateStyleSheet(value);
         blockHeightCache.clear();
+        svgDocumentCache.clear();
+        svgDocumentCacheOrder.clear();
+        svgDocumentCacheBytes = 0;
         RebuildTextFormats();
         ResetBrushes();
     }
@@ -760,7 +787,7 @@ namespace winrt::ElMd
         surfaceWidth = width;
         surfaceHeight = height;
         auto dispatcher = panel.DispatcherQueue();
-        mathJax.SetCompletionCallback([this, dispatcher]
+        auto completion = [this, dispatcher]
         {
             if (mathInvalidationQueued.exchange(true)) return;
             if (!dispatcher.TryEnqueue([this]
@@ -771,7 +798,9 @@ namespace winrt::ElMd
             {
                 mathInvalidationQueued = false;
             }
-        });
+        };
+        mathJax.SetCompletionCallback(completion);
+        svgNormalizer.SetCompletionCallback(std::move(completion));
     }
 
     void EditorSurfaceRenderer::Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height)
@@ -874,38 +903,66 @@ namespace winrt::ElMd
         ::Microsoft::WRL::ComPtr<ID2D1DeviceContext5> svgContext;
         auto svgSupported = SUCCEEDED(d2dContext.As(&svgContext)) && svgContext;
 
-        auto drawSvg = [&](std::string const& source, float width, float height, D2D1_POINT_2F origin) -> bool
+        auto drawSvg = [&](std::uint64_t renderId, std::string const& source, float width, float height, D2D1_POINT_2F origin) -> bool
         {
-            if (source.empty() || width <= 0.0f || height <= 0.0f || !svgSupported)
+            if (renderId == 0 || source.empty() || width <= 0.0f || height <= 0.0f || !svgSupported)
             {
                 return false;
+            }
+            if (origin.x + width < 0.0f || origin.y + height < 0.0f || origin.x > surfaceWidthDip || origin.y > surfaceHeightDip)
+            {
+                return true;
             }
 
-            auto allocation = GlobalAlloc(GMEM_MOVEABLE, source.size());
-            if (!allocation)
-            {
-                return false;
-            }
-            auto bytes = static_cast<char*>(GlobalLock(allocation));
-            if (!bytes)
-            {
-                GlobalFree(allocation);
-                return false;
-            }
-            std::memcpy(bytes, source.data(), source.size());
-            GlobalUnlock(allocation);
-
-            ::Microsoft::WRL::ComPtr<IStream> stream;
-            if (FAILED(CreateStreamOnHGlobal(allocation, TRUE, stream.GetAddressOf())) || !stream)
-            {
-                GlobalFree(allocation);
-                return false;
-            }
             ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> document;
-            if (FAILED(svgContext->CreateSvgDocument(stream.Get(), D2D1::SizeF(width, height), document.GetAddressOf())) || !document)
+            if (auto found = svgDocumentCache.find(renderId); found != svgDocumentCache.end())
             {
-                return false;
+                document = found->second.document;
+                if (auto order = std::find(svgDocumentCacheOrder.begin(), svgDocumentCacheOrder.end(), renderId); order != svgDocumentCacheOrder.end())
+                {
+                    svgDocumentCacheOrder.erase(order);
+                    svgDocumentCacheOrder.push_back(renderId);
+                }
             }
+            else
+            {
+                auto allocation = GlobalAlloc(GMEM_MOVEABLE, source.size());
+                if (!allocation) return false;
+                auto bytes = static_cast<char*>(GlobalLock(allocation));
+                if (!bytes)
+                {
+                    GlobalFree(allocation);
+                    return false;
+                }
+                std::memcpy(bytes, source.data(), source.size());
+                GlobalUnlock(allocation);
+                ::Microsoft::WRL::ComPtr<IStream> stream;
+                if (FAILED(CreateStreamOnHGlobal(allocation, TRUE, stream.GetAddressOf())) || !stream)
+                {
+                    GlobalFree(allocation);
+                    return false;
+                }
+                if (FAILED(svgContext->CreateSvgDocument(stream.Get(), D2D1::SizeF(width, height), document.GetAddressOf())) || !document) return false;
+                constexpr std::size_t budget = 24 * 1024 * 1024;
+                constexpr std::size_t limit = 96;
+                auto resourceCost = (std::max)(std::size_t{16 * 1024}, source.size() * 8);
+                while (!svgDocumentCacheOrder.empty() && (svgDocumentCacheBytes + resourceCost > budget || svgDocumentCache.size() >= limit))
+                {
+                    auto oldest = std::move(svgDocumentCacheOrder.front());
+                    svgDocumentCacheOrder.pop_front();
+                    auto oldestDocument = svgDocumentCache.find(oldest);
+                    if (oldestDocument == svgDocumentCache.end()) continue;
+                    svgDocumentCacheBytes -= oldestDocument->second.bytes;
+                    svgDocumentCache.erase(oldestDocument);
+                }
+                if (resourceCost <= budget)
+                {
+                    svgDocumentCacheBytes += resourceCost;
+                    svgDocumentCacheOrder.push_back(renderId);
+                    svgDocumentCache.emplace(renderId, CachedSvgDocument{ document, resourceCost });
+                }
+            }
+            document->SetViewportSize(D2D1::SizeF(width, height));
             D2D1_MATRIX_3X2_F transform{};
             svgContext->GetTransform(&transform);
             svgContext->SetTransform(D2D1::Matrix3x2F::Translation(origin.x, origin.y) * transform);
@@ -916,7 +973,8 @@ namespace winrt::ElMd
 
         auto drawMathSvg = [&](MathJaxSvgFragment const& fragment, D2D1_POINT_2F origin, D2D1_COLOR_F color) -> bool
         {
-            return drawSvg(RecolorMathSvg(fragment.svg, color), fragment.width, fragment.height, origin);
+            (void)color;
+            return fragment.svg && drawSvg(fragment.renderId, *fragment.svg, fragment.width, fragment.height, origin);
         };
 
         auto drawMathFallback = [&](std::size_t start, std::size_t end, D2D1_POINT_2F origin)
@@ -1304,6 +1362,8 @@ namespace winrt::ElMd
                         block.content_range.end.v,
                         sourceText,
                         mathJax,
+                        svgNormalizer,
+                        styleSheet.textColor,
                         styleSheet.body.size,
                         documentRight - documentLeft,
                         svgSupported,
@@ -1334,9 +1394,11 @@ namespace winrt::ElMd
                     DisplayInlineText display;
                     if (IsMermaidLanguage(block.language))
                     {
-                        blockMermaid = svgSupported
-                            ? mermaid.GetOrQueue(elmd::cps_to_utf8(block.code_text), theme == Theme::Dark, requestEmbedded)
-                            : std::nullopt;
+                        if (svgSupported)
+                        {
+                            auto rawMermaid = mermaid.GetOrQueue(elmd::cps_to_utf8(block.code_text), theme == Theme::Dark, requestEmbedded);
+                            blockMermaid = rawMermaid ? NormalizeMermaidSvg(*rawMermaid, svgNormalizer, requestEmbedded) : std::nullopt;
+                        }
                         showRawMermaid = block.source_range.start.v <= caret && caret <= block.source_range.end.v;
                         if (showRawMermaid || !blockMermaid || !static_cast<bool>(*blockMermaid))
                         {
@@ -1380,9 +1442,11 @@ namespace winrt::ElMd
                 }
                 case elmd::RenderBlockKind::Math:
                 {
-                    blockMath = svgSupported
-                        ? mathJax.GetOrQueue(elmd::cps_to_utf8(block.tex), true, styleSheet.body.size, documentRight - documentLeft, requestEmbedded)
-                        : std::nullopt;
+                    if (svgSupported)
+                    {
+                        auto rawMath = mathJax.GetOrQueue(elmd::cps_to_utf8(block.tex), true, styleSheet.body.size, documentRight - documentLeft, requestEmbedded);
+                        blockMath = rawMath ? NormalizeMathJaxSvg(*rawMath, svgNormalizer, styleSheet.textColor, styleSheet.body.size, requestEmbedded) : std::nullopt;
+                    }
                     showRawMath = block.source_range.start.v <= caret && caret <= block.source_range.end.v;
                     DisplayInlineText display;
                     if (showRawMath || !blockMath || !static_cast<bool>(*blockMath))
@@ -1428,7 +1492,7 @@ namespace winrt::ElMd
                         auto const& child = block.child_blocks[childIndex];
                         if (!child.inline_items.empty())
                         {
-                            MergeDisplayText(display, BuildDisplayInlineText(child.inline_items, caret, child.content_range.end.v, sourceText, mathJax, styleSheet.body.size, documentRight - documentLeft, svgSupported, requestEmbedded));
+                            MergeDisplayText(display, BuildDisplayInlineText(child.inline_items, caret, child.content_range.end.v, sourceText, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, documentRight - documentLeft, svgSupported, requestEmbedded));
                         }
                         else
                         {
@@ -1539,6 +1603,8 @@ namespace winrt::ElMd
                         block.content_range.end.v,
                         sourceText,
                         mathJax,
+                        svgNormalizer,
+                        styleSheet.textColor,
                         styleSheet.body.size,
                         documentRight - documentLeft,
                         svgSupported,
@@ -1849,7 +1915,7 @@ namespace winrt::ElMd
                 }
                 if (blockMermaidOrigin && blockMermaid)
                 {
-                    drawSvg(blockMermaid->svg, blockMermaidWidth, blockMermaidHeight, *blockMermaidOrigin);
+                    drawSvg(blockMermaid->renderId, blockMermaid->svg, blockMermaidWidth, blockMermaidHeight, *blockMermaidOrigin);
                 }
                 if (blockImageRect && blockImage && blockImage->bitmap)
                 {

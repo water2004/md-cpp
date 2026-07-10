@@ -1,0 +1,18 @@
+[package]
+name = "elmd-svg-normalizer"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+usvg = { version = "=0.47.0", default-features = true }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = "symbols"

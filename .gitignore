@@ -18,6 +18,7 @@ tools/mathjax-bundle/node_modules/
 tools/mathjax-bundle/quickjs-smoke.exe
 tools/mathjax-bundle/quickjs-smoke.obj
 tools/mermaid-bundle/node_modules/
+/src/app-winui/third_party/usvg-normalizer/target/
 !el-md.sln
 !src/app-winui/el-md.vcxproj
 !src/app-winui/el-md.vcxproj.filters
