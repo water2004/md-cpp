@@ -274,6 +274,7 @@ enum class SemanticEditIntent {
     DeletePreviousTextUnit,
     DeleteNextTextUnit,
     InsertParagraphBlockAfter,
+    InsertParagraphAfterAtomicBlock,
     InsertParagraphBlockAfterTable,
     MoveCaretToNextTableRow,
     InsertEmptySiblingBlock,
@@ -299,6 +300,7 @@ inline SemanticEditPlan plan_newline(const std::u32string& text, const MarkdownD
     if (!semantic || !semantic->document_block_index) return {SemanticEditIntent::InsertParagraphBlockAfter, std::nullopt};
     auto block_index = *semantic->document_block_index;
     const auto& block = document.blocks[block_index];
+    if (block.kind == BlockKind::ThematicBreak) return {SemanticEditIntent::InsertParagraphAfterAtomicBlock, block_index};
     if (block.kind == BlockKind::CodeBlock && semantic->content_range.start <= selection.head() && selection.head() <= semantic->content_range.end) return {SemanticEditIntent::InsertCodeLineBreak, block_index};
     if (block.kind == BlockKind::Table) {
         auto table = table_source_at(text, selection.head().v);
@@ -327,6 +329,18 @@ inline std::optional<Transaction> semantic_newline_transaction(const std::u32str
         case SemanticEditIntent::InsertEmptySiblingBlock: {
             Transaction transaction(revision, selection, caret_after(CharOffset(sel.start.v + 1)), TransactionReason::StructuralCommand);
             transaction.with_edit(sel, U"\n");
+            return transaction;
+        }
+        case SemanticEditIntent::InsertParagraphAfterAtomicBlock: {
+            if (!plan.block_index) return std::nullopt;
+            auto range = block_range_at(document, *plan.block_index);
+            if (!range) return std::nullopt;
+            auto position = range->content_range.end.v;
+            if (position < text_cps.size() && text_cps[position] == U'\n') {
+                return Transaction(revision, selection, caret_after(CharOffset(position + 1)), TransactionReason::StructuralCommand);
+            }
+            Transaction transaction(revision, selection, caret_after(CharOffset(position + 1)), TransactionReason::StructuralCommand);
+            transaction.with_edit(CharRange(CharOffset(position), CharOffset(position)), U"\n");
             return transaction;
         }
         case SemanticEditIntent::InsertParagraphBlockAfterTable: {
@@ -520,10 +534,30 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
             return t;
         }
         case CommandKind::MoveRight: {
+            if (selection.is_caret()) {
+                for (auto const& block : document.blocks) {
+                    if (block.kind != BlockKind::ThematicBreak) continue;
+                    auto range = document.source_map.find_node_by_id(block.id);
+                    if (range && range->content_range.start.v <= sel.start.v && sel.start.v < range->content_range.end.v) {
+                        auto target = range->content_range.end;
+                        return Transaction(revision, selection, cmd.extend_selection ? extend_after(target) : caret_after(target), TransactionReason::StructuralCommand);
+                    }
+                }
+            }
             std::size_t nxt = std::min(next_grapheme_boundary_char(text_cps, sel.start.v), len);
             return Transaction(revision, selection, cmd.extend_selection ? extend_after(CharOffset(nxt)) : caret_after(CharOffset(nxt)), TransactionReason::Typing);
         }
         case CommandKind::MoveLeft: {
+            if (selection.is_caret()) {
+                for (auto const& block : document.blocks) {
+                    if (block.kind != BlockKind::ThematicBreak) continue;
+                    auto range = document.source_map.find_node_by_id(block.id);
+                    if (range && range->content_range.start.v < sel.start.v && sel.start.v <= range->content_range.end.v) {
+                        auto target = range->content_range.start;
+                        return Transaction(revision, selection, cmd.extend_selection ? extend_after(target) : caret_after(target), TransactionReason::StructuralCommand);
+                    }
+                }
+            }
             std::size_t prev = sel.start.v > 0 ? prev_grapheme_boundary_char(text_cps, sel.start.v) : 0;
             return Transaction(revision, selection, cmd.extend_selection ? extend_after(CharOffset(prev)) : caret_after(CharOffset(prev)), TransactionReason::Typing);
         }

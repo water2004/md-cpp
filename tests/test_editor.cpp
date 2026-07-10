@@ -759,3 +759,45 @@ ELMD_TEST(test_large_document_incremental_edit_keeps_distant_blocks) {
     ELMD_CHECK(result.find("## Section 1499") != std::string::npos);
     ELMD_CHECK(editor.outline().flat_items().size() == 1500u);
 }
+
+ELMD_TEST(test_enter_after_thematic_break_creates_blank_lines_without_duplicate_rules) {
+    Editor editor("---");
+    editor.set_caret(CharOffset(3));
+    Command enter; enter.kind = CommandKind::InsertNewline;
+    auto check_structure = [&](std::size_t blank_count) {
+        auto structure = build_source_structure(editor.document(), editor.text_cps());
+        auto actual = std::count_if(structure.blocks.begin(), structure.blocks.end(), [](auto const& block) {
+            return block.kind == SourceBlockKind::Blank;
+        });
+        ELMD_CHECK_EQ(actual, blank_count);
+        auto range = editor.document().source_map.find_node_by_id(editor.document().blocks[0].id);
+        ELMD_CHECK(range != nullptr);
+        ELMD_CHECK_EQ(range->source_range.start.v, 0u);
+        ELMD_CHECK_EQ(range->source_range.end.v, 3u);
+    };
+    editor.execute_command(enter);
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("---\n"));
+    ELMD_CHECK_EQ(editor.selection().head().v, 4u);
+    check_structure(1);
+    editor.execute_command(enter);
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("---\n\n"));
+    ELMD_CHECK_EQ(editor.selection().head().v, 5u);
+    check_structure(2);
+    editor.execute_command(enter);
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("---\n\n\n"));
+    ELMD_CHECK_EQ(editor.selection().head().v, 6u);
+    check_structure(3);
+    auto breaks = std::count_if(editor.document().blocks.begin(), editor.document().blocks.end(), [](auto const& block) {
+        return block.kind == BlockKind::ThematicBreak;
+    });
+    ELMD_CHECK_EQ(breaks, 1);
+}
+
+ELMD_TEST(test_arrow_navigation_skips_thematic_break_source_marker) {
+    Editor editor("---");
+    editor.set_caret(CharOffset(0));
+    editor.execute_command(Command::MoveRight(false));
+    ELMD_CHECK_EQ(editor.selection().head().v, 3u);
+    editor.execute_command(Command::MoveLeft(false));
+    ELMD_CHECK_EQ(editor.selection().head().v, 0u);
+}

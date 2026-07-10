@@ -163,7 +163,7 @@ public:
             if (auto b = try_parse_code_block())         return b;
             if (auto b = try_parse_math_block())         return b;
             if (auto b = try_parse_table())              return b;
-            if (try_parse_thematic_break())              return parse_thematic_break();
+            if (auto b = try_parse_thematic_break())     return b;
             if (auto b = try_parse_list_or_task())       return b;
             if (try_match_toc())                          return parse_toc();
             if (peek1() == '[' && ch_at(pos+1) == '^') {
@@ -1127,26 +1127,33 @@ public:
     }
 
     // ---- thematic break ----
-    bool try_parse_thematic_break() {
-        std::size_t save = pos;
-        char32_t c = peek1();
-        if (c != '-' && c != '*' && c != '_') return false;
-        std::size_t count = 0;
-        while (peek1() == c) { ++count; advance(); }
-        while (peek1() == ' ' || peek1() == '\t') advance();
-        if (count >= 3 && (eof() || peek1() == '\n')) {
-            if (peek1() == '\n') advance();
-            return true;
-        }
-        pos = save;
-        return false;
-    }
-    std::optional<BlockNode> parse_thematic_break() {
+    std::optional<BlockNode> try_parse_thematic_break() {
         std::size_t start = pos;
-        while (!eof() && peek1() != '\n') advance();
+        std::size_t line_end = pos;
+        while (line_end < cps.size() && cps[line_end] != U'\n') ++line_end;
+        std::size_t cursor = start;
+        std::size_t leading_spaces = 0;
+        while (cursor < line_end && cps[cursor] == U' ' && leading_spaces < 4) {
+            ++cursor;
+            ++leading_spaces;
+        }
+        if (leading_spaces > 3 || cursor >= line_end) return std::nullopt;
+        char32_t marker = cps[cursor];
+        if (marker != U'-' && marker != U'*' && marker != U'_') return std::nullopt;
+        std::size_t count = 0;
+        for (; cursor < line_end; ++cursor) {
+            auto value = cps[cursor];
+            if (value == marker) {
+                ++count;
+                continue;
+            }
+            if (value != U' ' && value != U'\t') return std::nullopt;
+        }
+        if (count < 3) return std::nullopt;
+        pos = line_end;
         if (peek1() == '\n') advance();
         NodeId id = next_node_id();
-        push_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(start), cur()));
+        push_range(id, CharRange(CharOffset(start), CharOffset(line_end)), CharRange(CharOffset(start), CharOffset(line_end)));
         BlockNode b; b.id = id; b.kind = BlockKind::ThematicBreak;
         return b;
     }

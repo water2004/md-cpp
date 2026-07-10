@@ -1039,6 +1039,8 @@ namespace winrt::ElMd
                     return static_cast<float>((std::max)(std::size_t{2}, block.row_count)) * (styleSheet.body.lineHeight + 16.0f);
                 case elmd::RenderBlockKind::Image:
                     return 160.0f;
+                case elmd::RenderBlockKind::ThematicBreak:
+                    return 48.0f;
                 default:
                 {
                     auto length = block.content_range.end.v > block.content_range.start.v ? block.content_range.end.v - block.content_range.start.v : std::size_t{1};
@@ -1247,6 +1249,7 @@ namespace winrt::ElMd
             bool showRawMermaid = false;
             std::optional<CachedRasterImage> blockImage;
             bool showRawImage = false;
+            bool thematicBreak = false;
 
             switch (block.kind)
             {
@@ -1455,6 +1458,15 @@ namespace winrt::ElMd
                     displayToSource.push_back(block.source_range.start.v);
                     displayToSource.push_back(block.source_range.end.v);
                     break;
+                case elmd::RenderBlockKind::ThematicBreak:
+                    text = U"\u200B";
+                    displayToSource.push_back(block.content_range.start.v);
+                    displayToSource.push_back(block.content_range.end.v);
+                    height = 48.0f;
+                    textTop = 0.0f;
+                    measureHeight = false;
+                    thematicBreak = true;
+                    break;
                 case elmd::RenderBlockKind::Image:
                 {
                     blockImage = LoadRasterImage(sessionCore.baseDirectory, block.src);
@@ -1650,6 +1662,11 @@ namespace winrt::ElMd
             {
                 d2dContext->DrawLine(D2D1::Point2F(documentLeft + 2.0f, y + 4.0f), D2D1::Point2F(documentLeft + 2.0f, y + height - 4.0f), accentBrush.Get(), 4.0f);
             }
+            if (thematicBreak)
+            {
+                auto ruleY = y + height * 0.5f;
+                d2dContext->DrawLine(D2D1::Point2F(documentLeft, ruleY), D2D1::Point2F(documentRight, ruleY), mutedBrush.Get(), 1.0f);
+            }
             auto origin = D2D1::Point2F(documentLeft + inset, y + textTop);
             if (layout)
             {
@@ -1798,8 +1815,23 @@ namespace winrt::ElMd
                 visualBlock.text = std::move(text);
                 visualBlock.displayToSource = std::move(displayToSource);
                 visualBlock.layout = layout;
+                visualBlock.thematicBreak = thematicBreak;
                 visualBlocks.push_back(std::move(visualBlock));
-                addVisualLinesForBlock(visualBlocks.size() - 1);
+                if (thematicBreak)
+                {
+                    VisualLine visualLine;
+                    visualLine.blockIndex = visualBlocks.size() - 1;
+                    visualLine.sourceStart = sourceStart;
+                    visualLine.sourceEnd = sourceEnd;
+                    visualLine.displayStart = 0;
+                    visualLine.displayEnd = 1;
+                    visualLine.rect = visualBlocks.back().rect;
+                    visualLines.push_back(std::move(visualLine));
+                }
+                else
+                {
+                    addVisualLinesForBlock(visualBlocks.size() - 1);
+                }
             }
             y += height;
             blockHeightCache[cacheKey] = height;
@@ -2149,6 +2181,12 @@ namespace winrt::ElMd
         }
         auto const& block = visualBlocks[line.blockIndex];
         auto clamped = (std::min)((std::max)(sourceOffset, line.sourceStart), line.sourceEnd);
+        if (block.thematicBreak)
+        {
+            auto lineHeight = (std::min)(styleSheet.body.lineHeight, (line.rect.bottom - line.rect.top) * 0.46f);
+            auto top = clamped <= line.sourceStart ? line.rect.top : line.rect.bottom - lineHeight;
+            return D2D1::RectF(line.rect.left, top, line.rect.left + 2.0f, top + lineHeight);
+        }
         IDWriteTextLayout* layout = block.layout.Get();
         D2D1_POINT_2F textOrigin = block.textOrigin;
         std::vector<std::size_t> const* displayToSource = &block.displayToSource;
@@ -2275,6 +2313,12 @@ namespace winrt::ElMd
 
         auto const& line = visualLines[best];
         auto const& block = visualBlocks[line.blockIndex];
+        if (block.thematicBreak)
+        {
+            if (outUpstream) *outUpstream = false;
+            auto midpoint = (block.rect.top + block.rect.bottom) * 0.5f;
+            return y < midpoint ? line.sourceStart : line.sourceEnd;
+        }
         IDWriteTextLayout* layout = block.layout.Get();
         D2D1_POINT_2F textOrigin = block.textOrigin;
         std::vector<std::size_t> const* displayToSource = &block.displayToSource;

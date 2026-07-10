@@ -213,6 +213,27 @@ ELMD_TEST(test_parse_block_math) {
     ELMD_CHECK(blocks_has_kind(out.document.blocks, BlockKind::MathBlock));
 }
 
+ELMD_TEST(test_thematic_break_is_consumed_once_with_exact_ranges) {
+    auto out = parse_text(1, "---\n\nbody");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 2u);
+    ELMD_CHECK(out.document.blocks[0].kind == BlockKind::ThematicBreak);
+    auto range = out.document.source_map.find_node_by_id(out.document.blocks[0].id);
+    ELMD_CHECK(range != nullptr);
+    ELMD_CHECK_EQ(range->source_range.start.v, 0u);
+    ELMD_CHECK_EQ(range->source_range.end.v, 3u);
+    ELMD_CHECK_EQ(range->content_range.start.v, 0u);
+    ELMD_CHECK_EQ(range->content_range.end.v, 3u);
+    ELMD_CHECK(out.document.blocks[1].kind == BlockKind::Paragraph);
+}
+
+ELMD_TEST(test_thematic_break_allows_commonmark_marker_spacing) {
+    for (auto const& source : {std::string("- - -"), std::string("*  *  *"), std::string("_\t_\t_")}) {
+        auto out = parse_text(1, source);
+        ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+        ELMD_CHECK(out.document.blocks[0].kind == BlockKind::ThematicBreak);
+    }
+}
+
 ELMD_TEST(test_parse_inline_paren_math) {
     auto out = parse_text(1, "Speed \\(v=\\frac{d}{t}\\) now\n");
     auto* p = first_of(out.document.blocks, BlockKind::Paragraph);

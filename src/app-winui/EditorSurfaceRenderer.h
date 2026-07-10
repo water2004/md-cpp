@@ -90,6 +90,7 @@ namespace winrt::ElMd
             std::u32string text;
             std::vector<std::size_t> displayToSource;
             ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+            bool thematicBreak = false;
         };
 
         struct VisualLine

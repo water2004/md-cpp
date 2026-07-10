@@ -41,7 +41,7 @@ inline RenderBlock render_block_base(BlockKind k, NodeId id, TextRange<CharOffse
             case BlockKind::Callout:   return RenderBlockKind::Callout;
             case BlockKind::FootnoteDefinition: return RenderBlockKind::Footnote;
             case BlockKind::Frontmatter:return RenderBlockKind::Frontmatter;
-            case BlockKind::ThematicBreak: return RenderBlockKind::Text;
+            case BlockKind::ThematicBreak: return RenderBlockKind::ThematicBreak;
             case BlockKind::UnsupportedMarkup: return RenderBlockKind::Unsupported;
             case BlockKind::Extension: return RenderBlockKind::Extension;
         }
@@ -420,12 +420,7 @@ struct Builder {
                 return with_content_range(std::move(rb));
             }
             case BK::ThematicBreak: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::paragraph());
-                InlineRenderItem m; m.kind = InlineRenderItem::Kind::Marker;
-                m.source_range = CharRange(CharOffset(0), CharOffset(9));
-                m.text = U"─────────";
-                m.marker_style = MarkerStyle{true, {}}; m.visibility = MarkerVisibility::Always;
-                rb.inline_items.push_back(std::move(m));
+                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::thematic_break());
                 return with_content_range(std::move(rb));
             }
             case BK::UnsupportedMarkup: {

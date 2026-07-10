@@ -53,6 +53,21 @@ ELMD_TEST(builds_code_block) {
     ELMD_CHECK(m.blocks[0].line_count >= 1);
 }
 
+ELMD_TEST(thematic_break_remains_an_atomic_render_block) {
+    auto model = build_model("---");
+    ELMD_CHECK_EQ(model.blocks.size(), 1u);
+    ELMD_CHECK(model.blocks[0].kind == RenderBlockKind::ThematicBreak);
+    ELMD_CHECK(model.blocks[0].inline_items.empty());
+    ELMD_CHECK_EQ(model.blocks[0].source_range.start.v, 0u);
+    ELMD_CHECK_EQ(model.blocks[0].source_range.end.v, 3u);
+    ELMD_CHECK_EQ(model.blocks[0].content_range.end.v, 3u);
+    StubMeasurer measurer(8.0f);
+    auto layout = layout_blocks(model.blocks, 800.0f, 1.0f, measurer, std::nullopt, LogicalPoint(0, 0), Outline::empty(1));
+    ELMD_CHECK_EQ(layout.blocks.size(), 1u);
+    ELMD_CHECK(layout.blocks[0].kind.kind == LayoutBlockKind::ThematicBreak);
+    ELMD_CHECK_EQ(layout.blocks[0].source_range.end.v, 3u);
+}
+
 ELMD_TEST(builds_inline_math) {
     auto m = build_model("$x^2$");
     ELMD_CHECK(!m.blocks.empty());

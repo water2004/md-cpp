@@ -119,6 +119,13 @@ inline std::pair<LayoutBlock, float> layout_blank_block(const RenderBlock& rb, f
     return {std::move(block), line_height};
 }
 
+inline std::pair<LayoutBlock, float> layout_thematic_break(const RenderBlock& rb, float y, float viewport_width, float scale, LogicalPoint origin) {
+    auto height = 48.0f * scale;
+    LayoutBlock block(rb.id, rb.source_range, {LayoutBlockKind::ThematicBreak}, rb.block_style);
+    block.rect = LogicalRect(origin.x, y, viewport_width, height);
+    return {std::move(block), height};
+}
+
 inline std::pair<LayoutBlock, float> layout_code_block(const RenderBlock& rb, float y, float viewport_width, float scale, TextMeasurer& measurer) {
     float font_size = 14.0f * scale;
     float line_height = font_size * 1.4f;
@@ -374,6 +381,9 @@ inline LayoutTree layout_blocks(const std::vector<RenderBlock>& blocks, float vi
                 break;
             case RenderBlockKind::Table:
                 pr = layout_table_block(rb, y, viewport_width, scale, measurer, origin);
+                break;
+            case RenderBlockKind::ThematicBreak:
+                pr = layout_thematic_break(rb, y, viewport_width, scale, origin);
                 break;
 case RenderBlockKind::Toc:
                 pr = layout_toc_block(rb, y, viewport_width, scale, measurer, outline);

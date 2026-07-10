@@ -61,6 +61,7 @@ struct BlockStyle {
     std::optional<BorderSide> border_left, border_right, border_top, border_bottom;
 
     static BlockStyle paragraph() { BlockStyle s; s.margin_bottom = 8; return s; }
+    static BlockStyle thematic_break() { BlockStyle s; s.margin_top = 8; s.margin_bottom = 8; return s; }
     static BlockStyle heading(std::uint8_t level) {
         BlockStyle s;
         switch (level) {
@@ -129,7 +130,7 @@ struct InlineRenderItem {
 };
 
 enum class RenderBlockKind {
-    Text, Blank, Code, Math, Table, Image, Toc, Callout, Frontmatter, Footnote, Unsupported, Extension,
+    Text, Blank, Code, Math, Table, Image, ThematicBreak, Toc, Callout, Frontmatter, Footnote, Unsupported, Extension,
 };
 
 struct RenderBlock {
