@@ -13,6 +13,11 @@ namespace winrt::ElMd
         return D2D1::ColorF(red, green, blue, alpha);
     }
 
+    D2D1_COLOR_F Rgb(std::uint32_t value)
+    {
+        return Rgba(static_cast<float>((value >> 16) & 0xff) / 255.0f, static_cast<float>((value >> 8) & 0xff) / 255.0f, static_cast<float>(value & 0xff) / 255.0f);
+    }
+
     std::wstring ToWide(std::u32string_view text)
     {
         std::wstring wide;
@@ -96,6 +101,7 @@ namespace winrt::ElMd
         UINT32 length = 0;
         elmd::InlineStyle style;
         bool marker = false;
+        SyntaxHighlightKind syntax = SyntaxHighlightKind::None;
     };
 
     struct DisplayInlineText
@@ -259,6 +265,34 @@ namespace winrt::ElMd
         }
     }
 
+    void AppendGeneratedText(DisplayInlineText& display, std::u32string const& text, std::size_t sourceOffset, elmd::InlineStyle style)
+    {
+        auto start = static_cast<UINT32>(display.text.size());
+        display.text += text;
+        display.displayToSource.insert(display.displayToSource.end(), text.size(), sourceOffset);
+        if (!text.empty()) display.ranges.push_back(InlineStyleRange{start, static_cast<UINT32>(text.size()), style, false, SyntaxHighlightKind::None});
+    }
+
+    void MergeDisplayText(DisplayInlineText& target, DisplayInlineText source)
+    {
+        auto offset = static_cast<UINT32>(target.text.size());
+        auto characterCount = source.text.size();
+        target.text += source.text;
+        if (source.displayToSource.size() > characterCount) source.displayToSource.resize(characterCount);
+        target.displayToSource.insert(target.displayToSource.end(), source.displayToSource.begin(), source.displayToSource.end());
+        for (auto& range : source.ranges)
+        {
+            range.start += offset;
+            target.ranges.push_back(std::move(range));
+        }
+        for (auto& overlay : source.mathOverlays)
+        {
+            overlay.displayStart += offset;
+            target.mathOverlays.push_back(std::move(overlay));
+        }
+        for (auto& preview : source.mathPreviews) target.mathPreviews.push_back(std::move(preview));
+    }
+
     void AppendSourceText(DisplayInlineText& display, std::u32string const& sourceText, std::size_t start, std::size_t end, elmd::InlineStyle style, bool marker)
     {
         start = (std::min)(start, sourceText.size());
@@ -273,7 +307,7 @@ namespace winrt::ElMd
         display.displayToSource.insert(display.displayToSource.end(), count, sourceOffset);
         if (count > 0)
         {
-            display.ranges.push_back(InlineStyleRange{ start, static_cast<UINT32>(count), elmd::InlineStyle::plain(), false });
+            display.ranges.push_back(InlineStyleRange{ start, static_cast<UINT32>(count), elmd::InlineStyle::plain(), false, SyntaxHighlightKind::None });
         }
     }
 
@@ -298,7 +332,7 @@ namespace winrt::ElMd
             auto start = static_cast<UINT32>(display.text.size());
             display.text.push_back(U'\uFFFC');
             display.displayToSource.push_back(mappedOffset);
-            display.ranges.push_back(InlineStyleRange{ start, 1, elmd::InlineStyle::plain(), false });
+            display.ranges.push_back(InlineStyleRange{ start, 1, elmd::InlineStyle::plain(), false, SyntaxHighlightKind::None });
             auto fragmentStart = math.width > 0.0f ? progress / math.width : 0.0f;
             progress += fragment.breakSpace + fragment.width;
             auto fragmentEnd = math.width > 0.0f ? progress / math.width : 1.0f;
@@ -343,6 +377,24 @@ namespace winrt::ElMd
             }
             if (IsHeadingMarker(item) && !(item.source_range.start.v <= caret && caret <= sourceEnd))
             {
+                continue;
+            }
+            if (item.kind == elmd::InlineRenderItem::Kind::Link)
+            {
+                if (CaretTouchesRange(caret, item.source_range))
+                {
+                    AppendSourceText(display, sourceText, item.source_range.start.v, item.source_range.end.v, item.style, false);
+                }
+                else
+                {
+                    MergeDisplayText(display, BuildDisplayInlineText(item.children, caret, item.source_range.end.v, sourceText, mathJax, fontSize, containerWidth, svgSupported, requestMath));
+                }
+                continue;
+            }
+            if (item.kind == elmd::InlineRenderItem::Kind::Image)
+            {
+                if (CaretTouchesRange(caret, item.source_range)) AppendSourceText(display, sourceText, item.source_range.start.v, item.source_range.end.v, item.style, false);
+                else AppendGeneratedText(display, item.alt.empty() ? U"image" : elmd::utf8_to_cps(item.alt), item.source_range.start.v, item.style);
                 continue;
             }
             if (item.kind == elmd::InlineRenderItem::Kind::Math)
@@ -416,6 +468,7 @@ namespace winrt::ElMd
             sheet.panelColor = Rgba(0.940f, 0.945f, 0.955f);
             sheet.selectionColor = Rgba(0.370f, 0.570f, 0.960f, 0.30f);
             sheet.caretColor = Rgba(0.065f, 0.075f, 0.090f);
+            sheet.syntaxColors = { sheet.codeTextColor, Rgb(0xAF00DB), Rgb(0x267F99), Rgb(0x795E26), Rgb(0xA31515), Rgb(0x098658), Rgb(0x008000), Rgb(0x303030), Rgb(0x800080), Rgb(0x001080), Rgb(0x0070C1) };
             return sheet;
         }
 
@@ -427,6 +480,7 @@ namespace winrt::ElMd
         sheet.panelColor = Rgba(0.100f, 0.113f, 0.140f);
         sheet.selectionColor = Rgba(0.255f, 0.390f, 0.700f, 0.44f);
         sheet.caretColor = Rgba(0.965f, 0.975f, 1.000f);
+        sheet.syntaxColors = { sheet.codeTextColor, Rgb(0xC586C0), Rgb(0x4EC9B0), Rgb(0xDCDCAA), Rgb(0xCE9178), Rgb(0xB5CEA8), Rgb(0x6A9955), Rgb(0xD4D4D4), Rgb(0xC586C0), Rgb(0x9CDCFE), Rgb(0x4FC1FF) };
         return sheet;
     }
 
@@ -502,6 +556,7 @@ namespace winrt::ElMd
         panelBrush = nullptr;
         selectionBrush = nullptr;
         caretBrush = nullptr;
+        for (auto& brush : syntaxBrushes) brush = nullptr;
     }
 
     void EditorSurfaceRenderer::RebuildTextFormats()
@@ -543,6 +598,7 @@ namespace winrt::ElMd
 
         theme = value;
         styleSheet = CreateStyleSheet(value);
+        blockHeightCache.clear();
         RebuildTextFormats();
         ResetBrushes();
     }
@@ -612,6 +668,10 @@ namespace winrt::ElMd
         winrt::check_hresult(d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, d2dContext.GetAddressOf()));
 
         winrt::check_hresult(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(dwriteFactory.GetAddressOf())));
+        if (FAILED(CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(wicFactory.GetAddressOf()))))
+        {
+            CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(wicFactory.GetAddressOf()));
+        }
         RebuildTextFormats();
 
         ::Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
@@ -682,6 +742,7 @@ namespace winrt::ElMd
             return;
         }
 
+        if (newWidthDip != surfaceWidthDip) blockHeightCache.clear();
         ResetTargets();
         winrt::check_hresult(swapChain->ResizeBuffers(0, newWidth, newHeight, DXGI_FORMAT_UNKNOWN, 0));
         surfaceWidth = newWidth;
@@ -693,12 +754,65 @@ namespace winrt::ElMd
         ApplySwapChainTransform();
     }
 
+    std::optional<EditorSurfaceRenderer::CachedRasterImage> EditorSurfaceRenderer::LoadRasterImage(std::wstring const& baseDirectory, std::string_view source)
+    {
+        if (!wicFactory || !d2dContext || source.empty() || source.find("://") != std::string_view::npos || source.starts_with("data:")) return std::nullopt;
+        auto sourceText = winrt::to_hstring(std::string(source));
+        std::filesystem::path path(sourceText.c_str());
+        if (path.is_relative())
+        {
+            if (baseDirectory.empty()) return std::nullopt;
+            path = std::filesystem::path(baseDirectory) / path;
+        }
+        std::error_code error;
+        auto absolute = std::filesystem::weakly_canonical(path, error);
+        if (error) absolute = path.lexically_normal();
+        auto key = absolute.wstring();
+        if (auto found = rasterImageCache.find(key); found != rasterImageCache.end()) return found->second;
+
+        ::Microsoft::WRL::ComPtr<IWICBitmapDecoder> decoder;
+        if (FAILED(wicFactory->CreateDecoderFromFilename(key.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad, decoder.GetAddressOf()))) return std::nullopt;
+        ::Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> frame;
+        if (FAILED(decoder->GetFrame(0, frame.GetAddressOf()))) return std::nullopt;
+        UINT width = 0;
+        UINT height = 0;
+        if (FAILED(frame->GetSize(&width, &height)) || width == 0 || height == 0) return std::nullopt;
+        auto pixels = static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height);
+        if (pixels > 16ull * 1024ull * 1024ull) return std::nullopt;
+        ::Microsoft::WRL::ComPtr<IWICFormatConverter> converter;
+        if (FAILED(wicFactory->CreateFormatConverter(converter.GetAddressOf()))) return std::nullopt;
+        if (FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeMedianCut))) return std::nullopt;
+        CachedRasterImage image;
+        if (FAILED(d2dContext->CreateBitmapFromWicBitmap(converter.Get(), nullptr, image.bitmap.GetAddressOf())) || !image.bitmap) return std::nullopt;
+        image.width = static_cast<float>(width);
+        image.height = static_cast<float>(height);
+        image.bytes = static_cast<std::size_t>(pixels * 4);
+        while (!rasterImageCacheOrder.empty() && (rasterImageCache.size() >= 32 || rasterImageCacheBytes + image.bytes > 64 * 1024 * 1024))
+        {
+            auto oldest = std::move(rasterImageCacheOrder.front());
+            rasterImageCacheOrder.pop_front();
+            auto found = rasterImageCache.find(oldest);
+            if (found == rasterImageCache.end()) continue;
+            rasterImageCacheBytes -= found->second.bytes;
+            rasterImageCache.erase(found);
+        }
+        if (image.bytes <= 64 * 1024 * 1024)
+        {
+            rasterImageCacheBytes += image.bytes;
+            rasterImageCacheOrder.push_back(key);
+            rasterImageCache.emplace(key, image);
+        }
+        return image;
+    }
+
     void EditorSurfaceRenderer::DrawDocument(detail::EditorSessionCore const& sessionCore)
     {
         visualBlocks.clear();
         visualLines.clear();
         visualTables.clear();
         visualMathHits.clear();
+        visualBlocks.reserve(sessionCore.renderModel.blocks.size());
+        if (blockHeightCache.size() > 32768) blockHeightCache.clear();
         auto documentLeft = styleSheet.horizontalPadding;
         auto documentTop = styleSheet.verticalPadding;
         auto documentRight = (std::min)(surfaceWidthDip - styleSheet.horizontalPadding, documentLeft + styleSheet.documentWidth);
@@ -799,6 +913,11 @@ namespace winrt::ElMd
                 {
                     layout->SetFontSize(styleSheet.body.size * 0.82f, textRange);
                 }
+                auto syntaxIndex = static_cast<std::size_t>(range.syntax);
+                if (range.syntax != SyntaxHighlightKind::None && syntaxIndex < syntaxBrushes.size() && syntaxBrushes[syntaxIndex])
+                {
+                    layout->SetDrawingEffect(syntaxBrushes[syntaxIndex].Get(), textRange);
+                }
             }
         };
 
@@ -864,6 +983,43 @@ namespace winrt::ElMd
             }
         };
 
+        auto blockCacheKey = [&](elmd::RenderBlock const& block)
+        {
+            auto start = (std::min)(block.source_range.start.v, sourceText.size());
+            auto end = (std::min)((std::max)(block.source_range.end.v, start), sourceText.size());
+            auto source = std::u32string_view(sourceText).substr(start, end - start);
+            auto value = static_cast<std::uint64_t>(std::hash<std::u32string_view>{}(source));
+            value ^= static_cast<std::uint64_t>(block.kind) * 0x9e3779b97f4a7c15ull;
+            value ^= static_cast<std::uint64_t>(std::llround((documentRight - documentLeft) * 16.0f)) << 17;
+            value ^= static_cast<std::uint64_t>(theme) << 61;
+            return value;
+        };
+
+        auto estimatedBlockHeight = [&](elmd::RenderBlock const& block)
+        {
+            if (auto found = blockHeightCache.find(blockCacheKey(block)); found != blockHeightCache.end()) return found->second;
+            switch (block.kind)
+            {
+                case elmd::RenderBlockKind::Blank:
+                    return styleSheet.body.lineHeight;
+                case elmd::RenderBlockKind::Code:
+                    return (std::max)(64.0f, static_cast<float>((std::max)(std::size_t{1}, block.line_count)) * styleSheet.code.lineHeight + 32.0f);
+                case elmd::RenderBlockKind::Math:
+                    return 96.0f;
+                case elmd::RenderBlockKind::Table:
+                    return static_cast<float>((std::max)(std::size_t{2}, block.row_count)) * (styleSheet.body.lineHeight + 16.0f);
+                case elmd::RenderBlockKind::Image:
+                    return 160.0f;
+                default:
+                {
+                    auto length = block.content_range.end.v > block.content_range.start.v ? block.content_range.end.v - block.content_range.start.v : std::size_t{1};
+                    auto charactersPerLine = (std::max)(std::size_t{24}, static_cast<std::size_t>((documentRight - documentLeft) / (styleSheet.body.size * 0.56f)));
+                    auto lines = (std::max)(std::size_t{1}, (length + charactersPerLine - 1) / charactersPerLine);
+                    return static_cast<float>(lines) * styleSheet.body.lineHeight + 8.0f;
+                }
+            }
+        };
+
         if (sessionCore.renderModel.blocks.empty() && sourceText.empty())
         {
             auto emptyText = winrt::hstring(L"Open a Markdown file or start editing to see the WYSIWYG surface.");
@@ -887,6 +1043,25 @@ namespace winrt::ElMd
                 {
                     y += styleSheet.blockGap;
                 }
+            }
+            auto cacheKey = blockCacheKey(block);
+            auto blockStartY = y;
+            auto estimatedHeight = estimatedBlockHeight(block);
+            auto caretInside = block.source_range.start.v <= caret && caret <= block.source_range.end.v;
+            auto insidePrefetch = y + estimatedHeight >= -surfaceHeightDip && y <= surfaceHeightDip * 2.0f;
+            if (!caretInside && !insidePrefetch)
+            {
+                VisualBlock placeholder;
+                placeholder.rect = D2D1::RectF(documentLeft, y, documentRight, y + estimatedHeight);
+                placeholder.textOrigin = D2D1::Point2F(documentLeft, y);
+                placeholder.textWidth = documentRight - documentLeft;
+                placeholder.sourceStart = block.source_range.start.v;
+                placeholder.sourceEnd = block.source_range.end.v;
+                placeholder.documentY = y + scrollOffset;
+                visualBlocks.push_back(std::move(placeholder));
+                y += estimatedHeight;
+                previousBlank = currentBlank;
+                continue;
             }
             if (block.kind == elmd::RenderBlockKind::Table)
             {
@@ -1019,6 +1194,7 @@ namespace winrt::ElMd
                         d2dContext->DrawLine(D2D1::Point2F(visualTable.rect.left, boundary), D2D1::Point2F(visualTable.rect.right, boundary), mutedBrush.Get(), 1.0f);
                     }
                     y = visualTable.rect.bottom;
+                    blockHeightCache[cacheKey] = y - blockStartY;
                     previousBlank = false;
                     continue;
                 }
@@ -1040,6 +1216,8 @@ namespace winrt::ElMd
             bool showRawMath = false;
             std::optional<MermaidSvg> blockMermaid;
             bool showRawMermaid = false;
+            std::optional<CachedRasterImage> blockImage;
+            bool showRawImage = false;
 
             switch (block.kind)
             {
@@ -1106,6 +1284,21 @@ namespace winrt::ElMd
                     else
                     {
                         display = BuildCodeBlockText(block, caret, sourceText);
+                        if (requestEmbedded && block.language)
+                        {
+                            auto ranges = treeSitter.Highlight(*block.language, elmd::cps_to_utf8(block.code_text));
+                            for (auto const& range : ranges)
+                            {
+                                auto sourceRangeStart = block.content_range.start.v + range.start;
+                                auto sourceRangeEnd = sourceRangeStart + range.length;
+                                auto displayStart = DisplayPositionForSource(display.displayToSource, sourceRangeStart);
+                                auto displayEnd = DisplayPositionForSource(display.displayToSource, sourceRangeEnd);
+                                if (displayStart < displayEnd && displayEnd <= display.text.size())
+                                {
+                                    display.ranges.push_back(InlineStyleRange{static_cast<UINT32>(displayStart), static_cast<UINT32>(displayEnd - displayStart), elmd::InlineStyle::plain(), false, range.kind});
+                                }
+                            }
+                        }
                     }
                     text = std::move(display.text);
                     inlineRanges = std::move(display.ranges);
@@ -1149,19 +1342,114 @@ namespace winrt::ElMd
                     fillPanel = true;
                     break;
                 }
+                case elmd::RenderBlockKind::Callout:
+                case elmd::RenderBlockKind::Footnote:
+                {
+                    DisplayInlineText display;
+                    if (block.kind == elmd::RenderBlockKind::Callout)
+                    {
+                        auto label = elmd::utf8_to_cps(block.callout_kind.empty() ? "NOTE" : block.callout_kind);
+                        if (block.callout_title) label += U": " + InlineText(*block.callout_title);
+                        AppendGeneratedText(display, label + U"\n", block.source_range.start.v, elmd::InlineStyle::plain());
+                    }
+                    else
+                    {
+                        AppendGeneratedText(display, U"[" + elmd::utf8_to_cps(block.footnote_label) + U"] ", block.source_range.start.v, elmd::InlineStyle::plain());
+                    }
+                    for (std::size_t childIndex = 0; childIndex < block.child_blocks.size(); ++childIndex)
+                    {
+                        auto const& child = block.child_blocks[childIndex];
+                        if (!child.inline_items.empty())
+                        {
+                            MergeDisplayText(display, BuildDisplayInlineText(child.inline_items, caret, child.content_range.end.v, sourceText, mathJax, styleSheet.body.size, documentRight - documentLeft, svgSupported, requestEmbedded));
+                        }
+                        else
+                        {
+                            AppendSourceText(display, sourceText, child.content_range.start.v, child.content_range.end.v, elmd::InlineStyle::plain(), false);
+                        }
+                        if (childIndex + 1 < block.child_blocks.size()) AppendGeneratedText(display, U"\n", child.content_range.end.v, elmd::InlineStyle::plain());
+                    }
+                    display.displayToSource.push_back(block.content_range.end.v);
+                    text = std::move(display.text);
+                    inlineRanges = std::move(display.ranges);
+                    displayToSource = std::move(display.displayToSource);
+                    inlineMathOverlays = std::move(display.mathOverlays);
+                    inlineMathPreviews = std::move(display.mathPreviews);
+                    inset = 16.0f;
+                    textTop = 12.0f;
+                    fillPanel = true;
+                    break;
+                }
+                case elmd::RenderBlockKind::Toc:
+                {
+                    DisplayInlineText display;
+                    auto editing = block.source_range.start.v <= caret && caret <= block.source_range.end.v;
+                    if (editing)
+                    {
+                        AppendSourceText(display, sourceText, block.source_range.start.v, block.source_range.end.v, elmd::InlineStyle::plain(), false);
+                    }
+                    else
+                    {
+                        for (auto const* item : sessionCore.renderModel.outline.flat_items())
+                        {
+                            std::u32string label(static_cast<std::size_t>((std::max)(0, static_cast<int>(item->level) - 1) * 2), U' ');
+                            label += U"• " + elmd::utf8_to_cps(item->title_plain_text) + U"\n";
+                            AppendGeneratedText(display, label, block.source_range.start.v, elmd::InlineStyle::plain());
+                        }
+                    }
+                    display.displayToSource.push_back(block.source_range.end.v);
+                    text = std::move(display.text);
+                    inlineRanges = std::move(display.ranges);
+                    displayToSource = std::move(display.displayToSource);
+                    inset = 12.0f;
+                    textTop = 10.0f;
+                    fillPanel = true;
+                    break;
+                }
+                case elmd::RenderBlockKind::Frontmatter:
+                {
+                    DisplayInlineText display;
+                    AppendSourceText(display, sourceText, block.source_range.start.v, block.source_range.end.v, elmd::InlineStyle::plain(), false);
+                    display.displayToSource.push_back(block.source_range.end.v);
+                    text = std::move(display.text);
+                    inlineRanges = std::move(display.ranges);
+                    displayToSource = std::move(display.displayToSource);
+                    format = codeFormat.Get();
+                    brush = codeBrush.Get();
+                    inset = 16.0f;
+                    textTop = 12.0f;
+                    fillPanel = true;
+                    break;
+                }
                 case elmd::RenderBlockKind::Table:
                     text = U"Table";
                     displayToSource.push_back(block.source_range.start.v);
                     displayToSource.push_back(block.source_range.end.v);
                     break;
                 case elmd::RenderBlockKind::Image:
-                    text = U"Image: " + (block.alt.empty() ? elmd::utf8_to_cps(block.src) : elmd::utf8_to_cps(block.alt)) + U"\n" + elmd::utf8_to_cps(block.src);
+                {
+                    blockImage = LoadRasterImage(sessionCore.baseDirectory, block.src);
+                    showRawImage = block.source_range.start.v <= caret && caret <= block.source_range.end.v;
+                    DisplayInlineText display;
+                    if (showRawImage || !blockImage)
+                    {
+                        auto visibleEnd = block.source_range.end.v;
+                        if (visibleEnd > block.source_range.start.v && visibleEnd <= sourceText.size() && sourceText[visibleEnd - 1] == U'\n') --visibleEnd;
+                        AppendSourceText(display, sourceText, block.source_range.start.v, visibleEnd, elmd::InlineStyle::plain(), false);
+                    }
+                    else
+                    {
+                        AppendMathPlaceholder(display, 1, block.source_range.start.v);
+                    }
+                    display.displayToSource.push_back(block.source_range.end.v);
+                    text = std::move(display.text);
+                    inlineRanges = std::move(display.ranges);
+                    displayToSource = std::move(display.displayToSource);
                     brush = mutedBrush.Get();
-                    height = 72.0f;
-                    inset = 16.0f;
-                    textTop = 16.0f;
-                    fillPanel = true;
+                    inset = 8.0f;
+                    textTop = showRawImage ? 8.0f : 0.0f;
                     break;
+                }
                 case elmd::RenderBlockKind::Unsupported:
                     text = elmd::utf8_to_cps(block.raw);
                     brush = mutedBrush.Get();
@@ -1225,6 +1513,7 @@ namespace winrt::ElMd
             std::optional<D2D1_POINT_2F> blockMathOrigin;
             std::vector<std::vector<D2D1_POINT_2F>> inlineMathPreviewOrigins;
             std::optional<D2D1_POINT_2F> blockMermaidOrigin;
+            std::optional<D2D1_RECT_F> blockImageRect;
             float blockMermaidWidth = 0.0f;
             float blockMermaidHeight = 0.0f;
             if (measureHeight)
@@ -1306,11 +1595,31 @@ namespace winrt::ElMd
                     blockMermaidOrigin = D2D1::Point2F(previewX, y + 16.0f);
                 }
             }
+            if (block.kind == elmd::RenderBlockKind::Image && blockImage)
+            {
+                auto availableWidth = (std::max)(1.0f, documentRight - documentLeft - inset * 2.0f);
+                auto scale = (std::min)(1.0f, (std::min)(availableWidth / blockImage->width, 600.0f / blockImage->height));
+                auto imageWidth = blockImage->width * scale;
+                auto imageHeight = blockImage->height * scale;
+                auto imageX = documentLeft + (documentRight - documentLeft - imageWidth) * 0.5f;
+                auto imageY = y + 8.0f;
+                if (showRawImage)
+                {
+                    auto rawHeight = measureTextHeight(layout.Get(), styleSheet.body.lineHeight);
+                    imageY = y + textTop + rawHeight + 8.0f;
+                }
+                blockImageRect = D2D1::RectF(imageX, imageY, imageX + imageWidth, imageY + imageHeight);
+                height = imageY - y + imageHeight + 8.0f;
+            }
             auto sourceStart = displayToSource.empty() ? SourceStart(block) : displayToSource.front();
             auto sourceEnd = displayToSource.empty() ? SourceEnd(block, text) : displayToSource.back();
             if (fillPanel)
             {
                 d2dContext->FillRectangle(D2D1::RectF(documentLeft, y, documentRight, y + height), panelBrush.Get());
+            }
+            if (block.kind == elmd::RenderBlockKind::Callout)
+            {
+                d2dContext->DrawLine(D2D1::Point2F(documentLeft + 2.0f, y + 4.0f), D2D1::Point2F(documentLeft + 2.0f, y + height - 4.0f), accentBrush.Get(), 4.0f);
             }
             auto origin = D2D1::Point2F(documentLeft + inset, y + textTop);
             if (layout)
@@ -1405,6 +1714,10 @@ namespace winrt::ElMd
                 {
                     drawSvg(blockMermaid->svg, blockMermaidWidth, blockMermaidHeight, *blockMermaidOrigin);
                 }
+                if (blockImageRect && blockImage && blockImage->bitmap)
+                {
+                    d2dContext->DrawBitmap(blockImage->bitmap.Get(), *blockImageRect, 1.0f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+                }
 
                 VisualBlock visualBlock;
                 visualBlock.rect = D2D1::RectF(documentLeft, y, documentRight, y + height);
@@ -1420,6 +1733,7 @@ namespace winrt::ElMd
                 addVisualLinesForBlock(visualBlocks.size() - 1);
             }
             y += height;
+            blockHeightCache[cacheKey] = height;
             previousBlank = currentBlank;
         }
 
@@ -1672,8 +1986,9 @@ namespace winrt::ElMd
         return std::nullopt;
     }
 
-    void EditorSurfaceRenderer::ScrollToSourceOffset(std::size_t sourceOffset)
+    bool EditorSurfaceRenderer::ScrollToSourceOffset(std::size_t sourceOffset)
     {
+        auto previous = scrollOffset;
         if (auto caretBounds = CaretBounds(sourceOffset))
         {
             auto margin = styleSheet.verticalPadding;
@@ -1686,7 +2001,7 @@ namespace winrt::ElMd
             {
                 scrollOffset = (std::min)(maxScroll, scrollOffset + caretBounds->bottom - (surfaceHeightDip - margin));
             }
-            return;
+            return scrollOffset != previous;
         }
 
         for (auto const& block : visualBlocks)
@@ -1695,9 +2010,10 @@ namespace winrt::ElMd
             {
                 auto maxScroll = (std::max)(0.0f, totalDocumentHeight - surfaceHeightDip);
                 scrollOffset = (std::min)(maxScroll, (std::max)(0.0f, block.documentY - styleSheet.verticalPadding));
-                return;
+                return scrollOffset != previous;
             }
         }
+        return false;
     }
 
     std::optional<std::size_t> EditorSurfaceRenderer::LineIndexFor(std::size_t sourceOffset, bool upstream) const
@@ -2088,6 +2404,10 @@ namespace winrt::ElMd
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.panelColor, panelBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.selectionColor, selectionBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.caretColor, caretBrush.GetAddressOf()));
+            for (std::size_t index = 0; index < syntaxBrushes.size(); ++index)
+            {
+                winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.syntaxColors[index], syntaxBrushes[index].GetAddressOf()));
+            }
         }
 
         d2dContext->BeginDraw();

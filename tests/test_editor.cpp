@@ -674,3 +674,88 @@ ELMD_TEST(test_toggle_task_list_across_selected_lines_and_remove) {
     e.execute_command(c);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha\nbeta"));
 }
+
+ELMD_TEST(test_empty_inline_format_commands_insert_editable_pairs) {
+    Editor e;
+    Command strong; strong.kind = CommandKind::ToggleStrong;
+    e.execute_command(strong);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("****"));
+    ELMD_CHECK_EQ(e.selection().head().v, 2u);
+    Editor math;
+    Command inlineMath; inlineMath.kind = CommandKind::InsertMathInline;
+    math.execute_command(inlineMath);
+    ELMD_CHECK_EQ(math.buffer().text_utf8(), std::string("$$"));
+    ELMD_CHECK_EQ(math.selection().head().v, 1u);
+}
+
+ELMD_TEST(test_inline_format_command_removes_surrounding_markers) {
+    Editor e("**bold**");
+    e.set_selection(Selection{CharOffset(2), CharOffset(6), TextAffinity::Downstream});
+    Command command; command.kind = CommandKind::ToggleStrong;
+    e.execute_command(command);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("bold"));
+    ELMD_CHECK_EQ(e.selection().normalized_range().start.v, 0u);
+    ELMD_CHECK_EQ(e.selection().normalized_range().end.v, 4u);
+}
+
+ELMD_TEST(test_toggle_blockquote_across_selected_lines) {
+    Editor e("alpha\nbeta");
+    e.set_selection(Selection{CharOffset(0), CharOffset(10), TextAffinity::Downstream});
+    Command command; command.kind = CommandKind::ToggleBlockQuote;
+    e.execute_command(command);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha\n> beta"));
+    e.execute_command(command);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha\nbeta"));
+}
+
+ELMD_TEST(test_clear_heading_preserves_text) {
+    Editor e("### title");
+    e.set_caret(CharOffset(9));
+    Command command; command.kind = CommandKind::ClearHeading;
+    e.execute_command(command);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("title"));
+}
+
+ELMD_TEST(test_insert_image_uses_selection_as_alt_text) {
+    Editor e("diagram");
+    e.set_selection(Selection{CharOffset(0), CharOffset(7), TextAffinity::Downstream});
+    Command command; command.kind = CommandKind::InsertImage; command.path = U"chart.png";
+    e.execute_command(command);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("![diagram](chart.png)"));
+}
+
+ELMD_TEST(test_insert_footnote_adds_unique_definition) {
+    Editor e("alpha [^1]: old");
+    e.set_caret(CharOffset(5));
+    Command command; command.kind = CommandKind::InsertFootnote;
+    e.execute_command(command);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha[^2] [^1]: old\n\n[^2]: "));
+    ELMD_CHECK(std::any_of(e.document().blocks.begin(), e.document().blocks.end(), [](auto const& block) { return block.kind == BlockKind::FootnoteDefinition; }));
+}
+
+ELMD_TEST(test_toggle_callout_wraps_and_unwraps_selected_lines) {
+    Editor e("alpha\nbeta");
+    e.set_selection(Selection{CharOffset(0), CharOffset(10), TextAffinity::Downstream});
+    Command command; command.kind = CommandKind::ToggleCallout; command.callout_kind = U"warning";
+    e.execute_command(command);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> [!WARNING]\n> alpha\n> beta"));
+    ELMD_CHECK(std::any_of(e.document().blocks.begin(), e.document().blocks.end(), [](auto const& block) { return block.kind == BlockKind::Callout; }));
+    e.set_caret(CharOffset(20));
+    e.execute_command(command);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha\nbeta"));
+}
+
+ELMD_TEST(test_large_document_incremental_edit_keeps_distant_blocks) {
+    std::string source;
+    for (int index = 0; index < 1500; ++index) {
+        source += "## Section " + std::to_string(index) + "\n\nParagraph " + std::to_string(index) + " with **formatting** and $x_" + std::to_string(index) + "$.\n\n";
+    }
+    Editor editor(source);
+    auto position = source.find("Paragraph 750") + std::string("Paragraph 750").size();
+    editor.set_caret(CharOffset(position));
+    editor.execute_command(Command::InsertText(U" updated"));
+    auto result = editor.buffer().text_utf8();
+    ELMD_CHECK(result.find("Paragraph 750 updated") != std::string::npos);
+    ELMD_CHECK(result.find("## Section 1499") != std::string::npos);
+    ELMD_CHECK(editor.outline().flat_items().size() == 1500u);
+}

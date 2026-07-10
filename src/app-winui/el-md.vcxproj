@@ -79,7 +79,7 @@
       <AdditionalOptions>%(AdditionalOptions) /bigobj</AdditionalOptions>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$(IntDir)quickjs\quickjs.lib;d2d1.lib;d3d11.lib;dwrite.lib;dxgi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(IntDir)quickjs\quickjs.lib;d2d1.lib;d3d11.lib;dwrite.lib;dxgi.lib;windowscodecs.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>%(AdditionalOptions) /STACK:33554432</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
@@ -111,6 +111,7 @@
     <ClInclude Include="EditorSurfaceRenderer.h" />
     <ClInclude Include="MathJaxRenderer.h" />
     <ClInclude Include="MermaidRenderer.h" />
+    <ClInclude Include="TreeSitterHighlighter.h" />
     <ClInclude Include="App.xaml.h">
       <DependentUpon>App.xaml</DependentUpon>
     </ClInclude>
@@ -217,6 +218,25 @@
     <ClCompile Include="EditorSurfaceRenderer.cpp" />
     <ClCompile Include="MathJaxRenderer.cpp" />
     <ClCompile Include="MermaidRenderer.cpp" />
+    <ClCompile Include="TreeSitterHighlighter.cpp">
+      <AdditionalIncludeDirectories>third_party\tree-sitter\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <ClCompile Include="third_party\tree-sitter\runtime\lib.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+      <AdditionalIncludeDirectories>third_party\tree-sitter\include;third_party\tree-sitter\runtime;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ObjectFileName>$(IntDir)tree_sitter_runtime.obj</ObjectFileName>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;TREE_SITTER_HIDE_SYMBOLS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <DisableSpecificWarnings>4018;4100;4201;4232;4133;4244;4267;4996;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+    </ClCompile>
+    <ClCompile Include="third_party\tree-sitter\grammars\*.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+      <AdditionalIncludeDirectories>third_party\tree-sitter\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ObjectFileName>$(IntDir)tree_sitter_%(Filename).obj</ObjectFileName>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;TREE_SITTER_HIDE_SYMBOLS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <DisableSpecificWarnings>4018;4100;4133;4244;4267;4456;4996;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+    </ClCompile>
     <ClCompile Include="App.xaml.cpp">
       <DependentUpon>App.xaml</DependentUpon>
     </ClCompile>

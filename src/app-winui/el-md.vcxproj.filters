@@ -68,6 +68,15 @@
     <ClCompile Include="MermaidRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="TreeSitterHighlighter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="third_party\tree-sitter\runtime\lib.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="third_party\tree-sitter\grammars\*.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -89,6 +98,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="MermaidRenderer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="TreeSitterHighlighter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

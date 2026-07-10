@@ -2,6 +2,7 @@
 
 #include "MathJaxRenderer.h"
 #include "MermaidRenderer.h"
+#include "TreeSitterHighlighter.h"
 
 namespace winrt::ElMd
 {
@@ -59,7 +60,7 @@ namespace winrt::ElMd
         std::optional<std::size_t> TableDropIndexAt(float x, float y, bool rows) const;
         void SetTableDrag(std::optional<TableAction> action, std::optional<std::size_t> dropIndex);
         void ScrollBy(float delta);
-        void ScrollToSourceOffset(std::size_t sourceOffset);
+        bool ScrollToSourceOffset(std::size_t sourceOffset);
 
     private:
         float CompositionScaleX(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const;
@@ -67,6 +68,16 @@ namespace winrt::ElMd
         void ApplySwapChainTransform();
         void ResetTargets();
         void DrawDocument(detail::EditorSessionCore const& sessionCore);
+
+        struct CachedRasterImage
+        {
+            ::Microsoft::WRL::ComPtr<ID2D1Bitmap1> bitmap;
+            float width = 0.0f;
+            float height = 0.0f;
+            std::size_t bytes = 0;
+        };
+
+        std::optional<CachedRasterImage> LoadRasterImage(std::wstring const& baseDirectory, std::string_view source);
 
         struct VisualBlock
         {
@@ -157,6 +168,7 @@ namespace winrt::ElMd
             D2D1_COLOR_F panelColor{};
             D2D1_COLOR_F selectionColor{};
             D2D1_COLOR_F caretColor{};
+            std::array<D2D1_COLOR_F, 11> syntaxColors{};
             float documentWidth = 900.0f;
             float horizontalPadding = 48.0f;
             float verticalPadding = 40.0f;
@@ -176,6 +188,7 @@ namespace winrt::ElMd
         ::Microsoft::WRL::ComPtr<ID2D1DeviceContext> d2dContext;
         ::Microsoft::WRL::ComPtr<ID2D1Bitmap1> d2dTarget;
         ::Microsoft::WRL::ComPtr<IDWriteFactory> dwriteFactory;
+        ::Microsoft::WRL::ComPtr<IWICImagingFactory> wicFactory;
         ::Microsoft::WRL::ComPtr<IDWriteTextFormat> textFormat;
         ::Microsoft::WRL::ComPtr<IDWriteTextFormat> heading1Format;
         ::Microsoft::WRL::ComPtr<IDWriteTextFormat> heading2Format;
@@ -188,8 +201,10 @@ namespace winrt::ElMd
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> panelBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> selectionBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> caretBrush;
+        std::array<::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush>, 11> syntaxBrushes;
         MathJaxRenderer mathJax;
         MermaidRenderer mermaid;
+        TreeSitterHighlighter treeSitter;
         std::function<void()> invalidateCallback;
         std::atomic_bool mathInvalidationQueued = false;
         Theme theme = Theme::Dark;
@@ -198,6 +213,10 @@ namespace winrt::ElMd
         std::vector<VisualLine> visualLines;
         std::vector<VisualTable> visualTables;
         std::vector<VisualMathHit> visualMathHits;
+        std::unordered_map<std::uint64_t, float> blockHeightCache;
+        std::unordered_map<std::wstring, CachedRasterImage> rasterImageCache;
+        std::deque<std::wstring> rasterImageCacheOrder;
+        std::size_t rasterImageCacheBytes = 0;
         std::optional<D2D1_POINT_2F> pointerPosition;
         std::optional<TableAction> draggedTableAction;
         std::optional<std::size_t> tableDropIndex;

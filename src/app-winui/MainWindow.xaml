@@ -14,6 +14,8 @@
             <AppBarSeparator/>
             <AppBarButton x:Name="BoldButton" Icon="Bold" Label="Bold"/>
             <AppBarButton x:Name="ItalicButton" Icon="Italic" Label="Italic"/>
+            <AppBarButton x:Name="StrikeButton" Label="Strike"/>
+            <AppBarButton x:Name="InlineCodeButton" Label="Inline Code"/>
             <AppBarSeparator/>
             <AppBarButton x:Name="Heading1Button" Label="H1"/>
             <AppBarButton x:Name="Heading2Button" Label="H2"/>
@@ -23,6 +25,13 @@
             <AppBarButton x:Name="TaskListButton" Label="Task"/>
             <AppBarButton x:Name="CodeBlockButton" Label="Code"/>
             <AppBarButton x:Name="TableButton" Label="Table"/>
+            <AppBarButton x:Name="InlineMathButton" Label="Inline Math"/>
+            <AppBarButton x:Name="BlockMathButton" Label="Block Math"/>
+            <AppBarButton x:Name="LinkButton" Label="Link"/>
+            <AppBarButton x:Name="ImageButton" Label="Image"/>
+            <AppBarButton x:Name="FootnoteButton" Label="Footnote"/>
+            <AppBarButton x:Name="CalloutButton" Label="Callout"/>
+            <AppBarButton x:Name="TocButton" Label="TOC"/>
         </CommandBar>
 
         <Border Grid.Row="1" Grid.Column="0" Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,1,0">

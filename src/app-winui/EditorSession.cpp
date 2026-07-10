@@ -28,6 +28,7 @@ namespace winrt::ElMd
     void EditorSession::SaveAs(winrt::Windows::Storage::StorageFile const& file)
     {
         file_ = file;
+        core_->baseDirectory = std::filesystem::path(file_.Path().c_str()).parent_path().wstring();
     }
 
     void EditorSession::SetText(winrt::hstring const& text)
@@ -40,6 +41,7 @@ namespace winrt::ElMd
     void EditorSession::RebuildCore()
     {
         core_->sourceText = winrt::to_string(text_);
+        core_->baseDirectory = file_ ? std::filesystem::path(file_.Path().c_str()).parent_path().wstring() : std::wstring{};
         core_->editor = elmd::Editor(core_->sourceText);
         RebuildRenderModel();
     }

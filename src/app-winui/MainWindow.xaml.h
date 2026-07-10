@@ -39,6 +39,7 @@ namespace winrt::ElMd::implementation
         void CopySelectionToClipboard();
         void CutSelectionToClipboard();
         winrt::fire_and_forget PasteClipboardAsync();
+        winrt::fire_and_forget InsertImageAsync();
         void SetStatus(winrt::hstring const& text);
         HWND WindowHandle();
         winrt::fire_and_forget OpenDocumentAsync();
@@ -63,6 +64,8 @@ namespace winrt::ElMd::implementation
         bool MoveCaretVerticalStep(bool down, bool extend);
         std::vector<std::size_t> outlineOffsets;
         std::vector<std::size_t> diagnosticOffsets;
+        std::vector<std::wstring> outlineLabels;
+        std::vector<std::wstring> diagnosticLabels;
     };
 }
 

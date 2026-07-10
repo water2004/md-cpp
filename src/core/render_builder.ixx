@@ -191,7 +191,7 @@ struct Builder {
                 return;
             }
             case K::FootnoteRef: {
-                std::u32string raw = U"[^" + node.label.empty() ? U"" : utf8_to_cps(node.label);
+                std::u32string raw = U"[^" + (node.label.empty() ? U"" : utf8_to_cps(node.label));
                 raw.push_back(']');
                 std::size_t len = raw.size();
                 auto sr = range_for(node.id, cursor + len);

@@ -153,6 +153,20 @@ namespace winrt::ElMd::implementation
             ExecuteEditorCommand(command);
         });
 
+        StrikeButton().Click([this](auto const&, auto const&)
+        {
+            elmd::Command command;
+            command.kind = elmd::CommandKind::ToggleStrikethrough;
+            ExecuteEditorCommand(command);
+        });
+
+        InlineCodeButton().Click([this](auto const&, auto const&)
+        {
+            elmd::Command command;
+            command.kind = elmd::CommandKind::ToggleInlineCode;
+            ExecuteEditorCommand(command);
+        });
+
         Heading1Button().Click([this](auto const&, auto const&)
         {
             elmd::Command command;
@@ -210,6 +224,55 @@ namespace winrt::ElMd::implementation
             command.kind = elmd::CommandKind::InsertTable;
             command.rows = 2;
             command.cols = 3;
+            ExecuteEditorCommand(command);
+        });
+
+        InlineMathButton().Click([this](auto const&, auto const&)
+        {
+            elmd::Command command;
+            command.kind = elmd::CommandKind::InsertMathInline;
+            ExecuteEditorCommand(command);
+        });
+
+        BlockMathButton().Click([this](auto const&, auto const&)
+        {
+            elmd::Command command;
+            command.kind = elmd::CommandKind::InsertMathBlock;
+            ExecuteEditorCommand(command);
+        });
+
+        LinkButton().Click([this](auto const&, auto const&)
+        {
+            elmd::Command command;
+            command.kind = elmd::CommandKind::InsertLink;
+            command.href = U"https://";
+            ExecuteEditorCommand(command);
+        });
+
+        ImageButton().Click([this](auto const&, auto const&)
+        {
+            InsertImageAsync();
+        });
+
+        FootnoteButton().Click([this](auto const&, auto const&)
+        {
+            elmd::Command command;
+            command.kind = elmd::CommandKind::InsertFootnote;
+            ExecuteEditorCommand(command);
+        });
+
+        CalloutButton().Click([this](auto const&, auto const&)
+        {
+            elmd::Command command;
+            command.kind = elmd::CommandKind::ToggleCallout;
+            command.callout_kind = U"NOTE";
+            ExecuteEditorCommand(command);
+        });
+
+        TocButton().Click([this](auto const&, auto const&)
+        {
+            elmd::Command command;
+            command.kind = elmd::CommandKind::InsertToc;
             ExecuteEditorCommand(command);
         });
 
@@ -398,8 +461,7 @@ namespace winrt::ElMd::implementation
         UpdateOutlinePanel();
         UpdateDiagnosticsPanel();
         RenderEditorSurface();
-        editorRenderer.ScrollToSourceOffset(editorSession.Core().editor.selection().active.v);
-        RenderEditorSurface();
+        if (editorRenderer.ScrollToSourceOffset(editorSession.Core().editor.selection().active.v)) RenderEditorSurface();
         NotifyTextInputChanged(oldTextLength);
         return true;
     }
@@ -620,8 +682,7 @@ namespace winrt::ElMd::implementation
                     editorSession.SetSelection(shift ? selection.anchor.v : *offset, *offset, elmd::TextAffinity::Downstream);
                     NotifyTextInputSelectionChanged();
                     RenderEditorSurface();
-                    editorRenderer.ScrollToSourceOffset(*offset);
-                    RenderEditorSurface();
+                    if (editorRenderer.ScrollToSourceOffset(*offset)) RenderEditorSurface();
                     return true;
                 }
                 command.kind = elmd::CommandKind::MoveLineStart;
@@ -638,8 +699,7 @@ namespace winrt::ElMd::implementation
                     editorSession.SetSelection(shift ? selection.anchor.v : *offset, *offset, elmd::TextAffinity::Upstream);
                     NotifyTextInputSelectionChanged();
                     RenderEditorSurface();
-                    editorRenderer.ScrollToSourceOffset(*offset);
-                    RenderEditorSurface();
+                    if (editorRenderer.ScrollToSourceOffset(*offset)) RenderEditorSurface();
                     return true;
                 }
                 command.kind = elmd::CommandKind::MoveLineEnd;
@@ -676,8 +736,7 @@ namespace winrt::ElMd::implementation
         editorSession.SetSelection(extend ? selection.anchor.v : move->offset, move->offset, affinity);
         NotifyTextInputSelectionChanged();
         RenderEditorSurface();
-        editorRenderer.ScrollToSourceOffset(move->offset);
-        RenderEditorSurface();
+        if (editorRenderer.ScrollToSourceOffset(move->offset)) RenderEditorSurface();
         return true;
     }
 
@@ -973,6 +1032,42 @@ namespace winrt::ElMd::implementation
         return hwnd;
     }
 
+    winrt::fire_and_forget MainWindow::InsertImageAsync()
+    {
+        auto lifetime = get_strong();
+        try
+        {
+            auto picker = winrt::Windows::Storage::Pickers::FileOpenPicker();
+            picker.FileTypeFilter().Append(L".png");
+            picker.FileTypeFilter().Append(L".jpg");
+            picker.FileTypeFilter().Append(L".jpeg");
+            picker.FileTypeFilter().Append(L".gif");
+            picker.FileTypeFilter().Append(L".webp");
+            picker.FileTypeFilter().Append(L".bmp");
+            auto initializeWithWindow = picker.as<IInitializeWithWindow>();
+            winrt::check_hresult(initializeWithWindow->Initialize(WindowHandle()));
+            auto file = co_await picker.PickSingleFileAsync();
+            if (!file) co_return;
+            std::filesystem::path path(file.Path().c_str());
+            if (editorSession.HasFile())
+            {
+                std::error_code error;
+                auto base = std::filesystem::path(editorSession.Path().c_str()).parent_path();
+                auto relative = std::filesystem::relative(path, base, error);
+                if (!error && !relative.empty()) path = std::move(relative);
+            }
+            auto generic = path.generic_wstring();
+            elmd::Command command;
+            command.kind = elmd::CommandKind::InsertImage;
+            command.path = elmd::utf8_to_cps(winrt::to_string(winrt::hstring(generic)));
+            ExecuteEditorCommand(command);
+        }
+        catch (winrt::hresult_error const& error)
+        {
+            SetStatus(L"Image insert failed: " + error.message());
+        }
+    }
+
     winrt::fire_and_forget MainWindow::OpenDocumentAsync()
     {
         auto lifetime = get_strong();
@@ -995,7 +1090,13 @@ namespace winrt::ElMd::implementation
             }
 
             auto text = co_await winrt::Windows::Storage::FileIO::ReadTextAsync(file);
-            editorSession.Open(file, text);
+            SetStatus(L"Opening " + file.Name() + L"…");
+            winrt::apartment_context uiContext;
+            co_await winrt::resume_background();
+            winrt::ElMd::EditorSession loaded;
+            loaded.Open(file, text);
+            co_await uiContext;
+            editorSession = std::move(loaded);
             Title(L"el-md - " + editorSession.DisplayName());
             UpdateOutlinePanel();
             UpdateDiagnosticsPanel();
@@ -1097,8 +1198,6 @@ namespace winrt::ElMd::implementation
 
     void MainWindow::UpdateOutlinePanel()
     {
-        OutlineList().Items().Clear();
-        outlineOffsets.clear();
         std::vector<std::size_t> headingOffsets;
         for (auto const& block : editorSession.Core().renderModel.blocks)
         {
@@ -1108,20 +1207,28 @@ namespace winrt::ElMd::implementation
             }
         }
 
+        std::vector<std::wstring> labels;
+        std::vector<std::size_t> offsets;
         std::size_t headingIndex = 0;
         for (auto const* item : editorSession.Core().renderModel.outline.flat_items())
         {
             std::wstring indent((std::max)(0, static_cast<int>(item->level) - 1) * 2, L' ');
-            OutlineList().Items().Append(winrt::box_value(winrt::hstring(indent + winrt::to_hstring(item->title_plain_text).c_str())));
-            outlineOffsets.push_back(headingIndex < headingOffsets.size() ? headingOffsets[headingIndex] : 0);
+            auto title = winrt::to_hstring(item->title_plain_text);
+            labels.push_back(indent + std::wstring(title.c_str()));
+            offsets.push_back(headingIndex < headingOffsets.size() ? headingOffsets[headingIndex] : 0);
             ++headingIndex;
         }
+        if (labels == outlineLabels && offsets == outlineOffsets) return;
+        outlineLabels = std::move(labels);
+        outlineOffsets = std::move(offsets);
+        OutlineList().Items().Clear();
+        for (auto const& label : outlineLabels) OutlineList().Items().Append(winrt::box_value(winrt::hstring(label)));
     }
 
     void MainWindow::UpdateDiagnosticsPanel()
     {
-        DiagnosticsList().Items().Clear();
-        diagnosticOffsets.clear();
+        std::vector<std::wstring> labels;
+        std::vector<std::size_t> offsets;
         for (auto const& diagnostic : editorSession.Core().renderModel.diagnostics)
         {
             auto severity = L"Warning";
@@ -1136,15 +1243,20 @@ namespace winrt::ElMd::implementation
 
             auto offset = diagnostic.source_range ? diagnostic.source_range->start.v : 0;
             auto label = winrt::hstring(severity) + L" @ " + winrt::to_hstring(offset) + L": " + winrt::to_hstring(diagnostic.message);
-            DiagnosticsList().Items().Append(winrt::box_value(label));
-            diagnosticOffsets.push_back(offset);
+            labels.emplace_back(label.c_str());
+            offsets.push_back(offset);
         }
 
-        if (DiagnosticsList().Items().Size() == 0)
+        if (labels.empty())
         {
-            DiagnosticsList().Items().Append(winrt::box_value(L"No diagnostics"));
-            diagnosticOffsets.push_back(editorSession.Core().editor.selection().active.v);
+            labels.push_back(L"No diagnostics");
+            offsets.push_back(0);
         }
+        if (labels == diagnosticLabels && offsets == diagnosticOffsets) return;
+        diagnosticLabels = std::move(labels);
+        diagnosticOffsets = std::move(offsets);
+        DiagnosticsList().Items().Clear();
+        for (auto const& label : diagnosticLabels) DiagnosticsList().Items().Append(winrt::box_value(winrt::hstring(label)));
     }
 
     void MainWindow::HandleOutlineSelection(winrt::Windows::Foundation::IInspectable const& selectedItem)

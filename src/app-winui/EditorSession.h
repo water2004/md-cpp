@@ -13,6 +13,7 @@ namespace winrt::ElMd
             elmd::Editor editor;
             elmd::RenderModel renderModel;
             std::string sourceText;
+            std::wstring baseDirectory;
         };
     }
 

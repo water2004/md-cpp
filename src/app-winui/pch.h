@@ -8,6 +8,7 @@
 #include <d2d1_3.h>
 #include <d3d11_4.h>
 #include <dwrite.h>
+#include <wincodec.h>
 #include <dxgi1_6.h>
 #include <microsoft.ui.xaml.window.h>
 #include <microsoft.ui.xaml.media.dxinterop.h>
@@ -29,6 +30,7 @@
 #include <fstream>
 #include <iterator>
 #include <functional>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <optional>

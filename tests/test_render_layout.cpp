@@ -292,3 +292,18 @@ ELMD_TEST(caret_geometry_at_position) {
     auto cg = compute_caret_geometry(t, CharOffset(3));
     ELMD_CHECK(cg.has_value());
 }
+
+ELMD_TEST(render_model_preserves_link_children_and_footnote_label) {
+    auto model = build_model("See [site](https://example.com) and [^note].\n\n[^note]: source\n");
+    ELMD_CHECK(!model.blocks.empty());
+    bool link = false;
+    bool footnote = false;
+    for (auto const& item : model.blocks.front().inline_items) {
+        if (item.kind == InlineRenderItem::Kind::Link) {
+            link = !item.children.empty() && item.href == "https://example.com";
+        }
+        if (item.kind == InlineRenderItem::Kind::Text && item.text == U"[^note]") footnote = true;
+    }
+    ELMD_CHECK(link);
+    ELMD_CHECK(footnote);
+}

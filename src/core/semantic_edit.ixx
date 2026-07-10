@@ -186,6 +186,83 @@ inline std::optional<Transaction> task_checkbox_transaction(const std::u32string
     return t;
 }
 
+inline Transaction inline_toggle_transaction(const std::u32string& marker, const std::u32string& text_cps, const Selection& selection, std::uint64_t revision) {
+    auto sel = selection.normalized_range();
+    auto marker_size = marker.size();
+    if (sel.is_empty()) {
+        auto replacement = marker + marker;
+        Transaction transaction(revision, selection, Selection::caret(CharOffset(sel.start.v + marker_size)), TransactionReason::FormatCommand);
+        transaction.with_edit(sel, std::move(replacement));
+        return transaction;
+    }
+    auto selected = std::u32string(text_cps.begin() + sel.start.v, text_cps.begin() + sel.end.v);
+    if (selected.size() >= marker_size * 2 && selected.starts_with(marker) && selected.ends_with(marker)) {
+        auto inner = selected.substr(marker_size, selected.size() - marker_size * 2);
+        Selection after{CharOffset(sel.start.v), CharOffset(sel.start.v + inner.size()), TextAffinity::Downstream};
+        Transaction transaction(revision, selection, after, TransactionReason::FormatCommand);
+        transaction.with_edit(sel, std::move(inner));
+        return transaction;
+    }
+    auto surrounded = sel.start.v >= marker_size && sel.end.v + marker_size <= text_cps.size()
+        && std::equal(marker.begin(), marker.end(), text_cps.begin() + sel.start.v - marker_size)
+        && std::equal(marker.begin(), marker.end(), text_cps.begin() + sel.end.v);
+    if (surrounded) {
+        Selection after{CharOffset(sel.start.v - marker_size), CharOffset(sel.end.v - marker_size), TextAffinity::Downstream};
+        Transaction transaction(revision, selection, after, TransactionReason::FormatCommand);
+        transaction.with_edit(CharRange(CharOffset(sel.start.v - marker_size), CharOffset(sel.end.v + marker_size)), std::move(selected));
+        return transaction;
+    }
+    auto replacement = marker + selected + marker;
+    Selection after{CharOffset(sel.start.v + marker_size), CharOffset(sel.end.v + marker_size), TextAffinity::Downstream};
+    Transaction transaction(revision, selection, after, TransactionReason::FormatCommand);
+    transaction.with_edit(sel, std::move(replacement));
+    return transaction;
+}
+
+inline std::optional<Transaction> quote_toggle_transaction(const std::u32string& text_cps, const Selection& selection, std::uint64_t revision) {
+    auto sel = selection.normalized_range();
+    auto start = find_line_start(text_cps, sel.start.v);
+    auto last = sel.end.v;
+    if (last > sel.start.v && last > 0 && text_cps[last - 1] == U'\n') --last;
+    auto end = find_line_end(text_cps, last);
+    std::vector<std::u32string> lines;
+    auto cursor = start;
+    while (cursor <= end) {
+        auto line_end = find_line_end(text_cps, cursor);
+        lines.emplace_back(text_cps.begin() + cursor, text_cps.begin() + line_end);
+        if (line_end >= end) break;
+        cursor = line_end + 1;
+    }
+    auto quoted = [](std::u32string const& line) {
+        auto pos = std::find_if(line.begin(), line.end(), [](char32_t value) { return value != U' ' && value != U'\t'; });
+        return pos != line.end() && *pos == U'>';
+    };
+    auto remove = !lines.empty() && std::all_of(lines.begin(), lines.end(), quoted);
+    std::u32string replacement;
+    for (std::size_t index = 0; index < lines.size(); ++index) {
+        auto line = lines[index];
+        auto indent_end = std::find_if(line.begin(), line.end(), [](char32_t value) { return value != U' ' && value != U'\t'; });
+        auto indent = static_cast<std::size_t>(indent_end - line.begin());
+        replacement.append(line.begin(), indent_end);
+        if (remove) {
+            auto body = indent;
+            if (body < line.size() && line[body] == U'>') ++body;
+            if (body < line.size() && line[body] == U' ') ++body;
+            replacement.append(line.begin() + body, line.end());
+        } else {
+            replacement += U"> ";
+            replacement.append(indent_end, line.end());
+        }
+        if (index + 1 < lines.size()) replacement.push_back(U'\n');
+    }
+    auto after = selection.is_caret()
+        ? Selection::caret(CharOffset(start + replacement.size()))
+        : Selection{CharOffset(start), CharOffset(start + replacement.size()), TextAffinity::Downstream};
+    Transaction transaction(revision, selection, after, TransactionReason::StructuralCommand);
+    transaction.with_edit(CharRange(CharOffset(start), CharOffset(end)), std::move(replacement));
+    return transaction;
+}
+
 inline const NodeSourceRange* block_range_at(const MarkdownDocument& document, std::size_t block_index) {
     if (block_index >= document.blocks.size()) return nullptr;
     return document.source_map.find_node_by_id(document.blocks[block_index].id);
@@ -500,36 +577,15 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
         case CommandKind::ToggleEmphasis:
         case CommandKind::ToggleStrikethrough:
         case CommandKind::ToggleInlineCode: {
-            if (sel.is_empty()) return Transaction(revision, selection, selection, TransactionReason::FormatCommand);
-            auto wrap = [&](char32_t a, char32_t b) {
-                std::u32string sel_text(text_cps.begin() + sel.start.v, text_cps.begin() + sel.end.v);
-                std::u32string wrapped;
-                if (a == '`') { wrapped.push_back('`'); wrapped += sel_text; wrapped.push_back('`'); }
-                else if (a == '*') { wrapped.push_back('*'); wrapped.push_back('*'); wrapped += sel_text; wrapped.push_back('*'); wrapped.push_back('*'); }
-                else if (a == '~') { wrapped.push_back('~'); wrapped.push_back('~'); wrapped += sel_text; wrapped.push_back('~'); wrapped.push_back('~'); }
-                else if (a == '_') { wrapped.push_back('_'); wrapped.push_back('_'); wrapped += sel_text; wrapped.push_back('_'); wrapped.push_back('_'); }
-                (void)b;
-                std::size_t new_pos = sel.start.v + wrapped.size();
-                Transaction t(revision, selection, caret_after(CharOffset(new_pos)), TransactionReason::FormatCommand);
-                t.with_edit(sel, std::move(wrapped));
-                return t;
-            };
-            if (cmd.kind == CommandKind::ToggleEmphasis) {
-                std::u32string sel_text(text_cps.begin() + sel.start.v, text_cps.begin() + sel.end.v);
-                std::u32string wrapped; wrapped.push_back('*'); wrapped += sel_text; wrapped.push_back('*');
-                std::size_t new_pos = sel.start.v + wrapped.size();
-                Transaction t(revision, selection, caret_after(CharOffset(new_pos)), TransactionReason::FormatCommand);
-                t.with_edit(sel, std::move(wrapped));
-                return t;
-            }
-            if (cmd.kind == CommandKind::ToggleStrong) return wrap('*', '*');
-            if (cmd.kind == CommandKind::ToggleStrikethrough) return wrap('~', '~');
-            return wrap('`', '`');
+            if (cmd.kind == CommandKind::ToggleStrong) return inline_toggle_transaction(U"**", text_cps, selection, revision);
+            if (cmd.kind == CommandKind::ToggleEmphasis) return inline_toggle_transaction(U"*", text_cps, selection, revision);
+            if (cmd.kind == CommandKind::ToggleStrikethrough) return inline_toggle_transaction(U"~~", text_cps, selection, revision);
+            return inline_toggle_transaction(U"`", text_cps, selection, revision);
         }
         case CommandKind::InsertMathInline: {
             if (sel.is_empty()) {
-                std::u32string tmpl; tmpl.push_back('$'); tmpl.push_back(' '); tmpl.push_back(' '); tmpl.push_back('$');
-                std::size_t new_pos = sel.start.v + 2;
+                std::u32string tmpl = U"$$";
+                std::size_t new_pos = sel.start.v + 1;
                 Transaction t(revision, selection, caret_after(CharOffset(new_pos)), TransactionReason::FormatCommand);
                 t.with_edit(sel, std::move(tmpl));
                 return t;
@@ -588,7 +644,8 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
             t.with_edit(sel, std::move(s));
             return t;
         }
-        case CommandKind::SetHeading: {
+        case CommandKind::SetHeading:
+        case CommandKind::ClearHeading: {
             std::size_t ls = find_line_start(text_cps, sel.start.v);
             std::size_t le = find_line_end(text_cps, sel.end.v);
             std::u32string line_text(text_cps.begin() + ls, text_cps.begin() + le);
@@ -596,7 +653,10 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
             std::u32string stripped(line_text.begin() + off, line_text.end());
             std::size_t sp = 0; while (sp < stripped.size() && (stripped[sp] == ' ' || stripped[sp] == '\t')) ++sp;
             stripped = stripped.substr(sp);
-            std::u32string prefix; for (std::uint8_t i = 0; i < cmd.level; ++i) prefix.push_back('#'); prefix.push_back(' ');
+            auto level = cmd.kind == CommandKind::ClearHeading ? std::uint8_t{0} : (std::min)(cmd.level, std::uint8_t{6});
+            std::u32string prefix;
+            for (std::uint8_t i = 0; i < level; ++i) prefix.push_back('#');
+            if (level > 0) prefix.push_back(' ');
             std::u32string new_line = prefix + stripped;
             std::size_t new_pos = ls + new_line.size();
             Transaction t(revision, selection, caret_after(CharOffset(new_pos)), TransactionReason::StructuralCommand);
@@ -604,16 +664,7 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
             return t;
         }
         case CommandKind::ToggleBlockQuote: {
-            std::size_t ls = find_line_start(text_cps, sel.start.v);
-            std::size_t le = find_line_end(text_cps, sel.end.v);
-            std::u32string line_text(text_cps.begin() + ls, text_cps.begin() + le);
-            std::u32string new_line;
-            if (line_text.size() >= 2 && line_text[0] == '>' && line_text[1] == ' ') new_line = std::u32string(line_text.begin() + 2, line_text.end());
-            else { new_line.push_back('>'); new_line.push_back(' '); new_line += line_text; }
-            std::size_t new_pos = ls + new_line.size();
-            Transaction t(revision, selection, caret_after(CharOffset(new_pos)), TransactionReason::StructuralCommand);
-            t.with_edit(CharRange(CharOffset(ls), CharOffset(le)), std::move(new_line));
-            return t;
+            return quote_toggle_transaction(text_cps, selection, revision);
         }
         case CommandKind::ToggleUnorderedList:
         case CommandKind::ToggleOrderedList:
@@ -625,7 +676,7 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
             std::u32string block; block.push_back('\n'); block.push_back('`'); block.push_back('`'); block.push_back('`');
             if (cmd.lang) block += *cmd.lang;
             block += U"\n\n```\n";
-            std::size_t new_pos = sel.start.v + 4 + (cmd.lang ? cmd.lang->size() : 0);
+            std::size_t new_pos = sel.start.v + 5 + (cmd.lang ? cmd.lang->size() : 0);
             Transaction t(revision, selection, caret_after(CharOffset(new_pos)), TransactionReason::StructuralCommand);
             t.with_edit(sel, std::move(block));
             return t;
@@ -646,11 +697,100 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
             t.with_edit(sel, std::move(s));
             return t;
         }
+        case CommandKind::InsertImage: {
+            auto selected = sel.is_empty() ? std::u32string{} : std::u32string(text_cps.begin() + sel.start.v, text_cps.begin() + sel.end.v);
+            auto alt = cmd.alt.empty() ? selected : cmd.alt;
+            auto path = cmd.path.empty() ? U"image.png" : cmd.path;
+            std::u32string replacement = U"![" + alt + U"](" + path + U")";
+            auto after = alt.empty()
+                ? Selection::caret(CharOffset(sel.start.v + 2))
+                : Selection::caret(CharOffset(sel.start.v + replacement.size()));
+            Transaction transaction(revision, selection, after, TransactionReason::FormatCommand);
+            transaction.with_edit(sel, std::move(replacement));
+            return transaction;
+        }
+        case CommandKind::InsertFootnote: {
+            std::u32string label = cmd.text;
+            if (label.empty()) {
+                std::size_t number = 1;
+                do {
+                    label = utf8_to_cps(std::to_string(number++));
+                } while (text_cps.find(U"[^" + label + U"]:") != std::u32string::npos);
+            }
+            label.erase(std::remove_if(label.begin(), label.end(), [](char32_t value) {
+                return value == U'[' || value == U']' || value == U'^' || value == U'\r' || value == U'\n';
+            }), label.end());
+            if (label.empty()) label = U"1";
+            auto reference = U"[^" + label + U"]";
+            std::u32string separator;
+            if (!text_cps.empty() && !text_cps.ends_with(U"\n\n")) separator = text_cps.ends_with(U"\n") ? U"\n" : U"\n\n";
+            auto definition = separator + U"[^" + label + U"]: ";
+            if (sel.end.v == len) {
+                auto replacement = reference + definition;
+                Transaction transaction(revision, selection, Selection::caret(CharOffset(sel.start.v + replacement.size())), TransactionReason::StructuralCommand);
+                transaction.with_edit(sel, std::move(replacement));
+                return transaction;
+            }
+            auto adjustedEnd = len - (sel.end.v - sel.start.v) + reference.size();
+            Transaction transaction(revision, selection, Selection::caret(CharOffset(adjustedEnd + definition.size())), TransactionReason::StructuralCommand);
+            transaction.with_edit(sel, reference);
+            transaction.with_edit(CharRange(CharOffset(len), CharOffset(len)), definition);
+            return transaction;
+        }
+        case CommandKind::ToggleCallout: {
+            auto start = find_line_start(text_cps, sel.start.v);
+            auto end = find_line_end(text_cps, sel.end.v);
+            bool removing = false;
+            for (std::size_t index = 0; index < document.blocks.size(); ++index) {
+                if (document.blocks[index].kind != BlockKind::Callout) continue;
+                auto range = block_range_at(document, index);
+                if (range && range->source_range.start.v <= sel.start.v && sel.end.v <= range->source_range.end.v) {
+                    start = range->source_range.start.v;
+                    end = range->source_range.end.v;
+                    if (end > start && text_cps[end - 1] == U'\n') --end;
+                    removing = true;
+                    break;
+                }
+            }
+            std::vector<std::u32string> lines;
+            auto cursor = start;
+            while (cursor <= end) {
+                auto lineEnd = find_line_end(text_cps, cursor);
+                lines.emplace_back(text_cps.begin() + cursor, text_cps.begin() + lineEnd);
+                if (lineEnd >= end) break;
+                cursor = lineEnd + 1;
+            }
+            std::u32string replacement;
+            if (removing) {
+                for (std::size_t index = 1; index < lines.size(); ++index) {
+                    auto body = std::size_t{0};
+                    while (body < lines[index].size() && is_space_or_tab(lines[index][body])) ++body;
+                    if (body < lines[index].size() && lines[index][body] == U'>') ++body;
+                    if (body < lines[index].size() && lines[index][body] == U' ') ++body;
+                    replacement.append(lines[index].begin() + body, lines[index].end());
+                    if (index + 1 < lines.size()) replacement.push_back(U'\n');
+                }
+            } else {
+                auto kind = cmd.callout_kind.empty() ? U"NOTE" : cmd.callout_kind;
+                for (auto& value : kind) if (value >= U'a' && value <= U'z') value = static_cast<char32_t>(value - U'a' + U'A');
+                kind.erase(std::remove_if(kind.begin(), kind.end(), [](char32_t value) {
+                    return !((value >= U'A' && value <= U'Z') || (value >= U'0' && value <= U'9') || value == U'-' || value == U'_');
+                }), kind.end());
+                if (kind.empty()) kind = U"NOTE";
+                replacement = U"> [!" + kind + U"]\n";
+                for (std::size_t index = 0; index < lines.size(); ++index) {
+                    replacement += U"> ";
+                    replacement += lines[index];
+                    if (index + 1 < lines.size()) replacement.push_back(U'\n');
+                }
+            }
+            Transaction transaction(revision, selection, Selection::caret(CharOffset(start + replacement.size())), TransactionReason::StructuralCommand);
+            transaction.with_edit(CharRange(CharOffset(start), CharOffset(end)), std::move(replacement));
+            return transaction;
+        }
         case CommandKind::Undo: case CommandKind::Redo:
         case CommandKind::Cut: case CommandKind::Copy: case CommandKind::Paste:
-        case CommandKind::SelectAll: case CommandKind::ClearHeading:
-        case CommandKind::InsertImage: case CommandKind::InsertFootnote:
-        case CommandKind::ToggleCallout: case CommandKind::ExtensionCmd:
+        case CommandKind::SelectAll: case CommandKind::ExtensionCmd:
             return std::nullopt;
     }
     return std::nullopt;
