@@ -117,11 +117,22 @@ namespace winrt::ElMd
             float progressEnd = 1.0f;
         };
 
+        struct MathPreview
+        {
+            MathJaxSvg svg;
+            std::uint32_t displayStart = 0;
+            std::uint32_t displayLength = 0;
+            std::size_t sourceStart = 0;
+            std::size_t sourceEnd = 0;
+            std::size_t contentStart = 0;
+            std::size_t contentEnd = 0;
+        };
+
         std::u32string text;
         std::vector<std::size_t> displayToSource;
         std::vector<InlineStyleRange> ranges;
         std::vector<MathOverlay> mathOverlays;
-        std::vector<MathJaxSvg> mathPreviews;
+        std::vector<MathPreview> mathPreviews;
     };
 
     class MathInlineObject final : public ::Microsoft::WRL::RuntimeClass<::Microsoft::WRL::RuntimeClassFlags<::Microsoft::WRL::ClassicCom>, IDWriteInlineObject>
@@ -290,7 +301,11 @@ namespace winrt::ElMd
             overlay.displayStart += offset;
             target.mathOverlays.push_back(std::move(overlay));
         }
-        for (auto& preview : source.mathPreviews) target.mathPreviews.push_back(std::move(preview));
+        for (auto& preview : source.mathPreviews)
+        {
+            preview.displayStart += offset;
+            target.mathPreviews.push_back(std::move(preview));
+        }
     }
 
     void AppendSourceText(DisplayInlineText& display, std::u32string const& sourceText, std::size_t start, std::size_t end, elmd::InlineStyle style, bool marker)
@@ -406,6 +421,11 @@ namespace winrt::ElMd
                 }
                 auto math = mathJax.GetOrQueue(elmd::cps_to_utf8(item.text), false, fontSize, containerWidth, requestMath);
                 auto editing = CaretTouchesRange(caret, item.source_range);
+                auto delimiterLength = item.math_delim == elmd::MathDelimiter::InlineParen ? std::size_t{2} : std::size_t{1};
+                auto contentStart = (std::min)(item.source_range.start.v + delimiterLength, item.source_range.end.v);
+                auto contentEnd = item.source_range.end.v >= delimiterLength
+                    ? (std::max)(contentStart, item.source_range.end.v - delimiterLength)
+                    : contentStart;
                 if (!math || !static_cast<bool>(*math))
                 {
                     AppendSourceText(display, sourceText, item.source_range.start.v, item.source_range.end.v, item.style, false);
@@ -414,11 +434,20 @@ namespace winrt::ElMd
 
                 if (editing)
                 {
+                    auto displayStart = static_cast<std::uint32_t>(display.text.size());
                     AppendSourceText(display, sourceText, item.source_range.start.v, item.source_range.end.v, item.style, false);
-                    display.mathPreviews.push_back(*math);
+                    display.mathPreviews.push_back(DisplayInlineText::MathPreview{
+                        *math,
+                        displayStart,
+                        static_cast<std::uint32_t>(item.source_range.len()),
+                        item.source_range.start.v,
+                        item.source_range.end.v,
+                        contentStart,
+                        contentEnd,
+                    });
                     continue;
                 }
-                AppendMathFragments(display, *math, item.source_range.start.v, item.source_range.end.v, false);
+                AppendMathFragments(display, *math, contentStart, contentEnd, false);
                 continue;
             }
             AppendDisplayText(display, InlineText(item), item.source_range.start.v, item.style, item.kind == elmd::InlineRenderItem::Kind::Marker);
@@ -1211,7 +1240,7 @@ namespace winrt::ElMd
             std::vector<InlineStyleRange> inlineRanges;
             std::vector<std::size_t> displayToSource;
             std::vector<DisplayInlineText::MathOverlay> inlineMathOverlays;
-            std::vector<MathJaxSvg> inlineMathPreviews;
+            std::vector<DisplayInlineText::MathPreview> inlineMathPreviews;
             std::optional<MathJaxSvg> blockMath;
             bool showRawMath = false;
             std::optional<MermaidSvg> blockMermaid;
@@ -1530,11 +1559,11 @@ namespace winrt::ElMd
                 for (auto const& preview : inlineMathPreviews)
                 {
                     std::vector<D2D1_POINT_2F> origins;
-                    origins.reserve(preview.fragments.size());
+                    origins.reserve(preview.svg.fragments.size());
                     auto previewX = documentLeft + inset;
                     auto lineTop = previewY;
                     auto lineHeight = 0.0f;
-                    for (auto const& fragment : preview.fragments)
+                    for (auto const& fragment : preview.svg.fragments)
                     {
                         if (fragment.breakBefore && previewX > documentLeft + inset)
                         {
@@ -1672,6 +1701,34 @@ namespace winrt::ElMd
 
                 d2dContext->DrawTextLayout(origin, layout.Get(), brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
 
+                for (auto const& preview : inlineMathPreviews)
+                {
+                    if (preview.displayLength == 0) continue;
+                    UINT32 actualCount = 0;
+                    auto hr = layout->HitTestTextRange(preview.displayStart, preview.displayLength, origin.x, origin.y, nullptr, 0, &actualCount);
+                    if (hr != E_NOT_SUFFICIENT_BUFFER || actualCount == 0) continue;
+                    std::vector<DWRITE_HIT_TEST_METRICS> metrics(actualCount);
+                    if (FAILED(layout->HitTestTextRange(preview.displayStart, preview.displayLength, origin.x, origin.y, metrics.data(), actualCount, &actualCount))) continue;
+                    for (UINT32 metricIndex = 0; metricIndex < actualCount; ++metricIndex)
+                    {
+                        auto const& metric = metrics[metricIndex];
+                        auto segmentStart = (std::max)(metric.textPosition, preview.displayStart);
+                        auto segmentEnd = (std::min)(metric.textPosition + metric.length, preview.displayStart + preview.displayLength);
+                        if (segmentStart >= segmentEnd) continue;
+                        auto localStart = static_cast<std::size_t>(segmentStart - preview.displayStart);
+                        auto localEnd = static_cast<std::size_t>(segmentEnd - preview.displayStart);
+                        auto hitStart = (std::min)(preview.sourceStart + localStart, preview.sourceEnd);
+                        auto hitEnd = (std::min)(preview.sourceStart + localEnd, preview.sourceEnd);
+                        visualMathHits.push_back(VisualMathHit{
+                            D2D1::RectF(metric.left - 2.0f, metric.top - 2.0f, metric.left + metric.width + 2.0f, metric.top + metric.height + 2.0f),
+                            hitStart,
+                            hitEnd,
+                            0.0f,
+                            1.0f,
+                        });
+                    }
+                }
+
                 for (auto const& overlay : inlineMathOverlays)
                 {
                     float pointX = 0.0f;
@@ -1695,9 +1752,21 @@ namespace winrt::ElMd
                 {
                     auto const& preview = inlineMathPreviews[previewIndex];
                     auto const& origins = inlineMathPreviewOrigins[previewIndex];
-                    for (std::size_t fragmentIndex = 0; fragmentIndex < preview.fragments.size() && fragmentIndex < origins.size(); ++fragmentIndex)
+                    auto progress = 0.0f;
+                    for (std::size_t fragmentIndex = 0; fragmentIndex < preview.svg.fragments.size() && fragmentIndex < origins.size(); ++fragmentIndex)
                     {
-                        drawMathSvg(preview.fragments[fragmentIndex], origins[fragmentIndex], styleSheet.textColor);
+                        auto const& fragment = preview.svg.fragments[fragmentIndex];
+                        auto progressStart = preview.svg.width > 0.0f ? progress / preview.svg.width : 0.0f;
+                        progress += fragment.breakSpace + fragment.width;
+                        auto progressEnd = preview.svg.width > 0.0f ? progress / preview.svg.width : 1.0f;
+                        drawMathSvg(fragment, origins[fragmentIndex], styleSheet.textColor);
+                        visualMathHits.push_back(VisualMathHit{
+                            D2D1::RectF(origins[fragmentIndex].x - 2.0f, origins[fragmentIndex].y - 2.0f, origins[fragmentIndex].x + fragment.width + 2.0f, origins[fragmentIndex].y + fragment.height + 2.0f),
+                            preview.contentStart,
+                            preview.contentEnd,
+                            progressStart,
+                            progressEnd,
+                        });
                     }
                 }
                 if (blockMathOrigin && blockMath)

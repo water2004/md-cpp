@@ -62,6 +62,30 @@ ELMD_TEST(builds_inline_math) {
     ELMD_CHECK(has_math);
 }
 
+ELMD_TEST(inline_math_only_line_preserves_full_visual_source_range) {
+    auto m = build_model("$11111$");
+    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    ELMD_CHECK_EQ(m.blocks[0].source_range.start.v, 0u);
+    ELMD_CHECK_EQ(m.blocks[0].source_range.end.v, 7u);
+    ELMD_CHECK_EQ(m.blocks[0].content_range.start.v, 0u);
+    ELMD_CHECK_EQ(m.blocks[0].content_range.end.v, 7u);
+    ELMD_CHECK_EQ(m.blocks[0].inline_items.size(), 1u);
+    ELMD_CHECK(m.blocks[0].inline_items[0].kind == InlineRenderItem::Kind::Math);
+    ELMD_CHECK_EQ(m.blocks[0].inline_items[0].source_range.start.v, 0u);
+    ELMD_CHECK_EQ(m.blocks[0].inline_items[0].source_range.end.v, 7u);
+}
+
+ELMD_TEST(inline_math_at_either_text_edge_preserves_paragraph_end) {
+    auto leading = build_model("$x$ tail");
+    ELMD_CHECK_EQ(leading.blocks.size(), 1u);
+    ELMD_CHECK_EQ(leading.blocks[0].content_range.start.v, 0u);
+    ELMD_CHECK_EQ(leading.blocks[0].content_range.end.v, 8u);
+    auto trailing = build_model("lead $x$");
+    ELMD_CHECK_EQ(trailing.blocks.size(), 1u);
+    ELMD_CHECK_EQ(trailing.blocks[0].content_range.start.v, 0u);
+    ELMD_CHECK_EQ(trailing.blocks[0].content_range.end.v, 8u);
+}
+
 ELMD_TEST(builds_paren_inline_math_with_exact_source_range) {
     auto m = build_model("\\(x\\) after");
     auto it = std::find_if(m.blocks[0].inline_items.begin(), m.blocks[0].inline_items.end(), [](auto const& item) {

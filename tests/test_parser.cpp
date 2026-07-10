@@ -193,6 +193,21 @@ ELMD_TEST(test_parse_inline_math) {
     ELMD_CHECK(p && inlines_have_kind(p->children, InlineKind::InlineMath));
 }
 
+ELMD_TEST(test_structural_inline_at_paragraph_end_updates_content_range) {
+    std::vector<std::string> sources{
+        "$x$", "\\(x\\)", "**x**", "*x*", "__x__", "_x_", "~~x~~", "`x`",
+        "[x](u)", "![x](p)", "[^x]", "[[x]]",
+    };
+    for (auto const& source : sources) {
+        auto out = parse_text(1, source);
+        ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+        auto range = out.document.source_map.find_node_by_id(out.document.blocks[0].id);
+        ELMD_CHECK(range != nullptr);
+        ELMD_CHECK_EQ(range->content_range.start.v, 0u);
+        ELMD_CHECK_EQ(range->content_range.end.v, utf8_to_cps(source).size());
+    }
+}
+
 ELMD_TEST(test_parse_block_math) {
     auto out = parse_text(1, "$$\nE=mc^2\n$$\n");
     ELMD_CHECK(blocks_has_kind(out.document.blocks, BlockKind::MathBlock));

@@ -297,16 +297,17 @@ public:
             }
             // inline constructs — exact order
             if (peek1() == '$') {
-                if (auto n = try_parse_inline_math()) { flush(); inlines.push_back(std::move(*n)); continue; }
+                if (auto n = try_parse_inline_math()) { flush(); inlines.push_back(std::move(*n)); content_end = pos; continue; }
             }
             if (peek1() == '\\' && peek2() == '(') {
-                if (auto n = try_parse_inline_paren_math()) { flush(); inlines.push_back(std::move(*n)); continue; }
+                if (auto n = try_parse_inline_paren_math()) { flush(); inlines.push_back(std::move(*n)); content_end = pos; continue; }
             }
             if (peek1() == '*' && peek2() == '*') {
                 if (!delimiter_exists_before_newline(pos + 2, {'*','*'})) {
                     buf.push_back('*');
                     buf.push_back('*');
                     advance_n(2);
+                    content_end = pos;
                     continue;
                 }
                 flush();
@@ -318,12 +319,14 @@ public:
                 push_range(id, CharRange(CharOffset(inner_start), CharOffset(end_mark)), CharRange(CharOffset(inner_start), CharOffset(end_mark)));
                 InlineNode n; n.id = id; n.kind = InlineKind::Strong; n.children = std::move(ch);
                 inlines.push_back(std::move(n));
+                content_end = pos;
                 continue;
             }
             if (peek1() == '*' && peek2() != ' ' && peek2() != '*') {
                 if (!delimiter_exists_before_newline(pos + 1, {'*'})) {
                     buf.push_back('*');
                     advance();
+                    content_end = pos;
                     continue;
                 }
                 flush();
@@ -335,6 +338,7 @@ public:
                 push_range(id, CharRange(CharOffset(inner_start), CharOffset(end_mark)), CharRange(CharOffset(inner_start), CharOffset(end_mark)));
                 InlineNode n; n.id = id; n.kind = InlineKind::Emphasis; n.children = std::move(ch);
                 inlines.push_back(std::move(n));
+                content_end = pos;
                 continue;
             }
             if (peek1() == '_' && peek2() == '_' && peek2next_is_nonspace_underscore_()) {
@@ -342,6 +346,7 @@ public:
                     buf.push_back('_');
                     buf.push_back('_');
                     advance_n(2);
+                    content_end = pos;
                     continue;
                 }
                 flush();
@@ -353,12 +358,14 @@ public:
                 push_range(id, CharRange(CharOffset(inner_start), CharOffset(end_mark)), CharRange(CharOffset(inner_start), CharOffset(end_mark)));
                 InlineNode n; n.id = id; n.kind = InlineKind::Strong; n.children = std::move(ch);
                 inlines.push_back(std::move(n));
+                content_end = pos;
                 continue;
             }
             if (peek1() == '_' && peek2() != ' ' && peek2() != '_') {
                 if (!delimiter_exists_before_newline(pos + 1, {'_'})) {
                     buf.push_back('_');
                     advance();
+                    content_end = pos;
                     continue;
                 }
                 flush();
@@ -370,6 +377,7 @@ public:
                 push_range(id, CharRange(CharOffset(inner_start), CharOffset(end_mark)), CharRange(CharOffset(inner_start), CharOffset(end_mark)));
                 InlineNode n; n.id = id; n.kind = InlineKind::Emphasis; n.children = std::move(ch);
                 inlines.push_back(std::move(n));
+                content_end = pos;
                 continue;
             }
             if (peek1() == '~' && peek2() == '~' && peek2next2() != ' ') {
@@ -377,6 +385,7 @@ public:
                     buf.push_back('~');
                     buf.push_back('~');
                     advance_n(2);
+                    content_end = pos;
                     continue;
                 }
                 flush();
@@ -388,25 +397,26 @@ public:
                 push_range(id, CharRange(CharOffset(inner_start), CharOffset(end_mark)), CharRange(CharOffset(inner_start), CharOffset(end_mark)));
                 InlineNode n; n.id = id; n.kind = InlineKind::Strike; n.children = std::move(ch);
                 inlines.push_back(std::move(n));
+                content_end = pos;
                 continue;
             }
             if (peek1() == '`') {
                 if (auto n = try_parse_inline_code()) { flush(); inlines.push_back(std::move(*n)); content_end = pos; continue; }
             }
             if (peek1() == '!' && peek2() == '[') {
-                if (auto n = try_parse_link_or_image()) { flush(); inlines.push_back(std::move(*n)); continue; }
+                if (auto n = try_parse_link_or_image()) { flush(); inlines.push_back(std::move(*n)); content_end = pos; continue; }
             }
             if (peek1() == '[') {
                 if (peek2() == '^') {
-                    if (auto n = try_parse_footnote_ref()) { flush(); inlines.push_back(std::move(*n)); continue; }
+                    if (auto n = try_parse_footnote_ref()) { flush(); inlines.push_back(std::move(*n)); content_end = pos; continue; }
                 }
                 if (peek(1) == '[') {
-                    if (auto n = try_parse_wiki_link()) { flush(); inlines.push_back(std::move(*n)); continue; }
+                    if (auto n = try_parse_wiki_link()) { flush(); inlines.push_back(std::move(*n)); content_end = pos; continue; }
                 }
-                if (auto n = try_parse_link_or_image()) { flush(); inlines.push_back(std::move(*n)); continue; }
+                if (auto n = try_parse_link_or_image()) { flush(); inlines.push_back(std::move(*n)); content_end = pos; continue; }
             }
             if (peek1() == '<') {
-                if (auto n = try_parse_raw_html_inline()) { flush(); inlines.push_back(std::move(*n)); continue; }
+                if (auto n = try_parse_raw_html_inline()) { flush(); inlines.push_back(std::move(*n)); content_end = pos; continue; }
             }
             buf.push_back(peek1()); advance(); content_end = pos;
         }
@@ -473,7 +483,7 @@ public:
         }
         advance();
         NodeId id = next_node_id();
-        push_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(start + 1), cur()));
+        push_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(start + 1), CharOffset(cur().v - 1)));
         InlineNode n; n.id = id; n.kind = InlineKind::InlineMath; n.text = std::move(tex); n.math_delim = MathDelimiter::InlineDollar;
         return n;
     }
