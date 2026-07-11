@@ -122,14 +122,30 @@ public:
             if (position) {
                 const auto revision_before = buffer_.revision();
                 const auto selection_before = selection_;
-                const auto text_before = std::u32string(buffer_.text_cps());
                 if (execute_document_enter(DocumentSelection::caret(*position))) {
-                    Transaction compatibility(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
-                    compatibility.with_edit_original(
-                        CharRange(CharOffset(0), CharOffset(text_before.size())),
-                        std::u32string(buffer_.text_cps()),
-                        text_before);
-                    return compatibility;
+                    return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
+                }
+            }
+        }
+        if (cmd.kind == CommandKind::DeleteBackward || cmd.kind == CommandKind::DeleteForward) {
+            if (!selection_.is_caret() && document_selection_
+                && document_selection_->anchor.node_id == document_selection_->active.node_id) {
+                const auto revision_before = buffer_.revision();
+                const auto selection_before = selection_;
+                const auto changed = execute_document_delete_selection(*document_selection_).has_value();
+                if (!changed) return std::nullopt;
+                return Transaction(revision_before, selection_before, selection_, TransactionReason::Delete);
+            }
+            if (selection_.is_caret()) {
+                auto position = current_document_caret_();
+                if (position) {
+                    const auto revision_before = buffer_.revision();
+                    const auto selection_before = selection_;
+                    const auto changed = cmd.kind == CommandKind::DeleteBackward
+                        ? execute_document_delete_backward(DocumentSelection::caret(*position)).has_value()
+                        : execute_document_delete_forward(DocumentSelection::caret(*position)).has_value();
+                    if (!changed) return std::nullopt;
+                    return Transaction(revision_before, selection_before, selection_, TransactionReason::Delete);
                 }
             }
         }
@@ -165,14 +181,8 @@ public:
         if (document_history_.has_undo()) {
             const auto revision_before = buffer_.revision();
             const auto selection_before = selection_;
-            const auto text_before = std::u32string(buffer_.text_cps());
             if (!undo_document()) return std::nullopt;
-            Transaction compatibility(revision_before, selection_before, selection_, TransactionReason::Undo);
-            compatibility.with_edit_original(
-                CharRange(CharOffset(0), CharOffset(text_before.size())),
-                std::u32string(buffer_.text_cps()),
-                text_before);
-            return compatibility;
+            return Transaction(revision_before, selection_before, selection_, TransactionReason::Undo);
         }
         auto txn = undo_.undo();
         if (!txn) return std::nullopt;
@@ -191,14 +201,8 @@ public:
         if (document_history_.has_redo()) {
             const auto revision_before = buffer_.revision();
             const auto selection_before = selection_;
-            const auto text_before = std::u32string(buffer_.text_cps());
             if (!redo_document()) return std::nullopt;
-            Transaction compatibility(revision_before, selection_before, selection_, TransactionReason::Redo);
-            compatibility.with_edit_original(
-                CharRange(CharOffset(0), CharOffset(text_before.size())),
-                std::u32string(buffer_.text_cps()),
-                text_before);
-            return compatibility;
+            return Transaction(revision_before, selection_before, selection_, TransactionReason::Redo);
         }
         auto txn = undo_.redo();
         if (!txn) return std::nullopt;

@@ -189,6 +189,33 @@ inline std::optional<DocumentPosition> position_in_blocks(
                 return DocumentPosition{block.id, offset, TextAffinity::Downstream};
             }
         }
+        if (block.kind == BlockKind::CodeBlock) {
+            const auto* range = document.source_map.find_node_by_id(block.id);
+            if (range && source_offset.v >= range->content_range.start.v && source_offset.v <= range->content_range.end.v) {
+                if (!block.code_indented) {
+                    return DocumentPosition{block.id, source_offset.v - range->content_range.start.v, TextAffinity::Downstream};
+                }
+                std::size_t logical_start = 0;
+                std::size_t text_start = 0;
+                for (std::size_t line = 0; line < range->marker_ranges.size(); ++line) {
+                    auto text_end = block.code_text.find(U'\n', text_start);
+                    if (text_end == std::u32string::npos) text_end = block.code_text.size();
+                    const auto source_start = range->marker_ranges[line].end.v;
+                    const auto source_end = line + 1 < range->marker_ranges.size()
+                        ? range->marker_ranges[line + 1].start.v - 1
+                        : range->content_range.end.v;
+                    if (source_offset.v >= range->marker_ranges[line].start.v && source_offset.v <= source_end) {
+                        return DocumentPosition{
+                            block.id,
+                            logical_start + (std::min)(source_offset.v > source_start ? source_offset.v - source_start : 0, text_end - text_start),
+                            TextAffinity::Downstream};
+                    }
+                    logical_start += text_end - text_start;
+                    if (text_end < block.code_text.size()) ++logical_start;
+                    text_start = text_end < block.code_text.size() ? text_end + 1 : text_end;
+                }
+            }
+        }
         if (auto position = position_in_blocks(document, block.quote_children, source_offset)) return position;
         for (const auto& item : block.list_items) {
             if (auto position = position_in_blocks(document, item.children, source_offset)) return position;
@@ -233,11 +260,39 @@ inline std::optional<CharOffset> source_offset_from_document_position(
     DocumentPosition position) {
     const auto* paragraph = document_projection_detail::find_paragraph(document.blocks, position.node_id);
     const auto* range = document.source_map.find_node_by_id(position.node_id);
-    if (!paragraph || !range) return std::nullopt;
-    const auto logical_length = block_inline_text_content(paragraph->children).size();
-    if (paragraph->children.empty()) return range->content_range.start;
-    if (auto source = document_projection_detail::source_offset_from_logical(
-            document, paragraph->children, (std::min)(position.offset, logical_length), range->content_range.start)) return source;
+    if (paragraph && range) {
+        const auto logical_length = block_inline_text_content(paragraph->children).size();
+        if (paragraph->children.empty()) return range->content_range.start;
+        if (auto source = document_projection_detail::source_offset_from_logical(
+                document, paragraph->children, (std::min)(position.offset, logical_length), range->content_range.start)) return source;
+        return range->content_range.end;
+    }
+    std::function<const BlockNode*(const BlockVec&)> find_code = [&](const BlockVec& blocks) -> const BlockNode* {
+        for (const auto& block : blocks) {
+            if (block.id == position.node_id && block.kind == BlockKind::CodeBlock) return &block;
+            if (const auto* nested = find_code(block.quote_children)) return nested;
+            for (const auto& item : block.list_items) if (const auto* nested = find_code(item.children)) return nested;
+            for (const auto& item : block.task_items) if (const auto* nested = find_code(item.children)) return nested;
+        }
+        return nullptr;
+    };
+    const auto* code = find_code(document.blocks);
+    if (!code || !range) return std::nullopt;
+    const auto offset = (std::min)(position.offset, code->code_text.size());
+    if (!code->code_indented) return CharOffset(range->content_range.start.v + offset);
+    std::size_t logical_start = 0;
+    std::size_t text_start = 0;
+    for (std::size_t line = 0; line < range->marker_ranges.size(); ++line) {
+        auto text_end = code->code_text.find(U'\n', text_start);
+        if (text_end == std::u32string::npos) text_end = code->code_text.size();
+        const auto line_length = text_end - text_start;
+        if (offset <= logical_start + line_length) {
+            return CharOffset(range->marker_ranges[line].end.v + offset - logical_start);
+        }
+        logical_start += line_length;
+        if (text_end < code->code_text.size()) ++logical_start;
+        text_start = text_end < code->code_text.size() ? text_end + 1 : text_end;
+    }
     return range->content_range.end;
 }
 

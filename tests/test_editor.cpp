@@ -57,8 +57,8 @@ ELMD_TEST(test_editor_newline_command_uses_document_transaction_for_top_level_pa
     Command newline;
     newline.kind = CommandKind::InsertNewline;
 
-    auto compatibility = editor.execute_command(newline);
-    ELMD_CHECK(compatibility.has_value());
+    auto result = editor.execute_command(newline);
+    ELMD_CHECK(result.has_value());
     ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alpha\n\nomega"));
     ELMD_CHECK_EQ(editor.document().blocks.front().id, original_id);
     ELMD_CHECK(editor.has_document_undo());
@@ -81,6 +81,26 @@ ELMD_TEST(test_editor_document_delete_projects_and_restores_node_selection) {
     ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alphabeta"));
     ELMD_CHECK(editor.document_selection().has_value());
     if (editor.document_selection()) ELMD_CHECK_EQ(editor.document_selection()->active.offset, 5u);
+}
+
+ELMD_TEST(test_editor_backspace_command_moves_list_item_tree_and_undo_restores_it) {
+    Editor editor("- one\n- two");
+    const auto second_id = editor.document().blocks[0].list_items[1].children[0].id;
+    editor.set_document_selection(DocumentSelection::caret(
+        DocumentPosition{second_id, 0, TextAffinity::Downstream}));
+    Command backspace;
+    backspace.kind = CommandKind::DeleteBackward;
+    auto transaction = editor.execute_command(backspace);
+    ELMD_CHECK(transaction.has_value());
+    ELMD_CHECK_EQ(editor.document().blocks[0].list_items.size(), 1u);
+    ELMD_CHECK_EQ(editor.document().blocks[0].list_items[0].children.size(), 2u);
+    ELMD_CHECK_EQ(editor.document().blocks[0].list_items[0].children[1].id, second_id);
+    ELMD_CHECK(editor.document_selection().has_value());
+    if (editor.document_selection()) ELMD_CHECK_EQ(editor.document_selection()->active.node_id, second_id);
+    ELMD_CHECK(editor.undo_document());
+    ELMD_CHECK_EQ(editor.document().blocks[0].list_items.size(), 2u);
+    ELMD_CHECK(editor.redo_document());
+    ELMD_CHECK_EQ(editor.document().blocks[0].list_items.size(), 1u);
 }
 
 ELMD_TEST(test_editor_enter_at_paragraph_end_projects_empty_node_caret_anchor) {
@@ -844,16 +864,23 @@ ELMD_TEST(test_enter_exits_nested_blockquotes_one_level_at_a_time) {
 }
 
 ELMD_TEST(test_backspace_exits_nested_blockquotes_one_level_at_a_time) {
-    Editor e("> > alpha  \n> > ");
-    e.set_caret(CharOffset(16));
-    Command backspace; backspace.kind = CommandKind::DeleteBackward;
-    e.execute_command(backspace);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > alpha\n> "));
-    ELMD_CHECK_EQ(e.selection().head().v, 12u);
-    ELMD_CHECK(e.selection().affinity == TextAffinity::Downstream);
-    e.execute_command(backspace);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > alpha"));
-    ELMD_CHECK_EQ(e.selection().head().v, 9u);
+    Editor e("> > alpha");
+    const auto paragraph_id = e.document().blocks[0].quote_children[0].quote_children[0].id;
+    auto first = e.execute_document_delete_backward(DocumentSelection::caret(
+        DocumentPosition{paragraph_id, 0, TextAffinity::Downstream}));
+    ELMD_CHECK(first.has_value());
+    ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
+    ELMD_CHECK_EQ(e.document().blocks[0].kind, BlockKind::BlockQuote);
+    ELMD_CHECK_EQ(e.document().blocks[0].quote_children[0].id, paragraph_id);
+    auto second = e.execute_document_delete_backward(*e.document_selection());
+    ELMD_CHECK(second.has_value());
+    ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
+    ELMD_CHECK_EQ(e.document().blocks[0].kind, BlockKind::Paragraph);
+    ELMD_CHECK_EQ(e.document().blocks[0].id, paragraph_id);
+    ELMD_CHECK(e.undo_document());
+    ELMD_CHECK_EQ(e.document().blocks[0].kind, BlockKind::BlockQuote);
+    ELMD_CHECK(e.redo_document());
+    ELMD_CHECK_EQ(e.document().blocks[0].kind, BlockKind::Paragraph);
 }
 
 ELMD_TEST(test_backspace_at_first_quote_content_start_removes_exactly_one_level) {
@@ -862,12 +889,13 @@ ELMD_TEST(test_backspace_at_first_quote_content_start_removes_exactly_one_level)
     Command backspace; backspace.kind = CommandKind::DeleteBackward;
     e.execute_command(backspace);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha"));
-    ELMD_CHECK_EQ(e.selection().head().v, 2u);
-    ELMD_CHECK(e.selection().affinity == TextAffinity::Upstream);
+    ELMD_CHECK(e.document_selection().has_value());
+    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.offset, 0u);
     e.execute_command(backspace);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha"));
-    ELMD_CHECK_EQ(e.selection().head().v, 0u);
-    ELMD_CHECK(e.selection().affinity == TextAffinity::Upstream);
+    ELMD_CHECK_EQ(e.document().blocks[0].kind, BlockKind::Paragraph);
+    ELMD_CHECK(e.document_selection().has_value());
+    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.node_id, e.document().blocks[0].id);
 }
 
 ELMD_TEST(test_backspace_at_following_quote_line_start_joins_the_same_depth_first) {
@@ -876,11 +904,9 @@ ELMD_TEST(test_backspace_at_following_quote_line_start_joins_the_same_depth_firs
     Command backspace; backspace.kind = CommandKind::DeleteBackward;
     e.execute_command(backspace);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > firstsecond"));
-    ELMD_CHECK_EQ(e.selection().head().v, 9u);
-    ELMD_CHECK(e.selection().affinity == TextAffinity::Upstream);
-    auto line = quote_source_line_at(e.text_cps(), e.selection().head());
-    ELMD_CHECK(line.has_value());
-    if (line) ELMD_CHECK_EQ(line->marker_ranges.size(), 2u);
+    ELMD_CHECK(e.document_selection().has_value());
+    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.offset, 5u);
+    ELMD_CHECK_EQ(e.document().blocks[0].quote_children[0].quote_children.size(), 1u);
 }
 
 ELMD_TEST(test_backspace_join_removes_the_preceding_hard_break_marker) {
@@ -889,7 +915,8 @@ ELMD_TEST(test_backspace_join_removes_the_preceding_hard_break_marker) {
     Command backspace; backspace.kind = CommandKind::DeleteBackward;
     e.execute_command(backspace);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > firstsecond"));
-    ELMD_CHECK_EQ(e.selection().head().v, 9u);
+    ELMD_CHECK(e.document_selection().has_value());
+    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.offset, 5u);
 }
 
 ELMD_TEST(test_backspace_inside_nested_quote_content_never_touches_quote_markers) {
@@ -898,14 +925,8 @@ ELMD_TEST(test_backspace_inside_nested_quote_content_never_touches_quote_markers
     Command backspace; backspace.kind = CommandKind::DeleteBackward;
     e.execute_command(backspace);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > abcdefghijklmopqrstuvwxyz"));
-    ELMD_CHECK_EQ(e.selection().head().v, 17u);
-    ELMD_CHECK(e.selection().affinity == TextAffinity::Upstream);
-    auto line = quote_source_line_at(e.text_cps(), e.selection().head());
-    ELMD_CHECK(line.has_value());
-    if (line) {
-        ELMD_CHECK_EQ(line->marker_ranges.size(), 2u);
-        ELMD_CHECK_EQ(line->content_range.start.v, 4u);
-    }
+    ELMD_CHECK(e.document_selection().has_value());
+    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.offset, 13u);
 }
 
 ELMD_TEST(test_quote_source_line_model_owns_each_marker_and_content_range) {
@@ -970,7 +991,24 @@ ELMD_TEST(test_backspace_on_empty_indented_code_line_exits_the_code_block) {
     Command backspace; backspace.kind = CommandKind::DeleteBackward;
     e.execute_command(backspace);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("    alpha\n\nafter"));
-    ELMD_CHECK_EQ(e.selection().head().v, 9u);
+    ELMD_CHECK(e.document_selection().has_value());
+    ELMD_CHECK_EQ(e.document_selection()->active.node_id, e.document().blocks[1].id);
+    ELMD_CHECK_EQ(e.document_selection()->active.offset, 0u);
+    ELMD_CHECK(e.document_selection()->active.affinity == TextAffinity::Upstream);
+}
+
+ELMD_TEST(test_delete_forward_inside_indented_code_edits_code_node) {
+    Editor editor("    ab\n");
+    const auto code_id = editor.document().blocks[0].id;
+    editor.set_caret(CharOffset(5));
+    Command command;
+    command.kind = CommandKind::DeleteForward;
+    ELMD_CHECK(editor.execute_command(command).has_value());
+    ELMD_CHECK_EQ(editor.document().blocks[0].id, code_id);
+    ELMD_CHECK_EQ(editor.document().blocks[0].code_text, std::u32string(U"a\n"));
+    ELMD_CHECK(editor.document_selection().has_value());
+    ELMD_CHECK_EQ(editor.document_selection()->active.node_id, code_id);
+    ELMD_CHECK_EQ(editor.document_selection()->active.offset, 1u);
 }
 
 ELMD_TEST(test_enter_on_empty_list_exits_list) {

@@ -26,140 +26,8 @@ inline std::size_t find_line_end(const std::u32string& cps, std::size_t pos) {
     return p;
 }
 
-struct MarkdownNewlineEdit {
-    CharRange range;
-    std::u32string text;
-    CharOffset caret;
-};
-
 inline bool is_space_or_tab(char32_t ch) {
     return ch == U' ' || ch == U'\t';
-}
-
-inline std::optional<MarkdownNewlineEdit> markdown_newline_edit(const std::u32string& cps, CharRange sel) {
-    std::size_t ls = find_line_start(cps, sel.start.v);
-    std::size_t le = find_line_end(cps, sel.start.v);
-    std::u32string line(cps.begin() + ls, cps.begin() + le);
-    std::size_t pos = 0;
-    std::u32string base_prefix;
-    while (pos < line.size() && is_space_or_tab(line[pos])) base_prefix.push_back(line[pos++]);
-    while (pos < line.size() && line[pos] == U'>') {
-        base_prefix.push_back(U'>');
-        ++pos;
-        if (pos < line.size() && line[pos] == U' ') {
-            base_prefix.push_back(U' ');
-            ++pos;
-        } else {
-            base_prefix.push_back(U' ');
-        }
-        while (pos < line.size() && is_space_or_tab(line[pos])) base_prefix.push_back(line[pos++]);
-    }
-
-    std::u32string marker;
-    if (pos + 5 < line.size() && (line[pos] == U'-' || line[pos] == U'*' || line[pos] == U'+') && line[pos + 1] == U' ' && line[pos + 2] == U'[' && (line[pos + 3] == U' ' || line[pos + 3] == U'x' || line[pos + 3] == U'X') && line[pos + 4] == U']' && line[pos + 5] == U' ') {
-        marker.push_back(line[pos]);
-        marker += U" [ ] ";
-        pos += 6;
-    } else if (pos + 1 < line.size() && (line[pos] == U'-' || line[pos] == U'*' || line[pos] == U'+') && line[pos + 1] == U' ') {
-        marker.push_back(line[pos]);
-        marker.push_back(U' ');
-        pos += 2;
-    } else {
-        std::size_t number_start = pos;
-        while (pos < line.size() && line[pos] >= U'0' && line[pos] <= U'9') ++pos;
-        if (pos > number_start && pos + 1 < line.size() && (line[pos] == U'.' || line[pos] == U')') && line[pos + 1] == U' ') {
-            std::size_t value = 0;
-            for (std::size_t i = number_start; i < pos; ++i) value = value * 10 + static_cast<std::size_t>(line[i] - U'0');
-            marker = utf8_to_cps(std::to_string(value + 1));
-            marker.push_back(line[pos]);
-            marker.push_back(U' ');
-            pos += 2;
-        } else pos = number_start;
-    }
-
-    if (base_prefix.empty() && marker.empty()) return std::nullopt;
-    bool empty_item = true;
-    for (std::size_t i = pos; i < line.size(); ++i) {
-        if (!is_space_or_tab(line[i])) {
-            empty_item = false;
-            break;
-        }
-    }
-
-    if (empty_item && !marker.empty()) {
-        if (!base_prefix.empty()) {
-            auto next_line_start = le < cps.size() && cps[le] == U'\n' ? le + 1 : le;
-            auto next_quote = next_line_start < cps.size() ? quote_source_line_at(cps, CharOffset(next_line_start)) : std::nullopt;
-            bool matching_empty_quote = false;
-            if (next_quote && next_quote->empty && next_quote->source_range.start.v == next_line_start) {
-                auto next_prefix = std::u32string(cps.begin() + next_line_start, cps.begin() + next_quote->content_range.start.v);
-                matching_empty_quote = next_prefix == base_prefix;
-            }
-            if (matching_empty_quote) {
-                if (ls >= 3 && cps[ls - 1] == U'\n' && cps[ls - 2] == U' ' && cps[ls - 3] == U' ') {
-                    return MarkdownNewlineEdit{CharRange(CharOffset(ls - 3), CharOffset(next_line_start)), U"\n",
-                                               CharOffset(ls - 2 + base_prefix.size())};
-                }
-                return MarkdownNewlineEdit{CharRange(CharOffset(ls), CharOffset(next_line_start)), U"",
-                                           CharOffset(ls + base_prefix.size())};
-            }
-            if (ls >= 3 && cps[ls - 1] == U'\n' && cps[ls - 2] == U' ' && cps[ls - 3] == U' ') {
-                auto replacement = std::u32string(U"\n") + base_prefix;
-                return MarkdownNewlineEdit{CharRange(CharOffset(ls - 3), CharOffset(le)), replacement,
-                                           CharOffset(ls - 3 + replacement.size())};
-            }
-            return MarkdownNewlineEdit{CharRange(CharOffset(ls), CharOffset(le)), base_prefix,
-                                       CharOffset(ls + base_prefix.size())};
-        }
-        return MarkdownNewlineEdit{CharRange(CharOffset(ls), CharOffset(le)), U"", CharOffset(ls)};
-    }
-    if (empty_item && !base_prefix.empty()) return MarkdownNewlineEdit{CharRange(CharOffset(ls), CharOffset(le)), U"", CharOffset(ls)};
-
-    std::u32string insert;
-    insert.push_back(U'\n');
-    insert += base_prefix;
-    insert += marker;
-    return MarkdownNewlineEdit{sel, insert, CharOffset(sel.start.v + insert.size())};
-}
-
-inline std::optional<QuoteSourceLine> empty_quote_line_at(const std::u32string& cps, CharRange sel) {
-    if (sel.start.v != sel.end.v) return std::nullopt;
-    auto result = quote_source_line_at(cps, sel.start);
-    if (!result || !result->empty || sel.start.v != result->content_range.end.v) return std::nullopt;
-    return result;
-}
-
-inline std::optional<MarkdownNewlineEdit> empty_container_backspace_edit(const std::u32string& cps, CharRange sel) {
-    if (sel.start.v != sel.end.v) return std::nullopt;
-    auto line_start = find_line_start(cps, sel.start.v);
-    auto line_end = find_line_end(cps, sel.start.v);
-    if (sel.start.v != line_end || line_start == line_end) return std::nullopt;
-    auto line = std::u32string_view(cps).substr(line_start, line_end - line_start);
-    if (line == U"\t" || line == U"    ") {
-        auto erase_start = line_start;
-        if (line_start > 0 && cps[line_start - 1] == U'\n') erase_start = line_start - 1;
-        return MarkdownNewlineEdit{CharRange(CharOffset(erase_start), CharOffset(line_end)), U"", CharOffset(erase_start)};
-    }
-
-    auto quote = empty_quote_line_at(cps, sel);
-    if (!quote) return std::nullopt;
-    auto const& innermost = quote->marker_ranges.back();
-    if (quote->marker_ranges.size() > 1) {
-        auto remaining = std::u32string(cps.begin() + quote->source_range.start.v, cps.begin() + innermost.start.v);
-        if (quote->hard_break_from_previous) {
-            auto edit_start = quote->source_range.start.v - 3;
-            auto replacement = std::u32string(U"\n") + remaining;
-            return MarkdownNewlineEdit{CharRange(CharOffset(edit_start), quote->content_range.end), replacement, CharOffset(edit_start + replacement.size())};
-        }
-        return MarkdownNewlineEdit{CharRange(innermost.start, quote->content_range.end), U"", innermost.start};
-    }
-    auto erase_start = innermost.start.v;
-    if (line_start > 0 && cps[line_start - 1] == U'\n') {
-        erase_start = line_start - 1;
-        if (erase_start >= 2 && cps[erase_start - 1] == U' ' && cps[erase_start - 2] == U' ') erase_start -= 2;
-    }
-    auto erase_end = line_start + line.size();
-    return MarkdownNewlineEdit{CharRange(CharOffset(erase_start), CharOffset(erase_end)), U"", CharOffset(erase_start)};
 }
 
 inline std::size_t markdown_line_prefix_end(const std::u32string& line) {
@@ -347,7 +215,6 @@ enum class SemanticEditIntent {
     MoveCaretToNextTableRow,
     InsertEmptySiblingBlock,
     InsertCodeLineBreak,
-    ContinueContainerLine,
     MoveCaret,
     FormatInline,
     StructuralSourceTransform,
@@ -380,7 +247,7 @@ inline SemanticEditPlan plan_newline(const std::u32string& text, const EditorDoc
             return {SemanticEditIntent::MoveCaretToNextTableRow, block_index};
         }
     }
-    if (block.kind == BlockKind::BlockQuote || block.kind == BlockKind::List || block.kind == BlockKind::TaskList) return {SemanticEditIntent::ContinueContainerLine, block_index};
+    if (block.kind == BlockKind::BlockQuote || block.kind == BlockKind::List || block.kind == BlockKind::TaskList) return {SemanticEditIntent::NoEdit, block_index};
     return {SemanticEditIntent::InsertParagraphBlockAfter, block_index};
 }
 
@@ -448,48 +315,6 @@ inline std::optional<Transaction> semantic_newline_transaction(const std::u32str
             auto target = row.line_range.end.v;
             if (position.column < row.cells.size()) target = row.cells[position.column].content_range.start.v;
             return Transaction(revision, selection, caret_after(CharOffset(target)), TransactionReason::StructuralCommand);
-        }
-        case SemanticEditIntent::ContinueContainerLine: {
-            auto markdown_edit = markdown_newline_edit(text_cps, sel);
-            bool quote_block = markdown_edit && plan.block_index && document.blocks[*plan.block_index].kind == BlockKind::BlockQuote;
-            bool continued_quote = quote_block && markdown_edit->range.start.v == sel.start.v && markdown_edit->range.end.v == sel.end.v && markdown_edit->text.starts_with(U"\n");
-            if (continued_quote) {
-                markdown_edit->text.insert(markdown_edit->text.begin(), 2, U' ');
-                markdown_edit->caret = CharOffset(sel.start.v + markdown_edit->text.size());
-            }
-            auto empty_quote = quote_block && markdown_edit->text.empty() ? empty_quote_line_at(text_cps, sel) : std::nullopt;
-            if (empty_quote && empty_quote->marker_ranges.size() > 1) {
-                auto const& innermost = empty_quote->marker_ranges.back();
-                auto remaining = std::u32string(text_cps.begin() + empty_quote->source_range.start.v, text_cps.begin() + innermost.start.v);
-                if (empty_quote->hard_break_from_previous) {
-                    auto edit_start = empty_quote->source_range.start.v - 3;
-                    auto replacement = std::u32string(U"\n") + remaining;
-                    auto after = caret_after(CharOffset(edit_start + replacement.size()));
-                    Transaction transaction(revision, selection, after, TransactionReason::StructuralCommand);
-                    transaction.with_edit(CharRange(CharOffset(edit_start), empty_quote->content_range.end), replacement);
-                    return transaction;
-                }
-                auto after = caret_after(innermost.start);
-                Transaction transaction(revision, selection, after, TransactionReason::StructuralCommand);
-                transaction.with_edit(CharRange(innermost.start, empty_quote->content_range.end), U"");
-                return transaction;
-            }
-            bool exits_hard_break_quote = quote_block && markdown_edit->text.empty() && markdown_edit->range.start.v >= 3
-                && text_cps[markdown_edit->range.start.v - 1] == U'\n'
-                && text_cps[markdown_edit->range.start.v - 2] == U' '
-                && text_cps[markdown_edit->range.start.v - 3] == U' ';
-            if (exits_hard_break_quote) {
-                auto edit_start = markdown_edit->range.start.v - 3;
-                auto has_terminating_newline = markdown_edit->range.end.v < text_cps.size() && text_cps[markdown_edit->range.end.v] == U'\n';
-                Transaction transaction(revision, selection, caret_after(CharOffset(edit_start + 1)), TransactionReason::StructuralCommand);
-                transaction.with_edit(CharRange(CharOffset(edit_start), markdown_edit->range.end), has_terminating_newline ? U"" : U"\n");
-                return transaction;
-            }
-            auto after = caret_after(markdown_edit ? markdown_edit->caret : CharOffset(sel.start.v + 1));
-            Transaction transaction(revision, selection, after, TransactionReason::StructuralCommand);
-            if (markdown_edit) transaction.with_edit(markdown_edit->range, markdown_edit->text);
-            else transaction.with_edit(sel, U"\n");
-            return transaction;
         }
         case SemanticEditIntent::InsertParagraphBlockAfter: {
             std::u32string inserted = U"\n\n";
@@ -577,26 +402,6 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
                 return t;
             }
             if (auto paired = auto_pair_backspace_transaction(text_cps, selection, revision)) return paired;
-            if (auto quote_line = quote_source_line_at(text_cps, sel.start); quote_line && !quote_line->empty && sel.start == quote_line->content_range.start && !quote_line->marker_ranges.empty()) {
-                std::optional<QuoteSourceLine> previous_line;
-                if (quote_line->source_range.start.v > 0) previous_line = quote_source_line_at(text_cps, CharOffset(quote_line->source_range.start.v - 1));
-                if (previous_line && previous_line->marker_ranges.size() == quote_line->marker_ranges.size()) {
-                    auto edit_start = previous_line->content_range.end.v;
-                    if (edit_start >= 2 && text_cps[edit_start - 1] == U' ' && text_cps[edit_start - 2] == U' ') edit_start -= 2;
-                    Transaction transaction(revision, selection, backward_caret(CharOffset(edit_start)), TransactionReason::StructuralCommand);
-                    transaction.with_edit(CharRange(CharOffset(edit_start), quote_line->content_range.start), U"");
-                    return transaction;
-                }
-                auto const& innermost = quote_line->marker_ranges.back();
-                Transaction transaction(revision, selection, backward_caret(innermost.start), TransactionReason::StructuralCommand);
-                transaction.with_edit(innermost, U"");
-                return transaction;
-            }
-            if (auto container_edit = empty_container_backspace_edit(text_cps, sel)) {
-                Transaction transaction(revision, selection, caret_after(container_edit->caret), TransactionReason::StructuralCommand);
-                transaction.with_edit(container_edit->range, container_edit->text);
-                return transaction;
-            }
             std::size_t pos = sel.start.v;
             if (pos == 0) return std::nullopt;
             std::size_t prev = prev_grapheme_boundary_char(text_cps, pos);

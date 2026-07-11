@@ -230,6 +230,20 @@ ELMD_TEST(test_delete_backward_preserves_inline_container_identity) {
     ELMD_CHECK_EQ(transaction->selection_after.active.offset, 4u);
 }
 
+ELMD_TEST(test_backspace_removes_adjacent_autopair_from_ast_text_leaf) {
+    auto parsed = parse_text(1, "__");
+    ELMD_CHECK_EQ(parsed.document.blocks.size(), 1u);
+    auto paragraph_id = parsed.document.blocks[0].id;
+    auto transaction = document_delete_backward(parsed.document, DocumentSelection::caret(
+        DocumentPosition{paragraph_id, 1, TextAffinity::Downstream}));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK(transaction->after.blocks[0].children.empty());
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string{});
+    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, paragraph_id);
+    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 0u);
+}
+
 ELMD_TEST(test_delete_forward_preserves_inline_container_identity) {
     auto document = document_with({paragraph(1, 2, U"alpha")});
     auto transaction = document_delete_forward(document, caret(1, 1));
@@ -261,6 +275,160 @@ ELMD_TEST(test_delete_at_top_level_paragraph_end_merges_ast_siblings) {
     ELMD_CHECK_EQ(transaction->after.blocks[0].id, NodeId(1));
     ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("alphabeta"));
     ELMD_CHECK_EQ(transaction->selection_after.active.offset, 5u);
+}
+
+ELMD_TEST(test_backspace_unwraps_only_quote_paragraph_one_level) {
+    BlockNode quote;
+    quote.id = NodeId(1);
+    quote.kind = BlockKind::BlockQuote;
+    quote.quote_children.push_back(paragraph(2, 3, U"quoted"));
+    auto transaction = document_delete_backward(document_with({quote}), caret(2));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
+    ELMD_CHECK_EQ(transaction->after.blocks[0].kind, BlockKind::Paragraph);
+    ELMD_CHECK_EQ(transaction->after.blocks[0].id, NodeId(2));
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("quoted"));
+    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, NodeId(2));
+    ELMD_CHECK(validate_document(transaction->after).empty());
+}
+
+ELMD_TEST(test_backspace_unwraps_nested_quote_exactly_one_level) {
+    BlockNode inner;
+    inner.id = NodeId(2);
+    inner.kind = BlockKind::BlockQuote;
+    inner.quote_children.push_back(paragraph(3, 4, U"nested"));
+    BlockNode outer;
+    outer.id = NodeId(1);
+    outer.kind = BlockKind::BlockQuote;
+    outer.quote_children.push_back(std::move(inner));
+    auto transaction = document_delete_backward(document_with({outer}), caret(3));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
+    ELMD_CHECK_EQ(transaction->after.blocks[0].kind, BlockKind::BlockQuote);
+    ELMD_CHECK_EQ(transaction->after.blocks[0].quote_children.size(), 1u);
+    ELMD_CHECK_EQ(transaction->after.blocks[0].quote_children[0].kind, BlockKind::Paragraph);
+    ELMD_CHECK_EQ(transaction->after.blocks[0].quote_children[0].id, NodeId(3));
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("> nested"));
+}
+
+ELMD_TEST(test_backspace_lifts_first_list_item_and_preserves_remaining_items) {
+    BlockNode list;
+    list.id = NodeId(1);
+    list.kind = BlockKind::List;
+    for (std::uint64_t index = 0; index < 3; ++index) {
+        ListItem item;
+        item.id = NodeId(2 + index * 3);
+        item.marker = U"- ";
+        item.children.push_back(paragraph(3 + index * 3, 4 + index * 3, index == 0 ? U"one" : index == 1 ? U"two" : U"three"));
+        list.list_items.push_back(std::move(item));
+    }
+    auto transaction = document_delete_backward(document_with({list}), caret(3));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(transaction->after.blocks.size(), 2u);
+    ELMD_CHECK_EQ(transaction->after.blocks[0].kind, BlockKind::Paragraph);
+    ELMD_CHECK_EQ(transaction->after.blocks[0].id, NodeId(3));
+    ELMD_CHECK_EQ(transaction->after.blocks[1].kind, BlockKind::List);
+    ELMD_CHECK_EQ(transaction->after.blocks[1].list_items.size(), 2u);
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("one\n\n- two\n- three"));
+}
+
+ELMD_TEST(test_backspace_moves_middle_list_item_subtree_into_previous_item) {
+    BlockNode nested;
+    nested.id = NodeId(20);
+    nested.kind = BlockKind::List;
+    ListItem nested_item;
+    nested_item.id = NodeId(21);
+    nested_item.marker = U"- ";
+    nested_item.children.push_back(paragraph(22, 23, U"nested"));
+    nested.list_items.push_back(std::move(nested_item));
+    BlockNode list;
+    list.id = NodeId(1);
+    list.kind = BlockKind::List;
+    ListItem first;
+    first.id = NodeId(2);
+    first.marker = U"- ";
+    first.children.push_back(paragraph(3, 4, U"one"));
+    ListItem second;
+    second.id = NodeId(5);
+    second.marker = U"- ";
+    second.children.push_back(paragraph(6, 7, U"two"));
+    second.children.push_back(std::move(nested));
+    ListItem third;
+    third.id = NodeId(8);
+    third.marker = U"- ";
+    third.children.push_back(paragraph(9, 10, U"three"));
+    list.list_items = {std::move(first), std::move(second), std::move(third)};
+    auto transaction = document_delete_backward(document_with({list}), caret(6));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    const auto& result = transaction->after.blocks[0];
+    ELMD_CHECK_EQ(result.list_items.size(), 2u);
+    ELMD_CHECK_EQ(result.list_items[0].children.size(), 3u);
+    ELMD_CHECK_EQ(result.list_items[0].children[1].id, NodeId(6));
+    ELMD_CHECK_EQ(result.list_items[0].children[2].id, NodeId(20));
+    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, NodeId(6));
+    ELMD_CHECK(validate_document(transaction->after).empty());
+}
+
+ELMD_TEST(test_delete_forward_merges_next_list_item_with_its_nested_subtree) {
+    BlockNode nested;
+    nested.id = NodeId(20);
+    nested.kind = BlockKind::List;
+    ListItem nested_item;
+    nested_item.id = NodeId(21);
+    nested_item.marker = U"- ";
+    nested_item.children.push_back(paragraph(22, 23, U"D"));
+    nested.list_items.push_back(std::move(nested_item));
+    BlockNode list;
+    list.id = NodeId(1);
+    list.kind = BlockKind::List;
+    ListItem first;
+    first.id = NodeId(2);
+    first.marker = U"- ";
+    first.children.push_back(paragraph(3, 4, U"a"));
+    ListItem second;
+    second.id = NodeId(5);
+    second.marker = U"- ";
+    second.children.push_back(paragraph(6, 7, U"C"));
+    second.children.push_back(std::move(nested));
+    list.list_items = {std::move(first), std::move(second)};
+    auto transaction = document_delete_forward(document_with({list}), caret(3, 1));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    const auto& result = transaction->after.blocks[0];
+    ELMD_CHECK_EQ(result.list_items.size(), 1u);
+    ELMD_CHECK_EQ(result.list_items[0].children.size(), 2u);
+    ELMD_CHECK_EQ(block_inline_text_content(result.list_items[0].children[0].children), std::u32string(U"aC"));
+    ELMD_CHECK_EQ(result.list_items[0].children[1].id, NodeId(20));
+    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, NodeId(3));
+    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 1u);
+    ELMD_CHECK(validate_document(transaction->after).empty());
+}
+
+ELMD_TEST(test_backspace_moves_task_item_subtree_into_previous_item) {
+    BlockNode task_list;
+    task_list.id = NodeId(1);
+    task_list.kind = BlockKind::TaskList;
+    TaskListItem first;
+    first.id = NodeId(2);
+    first.checked = true;
+    first.children.push_back(paragraph(3, 4, U"done"));
+    TaskListItem second;
+    second.id = NodeId(5);
+    second.children.push_back(paragraph(6, 7, U"next"));
+    task_list.task_items = {std::move(first), std::move(second)};
+    auto transaction = document_delete_backward(document_with({task_list}), caret(6));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    const auto& result = transaction->after.blocks[0];
+    ELMD_CHECK_EQ(result.task_items.size(), 1u);
+    ELMD_CHECK_EQ(result.task_items[0].children.size(), 2u);
+    ELMD_CHECK_EQ(result.task_items[0].children[1].id, NodeId(6));
+    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, NodeId(6));
+    ELMD_CHECK(validate_document(transaction->after).empty());
 }
 
 ELMD_TEST(test_delete_selection_inside_inline_tree_preserves_container) {

@@ -273,6 +273,48 @@ inline bool contains_block(const BlockVec& blocks, NodeId id) {
     return false;
 }
 
+inline bool backspace_in_code_blocks(
+    BlockVec& blocks,
+    NodeId id,
+    std::size_t offset,
+    NodeAllocator& allocator,
+    DocumentPosition& after) {
+    for (std::size_t index = 0; index < blocks.size(); ++index) {
+        auto& block = blocks[index];
+        if (block.id == id && block.kind == BlockKind::CodeBlock) {
+            if (offset == 0 || offset > block.code_text.size()) return false;
+            auto line_start = block.code_text.rfind(U'\n', offset - 1);
+            line_start = line_start == std::u32string::npos ? 0 : line_start + 1;
+            auto line_end = block.code_text.find(U'\n', line_start);
+            if (line_end == std::u32string::npos) line_end = block.code_text.size();
+            if (block.code_indented && offset == line_start && line_start == line_end) {
+                const auto erase_start = line_start > 0 ? line_start - 1 : line_start;
+                const auto erase_end = line_end < block.code_text.size() ? line_end + 1 : line_end;
+                block.code_text.erase(erase_start, erase_end - erase_start);
+                if (index + 1 < blocks.size() && blocks[index + 1].kind == BlockKind::Paragraph) {
+                    after = DocumentPosition{blocks[index + 1].id, 0, TextAffinity::Upstream};
+                } else {
+                    auto paragraph = empty_paragraph(allocator);
+                    after = DocumentPosition{paragraph.id, 0, TextAffinity::Upstream};
+                    blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(index + 1), std::move(paragraph));
+                }
+                return true;
+            }
+            block.code_text.erase(offset - 1, 1);
+            after = DocumentPosition{block.id, offset - 1, TextAffinity::Upstream};
+            return true;
+        }
+        if (backspace_in_code_blocks(block.quote_children, id, offset, allocator, after)) return true;
+        for (auto& item : block.list_items) {
+            if (backspace_in_code_blocks(item.children, id, offset, allocator, after)) return true;
+        }
+        for (auto& item : block.task_items) {
+            if (backspace_in_code_blocks(item.children, id, offset, allocator, after)) return true;
+        }
+    }
+    return false;
+}
+
 inline bool split_paragraph_in_blocks(BlockVec& blocks, NodeId id, std::size_t offset, NodeAllocator& allocator, DocumentPosition& after);
 
 inline bool insert_text_in_blocks(BlockVec& blocks, NodeId id, std::size_t offset, std::u32string_view text, NodeAllocator& allocator) {
@@ -293,6 +335,10 @@ inline bool erase_text_in_blocks(BlockVec& blocks, NodeId id, std::size_t start,
             erase_inline_range(block.children, start, count);
             return true;
         }
+        if (block.id == id && block.kind == BlockKind::CodeBlock && start <= block.code_text.size()) {
+            block.code_text.erase(start, (std::min)(count, block.code_text.size() - start));
+            return true;
+        }
         if (erase_text_in_blocks(block.quote_children, id, start, count)) return true;
         for (auto& item : block.list_items) if (erase_text_in_blocks(item.children, id, start, count)) return true;
         for (auto& item : block.task_items) if (erase_text_in_blocks(item.children, id, start, count)) return true;
@@ -300,43 +346,302 @@ inline bool erase_text_in_blocks(BlockVec& blocks, NodeId id, std::size_t start,
     return false;
 }
 
-inline std::optional<std::size_t> paragraph_length_in_blocks(const BlockVec& blocks, NodeId id) {
+inline bool erase_empty_inline_at(InlineVec& nodes, std::size_t offset) {
+    std::size_t consumed = 0;
+    for (std::size_t index = 0; index < nodes.size(); ++index) {
+        auto& node = nodes[index];
+        const auto length = inline_length(node);
+        const bool removable = node.kind == InlineKind::Emphasis || node.kind == InlineKind::Strong
+            || node.kind == InlineKind::Strike || node.kind == InlineKind::InlineCode
+            || node.kind == InlineKind::InlineMath || node.kind == InlineKind::Link;
+        if (length == 0 && removable && consumed == offset) {
+            nodes.erase(nodes.begin() + static_cast<std::ptrdiff_t>(index));
+            return true;
+        }
+        if (offset >= consumed && offset <= consumed + length && !node.children.empty()) {
+            if (erase_empty_inline_at(node.children, offset - consumed)) return true;
+        }
+        consumed += length;
+    }
+    return false;
+}
+
+inline bool erase_empty_inline_in_blocks(BlockVec& blocks, NodeId id, std::size_t offset) {
+    for (auto& block : blocks) {
+        if (block.id == id && block.kind == BlockKind::Paragraph) return erase_empty_inline_at(block.children, offset);
+        if (erase_empty_inline_in_blocks(block.quote_children, id, offset)) return true;
+        for (auto& item : block.list_items) if (erase_empty_inline_in_blocks(item.children, id, offset)) return true;
+        for (auto& item : block.task_items) if (erase_empty_inline_in_blocks(item.children, id, offset)) return true;
+    }
+    return false;
+}
+
+inline bool erase_adjacent_pair_in_inlines(InlineVec& nodes, std::size_t offset) {
+    std::size_t consumed = 0;
+    for (std::size_t index = 0; index < nodes.size(); ++index) {
+        auto& node = nodes[index];
+        const auto length = inline_length(node);
+        if (offset < consumed || offset > consumed + length) {
+            consumed += length;
+            continue;
+        }
+        const auto local = offset - consumed;
+        if (!node.children.empty() && erase_adjacent_pair_in_inlines(node.children, local)) return true;
+        if (node.kind == InlineKind::Text && local > 0 && local < node.text.size()) {
+            const auto marker = node.text[local - 1];
+            const bool pairable = marker == U'*' || marker == U'_' || marker == U'$' || marker == U'`' || marker == U'~';
+            if (pairable && node.text[local] == marker) {
+                node.text.erase(local - 1, 2);
+                if (node.text.empty()) nodes.erase(nodes.begin() + static_cast<std::ptrdiff_t>(index));
+                return true;
+            }
+        }
+        return false;
+    }
+    return false;
+}
+
+inline bool erase_adjacent_pair_in_blocks(BlockVec& blocks, NodeId id, std::size_t offset) {
+    for (auto& block : blocks) {
+        if (block.id == id && block.kind == BlockKind::Paragraph) return erase_adjacent_pair_in_inlines(block.children, offset);
+        if (erase_adjacent_pair_in_blocks(block.quote_children, id, offset)) return true;
+        for (auto& item : block.list_items) if (erase_adjacent_pair_in_blocks(item.children, id, offset)) return true;
+        for (auto& item : block.task_items) if (erase_adjacent_pair_in_blocks(item.children, id, offset)) return true;
+    }
+    return false;
+}
+
+inline std::optional<std::size_t> editable_length_in_blocks(const BlockVec& blocks, NodeId id) {
     for (const auto& block : blocks) {
         if (block.id == id && block.kind == BlockKind::Paragraph) return block_inline_text_content(block.children).size();
-        if (auto length = paragraph_length_in_blocks(block.quote_children, id)) return length;
-        for (const auto& item : block.list_items) if (auto length = paragraph_length_in_blocks(item.children, id)) return length;
-        for (const auto& item : block.task_items) if (auto length = paragraph_length_in_blocks(item.children, id)) return length;
+        if (block.id == id && block.kind == BlockKind::CodeBlock) return block.code_text.size();
+        if (auto length = editable_length_in_blocks(block.quote_children, id)) return length;
+        for (const auto& item : block.list_items) if (auto length = editable_length_in_blocks(item.children, id)) return length;
+        for (const auto& item : block.task_items) if (auto length = editable_length_in_blocks(item.children, id)) return length;
     }
     return std::nullopt;
 }
 
-inline std::optional<DocumentPosition> merge_top_level_paragraph_backward(BlockVec& blocks, NodeId id) {
-    for (std::size_t index = 1; index < blocks.size(); ++index) {
-        if (blocks[index].id != id || blocks[index].kind != BlockKind::Paragraph || blocks[index - 1].kind != BlockKind::Paragraph) continue;
-        const auto previous_length = block_inline_text_content(blocks[index - 1].children).size();
-        blocks[index - 1].children.insert(
-            blocks[index - 1].children.end(),
-            std::make_move_iterator(blocks[index].children.begin()),
-            std::make_move_iterator(blocks[index].children.end()));
-        const auto target_id = blocks[index - 1].id;
-        blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index));
-        return DocumentPosition{target_id, previous_length, TextAffinity::Downstream};
-    }
-    return std::nullopt;
+inline DocumentPosition merge_paragraphs(BlockNode& first, BlockNode& second) {
+    const auto offset = block_inline_text_content(first.children).size();
+    first.children.insert(
+        first.children.end(),
+        std::make_move_iterator(second.children.begin()),
+        std::make_move_iterator(second.children.end()));
+    return DocumentPosition{first.id, offset, TextAffinity::Downstream};
 }
 
-inline std::optional<DocumentPosition> merge_top_level_paragraph_forward(BlockVec& blocks, NodeId id) {
-    for (std::size_t index = 0; index + 1 < blocks.size(); ++index) {
-        if (blocks[index].id != id || blocks[index].kind != BlockKind::Paragraph || blocks[index + 1].kind != BlockKind::Paragraph) continue;
-        const auto offset = block_inline_text_content(blocks[index].children).size();
-        blocks[index].children.insert(
-            blocks[index].children.end(),
-            std::make_move_iterator(blocks[index + 1].children.begin()),
-            std::make_move_iterator(blocks[index + 1].children.end()));
-        blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index + 1));
-        return DocumentPosition{id, offset, TextAffinity::Downstream};
+inline bool backspace_in_blocks(BlockVec& blocks, NodeId id, DocumentPosition& after);
+inline bool delete_forward_in_blocks(BlockVec& blocks, NodeId id, DocumentPosition& after);
+
+inline bool backspace_in_quote(BlockVec& owner, std::size_t quote_index, NodeId id, DocumentPosition& after) {
+    auto& quote = owner[quote_index];
+    for (std::size_t child_index = 0; child_index < quote.quote_children.size(); ++child_index) {
+        auto& child = quote.quote_children[child_index];
+        if (child.id != id || child.kind != BlockKind::Paragraph) continue;
+        if (child_index > 0 && quote.quote_children[child_index - 1].kind == BlockKind::Paragraph) {
+            after = merge_paragraphs(quote.quote_children[child_index - 1], child);
+            quote.quote_children.erase(quote.quote_children.begin() + static_cast<std::ptrdiff_t>(child_index));
+            return true;
+        }
+        BlockNode paragraph = std::move(child);
+        after = DocumentPosition{paragraph.id, 0, TextAffinity::Downstream};
+        if (quote.quote_children.size() == 1) {
+            owner[quote_index] = std::move(paragraph);
+        } else {
+            quote.quote_children.erase(quote.quote_children.begin() + static_cast<std::ptrdiff_t>(child_index));
+            owner.insert(owner.begin() + static_cast<std::ptrdiff_t>(quote_index), std::move(paragraph));
+        }
+        return true;
     }
-    return std::nullopt;
+    return backspace_in_blocks(quote.quote_children, id, after);
+}
+
+inline bool backspace_in_list(BlockVec& owner, std::size_t list_index, NodeId id, DocumentPosition& after) {
+    auto& list = owner[list_index];
+    for (std::size_t item_index = 0; item_index < list.list_items.size(); ++item_index) {
+        auto& item = list.list_items[item_index];
+        for (std::size_t child_index = 0; child_index < item.children.size(); ++child_index) {
+            auto& child = item.children[child_index];
+            if (child.id != id || child.kind != BlockKind::Paragraph) continue;
+            if (child_index > 0 && item.children[child_index - 1].kind == BlockKind::Paragraph) {
+                after = merge_paragraphs(item.children[child_index - 1], child);
+                item.children.erase(item.children.begin() + static_cast<std::ptrdiff_t>(child_index));
+                return true;
+            }
+            after = DocumentPosition{child.id, 0, TextAffinity::Downstream};
+            if (item_index == 0) {
+                auto lifted = std::move(item.children);
+                list.list_items.erase(list.list_items.begin());
+                if (list.list_ordered) ++list.list_start;
+                if (list.list_items.empty()) {
+                    owner.erase(owner.begin() + static_cast<std::ptrdiff_t>(list_index));
+                }
+                owner.insert(
+                    owner.begin() + static_cast<std::ptrdiff_t>(list_index),
+                    std::make_move_iterator(lifted.begin()),
+                    std::make_move_iterator(lifted.end()));
+            } else {
+                auto moved = std::move(item.children);
+                auto& previous = list.list_items[item_index - 1];
+                previous.children.insert(
+                    previous.children.end(),
+                    std::make_move_iterator(moved.begin()),
+                    std::make_move_iterator(moved.end()));
+                list.list_items.erase(list.list_items.begin() + static_cast<std::ptrdiff_t>(item_index));
+            }
+            return true;
+        }
+        if (backspace_in_blocks(item.children, id, after)) return true;
+    }
+    return false;
+}
+
+inline bool backspace_in_task_list(BlockVec& owner, std::size_t list_index, NodeId id, DocumentPosition& after) {
+    auto& list = owner[list_index];
+    for (std::size_t item_index = 0; item_index < list.task_items.size(); ++item_index) {
+        auto& item = list.task_items[item_index];
+        for (std::size_t child_index = 0; child_index < item.children.size(); ++child_index) {
+            auto& child = item.children[child_index];
+            if (child.id != id || child.kind != BlockKind::Paragraph) continue;
+            if (child_index > 0 && item.children[child_index - 1].kind == BlockKind::Paragraph) {
+                after = merge_paragraphs(item.children[child_index - 1], child);
+                item.children.erase(item.children.begin() + static_cast<std::ptrdiff_t>(child_index));
+                return true;
+            }
+            after = DocumentPosition{child.id, 0, TextAffinity::Downstream};
+            if (item_index == 0) {
+                auto lifted = std::move(item.children);
+                list.task_items.erase(list.task_items.begin());
+                if (list.task_items.empty()) owner.erase(owner.begin() + static_cast<std::ptrdiff_t>(list_index));
+                owner.insert(
+                    owner.begin() + static_cast<std::ptrdiff_t>(list_index),
+                    std::make_move_iterator(lifted.begin()),
+                    std::make_move_iterator(lifted.end()));
+            } else {
+                auto moved = std::move(item.children);
+                auto& previous = list.task_items[item_index - 1];
+                previous.children.insert(
+                    previous.children.end(),
+                    std::make_move_iterator(moved.begin()),
+                    std::make_move_iterator(moved.end()));
+                list.task_items.erase(list.task_items.begin() + static_cast<std::ptrdiff_t>(item_index));
+            }
+            return true;
+        }
+        if (backspace_in_blocks(item.children, id, after)) return true;
+    }
+    return false;
+}
+
+inline bool backspace_in_blocks(BlockVec& blocks, NodeId id, DocumentPosition& after) {
+    for (std::size_t index = 0; index < blocks.size(); ++index) {
+        auto& block = blocks[index];
+        if (block.id == id && block.kind == BlockKind::Paragraph) {
+            if (index == 0 || blocks[index - 1].kind != BlockKind::Paragraph) return false;
+            after = merge_paragraphs(blocks[index - 1], block);
+            blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index));
+            return true;
+        }
+        if (block.kind == BlockKind::BlockQuote || block.kind == BlockKind::Callout || block.kind == BlockKind::FootnoteDefinition) {
+            if (backspace_in_quote(blocks, index, id, after)) return true;
+        } else if (block.kind == BlockKind::List) {
+            if (backspace_in_list(blocks, index, id, after)) return true;
+        } else if (block.kind == BlockKind::TaskList) {
+            if (backspace_in_task_list(blocks, index, id, after)) return true;
+        }
+    }
+    return false;
+}
+
+inline bool delete_forward_in_quote(BlockVec& owner, std::size_t quote_index, NodeId id, DocumentPosition& after) {
+    auto& children = owner[quote_index].quote_children;
+    for (std::size_t index = 0; index < children.size(); ++index) {
+        if (children[index].id != id || children[index].kind != BlockKind::Paragraph) continue;
+        if (index + 1 >= children.size() || children[index + 1].kind != BlockKind::Paragraph) return false;
+        after = merge_paragraphs(children[index], children[index + 1]);
+        children.erase(children.begin() + static_cast<std::ptrdiff_t>(index + 1));
+        return true;
+    }
+    return delete_forward_in_blocks(children, id, after);
+}
+
+inline bool delete_forward_in_list(BlockNode& list, NodeId id, DocumentPosition& after) {
+    for (std::size_t item_index = 0; item_index < list.list_items.size(); ++item_index) {
+        auto& item = list.list_items[item_index];
+        for (std::size_t child_index = 0; child_index < item.children.size(); ++child_index) {
+            auto& child = item.children[child_index];
+            if (child.id != id || child.kind != BlockKind::Paragraph) continue;
+            if (child_index + 1 < item.children.size() && item.children[child_index + 1].kind == BlockKind::Paragraph) {
+                after = merge_paragraphs(child, item.children[child_index + 1]);
+                item.children.erase(item.children.begin() + static_cast<std::ptrdiff_t>(child_index + 1));
+                return true;
+            }
+            if (child_index + 1 == item.children.size() && item_index + 1 < list.list_items.size()) {
+                after = DocumentPosition{child.id, block_inline_text_content(child.children).size(), TextAffinity::Downstream};
+                auto moved = std::move(list.list_items[item_index + 1].children);
+                if (!moved.empty() && moved.front().kind == BlockKind::Paragraph) {
+                    merge_paragraphs(child, moved.front());
+                    moved.erase(moved.begin());
+                }
+                item.children.insert(item.children.end(), std::make_move_iterator(moved.begin()), std::make_move_iterator(moved.end()));
+                list.list_items.erase(list.list_items.begin() + static_cast<std::ptrdiff_t>(item_index + 1));
+                return true;
+            }
+            return false;
+        }
+        if (delete_forward_in_blocks(item.children, id, after)) return true;
+    }
+    return false;
+}
+
+inline bool delete_forward_in_task_list(BlockNode& list, NodeId id, DocumentPosition& after) {
+    for (std::size_t item_index = 0; item_index < list.task_items.size(); ++item_index) {
+        auto& item = list.task_items[item_index];
+        for (std::size_t child_index = 0; child_index < item.children.size(); ++child_index) {
+            auto& child = item.children[child_index];
+            if (child.id != id || child.kind != BlockKind::Paragraph) continue;
+            if (child_index + 1 < item.children.size() && item.children[child_index + 1].kind == BlockKind::Paragraph) {
+                after = merge_paragraphs(child, item.children[child_index + 1]);
+                item.children.erase(item.children.begin() + static_cast<std::ptrdiff_t>(child_index + 1));
+                return true;
+            }
+            if (child_index + 1 == item.children.size() && item_index + 1 < list.task_items.size()) {
+                after = DocumentPosition{child.id, block_inline_text_content(child.children).size(), TextAffinity::Downstream};
+                auto moved = std::move(list.task_items[item_index + 1].children);
+                if (!moved.empty() && moved.front().kind == BlockKind::Paragraph) {
+                    merge_paragraphs(child, moved.front());
+                    moved.erase(moved.begin());
+                }
+                item.children.insert(item.children.end(), std::make_move_iterator(moved.begin()), std::make_move_iterator(moved.end()));
+                list.task_items.erase(list.task_items.begin() + static_cast<std::ptrdiff_t>(item_index + 1));
+                return true;
+            }
+            return false;
+        }
+        if (delete_forward_in_blocks(item.children, id, after)) return true;
+    }
+    return false;
+}
+
+inline bool delete_forward_in_blocks(BlockVec& blocks, NodeId id, DocumentPosition& after) {
+    for (std::size_t index = 0; index < blocks.size(); ++index) {
+        auto& block = blocks[index];
+        if (block.id == id && block.kind == BlockKind::Paragraph) {
+            if (index + 1 >= blocks.size() || blocks[index + 1].kind != BlockKind::Paragraph) return false;
+            after = merge_paragraphs(block, blocks[index + 1]);
+            blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index + 1));
+            return true;
+        }
+        if (block.kind == BlockKind::BlockQuote || block.kind == BlockKind::Callout || block.kind == BlockKind::FootnoteDefinition) {
+            if (delete_forward_in_quote(blocks, index, id, after)) return true;
+        } else if (block.kind == BlockKind::List) {
+            if (delete_forward_in_list(block, id, after)) return true;
+        } else if (block.kind == BlockKind::TaskList) {
+            if (delete_forward_in_task_list(block, id, after)) return true;
+        }
+    }
+    return false;
 }
 
 inline std::optional<std::size_t> top_level_paragraph_index(const BlockVec& blocks, NodeId id) {
@@ -638,14 +943,27 @@ inline std::optional<DocumentTransaction> document_delete_backward(
     EditorDocument after = document;
     auto target = selection.active;
     bool changed = false;
-    if (target.offset > 0) {
-        changed = document_edit_detail::erase_text_in_blocks(after.blocks, target.node_id, target.offset - 1, 1);
-        if (changed) --target.offset;
-    } else if (auto merged = document_edit_detail::merge_top_level_paragraph_backward(after.blocks, target.node_id)) {
-        target = *merged;
-        changed = true;
+    document_edit_detail::NodeAllocator allocator(after);
+    changed = document_edit_detail::backspace_in_code_blocks(after.blocks, target.node_id, target.offset, allocator, target);
+    if (!changed && target.offset > 0) {
+        changed = document_edit_detail::erase_adjacent_pair_in_blocks(after.blocks, target.node_id, target.offset);
+        if (changed) {
+            --target.offset;
+        } else {
+            const auto length_before = document_edit_detail::editable_length_in_blocks(after.blocks, target.node_id);
+            changed = document_edit_detail::erase_text_in_blocks(after.blocks, target.node_id, target.offset - 1, 1);
+            const auto length_after = document_edit_detail::editable_length_in_blocks(after.blocks, target.node_id);
+            if (changed && length_before && length_after) {
+                const auto removed = *length_before - *length_after;
+                target.offset -= (std::min)(target.offset, removed);
+            }
+        }
+    } else if (!changed) {
+        changed = document_edit_detail::erase_empty_inline_in_blocks(after.blocks, target.node_id, target.offset);
+        if (!changed) changed = document_edit_detail::backspace_in_blocks(after.blocks, target.node_id, target);
     }
     if (!changed) return std::nullopt;
+    target.affinity = TextAffinity::Upstream;
     normalize_document(after);
     ++after.revision;
     DocumentTransaction transaction;
@@ -663,14 +981,13 @@ inline std::optional<DocumentTransaction> document_delete_forward(
     if (!selection.is_caret()) return std::nullopt;
     EditorDocument after = document;
     auto target = selection.active;
-    const auto length = document_edit_detail::paragraph_length_in_blocks(after.blocks, target.node_id);
+    const auto length = document_edit_detail::editable_length_in_blocks(after.blocks, target.node_id);
     if (!length) return std::nullopt;
     bool changed = false;
     if (target.offset < *length) {
         changed = document_edit_detail::erase_text_in_blocks(after.blocks, target.node_id, target.offset, 1);
-    } else if (auto merged = document_edit_detail::merge_top_level_paragraph_forward(after.blocks, target.node_id)) {
-        target = *merged;
-        changed = true;
+    } else {
+        changed = document_edit_detail::delete_forward_in_blocks(after.blocks, target.node_id, target);
     }
     if (!changed) return std::nullopt;
     normalize_document(after);

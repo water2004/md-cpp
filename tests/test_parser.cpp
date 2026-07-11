@@ -999,3 +999,24 @@ ELMD_TEST(parse_heading_no_space_is_not_heading) {
     auto out = parse_text(1, "###no-space\n");
     ELMD_CHECK(!blocks_has_kind(out.document.blocks, BlockKind::Heading));
 }
+
+ELMD_TEST(parse_empty_list_item_has_editable_paragraph_anchor) {
+    auto out = parse_text(1, "- ");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    ELMD_CHECK(out.document.blocks[0].kind == BlockKind::List);
+    ELMD_CHECK_EQ(out.document.blocks[0].list_items.size(), 1u);
+    ELMD_CHECK_EQ(out.document.blocks[0].list_items[0].children.size(), 1u);
+    const auto& paragraph = out.document.blocks[0].list_items[0].children[0];
+    ELMD_CHECK(paragraph.kind == BlockKind::Paragraph);
+    ELMD_CHECK(out.document.source_map.find_node_by_id(paragraph.id) != nullptr);
+}
+
+ELMD_TEST(parse_empty_quote_has_editable_paragraph_anchor) {
+    auto out = parse_text(1, "> ");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    ELMD_CHECK(out.document.blocks[0].kind == BlockKind::BlockQuote);
+    ELMD_CHECK_EQ(out.document.blocks[0].quote_children.size(), 1u);
+    const auto& paragraph = out.document.blocks[0].quote_children[0];
+    ELMD_CHECK(paragraph.kind == BlockKind::Paragraph);
+    ELMD_CHECK(out.document.source_map.find_node_by_id(paragraph.id) != nullptr);
+}

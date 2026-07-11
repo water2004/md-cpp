@@ -1901,6 +1901,16 @@ public:
                 for (auto& prefix : range.marker_ranges) prefix = CharRange(remap(prefix.start), remap(prefix.end));
                 source_ranges.push_back(std::move(range));
             }
+            if (children.empty()) {
+                BlockNode paragraph;
+                paragraph.id = next_node_id();
+                paragraph.kind = BlockKind::Paragraph;
+                source_ranges.emplace_back(
+                    paragraph.id,
+                    CharRange(CharOffset(marker->content_start), CharOffset(marker->content_start)),
+                    CharRange(CharOffset(marker->content_start), CharOffset(marker->content_start)));
+                children.push_back(std::move(paragraph));
+            }
             for (auto& diagnostic : nested.diagnostics) {
                 if (diagnostic.source_range) diagnostic.source_range = CharRange(remap(diagnostic.source_range->start), remap(diagnostic.source_range->end));
                 diagnostics.push_back(std::move(diagnostic));
@@ -1987,6 +1997,16 @@ public:
             range.content_range = CharRange(remap(range.content_range.start), remap(range.content_range.end));
             for (auto& marker : range.marker_ranges) marker = CharRange(remap(marker.start), remap(marker.end));
             source_ranges.push_back(std::move(range));
+        }
+        if (children.empty()) {
+            BlockNode paragraph;
+            paragraph.id = next_node_id();
+            paragraph.kind = BlockKind::Paragraph;
+            source_ranges.emplace_back(
+                paragraph.id,
+                CharRange(CharOffset(content_start), CharOffset(content_start)),
+                CharRange(CharOffset(content_start), CharOffset(content_start)));
+            children.push_back(std::move(paragraph));
         }
         for (auto& diagnostic : nested.diagnostics) {
             if (diagnostic.source_range) diagnostic.source_range = CharRange(remap(diagnostic.source_range->start), remap(diagnostic.source_range->end));
