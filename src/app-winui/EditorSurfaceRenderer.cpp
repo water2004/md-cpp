@@ -796,6 +796,9 @@ namespace winrt::ElMd
         theme = value;
         styleSheet = CreateStyleSheet(value);
         blockHeightCache.clear();
+        textLayoutCache.clear();
+        textLayoutCacheOrder.clear();
+        textLayoutCacheBytes = 0;
         svgDocumentCache.clear();
         svgDocumentCacheOrder.clear();
         svgDocumentCacheBytes = 0;
@@ -959,7 +962,13 @@ namespace winrt::ElMd
             return;
         }
 
-        if (newWidthDip != surfaceWidthDip) blockHeightCache.clear();
+        if (newWidthDip != surfaceWidthDip)
+        {
+            blockHeightCache.clear();
+            textLayoutCache.clear();
+            textLayoutCacheOrder.clear();
+            textLayoutCacheBytes = 0;
+        }
         ResetTargets();
         auto resized = swapChain->ResizeBuffers(0, newWidth, newHeight, DXGI_FORMAT_UNKNOWN, 0);
         if (FAILED(resized)) return;
@@ -2345,11 +2354,71 @@ namespace winrt::ElMd
                 displayToSource.push_back(sourceOffset);
             }
 
-            auto wide = ToWide(text);
             auto textWidth = (std::max)(1.0f, documentRight - documentLeft - inset * 2.0f);
-            auto layout = createLayout(wide, format, textWidth);
-            applyInlineStyles(layout.Get(), inlineRanges);
-            ApplyMathInlineObjects(layout.Get(), inlineMathOverlays);
+            auto cacheableLayout = inlineMathOverlays.empty() && inlineImageOverlays.empty()
+                && !blockMath && !blockMermaid && !blockImage;
+            auto layoutKey = cacheKey;
+            auto mixLayoutKey = [&](std::uint64_t value)
+            {
+                layoutKey ^= value + 0x9e3779b97f4a7c15ull + (layoutKey << 6) + (layoutKey >> 2);
+            };
+            mixLayoutKey(static_cast<std::uint64_t>(std::hash<std::u32string>{}(text)));
+            mixLayoutKey(static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(format)));
+            mixLayoutKey(static_cast<std::uint64_t>(std::llround(textWidth * 16.0f)));
+            for (auto const& range : inlineRanges)
+            {
+                std::uint64_t style = range.start;
+                style = style * 1315423911u + range.length;
+                style = style * 33u + static_cast<std::uint64_t>(range.style.bold);
+                style = style * 33u + static_cast<std::uint64_t>(range.style.italic);
+                style = style * 33u + static_cast<std::uint64_t>(range.style.underline);
+                style = style * 33u + static_cast<std::uint64_t>(range.style.strikethrough);
+                style = style * 33u + static_cast<std::uint64_t>(range.style.code);
+                style = style * 33u + static_cast<std::uint64_t>(range.style.link);
+                style = style * 33u + static_cast<std::uint64_t>(range.marker);
+                style = style * 33u + static_cast<std::uint64_t>(range.syntax);
+                mixLayoutKey(style);
+            }
+            ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+            if (cacheableLayout)
+            {
+                if (auto found = textLayoutCache.find(layoutKey); found != textLayoutCache.end())
+                {
+                    layout = found->second.layout;
+                    if (auto order = std::find(textLayoutCacheOrder.begin(), textLayoutCacheOrder.end(), layoutKey); order != textLayoutCacheOrder.end())
+                    {
+                        textLayoutCacheOrder.erase(order);
+                        textLayoutCacheOrder.push_back(layoutKey);
+                    }
+                }
+            }
+            if (!layout)
+            {
+                layout = createLayout(ToWide(text), format, textWidth);
+                applyInlineStyles(layout.Get(), inlineRanges);
+                ApplyMathInlineObjects(layout.Get(), inlineMathOverlays);
+                if (cacheableLayout && layout)
+                {
+                    constexpr std::size_t budget = 16 * 1024 * 1024;
+                    constexpr std::size_t limit = 512;
+                    auto bytes = (std::max)(std::size_t{4096}, text.size() * 12);
+                    while (!textLayoutCacheOrder.empty() && (textLayoutCacheBytes + bytes > budget || textLayoutCache.size() >= limit))
+                    {
+                        auto oldest = textLayoutCacheOrder.front();
+                        textLayoutCacheOrder.pop_front();
+                        auto found = textLayoutCache.find(oldest);
+                        if (found == textLayoutCache.end()) continue;
+                        textLayoutCacheBytes -= found->second.bytes;
+                        textLayoutCache.erase(found);
+                    }
+                    if (bytes <= budget)
+                    {
+                        textLayoutCacheBytes += bytes;
+                        textLayoutCacheOrder.push_back(layoutKey);
+                        textLayoutCache.emplace(layoutKey, CachedTextLayout{layout, bytes});
+                    }
+                }
+            }
             auto inlineImageDraws = resolveInlineImages(layout.Get(), inlineImageOverlays, textWidth);
             std::optional<D2D1_POINT_2F> blockMathOrigin;
             std::vector<std::vector<D2D1_POINT_2F>> inlineMathPreviewOrigins;

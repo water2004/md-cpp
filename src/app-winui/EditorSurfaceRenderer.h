@@ -92,6 +92,12 @@ namespace winrt::ElMd
             std::size_t bytes = 0;
         };
 
+        struct CachedTextLayout
+        {
+            ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+            std::size_t bytes = 0;
+        };
+
         std::optional<CachedRasterImage> LoadRasterImage(std::wstring const& baseDirectory, std::string_view source);
         void QueueRemoteImage(std::string source);
         void Invalidate();
@@ -255,6 +261,9 @@ namespace winrt::ElMd
         std::vector<VisualTable> visualTables;
         std::vector<VisualMathHit> visualMathHits;
         std::unordered_map<std::uint64_t, float> blockHeightCache;
+        std::unordered_map<std::uint64_t, CachedTextLayout> textLayoutCache;
+        std::deque<std::uint64_t> textLayoutCacheOrder;
+        std::size_t textLayoutCacheBytes = 0;
         std::unordered_map<std::wstring, CachedRasterImage> rasterImageCache;
         std::unordered_set<std::wstring> rasterImageFailed;
         std::deque<std::wstring> rasterImageCacheOrder;
