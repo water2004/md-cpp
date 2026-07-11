@@ -1,7 +1,7 @@
 #pragma once
 
-#include "EditorInlineImageRenderer.h"
 #include "EditorEmbeddedDraw.h"
+#include "EditorInlineImageRenderer.h"
 #include "EditorInteractionMap.h"
 #include "EditorRenderResources.h"
 #include "EditorStyleSheet.h"
@@ -16,9 +16,9 @@ namespace elmd
 
 namespace winrt::ElMd
 {
-    struct EditorQuoteBlockRenderer
+    struct EditorTableBlockRenderer
     {
-        static float Render(
+        static std::optional<float> Render(
             elmd::RenderBlock const& block,
             std::u32string_view sourceText,
             std::size_t caret,

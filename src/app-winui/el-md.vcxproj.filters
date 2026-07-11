@@ -92,6 +92,9 @@
     <ClCompile Include="EditorQuoteBlockRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="EditorTableBlockRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="EditorScrollController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -176,6 +179,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EditorQuoteBlockRenderer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EditorEmbeddedDraw.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EditorTableBlockRenderer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EditorScrollController.h">

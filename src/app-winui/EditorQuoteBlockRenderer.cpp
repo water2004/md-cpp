@@ -52,8 +52,8 @@ namespace winrt::ElMd
         EditorInlineImageRenderer& inlineImageRenderer,
         MathJaxRenderer& mathJax,
         SvgNormalizer& svgNormalizer,
-        DrawMath const& drawMath,
-        DrawMathFallback const& drawMathFallback)
+        EditorDrawMath const& drawMath,
+        EditorDrawMathFallback const& drawMathFallback)
     {
         std::vector<QuoteBox> boxes;
         std::vector<QuoteFragment> fragments;
