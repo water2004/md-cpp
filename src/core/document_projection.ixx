@@ -201,8 +201,10 @@ inline std::optional<DocumentPosition> position_in_blocks(
         if (block.kind == BlockKind::Table) {
             auto position_in_cell = [&](const TableCell& cell) -> std::optional<DocumentPosition> {
                 const auto* range = document.source_map.find_node_by_id(cell.id);
-                if (!range || source_offset.v < range->content_range.start.v || source_offset.v > range->content_range.end.v) return std::nullopt;
-                const auto offset = logical_offset_from_source(document, cell.children, source_offset, range->content_range.start);
+                if (!range || source_offset.v < range->source_range.start.v || source_offset.v > range->source_range.end.v) return std::nullopt;
+                const auto content_offset = CharOffset((std::clamp)(
+                    source_offset.v, range->content_range.start.v, range->content_range.end.v));
+                const auto offset = logical_offset_from_source(document, cell.children, content_offset, range->content_range.start);
                 return DocumentPosition{cell.id, offset, TextAffinity::Downstream};
             };
             for (const auto& cell : block.table_header) if (auto position = position_in_cell(cell)) return position;

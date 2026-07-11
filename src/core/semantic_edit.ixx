@@ -386,24 +386,6 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
         case CommandKind::MovePageUp:
         case CommandKind::MovePageDown:
             return std::nullopt;
-        case CommandKind::MoveTableCellNext: return table_edit_transaction(TableEditKind::MoveCellNext, text_cps, selection, revision);
-        case CommandKind::MoveTableCellPrevious: return table_edit_transaction(TableEditKind::MoveCellPrevious, text_cps, selection, revision);
-        case CommandKind::InsertTableRowAbove: return table_edit_transaction(TableEditKind::InsertRowAbove, text_cps, selection, revision);
-        case CommandKind::InsertTableRowBelow: return table_edit_transaction(TableEditKind::InsertRowBelow, text_cps, selection, revision);
-        case CommandKind::DeleteTableRow: return table_edit_transaction(TableEditKind::DeleteRow, text_cps, selection, revision);
-        case CommandKind::MoveTableRowUp: return table_edit_transaction(TableEditKind::MoveRowUp, text_cps, selection, revision);
-        case CommandKind::MoveTableRowDown: return table_edit_transaction(TableEditKind::MoveRowDown, text_cps, selection, revision);
-        case CommandKind::InsertTableColumnLeft: return table_edit_transaction(TableEditKind::InsertColumnLeft, text_cps, selection, revision);
-        case CommandKind::InsertTableColumnRight: return table_edit_transaction(TableEditKind::InsertColumnRight, text_cps, selection, revision);
-        case CommandKind::DeleteTableColumn: return table_edit_transaction(TableEditKind::DeleteColumn, text_cps, selection, revision);
-        case CommandKind::MoveTableColumnLeft: return table_edit_transaction(TableEditKind::MoveColumnLeft, text_cps, selection, revision);
-        case CommandKind::MoveTableColumnRight: return table_edit_transaction(TableEditKind::MoveColumnRight, text_cps, selection, revision);
-        case CommandKind::SetTableColumnAlignment: return table_edit_transaction(TableEditKind::SetColumnAlignment, text_cps, selection, revision, cmd.table_alignment);
-        case CommandKind::NormalizeTable: return table_edit_transaction(TableEditKind::Normalize, text_cps, selection, revision);
-        case CommandKind::InsertTableRowAt: return table_edit_transaction(TableEditKind::InsertRowAt, text_cps, selection, revision, TableAlignment::None, cmd.table_index);
-        case CommandKind::InsertTableColumnAt: return table_edit_transaction(TableEditKind::InsertColumnAt, text_cps, selection, revision, TableAlignment::None, cmd.table_index);
-        case CommandKind::MoveTableRowTo: return table_edit_transaction(TableEditKind::MoveRowTo, text_cps, selection, revision, TableAlignment::None, cmd.table_index);
-        case CommandKind::MoveTableColumnTo: return table_edit_transaction(TableEditKind::MoveColumnTo, text_cps, selection, revision, TableAlignment::None, cmd.table_index);
         case CommandKind::InsertFootnote: {
             std::u32string label = cmd.text;
             if (label.empty()) {

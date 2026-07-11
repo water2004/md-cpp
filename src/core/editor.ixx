@@ -188,6 +188,22 @@ public:
         return transaction;
     }
 
+    std::optional<DocumentTransaction> execute_document_table_edit(
+        DocumentSelection selection,
+        DocumentTableEdit edit,
+        TableAlignment alignment = TableAlignment::None,
+        std::size_t requested_index = 0) {
+        auto transaction = document_edit_table(document_, selection, edit, alignment, requested_index);
+        if (!transaction) return std::nullopt;
+        if (transaction->before.revision == transaction->after.revision) {
+            document_selection_ = transaction->selection_after;
+            synchronize_legacy_selection_();
+        } else {
+            apply_document_transaction_(*transaction);
+        }
+        return transaction;
+    }
+
     bool undo_document() {
         auto state = document_history_.undo();
         if (!state) return false;
@@ -210,6 +226,42 @@ public:
 
     // Apply a Command. Returns the transaction if it produced a change.
     std::optional<Transaction> execute_command(const Command& cmd) {
+        if (cmd.kind == CommandKind::MoveTableCellNext || cmd.kind == CommandKind::MoveTableCellPrevious
+            || cmd.kind == CommandKind::InsertTableRowAbove || cmd.kind == CommandKind::InsertTableRowBelow
+            || cmd.kind == CommandKind::DeleteTableRow || cmd.kind == CommandKind::MoveTableRowUp
+            || cmd.kind == CommandKind::MoveTableRowDown || cmd.kind == CommandKind::InsertTableColumnLeft
+            || cmd.kind == CommandKind::InsertTableColumnRight || cmd.kind == CommandKind::DeleteTableColumn
+            || cmd.kind == CommandKind::MoveTableColumnLeft || cmd.kind == CommandKind::MoveTableColumnRight
+            || cmd.kind == CommandKind::SetTableColumnAlignment || cmd.kind == CommandKind::NormalizeTable
+            || cmd.kind == CommandKind::InsertTableRowAt || cmd.kind == CommandKind::InsertTableColumnAt
+            || cmd.kind == CommandKind::MoveTableRowTo || cmd.kind == CommandKind::MoveTableColumnTo) {
+            if (!document_selection_) return std::nullopt;
+            auto edit = DocumentTableEdit::Normalize;
+            switch (cmd.kind) {
+                case CommandKind::MoveTableCellNext: edit = DocumentTableEdit::MoveCellNext; break;
+                case CommandKind::MoveTableCellPrevious: edit = DocumentTableEdit::MoveCellPrevious; break;
+                case CommandKind::InsertTableRowAbove: edit = DocumentTableEdit::InsertRowAbove; break;
+                case CommandKind::InsertTableRowBelow: edit = DocumentTableEdit::InsertRowBelow; break;
+                case CommandKind::DeleteTableRow: edit = DocumentTableEdit::DeleteRow; break;
+                case CommandKind::MoveTableRowUp: edit = DocumentTableEdit::MoveRowUp; break;
+                case CommandKind::MoveTableRowDown: edit = DocumentTableEdit::MoveRowDown; break;
+                case CommandKind::InsertTableColumnLeft: edit = DocumentTableEdit::InsertColumnLeft; break;
+                case CommandKind::InsertTableColumnRight: edit = DocumentTableEdit::InsertColumnRight; break;
+                case CommandKind::DeleteTableColumn: edit = DocumentTableEdit::DeleteColumn; break;
+                case CommandKind::MoveTableColumnLeft: edit = DocumentTableEdit::MoveColumnLeft; break;
+                case CommandKind::MoveTableColumnRight: edit = DocumentTableEdit::MoveColumnRight; break;
+                case CommandKind::SetTableColumnAlignment: edit = DocumentTableEdit::SetColumnAlignment; break;
+                case CommandKind::InsertTableRowAt: edit = DocumentTableEdit::InsertRowAt; break;
+                case CommandKind::InsertTableColumnAt: edit = DocumentTableEdit::InsertColumnAt; break;
+                case CommandKind::MoveTableRowTo: edit = DocumentTableEdit::MoveRowTo; break;
+                case CommandKind::MoveTableColumnTo: edit = DocumentTableEdit::MoveColumnTo; break;
+                default: break;
+            }
+            const auto revision_before = buffer_.revision();
+            const auto selection_before = selection_;
+            if (!execute_document_table_edit(*document_selection_, edit, cmd.table_alignment, cmd.table_index)) return std::nullopt;
+            return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
+        }
         if (cmd.kind == CommandKind::InsertCodeBlock || cmd.kind == CommandKind::InsertMathBlock
             || cmd.kind == CommandKind::InsertToc || cmd.kind == CommandKind::InsertTable) {
             if (!document_selection_) return std::nullopt;

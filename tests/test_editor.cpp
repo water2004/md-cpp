@@ -547,7 +547,7 @@ ELMD_TEST(test_table_insert_row_below) {
     e.set_caret(CharOffset(27));
     Command c; c.kind = CommandKind::InsertTableRowBelow;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A   | B   |\n| --- | --- |\n| C   | D   |\n|     |     |\n"));
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A | B |\n| --- | --- |\n| C | D |\n|  |  |"));
 }
 
 ELMD_TEST(test_table_delete_column) {
@@ -555,7 +555,7 @@ ELMD_TEST(test_table_delete_column) {
     e.set_caret(CharOffset(6));
     Command c; c.kind = CommandKind::DeleteTableColumn;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A   |\n| --- |\n| C   |\n"));
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A |\n| --- |\n| C |"));
 }
 
 ELMD_TEST(test_table_move_column_left) {
@@ -563,7 +563,7 @@ ELMD_TEST(test_table_move_column_left) {
     e.set_caret(CharOffset(6));
     Command c; c.kind = CommandKind::MoveTableColumnLeft;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| B   | A   |\n| --- | --- |\n| D   | C   |\n"));
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| B | A |\n| --- | --- |\n| D | C |"));
 }
 
 ELMD_TEST(test_table_column_alignment_is_preserved_by_structural_edits) {
@@ -571,11 +571,11 @@ ELMD_TEST(test_table_column_alignment_is_preserved_by_structural_edits) {
     e.set_caret(CharOffset(6));
     Command align; align.kind = CommandKind::SetTableColumnAlignment; align.table_alignment = TableAlignment::Right;
     e.execute_command(align);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A   | B   |\n| --- | --: |\n| 1   | 2   |\n"));
-    ELMD_CHECK_EQ(e.selection().head().v, 8u);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A | B |\n| --- | ---: |\n| 1 | 2 |"));
+    ELMD_CHECK_EQ(e.selection().head().v, 6u);
     Command move; move.kind = CommandKind::MoveTableColumnLeft;
     e.execute_command(move);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| B   | A   |\n| --: | --- |\n| 2   | 1   |\n"));
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| B | A |\n| ---: | --- |\n| 2 | 1 |"));
 }
 
 ELMD_TEST(test_normalize_table_canonicalizes_widths_without_losing_alignment) {
@@ -583,7 +583,7 @@ ELMD_TEST(test_normalize_table_canonicalizes_widths_without_losing_alignment) {
     e.set_caret(CharOffset(2));
     Command c; c.kind = CommandKind::NormalizeTable;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| Long | B   |\n| :--- | --: |\n| 1    | 2   |\n"));
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| Long | B |\n| :--- | ---: |\n| 1 | 2 |"));
 }
 
 ELMD_TEST(test_table_insert_row_and_column_at_visual_boundaries) {
@@ -591,10 +591,10 @@ ELMD_TEST(test_table_insert_row_and_column_at_visual_boundaries) {
     e.set_caret(CharOffset(2));
     Command row; row.kind = CommandKind::InsertTableRowAt; row.table_index = 1;
     e.execute_command(row);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A   | B   |\n| --- | --- |\n|     |     |\n| 1   | 2   |\n"));
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A | B |\n| --- | --- |\n|  |  |\n| 1 | 2 |"));
     Command column; column.kind = CommandKind::InsertTableColumnAt; column.table_index = 1;
     e.execute_command(column);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A   |     | B   |\n| --- | --- | --- |\n|     |     |     |\n| 1   |     | 2   |\n"));
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A |  | B |\n| --- | --- | --- |\n|  |  |  |\n| 1 |  | 2 |"));
 }
 
 ELMD_TEST(test_table_drag_moves_row_and_column_atomically) {
@@ -602,11 +602,30 @@ ELMD_TEST(test_table_drag_moves_row_and_column_atomically) {
     e.set_caret(CharOffset(29));
     Command row; row.kind = CommandKind::MoveTableRowTo; row.table_index = 0;
     e.execute_command(row);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| 1   | 2   |\n| --- | --- |\n| A   | B   |\n"));
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| 1 | 2 |\n| --- | --- |\n| A | B |"));
     e.set_caret(CharOffset(8));
     Command column; column.kind = CommandKind::MoveTableColumnTo; column.table_index = 0;
     e.execute_command(column);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| 2   | 1   |\n| --- | --- |\n| B   | A   |\n"));
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| 2 | 1 |\n| --- | --- |\n| B | A |"));
+}
+
+ELMD_TEST(test_table_structure_commands_preserve_ast_nodes_and_document_history) {
+    Editor editor("| A | B |\n| --- | --- |\n| 1 | 2 |");
+    const auto table_id = editor.document().blocks.front().id;
+    const auto first_cell_id = editor.document().blocks.front().table_header.front().id;
+    const auto second_cell_id = editor.document().blocks.front().table_header[1].id;
+    editor.set_document_selection(DocumentSelection::caret(
+        DocumentPosition{second_cell_id, 0, TextAffinity::Downstream}));
+    Command move; move.kind = CommandKind::MoveTableColumnLeft;
+    editor.execute_command(move);
+    ELMD_CHECK_EQ(editor.document().blocks.front().id, table_id);
+    ELMD_CHECK_EQ(editor.document().blocks.front().table_header[0].id, second_cell_id);
+    ELMD_CHECK_EQ(editor.document().blocks.front().table_header[1].id, first_cell_id);
+    ELMD_CHECK(editor.has_document_undo());
+    ELMD_CHECK(validate_document(editor.document()).empty());
+    editor.undo();
+    ELMD_CHECK_EQ(editor.document().blocks.front().table_header[0].id, first_cell_id);
+    ELMD_CHECK_EQ(editor.document().blocks.front().table_header[1].id, second_cell_id);
 }
 
 ELMD_TEST(test_typing_into_empty_table_cell_updates_source_and_ast) {

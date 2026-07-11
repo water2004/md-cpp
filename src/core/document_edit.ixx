@@ -15,6 +15,27 @@ enum class DocumentTransactionReason {
     Structure,
 };
 
+enum class DocumentTableEdit {
+    MoveCellNext,
+    MoveCellPrevious,
+    InsertRowAbove,
+    InsertRowBelow,
+    DeleteRow,
+    MoveRowUp,
+    MoveRowDown,
+    InsertColumnLeft,
+    InsertColumnRight,
+    DeleteColumn,
+    MoveColumnLeft,
+    MoveColumnRight,
+    SetColumnAlignment,
+    Normalize,
+    InsertRowAt,
+    InsertColumnAt,
+    MoveRowTo,
+    MoveColumnTo,
+};
+
 struct DocumentTransaction {
     EditorDocument before;
     EditorDocument after;
@@ -1897,6 +1918,199 @@ inline bool insert_atomic_block_in_blocks(
     return false;
 }
 
+struct TableLocation {
+    BlockNode* table = nullptr;
+    std::size_t row = 0;
+    std::size_t column = 0;
+};
+
+inline std::optional<TableLocation> find_table_location(BlockVec& blocks, NodeId cell_id) {
+    for (auto& block : blocks) {
+        if (block.kind == BlockKind::Table) {
+            for (std::size_t column = 0; column < block.table_header.size(); ++column) {
+                if (block.table_header[column].id == cell_id) return TableLocation{&block, 0, column};
+            }
+            for (std::size_t row = 0; row < block.table_rows.size(); ++row) {
+                for (std::size_t column = 0; column < block.table_rows[row].cells.size(); ++column) {
+                    if (block.table_rows[row].cells[column].id == cell_id) return TableLocation{&block, row + 1, column};
+                }
+            }
+        }
+        if (auto location = find_table_location(block.quote_children, cell_id)) return location;
+        for (auto& item : block.list_items) if (auto location = find_table_location(item.children, cell_id)) return location;
+        for (auto& item : block.task_items) if (auto location = find_table_location(item.children, cell_id)) return location;
+    }
+    return std::nullopt;
+}
+
+inline TableCell empty_table_cell(NodeAllocator& allocator) {
+    TableCell cell;
+    cell.id = allocator.allocate();
+    return cell;
+}
+
+inline std::vector<TableRow> logical_table_rows(const BlockNode& table) {
+    std::vector<TableRow> rows;
+    TableRow header;
+    header.cells = table.table_header;
+    rows.push_back(std::move(header));
+    rows.insert(rows.end(), table.table_rows.begin(), table.table_rows.end());
+    return rows;
+}
+
+inline void assign_logical_table_rows(BlockNode& table, std::vector<TableRow> rows, NodeAllocator& allocator) {
+    table.table_header = std::move(rows.front().cells);
+    table.table_rows.clear();
+    for (std::size_t index = 1; index < rows.size(); ++index) {
+        if (rows[index].id.v == 0) rows[index].id = allocator.allocate();
+        table.table_rows.push_back(std::move(rows[index]));
+    }
+}
+
+inline std::optional<DocumentPosition> edit_table(
+    BlockVec& blocks,
+    NodeId cell_id,
+    DocumentTableEdit edit,
+    TableAlignment alignment,
+    std::size_t requested_index,
+    NodeAllocator& allocator,
+    bool& changed) {
+    auto location = find_table_location(blocks, cell_id);
+    if (!location || !location->table) return std::nullopt;
+    auto& table = *location->table;
+    auto rows = logical_table_rows(table);
+    if (rows.empty() || rows.front().cells.empty()) return std::nullopt;
+    auto row = (std::min)(location->row, rows.size() - 1);
+    auto column = (std::min)(location->column, rows.front().cells.size() - 1);
+    changed = true;
+    auto make_row = [&]() {
+        TableRow result;
+        result.id = allocator.allocate();
+        result.cells.reserve(rows.front().cells.size());
+        for (std::size_t index = 0; index < rows.front().cells.size(); ++index) result.cells.push_back(empty_table_cell(allocator));
+        return result;
+    };
+    switch (edit) {
+        case DocumentTableEdit::MoveCellNext:
+            changed = false;
+            if (column + 1 < rows[row].cells.size()) ++column;
+            else if (row + 1 < rows.size()) { ++row; column = 0; }
+            break;
+        case DocumentTableEdit::MoveCellPrevious:
+            changed = false;
+            if (column > 0) --column;
+            else if (row > 0) { --row; column = rows[row].cells.size() - 1; }
+            break;
+        case DocumentTableEdit::InsertRowAbove:
+            rows.insert(rows.begin() + static_cast<std::ptrdiff_t>(row), make_row());
+            break;
+        case DocumentTableEdit::InsertRowBelow:
+            rows.insert(rows.begin() + static_cast<std::ptrdiff_t>(row + 1), make_row());
+            ++row;
+            break;
+        case DocumentTableEdit::DeleteRow:
+            if (rows.size() <= 1) return std::nullopt;
+            rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(row));
+            row = (std::min)(row, rows.size() - 1);
+            break;
+        case DocumentTableEdit::MoveRowUp:
+            if (row == 0) return std::nullopt;
+            std::swap(rows[row], rows[row - 1]);
+            --row;
+            break;
+        case DocumentTableEdit::MoveRowDown:
+            if (row + 1 >= rows.size()) return std::nullopt;
+            std::swap(rows[row], rows[row + 1]);
+            ++row;
+            break;
+        case DocumentTableEdit::InsertColumnLeft:
+            for (auto& source_row : rows) source_row.cells.insert(
+                source_row.cells.begin() + static_cast<std::ptrdiff_t>(column), empty_table_cell(allocator));
+            table.table_aligns.insert(table.table_aligns.begin() + static_cast<std::ptrdiff_t>(column), TableAlignment::None);
+            break;
+        case DocumentTableEdit::InsertColumnRight:
+            for (auto& source_row : rows) source_row.cells.insert(
+                source_row.cells.begin() + static_cast<std::ptrdiff_t>(column + 1), empty_table_cell(allocator));
+            table.table_aligns.insert(table.table_aligns.begin() + static_cast<std::ptrdiff_t>(column + 1), TableAlignment::None);
+            ++column;
+            break;
+        case DocumentTableEdit::DeleteColumn:
+            if (rows.front().cells.size() <= 1) return std::nullopt;
+            for (auto& source_row : rows) source_row.cells.erase(source_row.cells.begin() + static_cast<std::ptrdiff_t>(column));
+            if (column < table.table_aligns.size()) table.table_aligns.erase(table.table_aligns.begin() + static_cast<std::ptrdiff_t>(column));
+            column = (std::min)(column, rows.front().cells.size() - 1);
+            break;
+        case DocumentTableEdit::MoveColumnLeft:
+            if (column == 0) return std::nullopt;
+            for (auto& source_row : rows) std::swap(source_row.cells[column], source_row.cells[column - 1]);
+            if (table.table_aligns.size() > column) std::swap(table.table_aligns[column], table.table_aligns[column - 1]);
+            --column;
+            break;
+        case DocumentTableEdit::MoveColumnRight:
+            if (column + 1 >= rows.front().cells.size()) return std::nullopt;
+            for (auto& source_row : rows) std::swap(source_row.cells[column], source_row.cells[column + 1]);
+            if (table.table_aligns.size() > column + 1) std::swap(table.table_aligns[column], table.table_aligns[column + 1]);
+            ++column;
+            break;
+        case DocumentTableEdit::SetColumnAlignment:
+            table.table_aligns.resize(rows.front().cells.size(), TableAlignment::None);
+            table.table_aligns[column] = alignment;
+            break;
+        case DocumentTableEdit::Normalize:
+            break;
+        case DocumentTableEdit::InsertRowAt:
+            row = (std::min)(requested_index, rows.size());
+            rows.insert(rows.begin() + static_cast<std::ptrdiff_t>(row), make_row());
+            break;
+        case DocumentTableEdit::InsertColumnAt:
+            column = (std::min)(requested_index, rows.front().cells.size());
+            for (auto& source_row : rows) source_row.cells.insert(
+                source_row.cells.begin() + static_cast<std::ptrdiff_t>(column), empty_table_cell(allocator));
+            table.table_aligns.insert(table.table_aligns.begin() + static_cast<std::ptrdiff_t>(column), TableAlignment::None);
+            break;
+        case DocumentTableEdit::MoveRowTo: {
+            auto insertion = (std::min)(requested_index, rows.size());
+            if (insertion == row || insertion == row + 1) return std::nullopt;
+            auto moved = std::move(rows[row]);
+            rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(row));
+            if (insertion > row) --insertion;
+            rows.insert(rows.begin() + static_cast<std::ptrdiff_t>(insertion), std::move(moved));
+            row = insertion;
+            break;
+        }
+        case DocumentTableEdit::MoveColumnTo: {
+            auto insertion = (std::min)(requested_index, rows.front().cells.size());
+            if (insertion == column || insertion == column + 1) return std::nullopt;
+            for (auto& source_row : rows) {
+                auto moved = std::move(source_row.cells[column]);
+                source_row.cells.erase(source_row.cells.begin() + static_cast<std::ptrdiff_t>(column));
+                auto adjusted = insertion > column ? insertion - 1 : insertion;
+                source_row.cells.insert(source_row.cells.begin() + static_cast<std::ptrdiff_t>(adjusted), std::move(moved));
+            }
+            if (column < table.table_aligns.size()) {
+                auto moved = table.table_aligns[column];
+                table.table_aligns.erase(table.table_aligns.begin() + static_cast<std::ptrdiff_t>(column));
+                if (insertion > column) --insertion;
+                table.table_aligns.insert(table.table_aligns.begin() + static_cast<std::ptrdiff_t>(insertion), moved);
+            } else if (insertion > column) {
+                --insertion;
+            }
+            column = insertion;
+            break;
+        }
+    }
+    if (changed) assign_logical_table_rows(table, std::move(rows), allocator);
+    auto refreshed = find_table_location(blocks, changed ? [&]() {
+        auto current_rows = logical_table_rows(table);
+        row = (std::min)(row, current_rows.size() - 1);
+        column = (std::min)(column, current_rows[row].cells.size() - 1);
+        return current_rows[row].cells[column].id;
+    }() : rows[row].cells[column].id);
+    if (!refreshed) return std::nullopt;
+    auto current_rows = logical_table_rows(*refreshed->table);
+    return DocumentPosition{current_rows[refreshed->row].cells[refreshed->column].id, 0, TextAffinity::Downstream};
+}
+
 inline void normalize_blocks(BlockVec& blocks, NodeAllocator& allocator) {
     for (auto& block : blocks) {
         if (block.kind == BlockKind::BlockQuote || block.kind == BlockKind::Callout || block.kind == BlockKind::FootnoteDefinition) {
@@ -2284,6 +2498,32 @@ inline std::optional<DocumentTransaction> document_toggle_task_checkbox(
     transaction.selection_before = selection;
     transaction.selection_after = selection;
     transaction.reason = DocumentTransactionReason::Structure;
+    return transaction;
+}
+
+inline std::optional<DocumentTransaction> document_edit_table(
+    const EditorDocument& document,
+    const DocumentSelection& selection,
+    DocumentTableEdit edit,
+    TableAlignment alignment = TableAlignment::None,
+    std::size_t requested_index = 0) {
+    if (!selection.is_caret()) return std::nullopt;
+    EditorDocument after = document;
+    document_edit_detail::NodeAllocator allocator(after);
+    bool changed = false;
+    auto target = document_edit_detail::edit_table(
+        after.blocks, selection.active.node_id, edit, alignment, requested_index, allocator, changed);
+    if (!target) return std::nullopt;
+    if (changed) {
+        normalize_document(after);
+        ++after.revision;
+    }
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(after);
+    transaction.selection_before = selection;
+    transaction.selection_after = DocumentSelection::caret(*target);
+    transaction.reason = changed ? DocumentTransactionReason::Structure : DocumentTransactionReason::Format;
     return transaction;
 }
 
