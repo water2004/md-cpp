@@ -6,6 +6,7 @@
 #include "TreeSitterHighlighter.h"
 #include "EditorStyleSheet.h"
 #include "EditorInteractionMap.h"
+#include "EditorRenderResources.h"
 
 namespace winrt::ElMd
 {
@@ -69,10 +70,6 @@ namespace winrt::ElMd
         bool ScrollToSourceOffset(std::size_t sourceOffset);
 
     private:
-        float CompositionScaleX(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const;
-        float CompositionScaleY(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const;
-        void ApplySwapChainTransform();
-        void ResetTargets();
         void DrawDocument(detail::EditorSessionCore const& sessionCore);
 
         struct CachedRasterImage
@@ -123,34 +120,7 @@ namespace winrt::ElMd
         using VisualTable = EditorVisualTable;
         using VisualMathHit = EditorVisualMathHit;
 
-        void RebuildTextFormats();
-        void ResetBrushes();
-
-        ::Microsoft::WRL::ComPtr<ID3D11Device> d3dDevice;
-        ::Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3dContext;
-        ::Microsoft::WRL::ComPtr<IDXGISwapChain1> swapChain;
-        ::Microsoft::WRL::ComPtr<ID3D11RenderTargetView> renderTargetView;
-        ::Microsoft::WRL::ComPtr<ID2D1Factory1> d2dFactory;
-        ::Microsoft::WRL::ComPtr<ID2D1Device> d2dDevice;
-        ::Microsoft::WRL::ComPtr<ID2D1DeviceContext> d2dContext;
-        ::Microsoft::WRL::ComPtr<ID2D1Bitmap1> d2dTarget;
-        ::Microsoft::WRL::ComPtr<IDWriteFactory> dwriteFactory;
-        ::Microsoft::WRL::ComPtr<IWICImagingFactory> wicFactory;
-        ::Microsoft::WRL::ComPtr<IDWriteTextFormat> textFormat;
-        ::Microsoft::WRL::ComPtr<IDWriteTextFormat> heading1Format;
-        ::Microsoft::WRL::ComPtr<IDWriteTextFormat> heading2Format;
-        ::Microsoft::WRL::ComPtr<IDWriteTextFormat> heading3Format;
-        ::Microsoft::WRL::ComPtr<IDWriteTextFormat> codeFormat;
-        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> textBrush;
-        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> mutedBrush;
-        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> accentBrush;
-        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> codeBrush;
-        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> panelBrush;
-        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> canvasBrush;
-        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> nestedQuoteBrush;
-        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> selectionBrush;
-        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> caretBrush;
-        std::array<::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush>, 11> syntaxBrushes;
+        EditorRenderResources resources;
         MathJaxRenderer mathJax;
         MermaidRenderer mermaid;
         SvgNormalizer svgNormalizer;
@@ -180,12 +150,6 @@ namespace winrt::ElMd
         float scrollOffset = 0.0f;
         float scrollTarget = 0.0f;
         float totalDocumentHeight = 0.0f;
-        uint32_t surfaceWidth = 0;
-        uint32_t surfaceHeight = 0;
-        float surfaceWidthDip = 1.0f;
-        float surfaceHeightDip = 1.0f;
-        float surfaceScaleX = 1.0f;
-        float surfaceScaleY = 1.0f;
         bool resizing = false;
         bool rendering = false;
     };

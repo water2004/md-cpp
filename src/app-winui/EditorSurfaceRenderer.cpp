@@ -651,94 +651,6 @@ namespace winrt::ElMd
     }
 
 
-    float EditorSurfaceRenderer::CompositionScaleX(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const
-    {
-        return (std::max)(1.0f, panel.CompositionScaleX());
-    }
-
-    float EditorSurfaceRenderer::CompositionScaleY(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const
-    {
-        return (std::max)(1.0f, panel.CompositionScaleY());
-    }
-
-    void EditorSurfaceRenderer::ApplySwapChainTransform()
-    {
-        if (!swapChain)
-        {
-            return;
-        }
-
-        ::Microsoft::WRL::ComPtr<IDXGISwapChain2> swapChain2;
-        if (SUCCEEDED(swapChain.As(&swapChain2)))
-        {
-            DXGI_MATRIX_3X2_F matrix{};
-            matrix._11 = 1.0f / surfaceScaleX;
-            matrix._22 = 1.0f / surfaceScaleY;
-            winrt::check_hresult(swapChain2->SetMatrixTransform(&matrix));
-        }
-    }
-
-    void EditorSurfaceRenderer::ResetTargets()
-    {
-        if (d2dContext)
-        {
-            d2dContext->SetTarget(nullptr);
-            d2dContext->Flush();
-        }
-        if (d3dContext)
-        {
-            d3dContext->OMSetRenderTargets(0, nullptr, nullptr);
-            d3dContext->Flush();
-        }
-        renderTargetView = nullptr;
-        d2dTarget = nullptr;
-        ResetBrushes();
-    }
-
-    void EditorSurfaceRenderer::ResetBrushes()
-    {
-        textBrush = nullptr;
-        mutedBrush = nullptr;
-        accentBrush = nullptr;
-        codeBrush = nullptr;
-        panelBrush = nullptr;
-        canvasBrush = nullptr;
-        nestedQuoteBrush = nullptr;
-        selectionBrush = nullptr;
-        caretBrush = nullptr;
-        for (auto& brush : syntaxBrushes) brush = nullptr;
-    }
-
-    void EditorSurfaceRenderer::RebuildTextFormats()
-    {
-        if (!dwriteFactory)
-        {
-            return;
-        }
-
-        auto createFormat = [&](EditorFontStyle const& font, ::Microsoft::WRL::ComPtr<IDWriteTextFormat>& target)
-        {
-            target = nullptr;
-            winrt::check_hresult(dwriteFactory->CreateTextFormat(
-                font.family.c_str(),
-                nullptr,
-                font.weight,
-                font.style,
-                DWRITE_FONT_STRETCH_NORMAL,
-                font.size,
-                L"en-us",
-                target.GetAddressOf()));
-            winrt::check_hresult(target->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP));
-            winrt::check_hresult(target->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, font.lineHeight, font.size * 1.2f));
-        };
-
-        createFormat(styleSheet.body, textFormat);
-        createFormat(styleSheet.heading1, heading1Format);
-        createFormat(styleSheet.heading2, heading2Format);
-        createFormat(styleSheet.heading3, heading3Format);
-        createFormat(styleSheet.code, codeFormat);
-    }
-
     void EditorSurfaceRenderer::SetTheme(Theme value)
     {
         if (theme == value)
@@ -755,8 +667,8 @@ namespace winrt::ElMd
         svgDocumentCache.clear();
         svgDocumentCacheOrder.clear();
         svgDocumentCacheBytes = 0;
-        RebuildTextFormats();
-        ResetBrushes();
+        resources.RebuildTextFormats(styleSheet);
+        resources.ResetBrushes();
     }
 
     void EditorSurfaceRenderer::SetInvalidateCallback(std::function<void()> callback)
@@ -777,88 +689,8 @@ namespace winrt::ElMd
 
     void EditorSurfaceRenderer::Initialize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel)
     {
-        if (swapChain)
-        {
-            return;
-        }
-
-        D3D_FEATURE_LEVEL featureLevels[] = {
-            D3D_FEATURE_LEVEL_11_1,
-            D3D_FEATURE_LEVEL_11_0,
-            D3D_FEATURE_LEVEL_10_1,
-            D3D_FEATURE_LEVEL_10_0,
-        };
-
-        UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
-#if defined(_DEBUG)
-        flags |= D3D11_CREATE_DEVICE_DEBUG;
-#endif
-
-        winrt::check_hresult(D3D11CreateDevice(
-            nullptr,
-            D3D_DRIVER_TYPE_HARDWARE,
-            nullptr,
-            flags,
-            featureLevels,
-            static_cast<UINT>(sizeof(featureLevels) / sizeof(featureLevels[0])),
-            D3D11_SDK_VERSION,
-            d3dDevice.GetAddressOf(),
-            nullptr,
-            d3dContext.GetAddressOf()));
-
-        ::Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
-        winrt::check_hresult(d3dDevice.As(&dxgiDevice));
-
-        D2D1_FACTORY_OPTIONS d2dOptions{};
-#if defined(_DEBUG)
-        d2dOptions.debugLevel = D2D1_DEBUG_LEVEL_INFORMATION;
-#endif
-        winrt::check_hresult(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, d2dOptions, d2dFactory.GetAddressOf()));
-        winrt::check_hresult(d2dFactory->CreateDevice(dxgiDevice.Get(), d2dDevice.GetAddressOf()));
-        winrt::check_hresult(d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, d2dContext.GetAddressOf()));
-
-        winrt::check_hresult(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(dwriteFactory.GetAddressOf())));
-        if (FAILED(CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(wicFactory.GetAddressOf()))))
-        {
-            CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(wicFactory.GetAddressOf()));
-        }
-        RebuildTextFormats();
-
-        ::Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
-        winrt::check_hresult(dxgiDevice->GetAdapter(adapter.GetAddressOf()));
-
-        ::Microsoft::WRL::ComPtr<IDXGIFactory2> factory;
-        winrt::check_hresult(adapter->GetParent(__uuidof(IDXGIFactory2), reinterpret_cast<void**>(factory.GetAddressOf())));
-
-        surfaceScaleX = CompositionScaleX(panel);
-        surfaceScaleY = CompositionScaleY(panel);
-        surfaceWidthDip = static_cast<float>((std::max)(1.0, panel.ActualWidth()));
-        surfaceHeightDip = static_cast<float>((std::max)(1.0, panel.ActualHeight()));
-        auto width = (std::max)(uint32_t{ 1 }, static_cast<uint32_t>(std::ceil(panel.ActualWidth() * surfaceScaleX)));
-        auto height = (std::max)(uint32_t{ 1 }, static_cast<uint32_t>(std::ceil(panel.ActualHeight() * surfaceScaleY)));
-
-        DXGI_SWAP_CHAIN_DESC1 desc{};
-        desc.Width = width;
-        desc.Height = height;
-        desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-        desc.Stereo = false;
-        desc.SampleDesc.Count = 1;
-        desc.SampleDesc.Quality = 0;
-        desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-        desc.BufferCount = 2;
-        desc.Scaling = DXGI_SCALING_STRETCH;
-        desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-        desc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
-        desc.Flags = 0;
-
-        winrt::check_hresult(factory->CreateSwapChainForComposition(d3dDevice.Get(), &desc, nullptr, swapChain.GetAddressOf()));
-        ApplySwapChainTransform();
-
-        auto panelNative = panel.as<ISwapChainPanelNative>();
-        winrt::check_hresult(panelNative->SetSwapChain(swapChain.Get()));
-
-        surfaceWidth = width;
-        surfaceHeight = height;
+        if (resources.Ready()) return;
+        resources.Initialize(panel, styleSheet);
         auto dispatcher = panel.DispatcherQueue();
         renderDispatcher = dispatcher;
         auto completion = [this, dispatcher]
@@ -880,47 +712,22 @@ namespace winrt::ElMd
 
     void EditorSurfaceRenderer::Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height)
     {
-        if (!swapChain || resizing || !std::isfinite(width) || !std::isfinite(height) || width <= 0.0 || height <= 0.0)
-        {
-            return;
-        }
-
+        if (resizing) return;
         resizing = true;
         struct ResetFlag { bool& value; ~ResetFlag() { value = false; } } resetFlag{ resizing };
-
-        auto newScaleX = CompositionScaleX(panel);
-        auto newScaleY = CompositionScaleY(panel);
-        auto newWidthDip = static_cast<float>((std::max)(1.0, width));
-        auto newHeightDip = static_cast<float>((std::max)(1.0, height));
-        auto newWidth = (std::max)(uint32_t{ 1 }, static_cast<uint32_t>(std::ceil(width * newScaleX)));
-        auto newHeight = (std::max)(uint32_t{ 1 }, static_cast<uint32_t>(std::ceil(height * newScaleY)));
-        if (newWidth == surfaceWidth && newHeight == surfaceHeight && newWidthDip == surfaceWidthDip && newHeightDip == surfaceHeightDip && newScaleX == surfaceScaleX && newScaleY == surfaceScaleY)
-        {
-            return;
-        }
-
-        if (newWidthDip != surfaceWidthDip)
+        auto result = resources.Resize(panel, width, height);
+        if (!result.resized) return;
+        if (result.widthChanged)
         {
             blockHeightCache.clear();
             textLayoutCache.clear();
             textLayoutCacheOrder.clear();
             textLayoutCacheBytes = 0;
         }
-        ResetTargets();
-        auto resized = swapChain->ResizeBuffers(0, newWidth, newHeight, DXGI_FORMAT_UNKNOWN, 0);
-        if (FAILED(resized)) return;
-        surfaceWidth = newWidth;
-        surfaceHeight = newHeight;
-        surfaceWidthDip = newWidthDip;
-        surfaceHeightDip = newHeightDip;
-        surfaceScaleX = newScaleX;
-        surfaceScaleY = newScaleY;
-        ApplySwapChainTransform();
         auto maxScroll = MaximumScrollOffset();
         scrollOffset = (std::min)(scrollOffset, maxScroll);
         scrollTarget = (std::min)(scrollTarget, maxScroll);
     }
-
     void EditorSurfaceRenderer::QueueRemoteImage(std::string source)
     {
         auto state = remoteImages;
@@ -1003,7 +810,7 @@ namespace winrt::ElMd
 
     std::optional<EditorSurfaceRenderer::CachedRasterImage> EditorSurfaceRenderer::LoadRasterImage(std::wstring const& baseDirectory, std::string_view source)
     {
-        if (!wicFactory || !d2dContext || source.empty()) return std::nullopt;
+        if (!resources.wicFactory || !resources.d2dContext || source.empty()) return std::nullopt;
         std::wstring key;
         std::vector<std::uint8_t> encoded;
         auto remote = source.starts_with("https://") || source.starts_with("http://");
@@ -1065,10 +872,10 @@ namespace winrt::ElMd
         if (!encoded.empty())
         {
             if (encoded.size() > (std::numeric_limits<DWORD>::max)()) return fail();
-            if (FAILED(wicFactory->CreateStream(stream.GetAddressOf())) || FAILED(stream->InitializeFromMemory(encoded.data(), static_cast<DWORD>(encoded.size())))) return fail();
-            if (FAILED(wicFactory->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad, decoder.GetAddressOf()))) return fail();
+            if (FAILED(resources.wicFactory->CreateStream(stream.GetAddressOf())) || FAILED(stream->InitializeFromMemory(encoded.data(), static_cast<DWORD>(encoded.size())))) return fail();
+            if (FAILED(resources.wicFactory->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad, decoder.GetAddressOf()))) return fail();
         }
-        else if (FAILED(wicFactory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad, decoder.GetAddressOf()))) return fail();
+        else if (FAILED(resources.wicFactory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad, decoder.GetAddressOf()))) return fail();
         ::Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> frame;
         if (FAILED(decoder->GetFrame(0, frame.GetAddressOf()))) return fail();
         UINT width = 0;
@@ -1077,10 +884,10 @@ namespace winrt::ElMd
         auto pixels = static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height);
         if (pixels > 16ull * 1024ull * 1024ull) return fail();
         ::Microsoft::WRL::ComPtr<IWICFormatConverter> converter;
-        if (FAILED(wicFactory->CreateFormatConverter(converter.GetAddressOf()))) return fail();
+        if (FAILED(resources.wicFactory->CreateFormatConverter(converter.GetAddressOf()))) return fail();
         if (FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeMedianCut))) return fail();
         CachedRasterImage image;
-        if (FAILED(d2dContext->CreateBitmapFromWicBitmap(converter.Get(), nullptr, image.bitmap.GetAddressOf())) || !image.bitmap) return fail();
+        if (FAILED(resources.d2dContext->CreateBitmapFromWicBitmap(converter.Get(), nullptr, image.bitmap.GetAddressOf())) || !image.bitmap) return fail();
         image.width = static_cast<float>(width);
         image.height = static_cast<float>(height);
         image.bytes = static_cast<std::size_t>(pixels * 4);
@@ -1112,17 +919,17 @@ namespace winrt::ElMd
         }
         interactionMap.Clear(sessionCore.renderModel.blocks.size());
         if (blockHeightCache.size() > 32768) blockHeightCache.clear();
-        auto responsivePadding = (std::min)(styleSheet.horizontalPadding, (std::max)(12.0f, surfaceWidthDip * 0.06f));
+        auto responsivePadding = (std::min)(styleSheet.horizontalPadding, (std::max)(12.0f, resources.surfaceWidthDip * 0.06f));
         auto documentLeft = responsivePadding;
         auto documentTop = styleSheet.verticalPadding;
-        auto documentRight = (std::max)(documentLeft + 1.0f, (std::min)(surfaceWidthDip - responsivePadding - 14.0f, documentLeft + styleSheet.documentWidth));
+        auto documentRight = (std::max)(documentLeft + 1.0f, (std::min)(resources.surfaceWidthDip - responsivePadding - 14.0f, documentLeft + styleSheet.documentWidth));
         auto y = documentTop - scrollOffset;
         auto selection = sessionCore.editor.selection().normalized_range();
         auto caret = sessionCore.editor.selection().active.v;
         auto sourceText = sessionCore.editor.buffer().text_cps();
         std::unordered_set<std::uint64_t> mathFallbacks;
         ::Microsoft::WRL::ComPtr<ID2D1DeviceContext5> svgContext;
-        auto svgSupported = SUCCEEDED(d2dContext.As(&svgContext)) && svgContext;
+        auto svgSupported = SUCCEEDED(resources.d2dContext.As(&svgContext)) && svgContext;
 
         auto drawSvg = [&](std::uint64_t renderId, std::string const& source, float width, float height, D2D1_POINT_2F origin) -> bool
         {
@@ -1130,7 +937,7 @@ namespace winrt::ElMd
             {
                 return false;
             }
-            if (origin.x + width < 0.0f || origin.y + height < 0.0f || origin.x > surfaceWidthDip || origin.y > surfaceHeightDip)
+            if (origin.x + width < 0.0f || origin.y + height < 0.0f || origin.x > resources.surfaceWidthDip || origin.y > resources.surfaceHeightDip)
             {
                 return true;
             }
@@ -1206,13 +1013,13 @@ namespace winrt::ElMd
             if (!mathFallbacks.insert(key).second) return;
             auto fallback = ToWide(std::u32string_view(sourceText).substr(start, end - start));
             if (fallback.empty()) fallback = L"formula";
-            d2dContext->DrawTextW(fallback.c_str(), static_cast<UINT32>(fallback.size()), codeFormat.Get(), D2D1::RectF(origin.x, origin.y, documentRight, origin.y + styleSheet.code.lineHeight * 3.0f), textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+            resources.d2dContext->DrawTextW(fallback.c_str(), static_cast<UINT32>(fallback.size()), resources.codeFormat.Get(), D2D1::RectF(origin.x, origin.y, documentRight, origin.y + styleSheet.code.lineHeight * 3.0f), resources.textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
         };
 
         auto createLayout = [&](std::wstring const& text, IDWriteTextFormat* format, float width)
         {
             ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
-            auto hr = dwriteFactory->CreateTextLayout(text.c_str(), static_cast<UINT32>(text.size()), format, width, 100000.0f, layout.GetAddressOf());
+            auto hr = resources.dwriteFactory->CreateTextLayout(text.c_str(), static_cast<UINT32>(text.size()), format, width, 100000.0f, layout.GetAddressOf());
             if (FAILED(hr) || !layout)
             {
                 return ::Microsoft::WRL::ComPtr<IDWriteTextLayout>{};
@@ -1267,9 +1074,9 @@ namespace winrt::ElMd
                     layout->SetFontSize(styleSheet.body.size * 0.82f, textRange);
                 }
                 auto syntaxIndex = static_cast<std::size_t>(range.syntax);
-                if (range.syntax != SyntaxHighlightKind::None && syntaxIndex < syntaxBrushes.size() && syntaxBrushes[syntaxIndex])
+                if (range.syntax != SyntaxHighlightKind::None && syntaxIndex < resources.syntaxBrushes.size() && resources.syntaxBrushes[syntaxIndex])
                 {
-                    layout->SetDrawingEffect(syntaxBrushes[syntaxIndex].Get(), textRange);
+                    layout->SetDrawingEffect(resources.syntaxBrushes[syntaxIndex].Get(), textRange);
                 }
             }
         };
@@ -1358,11 +1165,11 @@ namespace winrt::ElMd
                 auto rect = D2D1::RectF(origin.x + pointX, origin.y + lineTop, origin.x + pointX + image.width, origin.y + lineTop + image.height);
                 if (image.image)
                 {
-                    d2dContext->DrawBitmap(image.image->bitmap.Get(), rect, 1.0f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+                    resources.d2dContext->DrawBitmap(image.image->bitmap.Get(), rect, 1.0f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
                 }
                 else
                 {
-                    d2dContext->DrawTextW(image.alt.c_str(), static_cast<UINT32>(image.alt.size()), textFormat.Get(), rect, mutedBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                    resources.d2dContext->DrawTextW(image.alt.c_str(), static_cast<UINT32>(image.alt.size()), resources.textFormat.Get(), rect, resources.mutedBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
                 }
             }
         };
@@ -1453,7 +1260,7 @@ namespace winrt::ElMd
         {
             auto emptyText = winrt::hstring(L"Open a Markdown file or start editing to see the WYSIWYG surface.");
             auto rect = D2D1::RectF(documentLeft, y, documentRight, y + 80.0f);
-            d2dContext->DrawTextW(emptyText.c_str(), static_cast<UINT32>(emptyText.size()), textFormat.Get(), rect, mutedBrush.Get());
+            resources.d2dContext->DrawTextW(emptyText.c_str(), static_cast<UINT32>(emptyText.size()), resources.textFormat.Get(), rect, resources.mutedBrush.Get());
             return;
         }
 
@@ -1477,8 +1284,8 @@ namespace winrt::ElMd
             auto blockStartY = y;
             auto estimatedHeight = estimatedBlockHeight(block);
             auto caretInside = block.source_range.start.v <= caret && caret <= block.source_range.end.v;
-            auto insidePrefetch = y + estimatedHeight >= -surfaceHeightDip && y <= surfaceHeightDip * 2.0f;
-            auto requestEmbedded = y >= -surfaceHeightDip * 2.0f && y <= surfaceHeightDip * 3.0f;
+            auto insidePrefetch = y + estimatedHeight >= -resources.surfaceHeightDip && y <= resources.surfaceHeightDip * 2.0f;
+            auto requestEmbedded = y >= -resources.surfaceHeightDip * 2.0f && y <= resources.surfaceHeightDip * 3.0f;
             if (!caretInside && !insidePrefetch)
             {
                 VisualBlock placeholder;
@@ -1565,7 +1372,7 @@ namespace winrt::ElMd
                                 display.displayToSource.push_back(sourceEnd);
                             }
                             auto wide = ToWide(display.text);
-                            auto layout = createLayout(wide, textFormat.Get(), (std::max)(1.0f, columnWidth - 20.0f));
+                            auto layout = createLayout(wide, resources.textFormat.Get(), (std::max)(1.0f, columnWidth - 20.0f));
                             auto cellTextHeight = styleSheet.body.lineHeight;
                             if (layout)
                             {
@@ -1633,14 +1440,14 @@ namespace winrt::ElMd
                     auto visualBlockIndex = interactionMap.blocks.size();
                     interactionMap.blocks.push_back(std::move(visualBlock));
 
-                    d2dContext->FillRectangle(D2D1::RectF(visualTable.rect.left, visualTable.rowBoundaries[0], visualTable.rect.right, visualTable.rowBoundaries[1]), panelBrush.Get());
+                    resources.d2dContext->FillRectangle(D2D1::RectF(visualTable.rect.left, visualTable.rowBoundaries[0], visualTable.rect.right, visualTable.rowBoundaries[1]), resources.panelBrush.Get());
                     for (std::size_t cellIndex = 0; cellIndex < visualTable.cells.size(); ++cellIndex)
                     {
                         auto& cell = visualTable.cells[cellIndex];
                         auto& cellDisplay = tableDisplays[cellIndex];
                         if (!selection.is_empty() && selection.start.v < cell.sourceEnd && cell.sourceStart < selection.end.v)
                         {
-                            d2dContext->FillRectangle(cell.rect, selectionBrush.Get());
+                            resources.d2dContext->FillRectangle(cell.rect, resources.selectionBrush.Get());
                         }
                         if (cell.layout)
                         {
@@ -1655,15 +1462,15 @@ namespace winrt::ElMd
                                 for (UINT32 index = 0; index < actualCount; ++index)
                                 {
                                     auto const& metric = metrics[index];
-                                    d2dContext->FillRoundedRectangle(
+                                    resources.d2dContext->FillRoundedRectangle(
                                         D2D1::RoundedRect(
                                             D2D1::RectF(metric.left - 3.0f, metric.top + 2.0f, metric.left + metric.width + 3.0f, metric.top + metric.height - 1.0f),
                                             4.0f,
                                             4.0f),
-                                        panelBrush.Get());
+                                        resources.panelBrush.Get());
                                 }
                             }
-                            d2dContext->DrawTextLayout(cell.textOrigin, cell.layout.Get(), textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                            resources.d2dContext->DrawTextLayout(cell.textOrigin, cell.layout.Get(), resources.textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
                             drawInlineImages(cell.layout.Get(), cell.textOrigin, tableImageDraws[cellIndex]);
                             for (auto const& overlay : cellDisplay.mathOverlays)
                             {
@@ -1680,7 +1487,7 @@ namespace winrt::ElMd
                                 if (overlay.strikethrough)
                                 {
                                     auto strikeY = mathY + overlay.fragment.height * 0.52f;
-                                    d2dContext->DrawLine(D2D1::Point2F(cell.textOrigin.x + pointX, strikeY), D2D1::Point2F(mathX + overlay.fragment.width, strikeY), textBrush.Get(), 1.5f);
+                                    resources.d2dContext->DrawLine(D2D1::Point2F(cell.textOrigin.x + pointX, strikeY), D2D1::Point2F(mathX + overlay.fragment.width, strikeY), resources.textBrush.Get(), 1.5f);
                                 }
                                 interactionMap.mathHits.push_back(VisualMathHit{
                                     D2D1::RectF(mathX, mathY, mathX + overlay.fragment.width, mathY + overlay.fragment.height),
@@ -1746,11 +1553,11 @@ namespace winrt::ElMd
                     }
                     for (auto boundary : visualTable.columnBoundaries)
                     {
-                        d2dContext->DrawLine(D2D1::Point2F(boundary, visualTable.rect.top), D2D1::Point2F(boundary, visualTable.rect.bottom), mutedBrush.Get(), 1.0f);
+                        resources.d2dContext->DrawLine(D2D1::Point2F(boundary, visualTable.rect.top), D2D1::Point2F(boundary, visualTable.rect.bottom), resources.mutedBrush.Get(), 1.0f);
                     }
                     for (auto boundary : visualTable.rowBoundaries)
                     {
-                        d2dContext->DrawLine(D2D1::Point2F(visualTable.rect.left, boundary), D2D1::Point2F(visualTable.rect.right, boundary), mutedBrush.Get(), 1.0f);
+                        resources.d2dContext->DrawLine(D2D1::Point2F(visualTable.rect.left, boundary), D2D1::Point2F(visualTable.rect.right, boundary), resources.mutedBrush.Get(), 1.0f);
                     }
                     y = visualTable.rect.bottom;
                     blockHeightCache[cacheKey] = y - blockStartY;
@@ -1814,7 +1621,7 @@ namespace winrt::ElMd
                         AppendGeneratedText(display, U"\u200B", child.content_range.start.v, elmd::InlineStyle::plain());
                         display.displayToSource.push_back(child.content_range.end.v);
                     }
-                    auto format = code ? codeFormat.Get() : textFormat.Get();
+                    auto format = code ? resources.codeFormat.Get() : resources.textFormat.Get();
                     auto horizontalPadding = code ? 12.0f : 0.0f;
                     auto verticalPadding = code ? 8.0f : 0.0f;
                     auto textWidth = (std::max)(1.0f, contentRight - contentLeft - horizontalPadding * 2.0f);
@@ -1859,15 +1666,15 @@ namespace winrt::ElMd
                 }
                 for (auto const& box : quoteBoxes)
                 {
-                    d2dContext->FillRectangle(box.rect, box.depth == 0 ? panelBrush.Get() : nestedQuoteBrush.Get());
+                    resources.d2dContext->FillRectangle(box.rect, box.depth == 0 ? resources.panelBrush.Get() : resources.nestedQuoteBrush.Get());
                     auto lineX = box.rect.left + box.borderWidth * 0.5f;
-                    d2dContext->DrawLine(D2D1::Point2F(lineX, box.rect.top + 4.0f), D2D1::Point2F(lineX, box.rect.bottom - 4.0f), mutedBrush.Get(), box.borderWidth);
+                    resources.d2dContext->DrawLine(D2D1::Point2F(lineX, box.rect.top + 4.0f), D2D1::Point2F(lineX, box.rect.bottom - 4.0f), resources.mutedBrush.Get(), box.borderWidth);
                 }
                 for (auto& fragment : quoteFragments)
                 {
                     auto sourceStart = fragment.sourceStart;
                     auto sourceEnd = fragment.sourceEnd;
-                    if (fragment.code) d2dContext->FillRectangle(fragment.rect, canvasBrush.Get());
+                    if (fragment.code) resources.d2dContext->FillRectangle(fragment.rect, resources.canvasBrush.Get());
                     if (fragment.layout)
                     {
                         for (auto const& range : fragment.display.ranges)
@@ -1881,7 +1688,7 @@ namespace winrt::ElMd
                             for (UINT32 metricIndex = 0; metricIndex < actualCount; ++metricIndex)
                             {
                                 auto const& metric = metrics[metricIndex];
-                                d2dContext->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(metric.left - 3.0f, metric.top + 2.0f, metric.left + metric.width + 3.0f, metric.top + metric.height - 1.0f), 4.0f, 4.0f), panelBrush.Get());
+                                resources.d2dContext->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(metric.left - 3.0f, metric.top + 2.0f, metric.left + metric.width + 3.0f, metric.top + metric.height - 1.0f), 4.0f, 4.0f), resources.panelBrush.Get());
                             }
                         }
                         if (!selection.is_empty() && selection.end.v > sourceStart && selection.start.v < sourceEnd)
@@ -1898,12 +1705,12 @@ namespace winrt::ElMd
                                     for (UINT32 metricIndex = 0; metricIndex < actualCount; ++metricIndex)
                                     {
                                         auto const& metric = metrics[metricIndex];
-                                        d2dContext->FillRectangle(D2D1::RectF(metric.left, metric.top, metric.left + metric.width, metric.top + metric.height), selectionBrush.Get());
+                                        resources.d2dContext->FillRectangle(D2D1::RectF(metric.left, metric.top, metric.left + metric.width, metric.top + metric.height), resources.selectionBrush.Get());
                                     }
                                 }
                             }
                         }
-                        d2dContext->DrawTextLayout(fragment.origin, fragment.layout.Get(), fragment.code ? codeBrush.Get() : textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                        resources.d2dContext->DrawTextLayout(fragment.origin, fragment.layout.Get(), fragment.code ? resources.codeBrush.Get() : resources.textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
                         drawInlineImages(fragment.layout.Get(), fragment.origin, fragment.images);
                         for (auto const& overlay : fragment.display.mathOverlays)
                         {
@@ -1946,8 +1753,8 @@ namespace winrt::ElMd
                 previousBlank = false;
                 continue;
             }
-            IDWriteTextFormat* format = textFormat.Get();
-            ID2D1Brush* brush = textBrush.Get();
+            IDWriteTextFormat* format = resources.textFormat.Get();
+            ID2D1Brush* brush = resources.textBrush.Get();
             float height = 48.0f;
             float inset = 0.0f;
             float textTop = 4.0f;
@@ -2001,17 +1808,17 @@ namespace winrt::ElMd
                     inlineImageOverlays = std::move(display.imageOverlays);
                     if (block.block_style.margin_top >= 24.0f)
                     {
-                        format = heading1Format.Get();
+                        format = resources.heading1Format.Get();
                         height = 58.0f;
                     }
                     else if (block.block_style.margin_top >= 20.0f)
                     {
-                        format = heading2Format.Get();
+                        format = resources.heading2Format.Get();
                         height = 50.0f;
                     }
                     else if (block.block_style.margin_top >= 16.0f)
                     {
-                        format = heading3Format.Get();
+                        format = resources.heading3Format.Get();
                     }
                     break;
                 }
@@ -2058,8 +1865,8 @@ namespace winrt::ElMd
                     text = std::move(display.text);
                     inlineRanges = std::move(display.ranges);
                     displayToSource = std::move(display.displayToSource);
-                    format = codeFormat.Get();
-                    brush = codeBrush.Get();
+                    format = resources.codeFormat.Get();
+                    brush = resources.codeBrush.Get();
                     height = 64.0f;
                     inset = 16.0f;
                     textTop = 16.0f;
@@ -2092,8 +1899,8 @@ namespace winrt::ElMd
                     text = std::move(display.text);
                     inlineRanges = std::move(display.ranges);
                     displayToSource = std::move(display.displayToSource);
-                    format = codeFormat.Get();
-                    brush = codeBrush.Get();
+                    format = resources.codeFormat.Get();
+                    brush = resources.codeBrush.Get();
                     inset = 16.0f;
                     textTop = 16.0f;
                     fillPanel = true;
@@ -2183,8 +1990,8 @@ namespace winrt::ElMd
                     text = std::move(display.text);
                     inlineRanges = std::move(display.ranges);
                     displayToSource = std::move(display.displayToSource);
-                    format = codeFormat.Get();
-                    brush = codeBrush.Get();
+                    format = resources.codeFormat.Get();
+                    brush = resources.codeBrush.Get();
                     inset = 16.0f;
                     textTop = 12.0f;
                     fillPanel = true;
@@ -2223,14 +2030,14 @@ namespace winrt::ElMd
                     text = std::move(display.text);
                     inlineRanges = std::move(display.ranges);
                     displayToSource = std::move(display.displayToSource);
-                    brush = mutedBrush.Get();
+                    brush = resources.mutedBrush.Get();
                     inset = 8.0f;
                     textTop = showRawImage ? 8.0f : 0.0f;
                     break;
                 }
                 case elmd::RenderBlockKind::Unsupported:
                     text = elmd::utf8_to_cps(block.raw);
-                    brush = mutedBrush.Get();
+                    brush = resources.mutedBrush.Get();
                     height = 64.0f;
                     break;
                 default:
@@ -2254,7 +2061,7 @@ namespace winrt::ElMd
                     inlineMathOverlays = std::move(display.mathOverlays);
                     inlineMathPreviews = std::move(display.mathPreviews);
                     inlineImageOverlays = std::move(display.imageOverlays);
-                    brush = mutedBrush.Get();
+                    brush = resources.mutedBrush.Get();
                     break;
                 }
             }
@@ -2361,7 +2168,7 @@ namespace winrt::ElMd
             float blockMermaidHeight = 0.0f;
             if (measureHeight)
             {
-                auto fallbackHeight = format == codeFormat.Get() ? styleSheet.code.lineHeight : styleSheet.body.lineHeight;
+                auto fallbackHeight = format == resources.codeFormat.Get() ? styleSheet.code.lineHeight : styleSheet.body.lineHeight;
                 auto bottomPadding = fillPanel ? 16.0f : 8.0f;
                 height = textTop + measureTextHeight(layout.Get(), fallbackHeight) + bottomPadding;
             }
@@ -2462,16 +2269,16 @@ namespace winrt::ElMd
             auto sourceEnd = displayToSource.empty() ? SourceEnd(block, text) : displayToSource.back();
             if (fillPanel)
             {
-                d2dContext->FillRectangle(D2D1::RectF(documentLeft, y, documentRight, y + height), panelBrush.Get());
+                resources.d2dContext->FillRectangle(D2D1::RectF(documentLeft, y, documentRight, y + height), resources.panelBrush.Get());
             }
             if (block.kind == elmd::RenderBlockKind::Callout)
             {
-                d2dContext->DrawLine(D2D1::Point2F(documentLeft + 2.0f, y + 4.0f), D2D1::Point2F(documentLeft + 2.0f, y + height - 4.0f), accentBrush.Get(), 4.0f);
+                resources.d2dContext->DrawLine(D2D1::Point2F(documentLeft + 2.0f, y + 4.0f), D2D1::Point2F(documentLeft + 2.0f, y + height - 4.0f), resources.accentBrush.Get(), 4.0f);
             }
             if (thematicBreak)
             {
                 auto ruleY = y + height * 0.5f;
-                d2dContext->DrawLine(D2D1::Point2F(documentLeft, ruleY), D2D1::Point2F(documentRight, ruleY), mutedBrush.Get(), 1.0f);
+                resources.d2dContext->DrawLine(D2D1::Point2F(documentLeft, ruleY), D2D1::Point2F(documentRight, ruleY), resources.mutedBrush.Get(), 1.0f);
             }
             auto origin = D2D1::Point2F(documentLeft + inset, y + textTop);
             if (layout)
@@ -2505,14 +2312,14 @@ namespace winrt::ElMd
                         if (child.kind == elmd::RenderBlockKind::Code)
                         {
                             auto rect = D2D1::RoundedRect(D2D1::RectF(left, top - 6.0f, documentRight, bottom + 6.0f), 5.0f, 5.0f);
-                            d2dContext->FillRoundedRectangle(rect, panelBrush.Get());
+                            resources.d2dContext->FillRoundedRectangle(rect, resources.panelBrush.Get());
                             nestedCodeDisplayRanges.push_back({start, start + length});
                         }
                         else
                         {
                             auto rect = D2D1::RectF(left, top - 4.0f, documentRight, bottom + 4.0f);
-                            d2dContext->FillRectangle(rect, nestedQuoteBrush.Get());
-                            d2dContext->DrawLine(D2D1::Point2F(left + 1.5f, rect.top), D2D1::Point2F(left + 1.5f, rect.bottom), mutedBrush.Get(), 3.0f);
+                            resources.d2dContext->FillRectangle(rect, resources.nestedQuoteBrush.Get());
+                            resources.d2dContext->DrawLine(D2D1::Point2F(left + 1.5f, rect.top), D2D1::Point2F(left + 1.5f, rect.bottom), resources.mutedBrush.Get(), 3.0f);
                         }
                     }
                 }
@@ -2542,7 +2349,7 @@ namespace winrt::ElMd
                                     D2D1::RectF(metric.left - 3.0f, metric.top + 2.0f, metric.left + metric.width + 3.0f, metric.top + metric.height - 1.0f),
                                     4.0f,
                                     4.0f);
-                                d2dContext->FillRoundedRectangle(rect, panelBrush.Get());
+                                resources.d2dContext->FillRoundedRectangle(rect, resources.panelBrush.Get());
                             }
                         }
                     }
@@ -2561,13 +2368,13 @@ namespace winrt::ElMd
                             for (UINT32 i = 0; i < actualCount; ++i)
                             {
                                 auto const& metric = metrics[i];
-                                d2dContext->FillRectangle(D2D1::RectF(metric.left, metric.top, metric.left + metric.width, metric.top + metric.height), selectionBrush.Get());
+                                resources.d2dContext->FillRectangle(D2D1::RectF(metric.left, metric.top, metric.left + metric.width, metric.top + metric.height), resources.selectionBrush.Get());
                             }
                         }
                     }
                 }
 
-                d2dContext->DrawTextLayout(origin, layout.Get(), brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                resources.d2dContext->DrawTextLayout(origin, layout.Get(), brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
                 drawInlineImages(layout.Get(), origin, inlineImageDraws);
 
                 for (auto const& preview : inlineMathPreviews)
@@ -2614,7 +2421,7 @@ namespace winrt::ElMd
                         if (overlay.strikethrough)
                         {
                             auto strikeY = mathY + overlay.fragment.height * 0.52f;
-                            d2dContext->DrawLine(D2D1::Point2F(origin.x + pointX, strikeY), D2D1::Point2F(mathX + overlay.fragment.width, strikeY), textBrush.Get(), 1.5f);
+                            resources.d2dContext->DrawLine(D2D1::Point2F(origin.x + pointX, strikeY), D2D1::Point2F(mathX + overlay.fragment.width, strikeY), resources.textBrush.Get(), 1.5f);
                         }
                         interactionMap.mathHits.push_back(VisualMathHit{
                             D2D1::RectF(mathX, mathY, mathX + overlay.fragment.width, mathY + overlay.fragment.height),
@@ -2640,7 +2447,7 @@ namespace winrt::ElMd
                         if (preview.strikethrough)
                         {
                             auto strikeY = origins[fragmentIndex].y + fragment.height * 0.52f;
-                            d2dContext->DrawLine(D2D1::Point2F(origins[fragmentIndex].x, strikeY), D2D1::Point2F(origins[fragmentIndex].x + fragment.width, strikeY), textBrush.Get(), 1.5f);
+                            resources.d2dContext->DrawLine(D2D1::Point2F(origins[fragmentIndex].x, strikeY), D2D1::Point2F(origins[fragmentIndex].x + fragment.width, strikeY), resources.textBrush.Get(), 1.5f);
                         }
                         interactionMap.mathHits.push_back(VisualMathHit{
                             D2D1::RectF(origins[fragmentIndex].x - 2.0f, origins[fragmentIndex].y - 2.0f, origins[fragmentIndex].x + fragment.width + 2.0f, origins[fragmentIndex].y + fragment.height + 2.0f),
@@ -2670,7 +2477,7 @@ namespace winrt::ElMd
                 }
                 if (blockImageRect && blockImage && blockImage->bitmap)
                 {
-                    d2dContext->DrawBitmap(blockImage->bitmap.Get(), *blockImageRect, 1.0f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+                    resources.d2dContext->DrawBitmap(blockImage->bitmap.Get(), *blockImageRect, 1.0f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
                 }
 
                 VisualBlock visualBlock;
@@ -2708,44 +2515,44 @@ namespace winrt::ElMd
 
         auto drawPlus = [&](D2D1_POINT_2F center)
         {
-            d2dContext->FillEllipse(D2D1::Ellipse(center, 9.0f, 9.0f), accentBrush.Get());
-            d2dContext->DrawLine(D2D1::Point2F(center.x - 4.0f, center.y), D2D1::Point2F(center.x + 4.0f, center.y), textBrush.Get(), 1.5f);
-            d2dContext->DrawLine(D2D1::Point2F(center.x, center.y - 4.0f), D2D1::Point2F(center.x, center.y + 4.0f), textBrush.Get(), 1.5f);
+            resources.d2dContext->FillEllipse(D2D1::Ellipse(center, 9.0f, 9.0f), resources.accentBrush.Get());
+            resources.d2dContext->DrawLine(D2D1::Point2F(center.x - 4.0f, center.y), D2D1::Point2F(center.x + 4.0f, center.y), resources.textBrush.Get(), 1.5f);
+            resources.d2dContext->DrawLine(D2D1::Point2F(center.x, center.y - 4.0f), D2D1::Point2F(center.x, center.y + 4.0f), resources.textBrush.Get(), 1.5f);
         };
         auto drawRowControls = [&](VisualTable const& table, std::size_t row)
         {
             auto centerY = (table.rowBoundaries[row] + table.rowBoundaries[row + 1]) * 0.5f;
             auto dragRect = D2D1::RectF(table.rect.left - 50.0f, centerY - 11.0f, table.rect.left - 28.0f, centerY + 11.0f);
             auto deleteRect = D2D1::RectF(table.rect.left - 25.0f, centerY - 11.0f, table.rect.left - 3.0f, centerY + 11.0f);
-            d2dContext->FillRectangle(dragRect, panelBrush.Get());
-            d2dContext->FillRectangle(deleteRect, panelBrush.Get());
-            d2dContext->DrawRectangle(dragRect, mutedBrush.Get(), 1.0f);
-            d2dContext->DrawRectangle(deleteRect, mutedBrush.Get(), 1.0f);
+            resources.d2dContext->FillRectangle(dragRect, resources.panelBrush.Get());
+            resources.d2dContext->FillRectangle(deleteRect, resources.panelBrush.Get());
+            resources.d2dContext->DrawRectangle(dragRect, resources.mutedBrush.Get(), 1.0f);
+            resources.d2dContext->DrawRectangle(deleteRect, resources.mutedBrush.Get(), 1.0f);
             for (int index = -1; index <= 1; ++index)
             {
                 auto lineY = centerY + static_cast<float>(index * 4);
-                d2dContext->DrawLine(D2D1::Point2F(dragRect.left + 6.0f, lineY), D2D1::Point2F(dragRect.right - 6.0f, lineY), mutedBrush.Get(), 1.5f);
+                resources.d2dContext->DrawLine(D2D1::Point2F(dragRect.left + 6.0f, lineY), D2D1::Point2F(dragRect.right - 6.0f, lineY), resources.mutedBrush.Get(), 1.5f);
             }
-            d2dContext->DrawLine(D2D1::Point2F(deleteRect.left + 7.0f, centerY - 4.0f), D2D1::Point2F(deleteRect.right - 7.0f, centerY + 4.0f), accentBrush.Get(), 1.5f);
-            d2dContext->DrawLine(D2D1::Point2F(deleteRect.right - 7.0f, centerY - 4.0f), D2D1::Point2F(deleteRect.left + 7.0f, centerY + 4.0f), accentBrush.Get(), 1.5f);
+            resources.d2dContext->DrawLine(D2D1::Point2F(deleteRect.left + 7.0f, centerY - 4.0f), D2D1::Point2F(deleteRect.right - 7.0f, centerY + 4.0f), resources.accentBrush.Get(), 1.5f);
+            resources.d2dContext->DrawLine(D2D1::Point2F(deleteRect.right - 7.0f, centerY - 4.0f), D2D1::Point2F(deleteRect.left + 7.0f, centerY + 4.0f), resources.accentBrush.Get(), 1.5f);
         };
         auto drawColumnControls = [&](VisualTable const& table, std::size_t column)
         {
             auto centerX = (table.columnBoundaries[column] + table.columnBoundaries[column + 1]) * 0.5f;
             auto dragRect = D2D1::RectF(centerX - 23.0f, table.rect.top - 29.0f, centerX - 1.0f, table.rect.top - 7.0f);
             auto deleteRect = D2D1::RectF(centerX + 2.0f, table.rect.top - 29.0f, centerX + 24.0f, table.rect.top - 7.0f);
-            d2dContext->FillRectangle(dragRect, panelBrush.Get());
-            d2dContext->FillRectangle(deleteRect, panelBrush.Get());
-            d2dContext->DrawRectangle(dragRect, mutedBrush.Get(), 1.0f);
-            d2dContext->DrawRectangle(deleteRect, mutedBrush.Get(), 1.0f);
+            resources.d2dContext->FillRectangle(dragRect, resources.panelBrush.Get());
+            resources.d2dContext->FillRectangle(deleteRect, resources.panelBrush.Get());
+            resources.d2dContext->DrawRectangle(dragRect, resources.mutedBrush.Get(), 1.0f);
+            resources.d2dContext->DrawRectangle(deleteRect, resources.mutedBrush.Get(), 1.0f);
             for (int index = -1; index <= 1; ++index)
             {
                 auto lineY = (dragRect.top + dragRect.bottom) * 0.5f + static_cast<float>(index * 4);
-                d2dContext->DrawLine(D2D1::Point2F(dragRect.left + 6.0f, lineY), D2D1::Point2F(dragRect.right - 6.0f, lineY), mutedBrush.Get(), 1.5f);
+                resources.d2dContext->DrawLine(D2D1::Point2F(dragRect.left + 6.0f, lineY), D2D1::Point2F(dragRect.right - 6.0f, lineY), resources.mutedBrush.Get(), 1.5f);
             }
             auto centerY = (deleteRect.top + deleteRect.bottom) * 0.5f;
-            d2dContext->DrawLine(D2D1::Point2F(deleteRect.left + 7.0f, centerY - 4.0f), D2D1::Point2F(deleteRect.right - 7.0f, centerY + 4.0f), accentBrush.Get(), 1.5f);
-            d2dContext->DrawLine(D2D1::Point2F(deleteRect.right - 7.0f, centerY - 4.0f), D2D1::Point2F(deleteRect.left + 7.0f, centerY + 4.0f), accentBrush.Get(), 1.5f);
+            resources.d2dContext->DrawLine(D2D1::Point2F(deleteRect.left + 7.0f, centerY - 4.0f), D2D1::Point2F(deleteRect.right - 7.0f, centerY + 4.0f), resources.accentBrush.Get(), 1.5f);
+            resources.d2dContext->DrawLine(D2D1::Point2F(deleteRect.right - 7.0f, centerY - 4.0f), D2D1::Point2F(deleteRect.left + 7.0f, centerY + 4.0f), resources.accentBrush.Get(), 1.5f);
         };
         if (pointerPosition)
         {
@@ -2780,7 +2587,7 @@ namespace winrt::ElMd
                         {
                             auto left = table.columnBoundaries[column];
                             auto right = table.columnBoundaries[column + 1];
-                            d2dContext->DrawLine(D2D1::Point2F(left, boundary), D2D1::Point2F(right, boundary), accentBrush.Get(), 2.0f);
+                            resources.d2dContext->DrawLine(D2D1::Point2F(left, boundary), D2D1::Point2F(right, boundary), resources.accentBrush.Get(), 2.0f);
                             drawPlus(D2D1::Point2F((left + right) * 0.5f, boundary));
                         }
                     }
@@ -2798,7 +2605,7 @@ namespace winrt::ElMd
                         {
                             auto top = table.rowBoundaries[row];
                             auto bottom = table.rowBoundaries[row + 1];
-                            d2dContext->DrawLine(D2D1::Point2F(boundary, top), D2D1::Point2F(boundary, bottom), accentBrush.Get(), 2.0f);
+                            resources.d2dContext->DrawLine(D2D1::Point2F(boundary, top), D2D1::Point2F(boundary, bottom), resources.accentBrush.Get(), 2.0f);
                             drawPlus(D2D1::Point2F(boundary, (top + bottom) * 0.5f));
                         }
                     }
@@ -2813,12 +2620,12 @@ namespace winrt::ElMd
                 if (draggedTableAction->kind == TableActionKind::DragRow && *tableDropIndex < table.rowBoundaries.size())
                 {
                     auto boundary = table.rowBoundaries[*tableDropIndex];
-                    d2dContext->DrawLine(D2D1::Point2F(table.rect.left, boundary), D2D1::Point2F(table.rect.right, boundary), accentBrush.Get(), 3.0f);
+                    resources.d2dContext->DrawLine(D2D1::Point2F(table.rect.left, boundary), D2D1::Point2F(table.rect.right, boundary), resources.accentBrush.Get(), 3.0f);
                 }
                 if (draggedTableAction->kind == TableActionKind::DragColumn && *tableDropIndex < table.columnBoundaries.size())
                 {
                     auto boundary = table.columnBoundaries[*tableDropIndex];
-                    d2dContext->DrawLine(D2D1::Point2F(boundary, table.rect.top), D2D1::Point2F(boundary, table.rect.bottom), accentBrush.Get(), 3.0f);
+                    resources.d2dContext->DrawLine(D2D1::Point2F(boundary, table.rect.top), D2D1::Point2F(boundary, table.rect.bottom), resources.accentBrush.Get(), 3.0f);
                 }
             }
         }
@@ -2833,7 +2640,7 @@ namespace winrt::ElMd
             auto upstream = sessionCore.editor.selection().affinity == elmd::TextAffinity::Upstream;
             if (auto rect = CaretBounds(caret, upstream))
             {
-                d2dContext->DrawLine(D2D1::Point2F(rect->left, rect->top), D2D1::Point2F(rect->left, rect->bottom), caretBrush.Get(), 1.5f);
+                resources.d2dContext->DrawLine(D2D1::Point2F(rect->left, rect->top), D2D1::Point2F(rect->left, rect->bottom), resources.caretBrush.Get(), 1.5f);
             }
         }
     }
@@ -2874,12 +2681,12 @@ namespace winrt::ElMd
 
     float EditorSurfaceRenderer::MaximumScrollOffset() const
     {
-        return (std::max)(0.0f, totalDocumentHeight - surfaceHeightDip);
+        return (std::max)(0.0f, totalDocumentHeight - resources.surfaceHeightDip);
     }
 
     float EditorSurfaceRenderer::ViewportHeight() const
     {
-        return surfaceHeightDip;
+        return resources.surfaceHeightDip;
     }
 
     void EditorSurfaceRenderer::UpdatePointer(float x, float y)
@@ -3005,14 +2812,14 @@ namespace winrt::ElMd
         if (auto caretBounds = CaretBounds(sourceOffset))
         {
             auto margin = styleSheet.verticalPadding;
-            auto maxScroll = (std::max)(0.0f, totalDocumentHeight - surfaceHeightDip);
+            auto maxScroll = (std::max)(0.0f, totalDocumentHeight - resources.surfaceHeightDip);
             if (caretBounds->top < margin)
             {
                 scrollOffset = (std::max)(0.0f, scrollOffset - (margin - caretBounds->top));
             }
-            else if (caretBounds->bottom > surfaceHeightDip - margin)
+            else if (caretBounds->bottom > resources.surfaceHeightDip - margin)
             {
-                scrollOffset = (std::min)(maxScroll, scrollOffset + caretBounds->bottom - (surfaceHeightDip - margin));
+                scrollOffset = (std::min)(maxScroll, scrollOffset + caretBounds->bottom - (resources.surfaceHeightDip - margin));
             }
             scrollTarget = scrollOffset;
             return scrollOffset != previous;
@@ -3022,7 +2829,7 @@ namespace winrt::ElMd
         {
             if (block.sourceStart <= sourceOffset && sourceOffset <= block.sourceEnd)
             {
-                auto maxScroll = (std::max)(0.0f, totalDocumentHeight - surfaceHeightDip);
+                auto maxScroll = (std::max)(0.0f, totalDocumentHeight - resources.surfaceHeightDip);
                 scrollOffset = (std::min)(maxScroll, (std::max)(0.0f, block.documentY - styleSheet.verticalPadding));
                 scrollTarget = scrollOffset;
                 return scrollOffset != previous;
@@ -3057,7 +2864,7 @@ namespace winrt::ElMd
     }
     void EditorSurfaceRenderer::Render(detail::EditorSessionCore const& sessionCore)
     {
-        if (!swapChain || !d3dDevice || !d3dContext || resizing || rendering)
+        if (!resources.Ready() || resizing || rendering)
         {
             return;
         }
@@ -3065,59 +2872,20 @@ namespace winrt::ElMd
         rendering = true;
         struct ResetFlag { bool& value; ~ResetFlag() { value = false; } } resetFlag{ rendering };
 
-        if (!renderTargetView)
-        {
-            ::Microsoft::WRL::ComPtr<ID3D11Texture2D> backBuffer;
-            winrt::check_hresult(swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(backBuffer.GetAddressOf())));
-            winrt::check_hresult(d3dDevice->CreateRenderTargetView(backBuffer.Get(), nullptr, renderTargetView.GetAddressOf()));
-        }
+        resources.EnsureFrameResources(styleSheet);
 
-        if (!d2dTarget)
-        {
-            ::Microsoft::WRL::ComPtr<IDXGISurface> surface;
-            winrt::check_hresult(swapChain->GetBuffer(0, __uuidof(IDXGISurface), reinterpret_cast<void**>(surface.GetAddressOf())));
-
-            D2D1_BITMAP_PROPERTIES1 properties{};
-            properties.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
-            properties.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
-            properties.dpiX = 96.0f * surfaceScaleX;
-            properties.dpiY = 96.0f * surfaceScaleY;
-            properties.bitmapOptions = D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW;
-
-            winrt::check_hresult(d2dContext->CreateBitmapFromDxgiSurface(surface.Get(), &properties, d2dTarget.GetAddressOf()));
-            d2dContext->SetTarget(d2dTarget.Get());
-            d2dContext->SetDpi(96.0f * surfaceScaleX, 96.0f * surfaceScaleY);
-        }
-
-        if (!textBrush)
-        {
-            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.textColor, textBrush.GetAddressOf()));
-            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.mutedColor, mutedBrush.GetAddressOf()));
-            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.accentColor, accentBrush.GetAddressOf()));
-            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.codeTextColor, codeBrush.GetAddressOf()));
-            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.panelColor, panelBrush.GetAddressOf()));
-            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.canvasColor, canvasBrush.GetAddressOf()));
-            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.nestedQuoteColor, nestedQuoteBrush.GetAddressOf()));
-            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.selectionColor, selectionBrush.GetAddressOf()));
-            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.caretColor, caretBrush.GetAddressOf()));
-            for (std::size_t index = 0; index < syntaxBrushes.size(); ++index)
-            {
-                winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.syntaxColors[index], syntaxBrushes[index].GetAddressOf()));
-            }
-        }
-
-        d2dContext->BeginDraw();
-        d2dContext->Clear(styleSheet.canvasColor);
+        resources.d2dContext->BeginDraw();
+        resources.d2dContext->Clear(styleSheet.canvasColor);
         DrawDocument(sessionCore);
-        auto ended = d2dContext->EndDraw();
+        auto ended = resources.d2dContext->EndDraw();
         if (ended == D2DERR_RECREATE_TARGET)
         {
-            ResetTargets();
+            resources.ResetTargets();
             return;
         }
         if (FAILED(ended)) return;
 
-        auto presented = swapChain->Present(1, 0);
-        if (presented == DXGI_ERROR_DEVICE_REMOVED || presented == DXGI_ERROR_DEVICE_RESET) ResetTargets();
+        auto presented = resources.swapChain->Present(1, 0);
+        if (presented == DXGI_ERROR_DEVICE_REMOVED || presented == DXGI_ERROR_DEVICE_RESET) resources.ResetTargets();
     }
 }

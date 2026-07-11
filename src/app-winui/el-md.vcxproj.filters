@@ -65,6 +65,9 @@
     <ClCompile Include="EditorInteractionMap.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="EditorRenderResources.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="EditorSurfaceRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -104,6 +107,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EditorInteractionMap.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EditorRenderResources.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EditorSurfaceRenderer.h">
