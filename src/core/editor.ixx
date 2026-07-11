@@ -153,6 +153,41 @@ public:
         return transaction;
     }
 
+    std::optional<DocumentTransaction> execute_document_insert_link(DocumentSelection selection, const Command& command) {
+        auto title = command.title ? std::optional<std::string>{cps_to_utf8(*command.title)} : std::nullopt;
+        auto transaction = document_insert_link(document_, selection, cps_to_utf8(command.href), std::move(title));
+        if (!transaction) return std::nullopt;
+        apply_document_transaction_(*transaction);
+        return transaction;
+    }
+
+    std::optional<DocumentTransaction> execute_document_insert_image(DocumentSelection selection, const Command& command) {
+        auto transaction = document_insert_image(document_, selection, cps_to_utf8(command.path), cps_to_utf8(command.alt));
+        if (!transaction) return std::nullopt;
+        apply_document_transaction_(*transaction);
+        return transaction;
+    }
+
+    std::optional<DocumentTransaction> execute_document_insert_atomic_block(DocumentSelection selection, const Command& command) {
+        BlockNode block;
+        if (command.kind == CommandKind::InsertCodeBlock) {
+            auto language = command.lang ? std::optional<std::string>{cps_to_utf8(*command.lang)} : std::nullopt;
+            block = make_code_block(std::move(language));
+        } else if (command.kind == CommandKind::InsertMathBlock) {
+            block = make_math_block();
+        } else if (command.kind == CommandKind::InsertToc) {
+            block = make_toc_block();
+        } else if (command.kind == CommandKind::InsertTable) {
+            block = make_table_block(document_, command.rows, command.cols);
+        } else {
+            return std::nullopt;
+        }
+        auto transaction = document_insert_atomic_block(document_, selection, std::move(block));
+        if (!transaction) return std::nullopt;
+        apply_document_transaction_(*transaction);
+        return transaction;
+    }
+
     bool undo_document() {
         auto state = document_history_.undo();
         if (!state) return false;
@@ -175,6 +210,24 @@ public:
 
     // Apply a Command. Returns the transaction if it produced a change.
     std::optional<Transaction> execute_command(const Command& cmd) {
+        if (cmd.kind == CommandKind::InsertCodeBlock || cmd.kind == CommandKind::InsertMathBlock
+            || cmd.kind == CommandKind::InsertToc || cmd.kind == CommandKind::InsertTable) {
+            if (!document_selection_) return std::nullopt;
+            const auto revision_before = buffer_.revision();
+            const auto selection_before = selection_;
+            if (!execute_document_insert_atomic_block(*document_selection_, cmd)) return std::nullopt;
+            return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
+        }
+        if (cmd.kind == CommandKind::InsertLink || cmd.kind == CommandKind::InsertImage) {
+            if (!document_selection_) return std::nullopt;
+            const auto revision_before = buffer_.revision();
+            const auto selection_before = selection_;
+            const auto changed = cmd.kind == CommandKind::InsertLink
+                ? execute_document_insert_link(*document_selection_, cmd).has_value()
+                : execute_document_insert_image(*document_selection_, cmd).has_value();
+            if (!changed) return std::nullopt;
+            return Transaction(revision_before, selection_before, selection_, TransactionReason::FormatCommand);
+        }
         if (cmd.kind == CommandKind::SetHeading || cmd.kind == CommandKind::ClearHeading
             || cmd.kind == CommandKind::ToggleBlockQuote || cmd.kind == CommandKind::ToggleUnorderedList
             || cmd.kind == CommandKind::ToggleOrderedList || cmd.kind == CommandKind::ToggleTaskList

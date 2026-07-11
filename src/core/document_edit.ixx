@@ -3,6 +3,7 @@ import std;
 import elmd.core.ast;
 import elmd.core.document;
 import elmd.core.document_position;
+import elmd.core.utf;
 
 export namespace elmd {
 
@@ -112,6 +113,36 @@ struct NodeAllocator {
 
     NodeId allocate() { return NodeId(next++); }
 };
+
+inline void assign_missing_ids_inline(InlineNode& node, NodeAllocator& allocator) {
+    if (node.id.v == 0) node.id = allocator.allocate();
+    for (auto& child : node.children) assign_missing_ids_inline(child, allocator);
+}
+
+inline void assign_missing_ids_block(BlockNode& block, NodeAllocator& allocator) {
+    if (block.id.v == 0) block.id = allocator.allocate();
+    for (auto& child : block.children) assign_missing_ids_inline(child, allocator);
+    for (auto& child : block.quote_children) assign_missing_ids_block(child, allocator);
+    for (auto& item : block.list_items) {
+        if (item.id.v == 0) item.id = allocator.allocate();
+        for (auto& child : item.children) assign_missing_ids_block(child, allocator);
+    }
+    for (auto& item : block.task_items) {
+        if (item.id.v == 0) item.id = allocator.allocate();
+        for (auto& child : item.children) assign_missing_ids_block(child, allocator);
+    }
+    for (auto& cell : block.table_header) {
+        if (cell.id.v == 0) cell.id = allocator.allocate();
+        for (auto& child : cell.children) assign_missing_ids_inline(child, allocator);
+    }
+    for (auto& row : block.table_rows) {
+        if (row.id.v == 0) row.id = allocator.allocate();
+        for (auto& cell : row.cells) {
+            if (cell.id.v == 0) cell.id = allocator.allocate();
+            for (auto& child : cell.children) assign_missing_ids_inline(child, allocator);
+        }
+    }
+}
 
 inline std::size_t inline_length(const InlineNode& node) {
     return inline_text_content(node).size();
@@ -401,6 +432,54 @@ inline bool toggle_inline_format(
 
     replacement.insert(replacement.end(), std::make_move_iterator(right.begin()), std::make_move_iterator(right.end()));
     nodes = std::move(replacement);
+    return true;
+}
+
+inline bool insert_link(
+    InlineVec& nodes,
+    std::size_t start,
+    std::size_t end,
+    std::string href,
+    std::optional<std::string> title,
+    NodeAllocator& allocator) {
+    if (start > end) std::swap(start, end);
+    const auto total = block_inline_text_content(nodes).size();
+    if (start > total || end > total) return false;
+    auto [left, remainder] = split_inlines(nodes, start, allocator);
+    auto [middle, right] = split_inlines(remainder, end - start, allocator);
+    InlineNode link;
+    link.id = allocator.allocate();
+    link.kind = InlineKind::Link;
+    link.href = std::move(href);
+    link.title = std::move(title);
+    link.children = std::move(middle);
+    left.push_back(std::move(link));
+    left.insert(left.end(), std::make_move_iterator(right.begin()), std::make_move_iterator(right.end()));
+    nodes = std::move(left);
+    return true;
+}
+
+inline bool insert_image(
+    InlineVec& nodes,
+    std::size_t start,
+    std::size_t end,
+    std::string path,
+    std::string alt,
+    NodeAllocator& allocator) {
+    if (start > end) std::swap(start, end);
+    const auto total = block_inline_text_content(nodes).size();
+    if (start > total || end > total) return false;
+    auto [left, remainder] = split_inlines(nodes, start, allocator);
+    auto [middle, right] = split_inlines(remainder, end - start, allocator);
+    if (alt.empty()) alt = cps_to_utf8(block_inline_text_content(middle));
+    InlineNode image;
+    image.id = allocator.allocate();
+    image.kind = InlineKind::Image;
+    image.href = std::move(path);
+    image.alt = std::move(alt);
+    left.push_back(std::move(image));
+    left.insert(left.end(), std::make_move_iterator(right.begin()), std::make_move_iterator(right.end()));
+    nodes = std::move(left);
     return true;
 }
 
@@ -1772,6 +1851,52 @@ inline bool toggle_task_checkbox_in_blocks(BlockVec& blocks, NodeId id) {
     return false;
 }
 
+inline bool insert_atomic_block_in_blocks(
+    BlockVec& blocks,
+    NodeId id,
+    std::size_t offset,
+    BlockNode inserted,
+    NodeAllocator& allocator,
+    NodeId& trailing_id) {
+    for (std::size_t index = 0; index < blocks.size(); ++index) {
+        auto& block = blocks[index];
+        if (block.id == id) {
+            if (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading) {
+                auto [left, right] = split_inlines(block.children, offset, allocator);
+                if (left.empty() && right.empty() && block.kind == BlockKind::Paragraph) {
+                    blocks[index] = std::move(inserted);
+                    auto trailing = empty_paragraph(allocator);
+                    trailing_id = trailing.id;
+                    blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(index + 1), std::move(trailing));
+                    return true;
+                }
+                block.children = std::move(left);
+                BlockNode trailing = block;
+                trailing.id = allocator.allocate();
+                trailing.children = std::move(right);
+                trailing.slug.clear();
+                trailing_id = trailing.id;
+                blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(index + 1), std::move(inserted));
+                blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(index + 2), std::move(trailing));
+                return true;
+            }
+            auto trailing = empty_paragraph(allocator);
+            trailing_id = trailing.id;
+            blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(index + 1), std::move(inserted));
+            blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(index + 2), std::move(trailing));
+            return true;
+        }
+        if (insert_atomic_block_in_blocks(block.quote_children, id, offset, inserted, allocator, trailing_id)) return true;
+        for (auto& item : block.list_items) {
+            if (insert_atomic_block_in_blocks(item.children, id, offset, inserted, allocator, trailing_id)) return true;
+        }
+        for (auto& item : block.task_items) {
+            if (insert_atomic_block_in_blocks(item.children, id, offset, inserted, allocator, trailing_id)) return true;
+        }
+    }
+    return false;
+}
+
 inline void normalize_blocks(BlockVec& blocks, NodeAllocator& allocator) {
     for (auto& block : blocks) {
         if (block.kind == BlockKind::BlockQuote || block.kind == BlockKind::Callout || block.kind == BlockKind::FootnoteDefinition) {
@@ -1949,6 +2074,143 @@ inline std::optional<DocumentTransaction> document_toggle_inline_format(
     transaction.selection_after = selection_after;
     transaction.reason = DocumentTransactionReason::Format;
     return transaction;
+}
+
+inline std::optional<DocumentTransaction> document_insert_link(
+    const EditorDocument& document,
+    const DocumentSelection& selection,
+    std::string href,
+    std::optional<std::string> title) {
+    if (selection.anchor.node_id != selection.active.node_id) return std::nullopt;
+    EditorDocument after = document;
+    auto* owner = document_edit_detail::inline_owner_in_blocks(after.blocks, selection.active.node_id);
+    if (!owner) return std::nullopt;
+    document_edit_detail::NodeAllocator allocator(after);
+    const auto start = (std::min)(selection.anchor.offset, selection.active.offset);
+    const auto end = (std::max)(selection.anchor.offset, selection.active.offset);
+    if (!document_edit_detail::insert_link(*owner, start, end, std::move(href), std::move(title), allocator)) return std::nullopt;
+    ++after.revision;
+    auto target = DocumentPosition{selection.active.node_id, end, TextAffinity::Downstream};
+    if (selection.is_caret()) target = DocumentPosition{selection.active.node_id, start, TextAffinity::Upstream};
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(after);
+    transaction.selection_before = selection;
+    transaction.selection_after = DocumentSelection::caret(target);
+    transaction.reason = DocumentTransactionReason::Format;
+    return transaction;
+}
+
+inline std::optional<DocumentTransaction> document_insert_image(
+    const EditorDocument& document,
+    const DocumentSelection& selection,
+    std::string path,
+    std::string alt) {
+    if (selection.anchor.node_id != selection.active.node_id) return std::nullopt;
+    EditorDocument after = document;
+    auto* owner = document_edit_detail::inline_owner_in_blocks(after.blocks, selection.active.node_id);
+    if (!owner) return std::nullopt;
+    document_edit_detail::NodeAllocator allocator(after);
+    const auto start = (std::min)(selection.anchor.offset, selection.active.offset);
+    const auto end = (std::max)(selection.anchor.offset, selection.active.offset);
+    const auto alt_length = alt.empty() ? end - start : utf8_to_cps(alt).size();
+    if (!document_edit_detail::insert_image(*owner, start, end,
+            path.empty() ? std::string("image.png") : std::move(path), std::move(alt), allocator)) return std::nullopt;
+    ++after.revision;
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(after);
+    transaction.selection_before = selection;
+    transaction.selection_after = DocumentSelection::caret(DocumentPosition{
+        selection.active.node_id, start + alt_length, TextAffinity::Downstream});
+    transaction.reason = DocumentTransactionReason::Format;
+    return transaction;
+}
+
+inline std::optional<DocumentTransaction> document_insert_atomic_block(
+    const EditorDocument& document,
+    const DocumentSelection& selection,
+    BlockNode block) {
+    if (!selection.is_caret()) {
+        auto deletion = document_delete_selection(document, selection);
+        if (!deletion) return std::nullopt;
+        auto insertion = document_insert_atomic_block(deletion->after, deletion->selection_after, std::move(block));
+        if (!insertion) return std::nullopt;
+        insertion->before = document;
+        insertion->selection_before = selection;
+        return insertion;
+    }
+    EditorDocument after = document;
+    document_edit_detail::NodeAllocator allocator(after);
+    const auto inserted_kind = block.kind;
+    document_edit_detail::assign_missing_ids_block(block, allocator);
+    const auto inserted_id = block.id;
+    NodeId table_target{};
+    if (block.kind == BlockKind::Table && !block.table_header.empty()) table_target = block.table_header.front().id;
+    NodeId trailing_id{};
+    if (!document_edit_detail::insert_atomic_block_in_blocks(
+            after.blocks, selection.active.node_id, selection.active.offset, std::move(block), allocator, trailing_id)) return std::nullopt;
+    normalize_document(after);
+    ++after.revision;
+    DocumentPosition target;
+    if (table_target.v != 0) target = DocumentPosition{table_target, 0, TextAffinity::Downstream};
+    else {
+        target = DocumentPosition{inserted_id, 0, TextAffinity::Downstream};
+        if (trailing_id.v != 0 && inserted_kind == BlockKind::Toc) {
+            target = DocumentPosition{trailing_id, 0, TextAffinity::Downstream};
+        }
+    }
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(after);
+    transaction.selection_before = selection;
+    transaction.selection_after = DocumentSelection::caret(target);
+    transaction.reason = DocumentTransactionReason::Structure;
+    return transaction;
+}
+
+inline BlockNode make_code_block(std::optional<std::string> language = std::nullopt) {
+    BlockNode block;
+    block.kind = BlockKind::CodeBlock;
+    block.language = std::move(language);
+    return block;
+}
+
+inline BlockNode make_math_block() {
+    BlockNode block;
+    block.kind = BlockKind::MathBlock;
+    block.math_delim = MathDelimiter::BlockDollar;
+    return block;
+}
+
+inline BlockNode make_toc_block() {
+    BlockNode block;
+    block.kind = BlockKind::Toc;
+    block.toc_marker = TocMarkerKind::BracketToc;
+    return block;
+}
+
+inline BlockNode make_table_block(const EditorDocument& document, std::size_t rows, std::size_t columns) {
+    static_cast<void>(document);
+    BlockNode table;
+    table.kind = BlockKind::Table;
+    columns = (std::max)(columns, std::size_t{1});
+    table.table_aligns.assign(columns, TableAlignment::None);
+    for (std::size_t column = 0; column < columns; ++column) {
+        TableCell cell;
+        cell.children.push_back(InlineNode::text_node(NodeId{}, U"Header"));
+        table.table_header.push_back(std::move(cell));
+    }
+    for (std::size_t row_index = 0; row_index < rows; ++row_index) {
+        TableRow row;
+        for (std::size_t column = 0; column < columns; ++column) {
+            TableCell cell;
+            cell.children.push_back(InlineNode::text_node(NodeId{}, U"Cell"));
+            row.cells.push_back(std::move(cell));
+        }
+        table.table_rows.push_back(std::move(row));
+    }
+    return table;
 }
 
 inline std::optional<DocumentTransaction> document_set_heading(

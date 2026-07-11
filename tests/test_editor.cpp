@@ -404,6 +404,28 @@ ELMD_TEST(test_editor_insert_math_block) {
     ELMD_CHECK(s.find("$$") != std::string::npos);
 }
 
+ELMD_TEST(test_atomic_block_commands_insert_document_nodes) {
+    Editor math;
+    Command math_command; math_command.kind = CommandKind::InsertMathBlock;
+    math.execute_command(math_command);
+    ELMD_CHECK(math.document().blocks.front().kind == BlockKind::MathBlock);
+    ELMD_CHECK(math.document_selection().has_value());
+    ELMD_CHECK_EQ(math.document_selection()->active.node_id, math.document().blocks.front().id);
+    ELMD_CHECK(validate_document(math.document()).empty());
+    math.undo();
+    ELMD_CHECK(math.document().blocks.front().kind == BlockKind::Paragraph);
+
+    Editor table;
+    Command table_command; table_command.kind = CommandKind::InsertTable; table_command.rows = 2; table_command.cols = 3;
+    table.execute_command(table_command);
+    ELMD_CHECK(table.document().blocks.front().kind == BlockKind::Table);
+    ELMD_CHECK_EQ(table.document().blocks.front().table_header.size(), 3u);
+    ELMD_CHECK_EQ(table.document().blocks.front().table_rows.size(), 2u);
+    ELMD_CHECK(table.document_selection().has_value());
+    ELMD_CHECK_EQ(table.document_selection()->active.node_id, table.document().blocks.front().table_header.front().id);
+    ELMD_CHECK(validate_document(table.document()).empty());
+}
+
 ELMD_TEST(test_insert_text_uses_document_transaction) {
     Editor e("hello");
     e.set_caret(CharOffset(5));
@@ -1505,6 +1527,31 @@ ELMD_TEST(test_insert_image_uses_selection_as_alt_text) {
     Command command; command.kind = CommandKind::InsertImage; command.path = U"chart.png";
     e.execute_command(command);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("![diagram](chart.png)"));
+}
+
+ELMD_TEST(test_link_and_image_commands_mutate_inline_tree) {
+    Editor link("label");
+    const auto paragraph_id = link.document().blocks.front().id;
+    link.set_document_selection(DocumentSelection{
+        DocumentPosition{paragraph_id, 0, TextAffinity::Downstream},
+        DocumentPosition{paragraph_id, 5, TextAffinity::Downstream}});
+    Command link_command; link_command.kind = CommandKind::InsertLink; link_command.href = U"https://example.test";
+    link.execute_command(link_command);
+    ELMD_CHECK_EQ(link.buffer().text_utf8(), std::string("[label](https://example.test)"));
+    ELMD_CHECK(link.document().blocks.front().children.front().kind == InlineKind::Link);
+    ELMD_CHECK_EQ(link.document().blocks.front().id, paragraph_id);
+    link.undo();
+    ELMD_CHECK_EQ(link.buffer().text_utf8(), std::string("label"));
+
+    Editor image("diagram");
+    image.set_document_selection(DocumentSelection{
+        DocumentPosition{image.document().blocks.front().id, 0, TextAffinity::Downstream},
+        DocumentPosition{image.document().blocks.front().id, 7, TextAffinity::Downstream}});
+    Command image_command; image_command.kind = CommandKind::InsertImage; image_command.path = U"chart.png";
+    image.execute_command(image_command);
+    ELMD_CHECK(image.document().blocks.front().children.front().kind == InlineKind::Image);
+    ELMD_CHECK_EQ(image.document().blocks.front().children.front().alt, std::string("diagram"));
+    ELMD_CHECK(image.has_document_undo());
 }
 
 ELMD_TEST(test_insert_footnote_adds_unique_definition) {

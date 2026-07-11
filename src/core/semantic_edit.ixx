@@ -386,20 +386,6 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
         case CommandKind::MovePageUp:
         case CommandKind::MovePageDown:
             return std::nullopt;
-        case CommandKind::InsertMathBlock: {
-            std::u32string block; block.push_back('\n'); block += U"$$\n\n$$\n";
-            std::size_t new_pos = sel.start.v + 4;
-            Transaction t(revision, selection, caret_after(CharOffset(new_pos)), TransactionReason::FormatCommand);
-            t.with_edit(sel, std::move(block));
-            return t;
-        }
-        case CommandKind::InsertToc: {
-            std::u32string s = U"\n[TOC]\n";
-            std::size_t new_pos = sel.start.v + s.size();
-            Transaction t(revision, selection, caret_after(CharOffset(new_pos)), TransactionReason::StructuralCommand);
-            t.with_edit(sel, s);
-            return t;
-        }
         case CommandKind::MoveTableCellNext: return table_edit_transaction(TableEditKind::MoveCellNext, text_cps, selection, revision);
         case CommandKind::MoveTableCellPrevious: return table_edit_transaction(TableEditKind::MoveCellPrevious, text_cps, selection, revision);
         case CommandKind::InsertTableRowAbove: return table_edit_transaction(TableEditKind::InsertRowAbove, text_cps, selection, revision);
@@ -418,58 +404,6 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
         case CommandKind::InsertTableColumnAt: return table_edit_transaction(TableEditKind::InsertColumnAt, text_cps, selection, revision, TableAlignment::None, cmd.table_index);
         case CommandKind::MoveTableRowTo: return table_edit_transaction(TableEditKind::MoveRowTo, text_cps, selection, revision, TableAlignment::None, cmd.table_index);
         case CommandKind::MoveTableColumnTo: return table_edit_transaction(TableEditKind::MoveColumnTo, text_cps, selection, revision, TableAlignment::None, cmd.table_index);
-        case CommandKind::InsertTable: {
-            std::u32string s;
-            for (std::size_t c = 0; c < cmd.cols; ++c) s += U"| Header ";
-            s.push_back('|'); s.push_back('\n');
-            for (std::size_t c = 0; c < cmd.cols; ++c) s += U"|---";
-            s.push_back('|'); s.push_back('\n');
-            for (std::size_t r = 0; r < cmd.rows; ++r) {
-                for (std::size_t c = 0; c < cmd.cols; ++c) s += U"| Cell ";
-                s.push_back('|'); s.push_back('\n');
-            }
-            std::size_t new_pos = sel.start.v + s.size();
-            Transaction t(revision, selection, caret_after(CharOffset(new_pos)), TransactionReason::StructuralCommand);
-            t.with_edit(sel, std::move(s));
-            return t;
-        }
-        case CommandKind::InsertCodeBlock: {
-            std::u32string block; block.push_back('\n'); block.push_back('`'); block.push_back('`'); block.push_back('`');
-            if (cmd.lang) block += *cmd.lang;
-            block += U"\n\n```\n";
-            std::size_t new_pos = sel.start.v + 5 + (cmd.lang ? cmd.lang->size() : 0);
-            Transaction t(revision, selection, caret_after(CharOffset(new_pos)), TransactionReason::StructuralCommand);
-            t.with_edit(sel, std::move(block));
-            return t;
-        }
-        case CommandKind::InsertLink: {
-            std::u32string title_part; if (cmd.title) { title_part.push_back(' '); title_part.push_back('"'); title_part += *cmd.title; title_part.push_back('"'); }
-            if (sel.is_empty()) {
-                std::u32string s; s.push_back('['); s.push_back(']'); s.push_back('('); s += cmd.href; s += title_part; s.push_back(')');
-                std::size_t new_pos = sel.start.v + 1;
-                Transaction t(revision, selection, caret_after(CharOffset(new_pos)), TransactionReason::FormatCommand);
-                t.with_edit(sel, std::move(s));
-                return t;
-            }
-            auto sel_text = std::u32string(text_cps.begin() + sel.start.v, text_cps.begin() + sel.end.v);
-            std::u32string s; s.push_back('['); s += sel_text; s.push_back(']'); s.push_back('('); s += cmd.href; s += title_part; s.push_back(')');
-            std::size_t new_pos = sel.start.v + s.size();
-            Transaction t(revision, selection, caret_after(CharOffset(new_pos)), TransactionReason::FormatCommand);
-            t.with_edit(sel, std::move(s));
-            return t;
-        }
-        case CommandKind::InsertImage: {
-            auto selected = sel.is_empty() ? std::u32string{} : std::u32string(text_cps.begin() + sel.start.v, text_cps.begin() + sel.end.v);
-            auto alt = cmd.alt.empty() ? selected : cmd.alt;
-            auto path = cmd.path.empty() ? U"image.png" : cmd.path;
-            std::u32string replacement = U"![" + alt + U"](" + path + U")";
-            auto after = alt.empty()
-                ? Selection::caret(CharOffset(sel.start.v + 2))
-                : Selection::caret(CharOffset(sel.start.v + replacement.size()));
-            Transaction transaction(revision, selection, after, TransactionReason::FormatCommand);
-            transaction.with_edit(sel, std::move(replacement));
-            return transaction;
-        }
         case CommandKind::InsertFootnote: {
             std::u32string label = cmd.text;
             if (label.empty()) {
