@@ -74,6 +74,9 @@
     <ClCompile Include="EditorRenderCache.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="EditorBlockLayoutCache.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="EditorSvgPainter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -152,6 +155,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EditorRenderCache.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EditorBlockLayoutCache.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EditorSvgPainter.h">

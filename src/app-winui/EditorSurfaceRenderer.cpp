@@ -46,7 +46,7 @@ namespace winrt::ElMd
 
         theme = value;
         styleSheet = CreateEditorStyleSheet(value == Theme::Dark);
-        blockHeightCache.clear();
+        blockLayoutCache.Clear();
         renderCache.ClearTextLayouts();
         renderCache.ClearSvgDocuments();
         resources.RebuildTextFormats(styleSheet);
@@ -101,7 +101,7 @@ namespace winrt::ElMd
         if (!result.resized) return;
         if (result.widthChanged)
         {
-            blockHeightCache.clear();
+            blockLayoutCache.Clear();
             renderCache.ClearTextLayouts();
         }
         auto maxScroll = MaximumScrollOffset();
@@ -114,10 +114,10 @@ namespace winrt::ElMd
         if (remoteGeneration != observedRemoteImageGeneration)
         {
             observedRemoteImageGeneration = remoteGeneration;
-            blockHeightCache.clear();
+            blockLayoutCache.Clear();
         }
         interactionMap.Clear(sessionCore.renderModel.blocks.size());
-        if (blockHeightCache.size() > 32768) blockHeightCache.clear();
+        blockLayoutCache.Trim(32768);
         auto responsivePadding = (std::min)(styleSheet.horizontalPadding, (std::max)(12.0f, resources.surfaceWidthDip * 0.06f));
         auto documentLeft = responsivePadding;
         auto documentTop = styleSheet.verticalPadding;
@@ -196,41 +196,7 @@ namespace winrt::ElMd
             }
         };
 
-        auto blockCacheKey = [&](elmd::RenderBlock const& block)
-        {
-            auto value = block.source_fingerprint;
-            value ^= static_cast<std::uint64_t>(block.kind) * 0x9e3779b97f4a7c15ull;
-            value ^= static_cast<std::uint64_t>(std::llround((documentRight - documentLeft) * 16.0f)) << 17;
-            value ^= static_cast<std::uint64_t>(theme) << 61;
-            return value;
-        };
-
-        auto estimatedBlockHeight = [&](elmd::RenderBlock const& block)
-        {
-            if (auto found = blockHeightCache.find(blockCacheKey(block)); found != blockHeightCache.end()) return found->second;
-            switch (block.kind)
-            {
-                case elmd::RenderBlockKind::Blank:
-                    return styleSheet.body.lineHeight;
-                case elmd::RenderBlockKind::Code:
-                    return (std::max)(64.0f, static_cast<float>((std::max)(std::size_t{1}, block.line_count)) * styleSheet.code.lineHeight + 32.0f);
-                case elmd::RenderBlockKind::Math:
-                    return 96.0f;
-                case elmd::RenderBlockKind::Table:
-                    return static_cast<float>((std::max)(std::size_t{2}, block.row_count)) * (styleSheet.body.lineHeight + 16.0f);
-                case elmd::RenderBlockKind::Image:
-                    return 160.0f;
-                case elmd::RenderBlockKind::ThematicBreak:
-                    return 48.0f;
-                default:
-                {
-                    auto length = block.content_range.end.v > block.content_range.start.v ? block.content_range.end.v - block.content_range.start.v : std::size_t{1};
-                    auto charactersPerLine = (std::max)(std::size_t{24}, static_cast<std::size_t>((documentRight - documentLeft) / (styleSheet.body.size * 0.56f)));
-                    auto lines = (std::max)(std::size_t{1}, (length + charactersPerLine - 1) / charactersPerLine);
-                    return static_cast<float>(lines) * styleSheet.body.lineHeight + 8.0f;
-                }
-            }
-        };
+        auto blockContentWidth = documentRight - documentLeft;
 
         std::vector<elmd::BlockLayoutInput> layoutInputs;
         layoutInputs.reserve(sessionCore.renderModel.blocks.size());
@@ -238,7 +204,7 @@ namespace winrt::ElMd
         {
             layoutInputs.push_back(elmd::BlockLayoutInput{
                 elmd::BlockId{ block.id.v },
-                estimatedBlockHeight(block),
+                blockLayoutCache.Estimate(block, blockContentWidth, static_cast<std::uint64_t>(theme), styleSheet),
                 block.kind == elmd::RenderBlockKind::Blank,
                 block.source_range.start.v <= caret && caret <= block.source_range.end.v,
             });
@@ -256,9 +222,7 @@ namespace winrt::ElMd
         bool layoutPlanChanged = false;
         auto cacheMeasuredHeight = [&](std::uint64_t key, float measured)
         {
-            auto found = blockHeightCache.find(key);
-            if (found == blockHeightCache.end() || std::abs(found->second - measured) > 0.5f) layoutPlanChanged = true;
-            blockHeightCache[key] = measured;
+            if (blockLayoutCache.Record(key, measured)) layoutPlanChanged = true;
         };
 
         if (sessionCore.renderModel.blocks.empty() && sourceText.empty())
@@ -274,7 +238,7 @@ namespace winrt::ElMd
             auto const& block = sessionCore.renderModel.blocks[blockIndex];
             auto const& placement = layoutPlan.blocks[blockIndex];
             y = placement.top - scrollOffset;
-            auto cacheKey = blockCacheKey(block);
+            auto cacheKey = blockLayoutCache.Key(block, blockContentWidth, static_cast<std::uint64_t>(theme));
             auto blockStartY = y;
             auto estimatedHeight = placement.height;
             auto requestEmbedded = placement.request_embedded;
