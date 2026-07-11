@@ -120,6 +120,7 @@
     <ClInclude Include="EditorPointerController.h" />
     <ClInclude Include="EditorKeyboardController.h" />
     <ClInclude Include="EditorDocumentController.h" />
+    <ClInclude Include="EditorSidebarController.h" />
     <ClInclude Include="EditorSurfaceRenderer.h" />
     <ClInclude Include="MathJaxRenderer.h" />
     <ClInclude Include="MermaidRenderer.h" />
@@ -243,6 +244,7 @@
     <ClCompile Include="EditorPointerController.cpp" />
     <ClCompile Include="EditorKeyboardController.cpp" />
     <ClCompile Include="EditorDocumentController.cpp" />
+    <ClCompile Include="EditorSidebarController.cpp" />
     <ClCompile Include="EditorSurfaceRenderer.cpp" />
     <ClCompile Include="MathJaxRenderer.cpp" />
     <ClCompile Include="MermaidRenderer.cpp" />

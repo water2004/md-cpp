@@ -41,7 +41,7 @@ script 执行 / iframe / 把 `<img>` 当图片 / 把 `<table>` 当表格 /
 | storage | `src/core/storage.ixx` | ✅ 新增（file_io+assets） |
 | export | `src/core/exporter.ixx` | ✅ 新增（markdown+html+plain_text） |
 | platform-windows | `src/platform/*.ixx` + `src/app-winui/{EditorRenderResources,EditorStyleSheet}.*` | ✅ D3D/DXGI/Direct2D/DirectWrite/WIC/TSF/clipboard/theme 已接入，core 仍保持纯 C++ |
-| app-winui | `src/app-winui/*.cpp + *.xaml` | ✅ WinUI 3 壳、原生编辑面、独立滚动、TSF/IME、键盘、指针与异步文档 I/O 控制器生命周期、outline/diagnostics、MathJax、Mermaid、Tree-sitter |
+| app-winui | `src/app-winui/*.cpp + *.xaml` | ✅ WinUI 3 壳、原生编辑面、独立滚动、TSF/IME、键盘、指针、异步文档 I/O 与侧边栏导航控制器生命周期、MathJax、Mermaid、Tree-sitter |
 
 ### 缺失/待补的 core 模块
 

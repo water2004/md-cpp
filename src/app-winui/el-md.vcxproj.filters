@@ -86,6 +86,9 @@
     <ClCompile Include="EditorDocumentController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="EditorSidebarController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="EditorSurfaceRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -146,6 +149,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EditorDocumentController.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EditorSidebarController.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EditorSurfaceRenderer.h">

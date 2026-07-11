@@ -7,6 +7,7 @@
 #include "EditorPointerController.h"
 #include "EditorKeyboardController.h"
 #include "EditorDocumentController.h"
+#include "EditorSidebarController.h"
 #include "MainWindow.g.h"
 
 namespace winrt::ElMd::implementation
@@ -23,10 +24,6 @@ namespace winrt::ElMd::implementation
         void SetSidebarExpanded(bool expanded);
         void UpdateTheme();
         winrt::ElMd::EditorSurfaceRenderer::Theme CurrentRendererTheme();
-        void UpdateOutlinePanel();
-        void UpdateDiagnosticsPanel();
-        void HandleOutlineSelection(winrt::Windows::Foundation::IInspectable const& selectedItem);
-        void HandleDiagnosticsSelection(winrt::Windows::Foundation::IInspectable const& selectedItem);
         void RegisterCommandHandlers();
         bool ExecuteEditorCommand(elmd::Command const& command);
         void HandlePointerWheel(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
@@ -41,10 +38,7 @@ namespace winrt::ElMd::implementation
         winrt::ElMd::EditorPointerController pointerController;
         winrt::ElMd::EditorKeyboardController keyboardController;
         winrt::ElMd::EditorDocumentController documentController;
-        std::vector<std::size_t> outlineOffsets;
-        std::vector<std::size_t> diagnosticOffsets;
-        std::vector<std::wstring> outlineLabels;
-        std::vector<std::wstring> diagnosticLabels;
+        winrt::ElMd::EditorSidebarController sidebarController;
     };
 }
 

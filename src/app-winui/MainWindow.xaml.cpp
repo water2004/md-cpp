@@ -14,6 +14,13 @@ namespace winrt::ElMd::implementation
         InitializeComponent();
         RegisterCommandHandlers();
         InitializeTextInput();
+        sidebarController.Attach(
+            editorSession,
+            editorRenderer,
+            textInputController,
+            OutlineList(),
+            DiagnosticsList(),
+            [this] { RenderEditorSurface(); });
         documentController.Attach(
             editorSession,
             editorRenderer,
@@ -23,8 +30,7 @@ namespace winrt::ElMd::implementation
             [this]
             {
                 Title(L"el-md - " + editorSession.DisplayName());
-                UpdateOutlinePanel();
-                UpdateDiagnosticsPanel();
+                sidebarController.Refresh();
                 RenderEditorSurface();
             },
             [this] { RenderEditorSurface(); },
@@ -51,6 +57,7 @@ namespace winrt::ElMd::implementation
         Closed([this](auto const&, auto const&)
         {
             documentController.Detach();
+            sidebarController.Detach();
             pointerController.Detach();
             keyboardController.Detach();
             textInputController.Detach();
@@ -146,7 +153,7 @@ namespace winrt::ElMd::implementation
         {
             if (args.AddedItems().Size() > 0)
             {
-                HandleOutlineSelection(args.AddedItems().GetAt(0));
+                sidebarController.SelectOutline(args.AddedItems().GetAt(0));
             }
         });
 
@@ -154,12 +161,10 @@ namespace winrt::ElMd::implementation
         {
             if (args.AddedItems().Size() > 0)
             {
-                HandleDiagnosticsSelection(args.AddedItems().GetAt(0));
+                sidebarController.SelectDiagnostic(args.AddedItems().GetAt(0));
             }
         });
 
-        UpdateOutlinePanel();
-        UpdateDiagnosticsPanel();
     }
 
     void MainWindow::RegisterCommandHandlers()
@@ -358,8 +363,7 @@ namespace winrt::ElMd::implementation
         auto status = editorSession.DisplayName() + L" | " + winrt::to_hstring(editorSession.Text().size()) + L" chars | rev " + winrt::to_hstring(editorSession.Revision());
         lastCommand = status;
         StatusText().Text(status);
-        UpdateOutlinePanel();
-        UpdateDiagnosticsPanel();
+        sidebarController.Refresh();
         RenderEditorSurface();
         if (editorRenderer.ScrollToSourceOffset(editorSession.Core().editor.selection().active.v)) RenderEditorSurface();
         textInputController.NotifyTextChanged(oldTextLength);
@@ -443,103 +447,4 @@ namespace winrt::ElMd::implementation
         RenderEditorSurface();
     }
 
-    void MainWindow::UpdateOutlinePanel()
-    {
-        std::vector<std::size_t> headingOffsets;
-        for (auto const& block : editorSession.Core().renderModel.blocks)
-        {
-            if (block.kind == elmd::RenderBlockKind::Text && block.block_style.margin_top >= 4.0f && block.content_range.end.v > block.content_range.start.v)
-            {
-                headingOffsets.push_back(block.content_range.start.v);
-            }
-        }
-
-        std::vector<std::wstring> labels;
-        std::vector<std::size_t> offsets;
-        std::size_t headingIndex = 0;
-        for (auto const* item : editorSession.Core().renderModel.outline.flat_items())
-        {
-            std::wstring indent((std::max)(0, static_cast<int>(item->level) - 1) * 2, L' ');
-            auto title = winrt::to_hstring(item->title_plain_text);
-            labels.push_back(indent + std::wstring(title.c_str()));
-            offsets.push_back(headingIndex < headingOffsets.size() ? headingOffsets[headingIndex] : 0);
-            ++headingIndex;
-        }
-        if (labels == outlineLabels && offsets == outlineOffsets) return;
-        outlineLabels = std::move(labels);
-        outlineOffsets = std::move(offsets);
-        OutlineList().Items().Clear();
-        for (auto const& label : outlineLabels) OutlineList().Items().Append(winrt::box_value(winrt::hstring(label)));
-    }
-
-    void MainWindow::UpdateDiagnosticsPanel()
-    {
-        std::vector<std::wstring> labels;
-        std::vector<std::size_t> offsets;
-        for (auto const& diagnostic : editorSession.Core().renderModel.diagnostics)
-        {
-            auto severity = L"Warning";
-            if (diagnostic.severity == elmd::RenderDiagnostic::Sev::Info)
-            {
-                severity = L"Info";
-            }
-            else if (diagnostic.severity == elmd::RenderDiagnostic::Sev::Error)
-            {
-                severity = L"Error";
-            }
-
-            auto offset = diagnostic.source_range ? diagnostic.source_range->start.v : 0;
-            auto label = winrt::hstring(severity) + L" @ " + winrt::to_hstring(offset) + L": " + winrt::to_hstring(diagnostic.message);
-            labels.emplace_back(label.c_str());
-            offsets.push_back(offset);
-        }
-
-        if (labels.empty())
-        {
-            labels.push_back(L"No diagnostics");
-            offsets.push_back(0);
-        }
-        if (labels == diagnosticLabels && offsets == diagnosticOffsets) return;
-        diagnosticLabels = std::move(labels);
-        diagnosticOffsets = std::move(offsets);
-        DiagnosticsList().Items().Clear();
-        for (auto const& label : diagnosticLabels) DiagnosticsList().Items().Append(winrt::box_value(winrt::hstring(label)));
-    }
-
-    void MainWindow::HandleOutlineSelection(winrt::Windows::Foundation::IInspectable const& selectedItem)
-    {
-        auto selectedText = winrt::unbox_value<winrt::hstring>(selectedItem);
-        for (uint32_t index = 0; index < OutlineList().Items().Size() && index < outlineOffsets.size(); ++index)
-        {
-            if (winrt::unbox_value<winrt::hstring>(OutlineList().Items().GetAt(index)) == selectedText)
-            {
-                editorSession.SetSelection(outlineOffsets[index], outlineOffsets[index]);
-                textInputController.NotifySelectionChanged();
-                editorRenderer.ScrollToSourceOffset(outlineOffsets[index]);
-                RenderEditorSurface();
-                return;
-            }
-        }
-    }
-
-    void MainWindow::HandleDiagnosticsSelection(winrt::Windows::Foundation::IInspectable const& selectedItem)
-    {
-        auto selectedText = winrt::unbox_value<winrt::hstring>(selectedItem);
-        if (selectedText == L"No diagnostics")
-        {
-            return;
-        }
-
-        for (uint32_t index = 0; index < DiagnosticsList().Items().Size() && index < diagnosticOffsets.size(); ++index)
-        {
-            if (winrt::unbox_value<winrt::hstring>(DiagnosticsList().Items().GetAt(index)) == selectedText)
-            {
-                editorSession.SetSelection(diagnosticOffsets[index], diagnosticOffsets[index]);
-                textInputController.NotifySelectionChanged();
-                editorRenderer.ScrollToSourceOffset(diagnosticOffsets[index]);
-                RenderEditorSurface();
-                return;
-            }
-        }
-    }
 }
