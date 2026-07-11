@@ -41,10 +41,10 @@ compile_commands.json
 src/app-winui/Generated Files/
 src/app-winui/x64/
 src/app-winui/el-md/x64/
+src/app-winui/third_party/usvg-normalizer/bin/
 
-# Vendored WinUI NuGet packages
-!src/app-winui/packages/
-!src/app-winui/packages/**
+# Restored WinUI NuGet packages
+src/app-winui/packages/
 
 # OS
 Thumbs.db
