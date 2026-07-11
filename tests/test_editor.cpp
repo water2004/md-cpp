@@ -81,6 +81,22 @@ ELMD_TEST(test_editor_document_delete_projects_and_restores_node_selection) {
     if (editor.document_selection()) ELMD_CHECK_EQ(editor.document_selection()->active.offset, 5u);
 }
 
+ELMD_TEST(test_editor_enter_at_paragraph_end_projects_empty_node_caret_anchor) {
+    Editor editor("alpha");
+    const auto first_id = editor.document().blocks.front().id;
+    editor.set_caret(CharOffset(5));
+    Command newline;
+    newline.kind = CommandKind::InsertNewline;
+    auto transaction = editor.execute_command(newline);
+
+    ELMD_CHECK(transaction.has_value());
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alpha\n\n"));
+    ELMD_CHECK_EQ(editor.document().blocks.size(), 2u);
+    ELMD_CHECK_EQ(editor.document().blocks.front().id, first_id);
+    ELMD_CHECK(editor.document().source_map.find_node_by_id(editor.document().blocks[1].id) != nullptr);
+    ELMD_CHECK_EQ(editor.selection().active.v, 7u);
+}
+
 ELMD_TEST(test_editor_insert_text) {
     Editor e;
     e.execute_command(Command::InsertText(U"hello"));

@@ -87,6 +87,25 @@ inline void rebind_symbols(DocumentSymbolIndex& symbols, const NodeIdMap& ids) {
     for (auto& symbol : symbols.code_blocks) symbol.node_id = rebound(symbol.node_id, ids);
 }
 
+inline void add_missing_top_level_ranges(const EditorDocument& document, SourceMap& source_map) {
+    std::size_t cursor = 0;
+    for (std::size_t index = 0; index < document.blocks.size(); ++index) {
+        EditorDocument fragment;
+        fragment.revision = document.revision;
+        fragment.blocks.push_back(document.blocks[index]);
+        const auto serialized = serialize_markdown_cps(fragment);
+        if (!source_map.find_node_by_id(document.blocks[index].id)) {
+            NodeSourceRange range(
+                document.blocks[index].id,
+                CharRange(CharOffset(cursor), CharOffset(cursor + serialized.size())),
+                CharRange(CharOffset(cursor), CharOffset(cursor + serialized.size())));
+            source_map.node_ranges.push_back(std::move(range));
+        }
+        cursor += serialized.size();
+        if (index + 1 < document.blocks.size()) cursor += 2;
+    }
+}
+
 inline const BlockNode* find_paragraph(const BlockVec& blocks, NodeId id) {
     for (const auto& block : blocks) {
         if (block.id == id && block.kind == BlockKind::Paragraph) return &block;
@@ -135,6 +154,7 @@ inline DocumentProjection project_document(const EditorDocument& document, const
         range.node_id = document_projection_detail::rebound(range.node_id, ids);
         if (range.node_id.v != 0) projection.source_map.node_ranges.push_back(std::move(range));
     }
+    document_projection_detail::add_missing_top_level_ranges(document, projection.source_map);
     projection.metadata = std::move(parsed.document.metadata);
     projection.diagnostics = std::move(parsed.document.diagnostics);
     projection.symbols = std::move(parsed.symbols);
