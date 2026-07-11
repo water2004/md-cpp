@@ -8,6 +8,16 @@ import elmd.core.utf;
 
 namespace winrt::ElMd
 {
+    EditorSurfaceRenderer::~EditorSurfaceRenderer()
+    {
+        mathJax.SetCompletionCallback({});
+        svgNormalizer.SetCompletionCallback({});
+        mermaid.SetCompletionCallback({});
+        std::scoped_lock lock(invalidationState->mutex);
+        invalidationState->active = false;
+        invalidationState->callback = {};
+    }
+
     D2D1_COLOR_F Rgba(float red, float green, float blue, float alpha = 1.0f)
     {
         return D2D1::ColorF(red, green, blue, alpha);
@@ -258,6 +268,7 @@ namespace winrt::ElMd
     bool IsStyleMarker(elmd::InlineRenderItem const& item)
     {
         if (item.kind != elmd::InlineRenderItem::Kind::Marker) return false;
+        if (item.marker_role == elmd::MarkerRole::Heading) return false;
         if (item.marker_owner) return true;
         bool backticks = !item.text.empty();
         for (char32_t ch : item.text) if (ch != U'`') backticks = false;
@@ -266,6 +277,7 @@ namespace winrt::ElMd
 
     bool IsHeadingMarker(elmd::InlineRenderItem const& item)
     {
+        if (item.kind == elmd::InlineRenderItem::Kind::Marker && item.marker_role == elmd::MarkerRole::Heading) return true;
         if (item.kind != elmd::InlineRenderItem::Kind::Marker || item.text.size() < 2 || item.text.back() != U' ')
         {
             return false;
@@ -464,6 +476,7 @@ namespace winrt::ElMd
     void ApplyMathInlineObjects(IDWriteTextLayout* layout, std::vector<DisplayInlineText::MathOverlay> const& overlays)
     {
         if (!layout) return;
+        if (!overlays.empty()) layout->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_DEFAULT, 0.0f, 0.0f);
         for (auto const& overlay : overlays)
         {
             auto const& fragment = overlay.fragment;
@@ -487,7 +500,8 @@ namespace winrt::ElMd
         float fontSize,
         float containerWidth,
         bool svgSupported,
-        bool requestMath)
+        bool requestMath,
+        std::optional<elmd::CharRange> focusRange = std::nullopt)
     {
         DisplayInlineText display;
         auto markerVisibility = RevealedStyleMarkers(items, caret);
@@ -498,7 +512,7 @@ namespace winrt::ElMd
             {
                 continue;
             }
-            if (IsHeadingMarker(item) && !(item.source_range.start.v <= caret && caret <= sourceEnd))
+            if (IsHeadingMarker(item) && (!focusRange || !(focusRange->start.v <= caret && caret <= focusRange->end.v)))
             {
                 continue;
             }
@@ -510,7 +524,7 @@ namespace winrt::ElMd
                 }
                 else
                 {
-                    MergeDisplayText(display, BuildDisplayInlineText(item.children, caret, item.source_range.end.v, sourceText, mathJax, svgNormalizer, svgColor, fontSize, containerWidth, svgSupported, requestMath));
+                    MergeDisplayText(display, BuildDisplayInlineText(item.children, caret, item.source_range.end.v, sourceText, mathJax, svgNormalizer, svgColor, fontSize, containerWidth, svgSupported, requestMath, focusRange));
                 }
                 continue;
             }
@@ -784,7 +798,18 @@ namespace winrt::ElMd
 
     void EditorSurfaceRenderer::SetInvalidateCallback(std::function<void()> callback)
     {
-        invalidateCallback = std::move(callback);
+        std::scoped_lock lock(invalidationState->mutex);
+        invalidationState->callback = std::move(callback);
+    }
+
+    void EditorSurfaceRenderer::Invalidate()
+    {
+        std::function<void()> callback;
+        {
+            std::scoped_lock lock(invalidationState->mutex);
+            if (invalidationState->active) callback = invalidationState->callback;
+        }
+        if (callback) callback();
     }
 
     void EditorSurfaceRenderer::InitializeMermaid(winrt::Microsoft::UI::Xaml::Controls::WebView2 const& webView)
@@ -796,7 +821,7 @@ namespace winrt::ElMd
             if (!dispatcher.TryEnqueue([this]
             {
                 mathInvalidationQueued = false;
-                if (invalidateCallback) invalidateCallback();
+                Invalidate();
             }))
             {
                 mathInvalidationQueued = false;
@@ -896,7 +921,7 @@ namespace winrt::ElMd
             if (!dispatcher.TryEnqueue([this]
             {
                 mathInvalidationQueued = false;
-                if (invalidateCallback) invalidateCallback();
+                Invalidate();
             }))
             {
                 mathInvalidationQueued = false;
@@ -945,15 +970,18 @@ namespace winrt::ElMd
 
     void EditorSurfaceRenderer::QueueRemoteImage(std::string source)
     {
+        auto state = remoteImages;
         {
-            std::scoped_lock lock(remoteImageMutex);
-            if (remoteImageData.contains(source) || remoteImagePending.contains(source) || remoteImageFailed.contains(source)) return;
-            remoteImagePending.insert(source);
+            std::scoped_lock lock(state->mutex);
+            if (state->data.contains(source) || state->pending.contains(source) || state->failed.contains(source)) return;
+            state->pending.insert(source);
         }
         try
         {
+            auto dispatcher = renderDispatcher;
+            auto invalidation = invalidationState;
             auto operation = winrt::Windows::Web::Http::HttpClient{}.GetBufferAsync(winrt::Windows::Foundation::Uri(winrt::to_hstring(source)));
-            operation.Completed([this, source = std::move(source)](auto const& async, winrt::Windows::Foundation::AsyncStatus status)
+            operation.Completed([state, dispatcher, invalidation, source = std::move(source)](auto const& async, winrt::Windows::Foundation::AsyncStatus status)
             {
                 std::vector<std::uint8_t> bytes;
                 if (status == winrt::Windows::Foundation::AsyncStatus::Completed)
@@ -971,46 +999,52 @@ namespace winrt::ElMd
                     catch (...) {}
                 }
                 {
-                    std::scoped_lock lock(remoteImageMutex);
-                    remoteImagePending.erase(source);
+                    std::scoped_lock lock(state->mutex);
+                    state->pending.erase(source);
                     if (bytes.empty())
                     {
-                        remoteImageFailed.insert(source);
+                        state->failed.insert(source);
                     }
                     else
                     {
-                        while (!remoteImageOrder.empty() && (remoteImageData.size() >= 16 || remoteImageBytes + bytes.size() > 32 * 1024 * 1024))
+                        while (!state->order.empty() && (state->data.size() >= 16 || state->bytes + bytes.size() > 32 * 1024 * 1024))
                         {
-                            auto oldest = std::move(remoteImageOrder.front());
-                            remoteImageOrder.pop_front();
-                            auto found = remoteImageData.find(oldest);
-                            if (found == remoteImageData.end()) continue;
-                            remoteImageBytes -= found->second.size();
-                            remoteImageData.erase(found);
+                            auto oldest = std::move(state->order.front());
+                            state->order.pop_front();
+                            auto found = state->data.find(oldest);
+                            if (found == state->data.end()) continue;
+                            state->bytes -= found->second.size();
+                            state->data.erase(found);
                         }
                         if (bytes.size() <= 32 * 1024 * 1024)
                         {
-                            remoteImageBytes += bytes.size();
-                            remoteImageOrder.push_back(source);
-                            remoteImageData.emplace(source, std::move(bytes));
+                            state->bytes += bytes.size();
+                            state->order.push_back(source);
+                            state->data.emplace(source, std::move(bytes));
                         }
                     }
+                    ++state->generation;
                 }
-                if (renderDispatcher)
+                if (dispatcher)
                 {
-                    renderDispatcher.TryEnqueue([this]
+                    dispatcher.TryEnqueue([invalidation]
                     {
-                        blockHeightCache.clear();
-                        if (invalidateCallback) invalidateCallback();
+                        std::function<void()> callback;
+                        {
+                            std::scoped_lock lock(invalidation->mutex);
+                            if (invalidation->active) callback = invalidation->callback;
+                        }
+                        if (callback) callback();
                     });
                 }
             });
         }
         catch (...)
         {
-            std::scoped_lock lock(remoteImageMutex);
-            remoteImagePending.erase(source);
-            remoteImageFailed.insert(std::move(source));
+            std::scoped_lock lock(state->mutex);
+            state->pending.erase(source);
+            state->failed.insert(std::move(source));
+            ++state->generation;
         }
     }
 
@@ -1028,9 +1062,9 @@ namespace winrt::ElMd
             if (auto found = rasterImageCache.find(key); found != rasterImageCache.end()) return found->second;
             if (rasterImageFailed.contains(key)) return std::nullopt;
             {
-                std::scoped_lock lock(remoteImageMutex);
-                auto found = remoteImageData.find(std::string(source));
-                if (found != remoteImageData.end()) encoded = found->second;
+                std::scoped_lock lock(remoteImages->mutex);
+                auto found = remoteImages->data.find(std::string(source));
+                if (found != remoteImages->data.end()) encoded = found->second;
             }
             if (encoded.empty())
             {
@@ -1117,6 +1151,12 @@ namespace winrt::ElMd
 
     void EditorSurfaceRenderer::DrawDocument(detail::EditorSessionCore const& sessionCore)
     {
+        auto remoteGeneration = remoteImages->generation.load();
+        if (remoteGeneration != observedRemoteImageGeneration)
+        {
+            observedRemoteImageGeneration = remoteGeneration;
+            blockHeightCache.clear();
+        }
         visualBlocks.clear();
         visualLines.clear();
         visualTables.clear();
@@ -1314,6 +1354,7 @@ namespace winrt::ElMd
         {
             std::vector<InlineImageDraw> resolved;
             if (!layout) return resolved;
+            if (!overlays.empty()) layout->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_DEFAULT, 0.0f, 0.0f);
             resolved.reserve(overlays.size());
             for (auto const& overlay : overlays)
             {
@@ -1346,13 +1387,26 @@ namespace winrt::ElMd
         auto drawInlineImages = [&](IDWriteTextLayout* layout, D2D1_POINT_2F origin, std::vector<InlineImageDraw> const& images)
         {
             if (!layout) return;
+            UINT32 lineCount = 0;
+            if (layout->GetLineMetrics(nullptr, 0, &lineCount) != E_NOT_SUFFICIENT_BUFFER || lineCount == 0) return;
+            std::vector<DWRITE_LINE_METRICS> lineMetrics(lineCount);
+            if (FAILED(layout->GetLineMetrics(lineMetrics.data(), lineCount, &lineCount))) return;
             for (auto const& image : images)
             {
                 float pointX = 0.0f;
-                float pointY = 0.0f;
-                DWRITE_HIT_TEST_METRICS metrics{};
-                if (FAILED(layout->HitTestTextPosition(image.displayStart, FALSE, &pointX, &pointY, &metrics))) continue;
-                auto rect = D2D1::RectF(origin.x + pointX, origin.y + pointY, origin.x + pointX + image.width, origin.y + pointY + image.height);
+                float ignoredY = 0.0f;
+                DWRITE_HIT_TEST_METRICS hit{};
+                if (FAILED(layout->HitTestTextPosition(image.displayStart, FALSE, &pointX, &ignoredY, &hit))) continue;
+                UINT32 lineStart = 0;
+                float lineTop = 0.0f;
+                for (UINT32 line = 0; line < lineCount; ++line)
+                {
+                    auto lineEnd = lineStart + lineMetrics[line].length;
+                    if (image.displayStart < lineEnd || line + 1 == lineCount) break;
+                    lineStart = lineEnd;
+                    lineTop += lineMetrics[line].height;
+                }
+                auto rect = D2D1::RectF(origin.x + pointX, origin.y + lineTop, origin.x + pointX + image.width, origin.y + lineTop + image.height);
                 if (image.image)
                 {
                     d2dContext->DrawBitmap(image.image->bitmap.Get(), rect, 1.0f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
@@ -1799,7 +1853,7 @@ namespace winrt::ElMd
                     }
                     else if (!child.inline_items.empty())
                     {
-                        display = BuildDisplayInlineText(child.inline_items, caret, child.content_range.end.v, sourceText, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, contentRight - contentLeft, svgSupported, requestEmbedded);
+                        display = BuildDisplayInlineText(child.inline_items, caret, child.content_range.end.v, sourceText, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, contentRight - contentLeft, svgSupported, requestEmbedded, child.source_range);
                     }
                     else
                     {
@@ -1988,7 +2042,8 @@ namespace winrt::ElMd
                         styleSheet.body.size,
                         documentRight - documentLeft,
                         svgSupported,
-                        requestEmbedded);
+                        requestEmbedded,
+                        block.source_range);
                     text = std::move(display.text);
                     inlineRanges = std::move(display.ranges);
                     displayToSource = std::move(display.displayToSource);
@@ -2112,7 +2167,7 @@ namespace winrt::ElMd
                     std::function<void(elmd::RenderBlock const&)> appendChild = [&](elmd::RenderBlock const& child) {
                         if (!child.inline_items.empty())
                         {
-                            MergeDisplayText(display, BuildDisplayInlineText(child.inline_items, caret, child.content_range.end.v, sourceText, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, documentRight - documentLeft, svgSupported, requestEmbedded));
+                            MergeDisplayText(display, BuildDisplayInlineText(child.inline_items, caret, child.content_range.end.v, sourceText, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, documentRight - documentLeft, svgSupported, requestEmbedded, child.source_range));
                         }
                         else if (!child.child_blocks.empty())
                         {
@@ -2242,7 +2297,8 @@ namespace winrt::ElMd
                         styleSheet.body.size,
                         documentRight - documentLeft,
                         svgSupported,
-                        requestEmbedded);
+                        requestEmbedded,
+                        block.source_range);
                     text = std::move(display.text);
                     inlineRanges = std::move(display.ranges);
                     displayToSource = std::move(display.displayToSource);

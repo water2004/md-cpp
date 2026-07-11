@@ -36,6 +36,30 @@ ELMD_TEST(builds_heading_with_marker_and_text) {
     ELMD_CHECK(has_text);
 }
 
+ELMD_TEST(builds_setext_heading_with_a_structural_trailing_marker) {
+    auto m = build_model("Section\n-------\n");
+    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    bool headingText = false;
+    bool underline = false;
+    if (!m.blocks.empty()) {
+        ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Text);
+        for (auto const& item : m.blocks[0].inline_items) {
+            if (item.kind == InlineRenderItem::Kind::Text && item.style.heading_level && *item.style.heading_level == 2) headingText = true;
+            if (item.kind == InlineRenderItem::Kind::Marker && item.marker_role == MarkerRole::Heading && item.text == U"\n-------") underline = true;
+        }
+    }
+    ELMD_CHECK(headingText);
+    ELMD_CHECK(underline);
+}
+
+ELMD_TEST(atx_heading_link_reaches_the_render_model_as_a_link) {
+    auto m = build_model("### [#](https://example.com)可做转义的字符\n");
+    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    if (!m.blocks.empty()) ELMD_CHECK(std::any_of(m.blocks[0].inline_items.begin(), m.blocks[0].inline_items.end(), [](auto const& item) {
+            return item.kind == InlineRenderItem::Kind::Link && item.href == "https://example.com";
+        }));
+}
+
 ELMD_TEST(builds_strong_with_open_and_close_markers) {
     auto m = build_model("**bold**");
     int marker_count = 0;
@@ -43,6 +67,64 @@ ELMD_TEST(builds_strong_with_open_and_close_markers) {
         if (it.kind == InlineRenderItem::Kind::Marker && it.text == U"**") ++marker_count;
     }
     ELMD_CHECK_EQ(marker_count, 2);
+}
+
+ELMD_TEST(render_markers_are_exact_source_delimiters) {
+    struct Case {
+        std::string source;
+        std::u32string marker;
+    };
+    const std::vector<Case> cases{
+        {"*word*", U"*"},
+        {"_word_", U"_"},
+        {"**word**", U"**"},
+        {"__word__", U"__"},
+        {"~~word~~", U"~~"},
+    };
+    for (auto const& test : cases) {
+        auto model = build_model(test.source);
+        ELMD_CHECK_EQ(model.blocks.size(), 1u);
+        if (model.blocks.empty()) continue;
+        std::vector<InlineRenderItem const*> markers;
+        for (auto const& item : model.blocks.front().inline_items) {
+            if (item.kind == InlineRenderItem::Kind::Marker) markers.push_back(&item);
+        }
+        ELMD_CHECK_EQ(markers.size(), 2u);
+        if (markers.size() != 2) continue;
+        ELMD_CHECK_EQ(markers[0]->text, test.marker);
+        ELMD_CHECK_EQ(markers[1]->text, test.marker);
+        ELMD_CHECK_EQ(markers[0]->source_range.start.v, 0u);
+        ELMD_CHECK_EQ(markers[0]->source_range.end.v, test.marker.size());
+        ELMD_CHECK_EQ(markers[1]->source_range.start.v, test.source.size() - test.marker.size());
+        ELMD_CHECK_EQ(markers[1]->source_range.end.v, test.source.size());
+        ELMD_CHECK(markers[0]->marker_owner.has_value());
+        ELMD_CHECK(markers[1]->marker_owner == markers[0]->marker_owner);
+    }
+}
+
+ELMD_TEST(render_nested_delimiters_keep_monotonic_exact_ranges) {
+    auto model = build_model("_outer **inner** tail_");
+    ELMD_CHECK_EQ(model.blocks.size(), 1u);
+    if (model.blocks.empty()) return;
+    std::vector<InlineRenderItem const*> markers;
+    for (auto const& item : model.blocks.front().inline_items) {
+        if (item.kind == InlineRenderItem::Kind::Marker) markers.push_back(&item);
+    }
+    ELMD_CHECK_EQ(markers.size(), 4u);
+    if (markers.size() == 4) {
+        ELMD_CHECK_EQ(markers[0]->text, std::u32string(U"_"));
+        ELMD_CHECK_EQ(markers[0]->source_range.start.v, 0u);
+        ELMD_CHECK_EQ(markers[1]->text, std::u32string(U"**"));
+        ELMD_CHECK_EQ(markers[1]->source_range.start.v, 7u);
+        ELMD_CHECK_EQ(markers[2]->text, std::u32string(U"**"));
+        ELMD_CHECK_EQ(markers[2]->source_range.start.v, 14u);
+        ELMD_CHECK_EQ(markers[3]->text, std::u32string(U"_"));
+        ELMD_CHECK_EQ(markers[3]->source_range.start.v, 21u);
+    }
+    auto const& items = model.blocks.front().inline_items;
+    for (std::size_t index = 1; index < items.size(); ++index) {
+        ELMD_CHECK(items[index - 1].source_range.end.v <= items[index].source_range.start.v);
+    }
 }
 
 ELMD_TEST(builds_code_block) {

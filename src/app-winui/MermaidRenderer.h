@@ -29,6 +29,7 @@ namespace winrt::ElMd
         MermaidRenderer& operator=(MermaidRenderer const&) = delete;
 
         void Initialize(winrt::Microsoft::UI::Xaml::Controls::WebView2 const& webView, std::function<void()> completion);
+        void SetCompletionCallback(std::function<void()> completion);
         std::optional<MermaidSvg> GetOrQueue(std::string_view source, bool dark, bool allowQueue = true);
         void Clear();
 

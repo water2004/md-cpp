@@ -14,6 +14,8 @@ namespace winrt::ElMd
 
     struct EditorSurfaceRenderer
     {
+        ~EditorSurfaceRenderer();
+
         enum class Theme
         {
             Light,
@@ -92,6 +94,25 @@ namespace winrt::ElMd
 
         std::optional<CachedRasterImage> LoadRasterImage(std::wstring const& baseDirectory, std::string_view source);
         void QueueRemoteImage(std::string source);
+        void Invalidate();
+
+        struct InvalidationState
+        {
+            std::mutex mutex;
+            std::function<void()> callback;
+            bool active = true;
+        };
+
+        struct RemoteImageState
+        {
+            std::mutex mutex;
+            std::unordered_map<std::string, std::vector<std::uint8_t>> data;
+            std::unordered_set<std::string> pending;
+            std::unordered_set<std::string> failed;
+            std::deque<std::string> order;
+            std::size_t bytes = 0;
+            std::atomic_uint64_t generation = 0;
+        };
 
         struct VisualBlock
         {
@@ -225,7 +246,7 @@ namespace winrt::ElMd
         MermaidRenderer mermaid;
         SvgNormalizer svgNormalizer;
         TreeSitterHighlighter treeSitter;
-        std::function<void()> invalidateCallback;
+        std::shared_ptr<InvalidationState> invalidationState = std::make_shared<InvalidationState>();
         std::atomic_bool mathInvalidationQueued = false;
         Theme theme = Theme::Dark;
         EditorStyleSheet styleSheet = CreateStyleSheet(Theme::Dark);
@@ -238,12 +259,8 @@ namespace winrt::ElMd
         std::unordered_set<std::wstring> rasterImageFailed;
         std::deque<std::wstring> rasterImageCacheOrder;
         std::size_t rasterImageCacheBytes = 0;
-        std::mutex remoteImageMutex;
-        std::unordered_map<std::string, std::vector<std::uint8_t>> remoteImageData;
-        std::unordered_set<std::string> remoteImagePending;
-        std::unordered_set<std::string> remoteImageFailed;
-        std::deque<std::string> remoteImageOrder;
-        std::size_t remoteImageBytes = 0;
+        std::shared_ptr<RemoteImageState> remoteImages = std::make_shared<RemoteImageState>();
+        std::uint64_t observedRemoteImageGeneration = 0;
         winrt::Microsoft::UI::Dispatching::DispatcherQueue renderDispatcher{ nullptr };
         std::unordered_map<std::uint64_t, CachedSvgDocument> svgDocumentCache;
         std::deque<std::uint64_t> svgDocumentCacheOrder;

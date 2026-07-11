@@ -219,6 +219,11 @@ namespace winrt::ElMd
         state->completion = std::move(completion);
     }
 
+    void MermaidRenderer::SetCompletionCallback(std::function<void()> completion)
+    {
+        state->completion = std::move(completion);
+    }
+
     std::optional<MermaidSvg> MermaidRenderer::GetOrQueue(std::string_view source, bool dark, bool allowQueue)
     {
         auto key = std::string(source) + '\x1f' + (dark ? "1" : "0");

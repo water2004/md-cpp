@@ -236,6 +236,44 @@ struct Builder {
             if (const auto* r = sm ? sm->find_node_by_id(id) : nullptr) return r->content_range.start.v;
             return cursor;
         };
+        auto source_text = [&](TextRange<CharOffset> range) {
+            auto start = (std::min)(range.start.v, source.size());
+            auto end = (std::min)((std::max)(range.end.v, start), source.size());
+            return std::u32string(source.substr(start, end - start));
+        };
+        auto append_exact_marker = [&](TextRange<CharOffset> marker_range) {
+            InlineRenderItem marker;
+            marker.kind = InlineRenderItem::Kind::Marker;
+            marker.marker_owner = node.id;
+            marker.source_range = marker_range;
+            marker.text = source_text(marker_range);
+            marker.marker_style = MarkerStyle{true, {}};
+            marker.visibility = MarkerVisibility::Always;
+            out.push_back(std::move(marker));
+        };
+        auto append_delimited = [&](const InlineStyle& child_style, std::u32string fallback_opening,
+                                    std::u32string fallback_closing) {
+            if (const auto* range = sm ? sm->find_node_by_id(node.id) : nullptr;
+                range && range->marker_ranges.size() >= 2) {
+                append_exact_marker(range->marker_ranges.front());
+                auto child_items = build_inlines(node.children, range->content_range.start.v, child_style);
+                out.insert(out.end(), std::make_move_iterator(child_items.begin()), std::make_move_iterator(child_items.end()));
+                append_exact_marker(range->marker_ranges.back());
+                cursor = range->source_range.end.v;
+                return;
+            }
+            if (!fallback_opening.empty()) {
+                push_marker(out, cursor, std::move(fallback_opening));
+                out.back().marker_owner = node.id;
+            }
+            auto child_items = build_inlines(node.children, cursor, child_style);
+            if (!child_items.empty()) cursor = child_items.back().source_range.end.v;
+            out.insert(out.end(), std::make_move_iterator(child_items.begin()), std::make_move_iterator(child_items.end()));
+            if (!fallback_closing.empty()) {
+                push_marker(out, cursor, std::move(fallback_closing));
+                out.back().marker_owner = node.id;
+            }
+        };
         switch (node.kind) {
             case K::Text: {
                 std::size_t len = node.text.size();
@@ -247,52 +285,25 @@ struct Builder {
                 return;
             }
             case K::Strong: {
-                auto opening = node.opening_marker.empty() ? U"**" : node.opening_marker;
-                auto closing = node.closing_marker.empty() ? U"**" : node.closing_marker;
-                push_marker(out, cursor, opening);
-                out.back().marker_owner = node.id;
-                std::size_t inner = content_start_for(node.id);
                 InlineStyle cs = style; cs.bold = true;
-                auto child_items = build_inlines(node.children, inner, cs);
-                for (auto& it : child_items) { cursor += it.source_range.len(); out.push_back(std::move(it)); }
-                push_marker(out, cursor, closing);
-                out.back().marker_owner = node.id;
+                append_delimited(cs, node.opening_marker.empty() ? U"**" : node.opening_marker,
+                                 node.closing_marker.empty() ? U"**" : node.closing_marker);
                 return;
             }
             case K::Emphasis: {
-                auto opening = node.opening_marker.empty() ? U"*" : node.opening_marker;
-                auto closing = node.closing_marker.empty() ? U"*" : node.closing_marker;
-                push_marker(out, cursor, opening);
-                out.back().marker_owner = node.id;
-                std::size_t inner = content_start_for(node.id);
                 InlineStyle cs = style; cs.italic = true;
-                auto child_items = build_inlines(node.children, inner, cs);
-                for (auto& it : child_items) { cursor += it.source_range.len(); out.push_back(std::move(it)); }
-                push_marker(out, cursor, closing);
-                out.back().marker_owner = node.id;
+                append_delimited(cs, node.opening_marker.empty() ? U"*" : node.opening_marker,
+                                 node.closing_marker.empty() ? U"*" : node.closing_marker);
                 return;
             }
             case K::Strike: {
-                auto opening = node.opening_marker.empty() ? U"~~" : node.opening_marker;
-                auto closing = node.closing_marker.empty() ? U"~~" : node.closing_marker;
-                push_marker(out, cursor, opening);
-                out.back().marker_owner = node.id;
-                std::size_t inner = content_start_for(node.id);
                 InlineStyle cs = style; cs.strikethrough = true;
-                auto child_items = build_inlines(node.children, inner, cs);
-                for (auto& it : child_items) { cursor += it.source_range.len(); out.push_back(std::move(it)); }
-                push_marker(out, cursor, closing);
-                out.back().marker_owner = node.id;
+                append_delimited(cs, node.opening_marker.empty() ? U"~~" : node.opening_marker,
+                                 node.closing_marker.empty() ? U"~~" : node.closing_marker);
                 return;
             }
             case K::Span: {
-                auto opening = node.opening_marker;
-                auto closing = node.closing_marker;
-                if (!opening.empty()) { push_marker(out, cursor, opening); out.back().marker_owner = node.id; }
-                std::size_t inner = content_start_for(node.id);
-                auto child_items = build_inlines(node.children, inner, style);
-                for (auto& it : child_items) { cursor += it.source_range.len(); out.push_back(std::move(it)); }
-                if (!closing.empty()) { push_marker(out, cursor, closing); out.back().marker_owner = node.id; }
+                append_delimited(style, node.opening_marker, node.closing_marker);
                 return;
             }
             case K::InlineCode: {
@@ -302,7 +313,7 @@ struct Builder {
                     opening.kind = InlineRenderItem::Kind::Marker;
                     opening.marker_owner = node.id;
                     opening.source_range = range->marker_ranges[0];
-                    opening.text = std::u32string(opening.source_range.len(), U'`');
+                    opening.text = source_text(opening.source_range);
                     opening.marker_style = MarkerStyle{true, {}};
                     opening.visibility = MarkerVisibility::Always;
                     out.push_back(std::move(opening));
@@ -314,7 +325,7 @@ struct Builder {
                     closing.kind = InlineRenderItem::Kind::Marker;
                     closing.marker_owner = node.id;
                     closing.source_range = range->marker_ranges[1];
-                    closing.text = std::u32string(closing.source_range.len(), U'`');
+                    closing.text = source_text(closing.source_range);
                     closing.marker_style = MarkerStyle{true, {}};
                     closing.visibility = MarkerVisibility::Always;
                     out.push_back(std::move(closing));
@@ -476,17 +487,29 @@ struct Builder {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::heading(b.level));
                 InlineStyle s = InlineStyle::plain(); s.heading_level = b.level;
                 std::size_t cs = base_range().start.v;
-                if (const auto* r = sm ? sm->find_node_by_id(b.id) : nullptr) cs = r->content_range.start.v;
-                std::size_t cursor = base_range().start.v;
-                std::u32string marker(static_cast<std::size_t>(b.level), U'#');
-                marker.push_back(U' ');
-                if (cursor + marker.size() <= cs) {
-                    push_marker(rb.inline_items, cursor, std::move(marker));
-                    rb.inline_items.back().style = s;
-                    rb.inline_items.back().marker_role = MarkerRole::Heading;
+                auto range = sm ? sm->find_node_by_id(b.id) : nullptr;
+                if (range) cs = range->content_range.start.v;
+                if (range) {
+                    for (auto const& markerRange : range->marker_ranges) {
+                        auto start = (std::min)(markerRange.start.v, source.size());
+                        auto end = (std::min)((std::max)(markerRange.end.v, start), source.size());
+                        InlineRenderItem marker;
+                        marker.kind = InlineRenderItem::Kind::Marker;
+                        marker.source_range = markerRange;
+                        marker.text = std::u32string(source.substr(start, end - start));
+                        marker.style = s;
+                        marker.marker_role = MarkerRole::Heading;
+                        marker.marker_owner = b.id;
+                        marker.marker_style = MarkerStyle{true, {}};
+                        marker.visibility = MarkerVisibility::WhenBlockFocused;
+                        rb.inline_items.push_back(std::move(marker));
+                    }
                 }
                 auto items = build_inlines(b.children, cs, s);
                 for (auto& it : items) rb.inline_items.push_back(std::move(it));
+                std::stable_sort(rb.inline_items.begin(), rb.inline_items.end(), [](auto const& left, auto const& right) {
+                    return left.source_range.start.v < right.source_range.start.v;
+                });
                 return with_content_range(std::move(rb));
             }
             case BK::BlockQuote: {

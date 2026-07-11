@@ -44,6 +44,40 @@ ELMD_TEST(test_parse_heading) {
     ELMD_CHECK_EQ(out.symbols.headings.size(), 1u);
 }
 
+ELMD_TEST(test_setext_headings_take_precedence_over_thematic_breaks) {
+    auto out = parse_text(1, "Primary\n===\n\nSecondary\n------\n\n---\n");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 3u);
+    if (out.document.blocks.size() >= 3) {
+        ELMD_CHECK(out.document.blocks[0].kind == BlockKind::Heading);
+        ELMD_CHECK_EQ(out.document.blocks[0].level, 1);
+        ELMD_CHECK(out.document.blocks[1].kind == BlockKind::Heading);
+        ELMD_CHECK_EQ(out.document.blocks[1].level, 2);
+        ELMD_CHECK(out.document.blocks[2].kind == BlockKind::ThematicBreak);
+        auto range = out.document.source_map.find_node_by_id(out.document.blocks[1].id);
+        ELMD_CHECK(range != nullptr);
+        if (range) {
+            ELMD_CHECK_EQ(range->content_range.start.v, 13u);
+            ELMD_CHECK_EQ(range->content_range.end.v, 22u);
+            ELMD_CHECK_EQ(range->marker_ranges.size(), 1u);
+        }
+    }
+}
+
+ELMD_TEST(test_atx_heading_uses_the_complete_inline_parser) {
+    auto out = parse_text(1, "### [#](https://example.com/path#fragment) **bold** `code` <em>html</em>\n");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    if (!out.document.blocks.empty()) {
+        auto const& heading = out.document.blocks[0];
+        ELMD_CHECK(heading.kind == BlockKind::Heading);
+        ELMD_CHECK_EQ(heading.level, 3);
+        ELMD_CHECK(inlines_have_kind(heading.children, InlineKind::Link));
+        ELMD_CHECK(inlines_have_kind(heading.children, InlineKind::Strong));
+        ELMD_CHECK(inlines_have_kind(heading.children, InlineKind::InlineCode));
+        ELMD_CHECK(inlines_have_kind(heading.children, InlineKind::Emphasis));
+    }
+    ELMD_CHECK_EQ(out.symbols.links.size(), 1u);
+}
+
 ELMD_TEST(test_parse_paragraph) {
     auto out = parse_text(1, "Hello world\n");
     auto* p = first_of(out.document.blocks, BlockKind::Paragraph);
@@ -149,6 +183,82 @@ ELMD_TEST(test_parse_strikethrough) {
     auto out = parse_text(1, "Hello ~~world~~\n");
     auto* p = first_of(out.document.blocks, BlockKind::Paragraph);
     ELMD_CHECK(p && inlines_have_kind(p->children, InlineKind::Strike));
+}
+
+ELMD_TEST(test_delimited_inline_nodes_preserve_exact_source_markers) {
+    struct Case {
+        std::string source;
+        InlineKind kind;
+        std::u32string marker;
+        std::size_t content_start;
+        std::size_t content_end;
+    };
+    const std::vector<Case> cases{
+        {"*word*", InlineKind::Emphasis, U"*", 1, 5},
+        {"_word_", InlineKind::Emphasis, U"_", 1, 5},
+        {"**word**", InlineKind::Strong, U"**", 2, 6},
+        {"__word__", InlineKind::Strong, U"__", 2, 6},
+        {"~~word~~", InlineKind::Strike, U"~~", 2, 6},
+    };
+    for (auto const& test : cases) {
+        auto out = parse_text(1, test.source);
+        auto* paragraph = first_of(out.document.blocks, BlockKind::Paragraph);
+        ELMD_CHECK(paragraph != nullptr);
+        if (!paragraph) continue;
+        auto node = std::find_if(paragraph->children.begin(), paragraph->children.end(), [&](auto const& child) {
+            return child.kind == test.kind;
+        });
+        ELMD_CHECK(node != paragraph->children.end());
+        if (node == paragraph->children.end()) continue;
+        ELMD_CHECK_EQ(node->opening_marker, test.marker);
+        ELMD_CHECK_EQ(node->closing_marker, test.marker);
+        auto range = out.document.source_map.find_node_by_id(node->id);
+        ELMD_CHECK(range != nullptr);
+        if (!range) continue;
+        ELMD_CHECK_EQ(range->source_range.start.v, 0u);
+        ELMD_CHECK_EQ(range->source_range.end.v, test.source.size());
+        ELMD_CHECK_EQ(range->content_range.start.v, test.content_start);
+        ELMD_CHECK_EQ(range->content_range.end.v, test.content_end);
+        ELMD_CHECK_EQ(range->marker_ranges.size(), 2u);
+        if (range->marker_ranges.size() == 2) {
+            ELMD_CHECK_EQ(range->marker_ranges[0].start.v, 0u);
+            ELMD_CHECK_EQ(range->marker_ranges[0].end.v, test.marker.size());
+            ELMD_CHECK_EQ(range->marker_ranges[1].start.v, test.content_end);
+            ELMD_CHECK_EQ(range->marker_ranges[1].end.v, test.source.size());
+        }
+    }
+}
+
+ELMD_TEST(test_mixed_nested_delimiters_keep_independent_source_ranges) {
+    auto out = parse_text(1, "_outer **inner** tail_");
+    auto* paragraph = first_of(out.document.blocks, BlockKind::Paragraph);
+    ELMD_CHECK(paragraph != nullptr);
+    if (!paragraph || paragraph->children.empty()) return;
+    auto const& emphasis = paragraph->children.front();
+    ELMD_CHECK(emphasis.kind == InlineKind::Emphasis);
+    ELMD_CHECK_EQ(emphasis.opening_marker, std::u32string(U"_"));
+    auto strong = std::find_if(emphasis.children.begin(), emphasis.children.end(), [](auto const& child) {
+        return child.kind == InlineKind::Strong;
+    });
+    ELMD_CHECK(strong != emphasis.children.end());
+    auto outer_range = out.document.source_map.find_node_by_id(emphasis.id);
+    ELMD_CHECK(outer_range != nullptr);
+    if (outer_range) {
+        ELMD_CHECK_EQ(outer_range->source_range.start.v, 0u);
+        ELMD_CHECK_EQ(outer_range->source_range.end.v, 22u);
+        ELMD_CHECK_EQ(outer_range->content_range.start.v, 1u);
+        ELMD_CHECK_EQ(outer_range->content_range.end.v, 21u);
+    }
+    if (strong != emphasis.children.end()) {
+        auto inner_range = out.document.source_map.find_node_by_id(strong->id);
+        ELMD_CHECK(inner_range != nullptr);
+        if (inner_range) {
+            ELMD_CHECK_EQ(inner_range->source_range.start.v, 7u);
+            ELMD_CHECK_EQ(inner_range->source_range.end.v, 16u);
+            ELMD_CHECK_EQ(inner_range->content_range.start.v, 9u);
+            ELMD_CHECK_EQ(inner_range->content_range.end.v, 14u);
+        }
+    }
 }
 
 ELMD_TEST(test_parse_inline_code) {
@@ -271,11 +381,11 @@ ELMD_TEST(test_thematic_break_is_consumed_once_with_exact_ranges) {
     ELMD_CHECK(out.document.blocks[1].kind == BlockKind::Paragraph);
 }
 
-ELMD_TEST(test_thematic_break_allows_commonmark_marker_spacing) {
+ELMD_TEST(test_thematic_break_rejects_spacing_between_markers) {
     for (auto const& source : {std::string("- - -"), std::string("*  *  *"), std::string("_\t_\t_")}) {
         auto out = parse_text(1, source);
         ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
-        ELMD_CHECK(out.document.blocks[0].kind == BlockKind::ThematicBreak);
+        ELMD_CHECK(out.document.blocks[0].kind != BlockKind::ThematicBreak);
     }
 }
 
@@ -287,20 +397,20 @@ ELMD_TEST(test_thematic_break_accepts_arbitrarily_long_matching_marker_runs) {
     }
 }
 
-ELMD_TEST(test_thematic_break_with_spacing_interrupts_a_paragraph) {
+ELMD_TEST(test_spaced_markers_remain_paragraph_text) {
     auto out = parse_text(1, "before\n_ _ _ _\nafter");
-    ELMD_CHECK_EQ(out.document.blocks.size(), 3u);
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
     ELMD_CHECK(out.document.blocks[0].kind == BlockKind::Paragraph);
-    ELMD_CHECK(out.document.blocks[1].kind == BlockKind::ThematicBreak);
-    ELMD_CHECK(out.document.blocks[2].kind == BlockKind::Paragraph);
 }
 
-ELMD_TEST(test_long_dash_rules_are_not_frontmatter_delimiters) {
+ELMD_TEST(test_long_dash_rule_before_text_is_thematic_and_after_text_is_setext) {
     auto out = parse_text(1, "------\nbody\n------");
-    ELMD_CHECK_EQ(out.document.blocks.size(), 3u);
-    ELMD_CHECK(out.document.blocks[0].kind == BlockKind::ThematicBreak);
-    ELMD_CHECK(out.document.blocks[1].kind == BlockKind::Paragraph);
-    ELMD_CHECK(out.document.blocks[2].kind == BlockKind::ThematicBreak);
+    ELMD_CHECK_EQ(out.document.blocks.size(), 2u);
+    if (out.document.blocks.size() >= 2) {
+        ELMD_CHECK(out.document.blocks[0].kind == BlockKind::ThematicBreak);
+        ELMD_CHECK(out.document.blocks[1].kind == BlockKind::Heading);
+        ELMD_CHECK_EQ(out.document.blocks[1].level, 2);
+    }
     ELMD_CHECK(!blocks_has_kind(out.document.blocks, BlockKind::Frontmatter));
 }
 
@@ -309,6 +419,9 @@ ELMD_TEST(test_frontmatter_is_only_recognized_at_document_start) {
     ELMD_CHECK(!blocks_has_kind(out.document.blocks, BlockKind::Frontmatter));
     ELMD_CHECK_EQ(std::count_if(out.document.blocks.begin(), out.document.blocks.end(), [](auto const& block) {
         return block.kind == BlockKind::ThematicBreak;
+    }), 0);
+    ELMD_CHECK_EQ(std::count_if(out.document.blocks.begin(), out.document.blocks.end(), [](auto const& block) {
+        return block.kind == BlockKind::Heading && block.level == 2;
     }), 2);
 }
 
