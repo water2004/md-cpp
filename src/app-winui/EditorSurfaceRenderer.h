@@ -142,6 +142,7 @@ namespace winrt::ElMd
             std::size_t sourceEnd = 0;
             std::size_t rowCount = 0;
             std::size_t columnCount = 0;
+            bool editable = true;
             std::vector<float> rowBoundaries;
             std::vector<float> columnBoundaries;
             std::vector<VisualTableCell> cells;

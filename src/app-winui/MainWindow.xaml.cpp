@@ -101,6 +101,8 @@ namespace winrt::ElMd::implementation
 
         EditorSurface().PointerExited([this](auto const&, auto const&)
         {
+            hoverTooltip.reset();
+            Microsoft::UI::Xaml::Controls::ToolTipService::SetToolTip(EditorSurface(), nullptr);
             if (!tableDrag)
             {
                 editorRenderer.ClearPointer();
@@ -822,6 +824,16 @@ namespace winrt::ElMd::implementation
             return;
         }
 
+        if ((args.KeyModifiers() & winrt::Windows::System::VirtualKeyModifiers::Control) == winrt::Windows::System::VirtualKeyModifiers::Control)
+        {
+            if (auto link = LinkAtSourceOffset(*hit))
+            {
+                OpenLinkAsync(std::move(*link));
+                args.Handled(true);
+                return;
+            }
+        }
+
         if (TryToggleTaskCheckboxAt(*hit))
         {
             args.Handled(true);
@@ -841,6 +853,18 @@ namespace winrt::ElMd::implementation
     {
         auto point = args.GetCurrentPoint(EditorSurface()).Position();
         editorRenderer.UpdatePointer(static_cast<float>(point.X), static_cast<float>(point.Y));
+        if (!pointerSelecting && !tableDrag)
+        {
+            auto hit = editorRenderer.HitTest(static_cast<float>(point.X), static_cast<float>(point.Y));
+            auto tooltip = hit ? TooltipAtSourceOffset(*hit) : std::nullopt;
+            if (tooltip != hoverTooltip)
+            {
+                hoverTooltip = tooltip;
+                Microsoft::UI::Xaml::Controls::ToolTipService::SetToolTip(
+                    EditorSurface(),
+                    tooltip ? winrt::box_value(winrt::to_hstring(*tooltip)) : nullptr);
+            }
+        }
         if (tableDrag)
         {
             auto rows = tableDrag->kind == winrt::ElMd::EditorSurfaceRenderer::TableActionKind::DragRow;
@@ -996,6 +1020,103 @@ namespace winrt::ElMd::implementation
         elmd::Command command;
         command.kind = elmd::CommandKind::ToggleTaskCheckbox;
         return ExecuteEditorCommand(command);
+    }
+
+    std::optional<std::string> MainWindow::LinkAtSourceOffset(std::size_t offset) const
+    {
+        auto scanItems = [&](auto& self, auto const& items) -> std::optional<std::string>
+        {
+            for (auto const& item : items)
+            {
+                if (item.kind == elmd::InlineRenderItem::Kind::Link && item.source_range.start.v <= offset && offset <= item.source_range.end.v) return item.href;
+                if (!item.children.empty()) if (auto nested = self(self, item.children)) return nested;
+            }
+            return std::nullopt;
+        };
+        auto scanBlock = [&](auto& self, auto const& block) -> std::optional<std::string>
+        {
+            if (block.kind == elmd::RenderBlockKind::Image && block.link && block.source_range.start.v <= offset && offset <= block.source_range.end.v) return *block.link;
+            if (auto link = scanItems(scanItems, block.inline_items)) return link;
+            if (block.callout_title) if (auto link = scanItems(scanItems, *block.callout_title)) return link;
+            for (auto const& cell : block.table_cells) if (auto link = scanItems(scanItems, cell)) return link;
+            for (auto const& child : block.child_blocks) if (auto link = self(self, child)) return link;
+            return std::nullopt;
+        };
+        for (auto const& block : editorSession.Core().renderModel.blocks) if (auto link = scanBlock(scanBlock, block)) return link;
+        return std::nullopt;
+    }
+
+    std::optional<std::string> MainWindow::TooltipAtSourceOffset(std::size_t offset) const
+    {
+        auto scanItems = [&](auto& self, auto const& items) -> std::optional<std::string>
+        {
+            for (auto const& item : items)
+            {
+                if (item.source_range.start.v <= offset && offset <= item.source_range.end.v)
+                {
+                    if (item.title && !item.title->empty()) return *item.title;
+                    if (item.kind == elmd::InlineRenderItem::Kind::Link && !item.href.empty()) return item.href;
+                    if (item.kind == elmd::InlineRenderItem::Kind::Image && !item.alt.empty()) return item.alt;
+                }
+                if (!item.children.empty()) if (auto nested = self(self, item.children)) return nested;
+            }
+            return std::nullopt;
+        };
+        auto scanBlock = [&](auto& self, auto const& block) -> std::optional<std::string>
+        {
+            if (block.kind == elmd::RenderBlockKind::Image && block.source_range.start.v <= offset && offset <= block.source_range.end.v)
+            {
+                if (block.title && !block.title->empty()) return *block.title;
+                if (!block.alt.empty()) return block.alt;
+            }
+            if (auto tooltip = scanItems(scanItems, block.inline_items)) return tooltip;
+            if (block.callout_title) if (auto tooltip = scanItems(scanItems, *block.callout_title)) return tooltip;
+            for (auto const& cell : block.table_cells) if (auto tooltip = scanItems(scanItems, cell)) return tooltip;
+            for (auto const& child : block.child_blocks) if (auto tooltip = self(self, child)) return tooltip;
+            return std::nullopt;
+        };
+        for (auto const& block : editorSession.Core().renderModel.blocks) if (auto tooltip = scanBlock(scanBlock, block)) return tooltip;
+        return std::nullopt;
+    }
+
+    winrt::fire_and_forget MainWindow::OpenLinkAsync(std::string href)
+    {
+        auto lifetime = get_strong();
+        while (!href.empty() && static_cast<unsigned char>(href.front()) <= 0x20) href.erase(href.begin());
+        while (!href.empty() && static_cast<unsigned char>(href.back()) <= 0x20) href.pop_back();
+        if (href.empty()) co_return;
+        if (href.front() == '#')
+        {
+            if (auto item = editorSession.Core().renderModel.outline.find_item_by_slug(href.substr(1)))
+            {
+                editorSession.SetSelection(item->source_range.start.v, item->source_range.start.v);
+                NotifyTextInputSelectionChanged();
+                editorRenderer.ScrollToSourceOffset(item->source_range.start.v);
+                RenderEditorSurface();
+            }
+            co_return;
+        }
+        auto lower = href;
+        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+        try
+        {
+            if (lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:"))
+            {
+                co_await winrt::Windows::System::Launcher::LaunchUriAsync(winrt::Windows::Foundation::Uri(winrt::to_hstring(href)));
+                co_return;
+            }
+            auto colon = lower.find(':');
+            auto boundary = lower.find_first_of("/?#");
+            if (colon != std::string::npos && (boundary == std::string::npos || colon < boundary)) co_return;
+            auto path = std::filesystem::path(winrt::to_hstring(href).c_str());
+            if (path.is_relative()) path = std::filesystem::path(editorSession.Core().baseDirectory) / path;
+            auto file = co_await winrt::Windows::Storage::StorageFile::GetFileFromPathAsync(path.lexically_normal().wstring());
+            co_await winrt::Windows::System::Launcher::LaunchFileAsync(file);
+        }
+        catch (winrt::hresult_error const& error)
+        {
+            SetStatus(L"Open link failed: " + error.message());
+        }
     }
 
     void MainWindow::CopySelectionToClipboard()

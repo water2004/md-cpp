@@ -227,10 +227,17 @@ public:
     }
 
     std::optional<std::pair<std::size_t, std::size_t>> html_closing_tag(std::string_view name, std::size_t from, std::size_t limit) const {
+        std::size_t depth = 1;
         for (auto cursor = from; cursor < limit; ++cursor) {
             if (cps[cursor] != U'<') continue;
             auto tag = html_tag_at(cursor, limit);
-            if (tag && tag->closing && tag->name == name) return std::pair{cursor, tag->end};
+            if (!tag || tag->name != name) continue;
+            if (tag->closing) {
+                if (--depth == 0) return std::pair{cursor, tag->end};
+            } else if (!tag->self_closing) {
+                ++depth;
+            }
+            cursor = tag->end - 1;
         }
         return std::nullopt;
     }
@@ -254,6 +261,21 @@ public:
 
     static bool ascii_punctuation(char32_t value) {
         return (value >= U'!' && value <= U'/') || (value >= U':' && value <= U'@') || (value >= U'[' && value <= U'`') || (value >= U'{' && value <= U'~');
+    }
+
+    static std::optional<float> html_dimension(HtmlTag const& tag, std::string_view name) {
+        auto found = tag.attributes.find(std::string(name));
+        if (found == tag.attributes.end()) return std::nullopt;
+        auto value = found->second;
+        while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) value.pop_back();
+        if (value.size() >= 2 && value.ends_with("px")) value.resize(value.size() - 2);
+        try {
+            auto parsed = std::stof(value);
+            if (!std::isfinite(parsed) || parsed <= 0.0f) return std::nullopt;
+            return (std::min)(parsed, 4096.0f);
+        } catch (...) {
+            return std::nullopt;
+        }
     }
 
     std::optional<std::pair<std::u32string, std::size_t>> html_entity_at(std::size_t at, std::size_t limit) const {
@@ -1101,6 +1123,8 @@ public:
         block.image_alt = image->alt;
         block.image_title = image->title;
         block.image_link = std::move(link);
+        block.image_width = image->image_width;
+        block.image_height = image->image_height;
         if (!source_ranges.empty() && source_ranges.back().node_id == block.id) source_ranges.back().source_range.end = CharOffset(pos);
         return block;
     }
@@ -1195,6 +1219,8 @@ public:
             node.href = src;
             if (tag->attributes.contains("alt")) node.alt = tag->attributes.at("alt");
             if (tag->attributes.contains("title")) node.title = tag->attributes.at("title");
+            node.image_width = html_dimension(*tag, "width");
+            node.image_height = html_dimension(*tag, "height");
             images.push_back({id, node.href, node.alt});
             return node;
         }
@@ -1319,6 +1345,7 @@ public:
             BlockNode block;
             block.kind = BlockKind::Table;
             std::vector<TableRow> rows;
+            std::vector<bool> row_headers;
             auto cursor = content_start;
             while (cursor < content_end) {
                 auto row_tag = html_tag_at(cursor, content_end);
@@ -1327,12 +1354,14 @@ public:
                 if (!row_closing) break;
                 TableRow row;
                 row.id = next_node_id();
+                bool row_header = false;
                 auto cell_cursor = row_tag->end;
                 while (cell_cursor < row_closing->first) {
                     auto cell_tag = html_tag_at(cell_cursor, row_closing->first);
                     if (!cell_tag || cell_tag->closing || (cell_tag->name != "td" && cell_tag->name != "th")) { ++cell_cursor; continue; }
                     auto cell_closing = html_closing_tag(cell_tag->name, cell_tag->end, row_closing->first);
                     if (!cell_closing) break;
+                    row_header = row_header || cell_tag->name == "th";
                     TableCell cell;
                     cell.id = next_node_id();
                     auto text_id = next_node_id();
@@ -1343,11 +1372,12 @@ public:
                     cell_cursor = cell_closing->second;
                 }
                 push_range(row.id, CharRange(CharOffset(row_tag->start), CharOffset(row_closing->second)), CharRange(CharOffset(row_tag->end), CharOffset(row_closing->first)));
-                if (!row.cells.empty()) rows.push_back(std::move(row));
+                if (!row.cells.empty()) { rows.push_back(std::move(row)); row_headers.push_back(row_header); }
                 cursor = row_closing->second;
             }
             if (rows.empty()) return std::nullopt;
             block.id = next_node_id();
+            block.table_header_row = !row_headers.empty() && row_headers.front();
             block.table_header.reserve(rows.front().cells.size());
             for (auto& cell : rows.front().cells) block.table_header.push_back(std::move(cell));
             for (std::size_t index = 1; index < rows.size(); ++index) block.table_rows.push_back(std::move(rows[index]));

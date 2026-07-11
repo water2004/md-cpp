@@ -72,6 +72,15 @@ ELMD_TEST(test_export_html_only_allows_data_urls_for_images) {
     ELMD_CHECK(res.value.content.find("data:text/html") == std::string::npos);
 }
 
+ELMD_TEST(test_export_html_preserves_safe_image_dimensions) {
+    auto out = parse_text(1, "<img src=\"image.png\" width=\"320\" height=\"180\">\n");
+    ExportOptions opts;
+    auto res = export_html("", out.document, opts);
+    ELMD_CHECK(res.ok);
+    ELMD_CHECK(res.value.content.find("width=\"320.000000\"") != std::string::npos);
+    ELMD_CHECK(res.value.content.find("height=\"180.000000\"") != std::string::npos);
+}
+
 ELMD_TEST(test_export_html_drop_policy) {
     auto out = parse_text(1, "<iframe>x</iframe>\n");
     ExportOptions opts;

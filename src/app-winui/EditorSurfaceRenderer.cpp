@@ -195,11 +195,23 @@ namespace winrt::ElMd
             bool strikethrough = false;
         };
 
+        struct ImageOverlay
+        {
+            std::uint32_t displayStart = 0;
+            std::size_t sourceStart = 0;
+            std::size_t sourceEnd = 0;
+            std::string source;
+            std::string alt;
+            std::optional<float> width;
+            std::optional<float> height;
+        };
+
         std::u32string text;
         std::vector<std::size_t> displayToSource;
         std::vector<InlineStyleRange> ranges;
         std::vector<MathOverlay> mathOverlays;
         std::vector<MathPreview> mathPreviews;
+        std::vector<ImageOverlay> imageOverlays;
     };
 
     class MathInlineObject final : public ::Microsoft::WRL::RuntimeClass<::Microsoft::WRL::RuntimeClassFlags<::Microsoft::WRL::ClassicCom>, IDWriteInlineObject>
@@ -246,6 +258,7 @@ namespace winrt::ElMd
     bool IsStyleMarker(elmd::InlineRenderItem const& item)
     {
         if (item.kind != elmd::InlineRenderItem::Kind::Marker) return false;
+        if (item.marker_owner) return true;
         bool backticks = !item.text.empty();
         for (char32_t ch : item.text) if (ch != U'`') backticks = false;
         return item.text == U"*" || item.text == U"**" || item.text == U"~~" || backticks;
@@ -290,11 +303,31 @@ namespace winrt::ElMd
     {
         std::vector<bool> visible(items.size(), true);
         std::vector<std::pair<std::u32string, std::size_t>> stack;
+        std::unordered_map<std::uint64_t, std::size_t> owners;
         for (std::size_t index = 0; index < items.size(); ++index)
         {
             auto const& item = items[index];
             if (!IsStyleMarker(item))
             {
+                continue;
+            }
+
+            if (item.marker_owner)
+            {
+                auto found = owners.find(item.marker_owner->v);
+                if (found == owners.end())
+                {
+                    owners.emplace(item.marker_owner->v, index);
+                    visible[index] = false;
+                }
+                else
+                {
+                    auto openIndex = found->second;
+                    auto reveal = items[openIndex].source_range.start.v <= caret && caret <= item.source_range.end.v;
+                    visible[openIndex] = reveal;
+                    visible[index] = reveal;
+                    owners.erase(found);
+                }
                 continue;
             }
 
@@ -320,6 +353,7 @@ namespace winrt::ElMd
         {
             visible[entry.second] = true;
         }
+        for (auto const& entry : owners) visible[entry.second] = true;
         return visible;
     }
 
@@ -372,6 +406,11 @@ namespace winrt::ElMd
         {
             preview.displayStart += offset;
             target.mathPreviews.push_back(std::move(preview));
+        }
+        for (auto& overlay : source.imageOverlays)
+        {
+            overlay.displayStart += offset;
+            target.imageOverlays.push_back(std::move(overlay));
         }
     }
 
@@ -478,7 +517,12 @@ namespace winrt::ElMd
             if (item.kind == elmd::InlineRenderItem::Kind::Image)
             {
                 if (CaretTouchesRange(caret, item.source_range)) AppendSourceText(display, sourceText, item.source_range.start.v, item.source_range.end.v, item.style, false);
-                else AppendGeneratedText(display, item.alt.empty() ? U"image" : elmd::utf8_to_cps(item.alt), item.source_range.start.v, item.style);
+                else
+                {
+                    auto displayStart = static_cast<std::uint32_t>(display.text.size());
+                    AppendGeneratedText(display, U"\uFFFC", item.source_range.start.v, item.style);
+                    display.imageOverlays.push_back(DisplayInlineText::ImageOverlay{ displayStart, item.source_range.start.v, item.source_range.end.v, item.src, item.alt, item.image_width, item.image_height });
+                }
                 continue;
             }
             if (item.kind == elmd::InlineRenderItem::Kind::Math)
@@ -1257,6 +1301,69 @@ namespace winrt::ElMd
             return (std::max)(fallbackHeight, metrics.height);
         };
 
+        struct InlineImageDraw
+        {
+            std::uint32_t displayStart = 0;
+            std::optional<CachedRasterImage> image;
+            std::wstring alt;
+            float width = 0.0f;
+            float height = 0.0f;
+        };
+
+        auto resolveInlineImages = [&](IDWriteTextLayout* layout, std::vector<DisplayInlineText::ImageOverlay> const& overlays, float availableWidth)
+        {
+            std::vector<InlineImageDraw> resolved;
+            if (!layout) return resolved;
+            resolved.reserve(overlays.size());
+            for (auto const& overlay : overlays)
+            {
+                InlineImageDraw draw;
+                draw.displayStart = overlay.displayStart;
+                draw.image = LoadRasterImage(sessionCore.baseDirectory, overlay.source);
+                draw.alt = winrt::to_hstring(overlay.alt.empty() ? std::string("image") : overlay.alt).c_str();
+                if (draw.image)
+                {
+                    draw.width = overlay.width.value_or(draw.image->width);
+                    draw.height = overlay.height.value_or(draw.image->height);
+                    if (overlay.width && !overlay.height) draw.height = draw.image->height * draw.width / draw.image->width;
+                    if (!overlay.width && overlay.height) draw.width = draw.image->width * draw.height / draw.image->height;
+                    auto scale = (std::min)(1.0f, (std::min)((std::max)(48.0f, availableWidth * 0.75f) / draw.width, 240.0f / draw.height));
+                    draw.width = (std::max)(1.0f, draw.width * scale);
+                    draw.height = (std::max)(styleSheet.body.lineHeight, draw.height * scale);
+                }
+                else
+                {
+                    draw.width = overlay.width.value_or((std::min)((std::max)(48.0f, static_cast<float>(draw.alt.size()) * styleSheet.body.size * 0.56f), (std::max)(48.0f, availableWidth)));
+                    draw.height = overlay.height.value_or(styleSheet.body.lineHeight);
+                }
+                auto object = ::Microsoft::WRL::Make<MathInlineObject>(draw.width, draw.height, draw.height);
+                if (object) layout->SetInlineObject(object.Get(), DWRITE_TEXT_RANGE{ draw.displayStart, 1 });
+                resolved.push_back(std::move(draw));
+            }
+            return resolved;
+        };
+
+        auto drawInlineImages = [&](IDWriteTextLayout* layout, D2D1_POINT_2F origin, std::vector<InlineImageDraw> const& images)
+        {
+            if (!layout) return;
+            for (auto const& image : images)
+            {
+                float pointX = 0.0f;
+                float pointY = 0.0f;
+                DWRITE_HIT_TEST_METRICS metrics{};
+                if (FAILED(layout->HitTestTextPosition(image.displayStart, FALSE, &pointX, &pointY, &metrics))) continue;
+                auto rect = D2D1::RectF(origin.x + pointX, origin.y + pointY, origin.x + pointX + image.width, origin.y + pointY + image.height);
+                if (image.image)
+                {
+                    d2dContext->DrawBitmap(image.image->bitmap.Get(), rect, 1.0f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+                }
+                else
+                {
+                    d2dContext->DrawTextW(image.alt.c_str(), static_cast<UINT32>(image.alt.size()), textFormat.Get(), rect, mutedBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                }
+            }
+        };
+
         auto addVisualLinesForBlock = [&](std::size_t blockIndex)
         {
             auto const& block = visualBlocks[blockIndex];
@@ -1386,32 +1493,51 @@ namespace winrt::ElMd
             if (block.kind == elmd::RenderBlockKind::Table)
             {
                 auto tableSource = elmd::table_source_at(sourceText, block.source_range.start.v);
-                if (tableSource && tableSource->rows.size() >= 2 && tableSource->column_count > 0)
+                auto markdownTable = tableSource && tableSource->rows.size() >= 2 && tableSource->column_count > 0;
+                auto modeledTable = block.row_count > 0 && block.column_count > 0 && !block.table_cells.empty();
+                if (markdownTable || modeledTable)
                 {
                     VisualTable table;
                     table.sourceStart = block.source_range.start.v;
                     table.sourceEnd = block.source_range.end.v;
-                    table.columnCount = tableSource->column_count;
-                    table.rowCount = tableSource->rows.size() - 1;
+                    table.editable = markdownTable;
+                    table.columnCount = markdownTable ? tableSource->column_count : block.column_count;
+                    table.rowCount = markdownTable ? tableSource->rows.size() - 1 : block.row_count;
                     auto tableWidth = (std::max)(1.0f, documentRight - documentLeft);
                     auto columnWidth = tableWidth / static_cast<float>(table.columnCount);
                     std::vector<float> rowHeights(table.rowCount, styleSheet.body.lineHeight + 16.0f);
                     std::vector<DisplayInlineText> tableDisplays;
+                    std::vector<std::vector<InlineImageDraw>> tableImageDraws;
                     tableDisplays.reserve(table.rowCount * table.columnCount);
+                    tableImageDraws.reserve(table.rowCount * table.columnCount);
 
                     for (std::size_t row = 0; row < table.rowCount; ++row)
                     {
-                        auto sourceRowIndex = row == 0 ? 0 : row + 1;
-                        auto const& sourceRow = tableSource->rows[sourceRowIndex];
                         for (std::size_t column = 0; column < table.columnCount; ++column)
                         {
-                            auto sourceStart = sourceRow.line_range.end.v;
+                            auto sourceStart = block.source_range.start.v;
                             auto sourceEnd = sourceStart;
-                            if (column < sourceRow.cells.size())
+                            if (markdownTable)
                             {
-                                auto const& sourceCell = sourceRow.cells[column];
-                                sourceStart = sourceCell.content_range.start.v;
-                                sourceEnd = sourceCell.content_range.end.v;
+                                auto sourceRowIndex = row == 0 ? 0 : row + 1;
+                                auto const& sourceRow = tableSource->rows[sourceRowIndex];
+                                sourceStart = sourceRow.line_range.end.v;
+                                sourceEnd = sourceStart;
+                                if (column < sourceRow.cells.size())
+                                {
+                                    auto const& sourceCell = sourceRow.cells[column];
+                                    sourceStart = sourceCell.content_range.start.v;
+                                    sourceEnd = sourceCell.content_range.end.v;
+                                }
+                            }
+                            else
+                            {
+                                auto rangeIndex = row * table.columnCount + column;
+                                if (rangeIndex < block.table_cell_ranges.size())
+                                {
+                                    sourceStart = block.table_cell_ranges[rangeIndex].start.v;
+                                    sourceEnd = block.table_cell_ranges[rangeIndex].end.v;
+                                }
                             }
                             DisplayInlineText display;
                             auto renderCellIndex = row * table.columnCount + column;
@@ -1443,7 +1569,7 @@ namespace winrt::ElMd
                                 layout->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
                                 applyInlineStyles(layout.Get(), display.ranges);
                                 ApplyMathInlineObjects(layout.Get(), display.mathOverlays);
-                                if (row == 0)
+                                if (row == 0 && block.table_header_row)
                                 {
                                     layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_RANGE{0, static_cast<UINT32>(wide.size())});
                                 }
@@ -1458,6 +1584,7 @@ namespace winrt::ElMd
                                     rowHeights[row] = (std::max)(rowHeights[row], metrics.height + 16.0f);
                                 }
                             }
+                            auto imageDraws = resolveInlineImages(layout.Get(), display.imageOverlays, (std::max)(1.0f, columnWidth - 20.0f));
                             VisualTableCell cell;
                             cell.sourceStart = sourceStart;
                             cell.sourceEnd = sourceEnd;
@@ -1468,6 +1595,7 @@ namespace winrt::ElMd
                             cell.textHeight = cellTextHeight;
                             cell.layout = std::move(layout);
                             tableDisplays.push_back(std::move(display));
+                            tableImageDraws.push_back(std::move(imageDraws));
                             table.cells.push_back(std::move(cell));
                         }
                     }
@@ -1533,6 +1661,7 @@ namespace winrt::ElMd
                                 }
                             }
                             d2dContext->DrawTextLayout(cell.textOrigin, cell.layout.Get(), textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                            drawInlineImages(cell.layout.Get(), cell.textOrigin, tableImageDraws[cellIndex]);
                             for (auto const& overlay : cellDisplay.mathOverlays)
                             {
                                 float pointX = 0.0f;
@@ -1645,6 +1774,7 @@ namespace winrt::ElMd
                     std::size_t sourceStart = 0;
                     std::size_t sourceEnd = 0;
                     bool code = false;
+                    std::vector<InlineImageDraw> images;
                 };
                 std::vector<QuoteBox> quoteBoxes;
                 std::vector<QuoteFragment> quoteFragments;
@@ -1688,6 +1818,7 @@ namespace winrt::ElMd
                     auto layout = createLayout(ToWide(display.text), format, textWidth);
                     applyInlineStyles(layout.Get(), display.ranges);
                     ApplyMathInlineObjects(layout.Get(), display.mathOverlays);
+                    auto images = resolveInlineImages(layout.Get(), display.imageOverlays, textWidth);
                     auto fallbackHeight = code ? styleSheet.code.lineHeight : styleSheet.body.lineHeight;
                     auto fragmentHeight = measureTextHeight(layout.Get(), fallbackHeight) + verticalPadding * 2.0f;
                     QuoteFragment fragment;
@@ -1698,6 +1829,7 @@ namespace winrt::ElMd
                     fragment.sourceStart = child.content_range.start.v;
                     fragment.sourceEnd = child.content_range.end.v;
                     fragment.code = code;
+                    fragment.images = std::move(images);
                     fragment.display = std::move(display);
                     fragment.layout = std::move(layout);
                     quoteFragments.push_back(std::move(fragment));
@@ -1769,6 +1901,7 @@ namespace winrt::ElMd
                             }
                         }
                         d2dContext->DrawTextLayout(fragment.origin, fragment.layout.Get(), fragment.code ? codeBrush.Get() : textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                        drawInlineImages(fragment.layout.Get(), fragment.origin, fragment.images);
                         for (auto const& overlay : fragment.display.mathOverlays)
                         {
                             float pointX = 0.0f;
@@ -1822,6 +1955,7 @@ namespace winrt::ElMd
             std::vector<std::size_t> displayToSource;
             std::vector<DisplayInlineText::MathOverlay> inlineMathOverlays;
             std::vector<DisplayInlineText::MathPreview> inlineMathPreviews;
+            std::vector<DisplayInlineText::ImageOverlay> inlineImageOverlays;
             std::optional<MathJaxSvg> blockMath;
             bool showRawMath = false;
             std::optional<MermaidSvg> blockMermaid;
@@ -1860,6 +1994,7 @@ namespace winrt::ElMd
                     displayToSource = std::move(display.displayToSource);
                     inlineMathOverlays = std::move(display.mathOverlays);
                     inlineMathPreviews = std::move(display.mathPreviews);
+                    inlineImageOverlays = std::move(display.imageOverlays);
                     if (block.block_style.margin_top >= 24.0f)
                     {
                         format = heading1Format.Get();
@@ -2004,6 +2139,7 @@ namespace winrt::ElMd
                     displayToSource = std::move(display.displayToSource);
                     inlineMathOverlays = std::move(display.mathOverlays);
                     inlineMathPreviews = std::move(display.mathPreviews);
+                    inlineImageOverlays = std::move(display.imageOverlays);
                     inset = 16.0f;
                     textTop = 12.0f;
                     fillPanel = true;
@@ -2112,6 +2248,7 @@ namespace winrt::ElMd
                     displayToSource = std::move(display.displayToSource);
                     inlineMathOverlays = std::move(display.mathOverlays);
                     inlineMathPreviews = std::move(display.mathPreviews);
+                    inlineImageOverlays = std::move(display.imageOverlays);
                     brush = mutedBrush.Get();
                     break;
                 }
@@ -2150,6 +2287,7 @@ namespace winrt::ElMd
             auto layout = createLayout(wide, format, textWidth);
             applyInlineStyles(layout.Get(), inlineRanges);
             ApplyMathInlineObjects(layout.Get(), inlineMathOverlays);
+            auto inlineImageDraws = resolveInlineImages(layout.Get(), inlineImageOverlays, textWidth);
             std::optional<D2D1_POINT_2F> blockMathOrigin;
             std::vector<std::vector<D2D1_POINT_2F>> inlineMathPreviewOrigins;
             std::optional<D2D1_POINT_2F> blockMermaidOrigin;
@@ -2238,9 +2376,13 @@ namespace winrt::ElMd
             if (block.kind == elmd::RenderBlockKind::Image && blockImage)
             {
                 auto availableWidth = (std::max)(1.0f, documentRight - documentLeft - inset * 2.0f);
-                auto scale = (std::min)(1.0f, (std::min)(availableWidth / blockImage->width, 600.0f / blockImage->height));
-                auto imageWidth = blockImage->width * scale;
-                auto imageHeight = blockImage->height * scale;
+                auto imageWidth = block.image_width.value_or(blockImage->width);
+                auto imageHeight = block.image_height.value_or(blockImage->height);
+                if (block.image_width && !block.image_height) imageHeight = blockImage->height * imageWidth / blockImage->width;
+                if (!block.image_width && block.image_height) imageWidth = blockImage->width * imageHeight / blockImage->height;
+                auto scale = (std::min)(1.0f, (std::min)(availableWidth / imageWidth, 600.0f / imageHeight));
+                imageWidth *= scale;
+                imageHeight *= scale;
                 auto imageX = documentLeft + (documentRight - documentLeft - imageWidth) * 0.5f;
                 auto imageY = y + 8.0f;
                 if (showRawImage)
@@ -2316,6 +2458,7 @@ namespace winrt::ElMd
                 }
 
                 d2dContext->DrawTextLayout(origin, layout.Get(), brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                drawInlineImages(layout.Get(), origin, inlineImageDraws);
 
                 for (auto const& preview : inlineMathPreviews)
                 {
@@ -2498,6 +2641,7 @@ namespace winrt::ElMd
         {
             for (auto const& table : visualTables)
             {
+                if (!table.editable) continue;
                 auto pointer = *pointerPosition;
                 if (table.rect.top <= pointer.y && pointer.y <= table.rect.bottom && table.rect.left - 56.0f <= pointer.x && pointer.x <= table.rect.left + 8.0f)
                 {
@@ -2648,6 +2792,7 @@ namespace winrt::ElMd
     {
         for (auto const& table : visualTables)
         {
+            if (!table.editable) continue;
             auto source_for_row = [&](std::size_t row) {
                 auto index = (std::min)(row, table.rowCount - 1) * table.columnCount;
                 return index < table.cells.size() ? table.cells[index].sourceStart : table.sourceStart;
@@ -2713,6 +2858,7 @@ namespace winrt::ElMd
     {
         for (auto const& table : visualTables)
         {
+            if (!table.editable) continue;
             if (draggedTableAction && (draggedTableAction->sourceOffset < table.sourceStart || draggedTableAction->sourceOffset > table.sourceEnd)) continue;
             if (rows)
             {

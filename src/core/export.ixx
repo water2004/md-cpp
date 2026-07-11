@@ -97,6 +97,13 @@ inline std::string sanitized_target(std::string_view value, bool image) {
     return result;
 }
 
+inline std::string image_dimension_attributes(std::optional<float> width, std::optional<float> height) {
+    std::string attributes;
+    if (width) attributes += " width=\"" + std::to_string(*width) + "\"";
+    if (height) attributes += " height=\"" + std::to_string(*height) + "\"";
+    return attributes;
+}
+
 inline std::string inline_to_html(const InlineNode& n, ExportRawHtmlPolicy pol) {
     using K = InlineKind;
     switch (n.kind) {
@@ -134,7 +141,7 @@ inline std::string inline_to_html(const InlineNode& n, ExportRawHtmlPolicy pol) 
         case K::Image: {
             std::string title_attr;
             if (n.title) title_attr = " title=\"" + escape_text(*n.title) + "\"";
-            return "<img src=\"" + escape_text(sanitized_target(n.href, true)) + "\" alt=\"" + escape_text(n.alt) + "\"" + title_attr + " />";
+            return "<img src=\"" + escape_text(sanitized_target(n.href, true)) + "\" alt=\"" + escape_text(n.alt) + "\"" + title_attr + image_dimension_attributes(n.image_width, n.image_height) + " />";
         }
         case K::InlineMath:
             return "<span class=\"math-inline\">" + escape_raw_html(cps_to_utf8(n.text)) + "</span>";
@@ -239,7 +246,7 @@ inline std::string block_to_html(const BlockNode& b, ExportRawHtmlPolicy pol) {
         }
         case BK::ImageBlock: {
             auto title = b.image_title ? " title=\"" + escape_text(*b.image_title) + "\"" : std::string{};
-            auto image = "<img src=\"" + escape_text(sanitized_target(b.src, true)) + "\" alt=\"" + escape_text(b.image_alt) + "\"" + title + " />";
+            auto image = "<img src=\"" + escape_text(sanitized_target(b.src, true)) + "\" alt=\"" + escape_text(b.image_alt) + "\"" + title + image_dimension_attributes(b.image_width, b.image_height) + " />";
             if (b.image_link) image = "<a href=\"" + escape_text(sanitized_target(*b.image_link, false)) + "\">" + image + "</a>";
             return image + "\n";
         }

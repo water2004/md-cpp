@@ -134,6 +134,17 @@ ELMD_TEST(builds_table_block) {
     ELMD_CHECK(m.blocks[0].column_count >= 2);
 }
 
+ELMD_TEST(builds_safe_html_table_with_cell_ranges) {
+    auto m = build_model("<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>\n");
+    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Table);
+    ELMD_CHECK(m.blocks[0].table_header_row);
+    ELMD_CHECK_EQ(m.blocks[0].row_count, 2u);
+    ELMD_CHECK_EQ(m.blocks[0].column_count, 2u);
+    ELMD_CHECK_EQ(m.blocks[0].table_cell_ranges.size(), 4u);
+    for (auto const& range : m.blocks[0].table_cell_ranges) ELMD_CHECK(range.end.v >= range.start.v);
+}
+
 ELMD_TEST(builds_ordered_list_with_source_markers_and_line_breaks) {
     auto m = build_model("9. alpha\n10. beta\n");
     ELMD_CHECK_EQ(m.blocks.size(), 1u);
@@ -144,6 +155,24 @@ ELMD_TEST(builds_ordered_list_with_source_markers_and_line_breaks) {
     ELMD_CHECK(markers.find(U"9. ") != std::u32string::npos);
     ELMD_CHECK(markers.find(U"10. ") != std::u32string::npos);
     ELMD_CHECK(markers.find(U"\n") != std::u32string::npos);
+}
+
+ELMD_TEST(ordered_list_display_numbers_are_sequential) {
+    auto m = build_model("1. first\n8. second\n3. third\n");
+    std::vector<std::u32string> source;
+    std::vector<std::u32string> display;
+    for (auto const& item : m.blocks[0].inline_items) {
+        if (item.kind != InlineRenderItem::Kind::Marker || item.marker_role != MarkerRole::ListNumber) continue;
+        source.push_back(item.text);
+        display.push_back(item.display_text);
+    }
+    ELMD_CHECK_EQ(source.size(), 3u);
+    ELMD_CHECK(source[0] == U"1. ");
+    ELMD_CHECK(source[1] == U"8. ");
+    ELMD_CHECK(source[2] == U"3. ");
+    ELMD_CHECK(display[0] == U"1. ");
+    ELMD_CHECK(display[1] == U"2. ");
+    ELMD_CHECK(display[2] == U"3. ");
 }
 
 ELMD_TEST(unordered_list_preserves_source_markers_and_presents_bullets) {
@@ -184,8 +213,10 @@ ELMD_TEST(nested_list_blocks_reach_the_render_model) {
     ELMD_CHECK_EQ(m.blocks.size(), 1u);
     std::u32string text;
     bool image = false;
+    bool quote = false;
     for (auto const& item : m.blocks[0].inline_items) {
         if (item.kind == InlineRenderItem::Kind::Image) image = true;
+        if (item.kind == InlineRenderItem::Kind::Marker && item.display_text == U"\u2502 ") quote = true;
         else if (item.kind == InlineRenderItem::Kind::Link) for (auto const& child : item.children) text += child.text;
         else text += item.text;
     }
@@ -194,6 +225,7 @@ ELMD_TEST(nested_list_blocks_reach_the_render_model) {
     ELMD_CHECK(text.find(U"grandchild") != std::u32string::npos);
     ELMD_CHECK(text.find(U"quoted") != std::u32string::npos);
     ELMD_CHECK(image);
+    ELMD_CHECK(quote);
 }
 
 ELMD_TEST(math_inside_emphasis_renders_without_inheriting_text_style) {
@@ -447,10 +479,39 @@ ELMD_TEST(safe_block_html_becomes_rendered_content) {
     ELMD_CHECK(found);
 }
 
+ELMD_TEST(safe_inline_html_markers_share_their_node_owner) {
+    auto m = build_model("before <em>italic</em> after\n");
+    std::vector<InlineRenderItem const*> markers;
+    for (auto const& item : m.blocks[0].inline_items) if (item.kind == InlineRenderItem::Kind::Marker && item.marker_owner) markers.push_back(&item);
+    ELMD_CHECK_EQ(markers.size(), 2u);
+    if (markers.size() == 2) {
+        ELMD_CHECK(markers[0]->text == U"<em>");
+        ELMD_CHECK(markers[1]->text == U"</em>");
+        ELMD_CHECK(markers[0]->marker_owner == markers[1]->marker_owner);
+    }
+}
+
 ELMD_TEST(diagnostics_pass_through) {
     auto out = parse_text(1, "$x + 1\n");
     auto m = build_render_model(out.document, "$x + 1\n", out.outline);
     ELMD_CHECK(!m.diagnostics.empty());
+}
+
+ELMD_TEST(large_document_parse_and_render_model_build_are_bounded) {
+    std::string source;
+    source.reserve(512 * 1024);
+    for (std::size_t index = 0; index < 1200; ++index) {
+        source += "## Section " + std::to_string(index) + "\n\n";
+        source += "Paragraph with **bold**, [link](https://example.com), `$code`, and $x^2$.\n\n";
+        source += "- first item\n  - nested item\n- second item\n\n";
+    }
+    auto started = std::chrono::steady_clock::now();
+    auto parsed = parse_text(1, source);
+    auto model = build_render_model(parsed.document, source, parsed.outline);
+    auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+    ELMD_CHECK(parsed.document.blocks.size() >= 3600u);
+    ELMD_CHECK(model.blocks.size() >= parsed.document.blocks.size());
+    ELMD_CHECK(elapsed < 5.0);
 }
 
 ELMD_TEST(layout_empty) {

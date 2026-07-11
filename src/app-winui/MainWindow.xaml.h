@@ -39,6 +39,9 @@ namespace winrt::ElMd::implementation
         void HandleEditorDoubleTapped(winrt::Microsoft::UI::Xaml::Input::DoubleTappedRoutedEventArgs const& args);
         bool SelectWordAt(std::size_t offset);
         bool TryToggleTaskCheckboxAt(std::size_t offset);
+        std::optional<std::string> LinkAtSourceOffset(std::size_t offset) const;
+        std::optional<std::string> TooltipAtSourceOffset(std::size_t offset) const;
+        winrt::fire_and_forget OpenLinkAsync(std::string href);
         void CopySelectionToClipboard();
         void CutSelectionToClipboard();
         winrt::fire_and_forget PasteClipboardAsync();
@@ -61,6 +64,7 @@ namespace winrt::ElMd::implementation
         std::u32string pendingCharacterText;
         bool pointerSelecting = false;
         bool scrollBarUpdating = false;
+        std::optional<std::string> hoverTooltip;
         winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer scrollAnimationTimer{ nullptr };
         std::chrono::steady_clock::time_point lastScrollFrame{};
         std::size_t pointerAnchor = 0;

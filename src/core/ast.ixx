@@ -45,6 +45,8 @@ struct InlineNode {
     std::string href;           // Link / Image
     std::string alt;            // Image
     std::optional<std::string> title; // Link / Image
+    std::optional<float> image_width;
+    std::optional<float> image_height;
     InlineVec children;         // Emphasis / Strong / Strike / Link
     std::u32string opening_marker;
     std::u32string closing_marker;
@@ -84,10 +86,13 @@ struct BlockNode {
     std::vector<TableCell> table_header;
     std::vector<TableRow> table_rows;
     std::vector<TableAlignment> table_aligns;
+    bool table_header_row = true;
     std::string src;        // ImageBlock
     std::string image_alt;
     std::optional<std::string> image_title;
     std::optional<std::string> image_link;
+    std::optional<float> image_width;
+    std::optional<float> image_height;
     std::u32string opening_marker;
     std::u32string closing_marker;
     std::string callout_kind;           // Callout

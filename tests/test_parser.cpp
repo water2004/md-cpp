@@ -520,16 +520,33 @@ ELMD_TEST(test_parse_frontmatter_yaml) {
 }
 
 ELMD_TEST(test_safe_block_html_is_rendered_as_text_content) {
-    auto out = parse_text(1, "<div>\nhello\n</div>\n");
+    auto out = parse_text(1, "<div>\nhello *not emphasis*\n</div>\n");
     auto* paragraph = first_of(out.document.blocks, BlockKind::Paragraph);
     ELMD_CHECK(paragraph != nullptr);
-    if (paragraph) ELMD_CHECK_EQ(cps_to_utf8(block_inline_text_content(paragraph->children)), std::string("hello"));
+    if (paragraph) {
+        ELMD_CHECK_EQ(cps_to_utf8(block_inline_text_content(paragraph->children)), std::string("hello *not emphasis*"));
+        ELMD_CHECK(!inlines_have_kind(paragraph->children, InlineKind::Emphasis));
+    }
 }
 
 ELMD_TEST(test_safe_inline_html_is_structural) {
     auto out = parse_text(1, "hello <span>world</span>\n");
     auto* p = first_of(out.document.blocks, BlockKind::Paragraph);
     ELMD_CHECK(p && inlines_have_kind(p->children, InlineKind::Span));
+}
+
+ELMD_TEST(test_nested_safe_inline_html_is_structural) {
+    auto out = parse_text(1, "<span>outer <span>inner **bold**</span> tail</span>\n");
+    auto* paragraph = first_of(out.document.blocks, BlockKind::Paragraph);
+    ELMD_CHECK(paragraph != nullptr);
+    if (paragraph) {
+        auto outer = std::find_if(paragraph->children.begin(), paragraph->children.end(), [](auto const& node) { return node.kind == InlineKind::Span; });
+        ELMD_CHECK(outer != paragraph->children.end());
+        if (outer != paragraph->children.end()) {
+            ELMD_CHECK(inlines_have_kind(outer->children, InlineKind::Span));
+            ELMD_CHECK(inlines_have_kind(outer->children, InlineKind::Strong));
+        }
+    }
 }
 
 ELMD_TEST(test_unsafe_inline_html_targets_are_removed) {
@@ -559,12 +576,16 @@ ELMD_TEST(test_nested_lists_preserve_nested_block_structure) {
 }
 
 ELMD_TEST(test_html_img_is_an_image_block) {
-    auto out = parse_text(1, "<img src=\"a.png\" alt=\"A\">\n");
+    auto out = parse_text(1, "<img src=\"a.png\" alt=\"A\" width=\"320\" height=\"180px\">\n");
     auto* image = first_of(out.document.blocks, BlockKind::ImageBlock);
     ELMD_CHECK(image != nullptr);
     if (image) {
         ELMD_CHECK_EQ(image->src, std::string("a.png"));
         ELMD_CHECK_EQ(image->image_alt, std::string("A"));
+        ELMD_CHECK(image->image_width.has_value());
+        ELMD_CHECK(image->image_height.has_value());
+        if (image->image_width) ELMD_CHECK_EQ(*image->image_width, 320.0f);
+        if (image->image_height) ELMD_CHECK_EQ(*image->image_height, 180.0f);
     }
 }
 
@@ -572,6 +593,18 @@ ELMD_TEST(test_markdown_image_supported) {
     auto out = parse_text(1, "![alt](a.png)\n");
     auto* image = first_of(out.document.blocks, BlockKind::ImageBlock);
     ELMD_CHECK(image != nullptr);
+}
+
+ELMD_TEST(test_linked_markdown_image_is_an_image_block) {
+    auto out = parse_text(1, "[![rock](shiprock.jpg \"Shiprock\")](https://example.com)\n");
+    auto* image = first_of(out.document.blocks, BlockKind::ImageBlock);
+    ELMD_CHECK(image != nullptr);
+    if (image) {
+        ELMD_CHECK_EQ(image->src, std::string("shiprock.jpg"));
+        ELMD_CHECK_EQ(image->image_alt, std::string("rock"));
+        ELMD_CHECK(image->image_title && *image->image_title == "Shiprock");
+        ELMD_CHECK(image->image_link && *image->image_link == "https://example.com");
+    }
 }
 
 ELMD_TEST(test_indented_code_block_strips_one_indent_level) {
@@ -664,6 +697,20 @@ ELMD_TEST(test_blockquote_preserves_heading_and_list_children) {
 ELMD_TEST(test_safe_html_table_parsed) {
     auto out = parse_text(1, "<table>\n<tr><td>A</td></tr>\n</table>\n");
     ELMD_CHECK(blocks_has_kind(out.document.blocks, BlockKind::Table));
+    auto* table = first_of(out.document.blocks, BlockKind::Table);
+    ELMD_CHECK(table != nullptr);
+    if (table) ELMD_CHECK(!table->table_header_row);
+}
+
+ELMD_TEST(test_safe_html_table_preserves_header_cells) {
+    auto out = parse_text(1, "<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>\n");
+    auto* table = first_of(out.document.blocks, BlockKind::Table);
+    ELMD_CHECK(table != nullptr);
+    if (table) {
+        ELMD_CHECK(table->table_header_row);
+        ELMD_CHECK_EQ(table->table_header.size(), 2u);
+        ELMD_CHECK_EQ(table->table_rows.size(), 1u);
+    }
 }
 
 ELMD_TEST(test_gfm_table_parsed) {

@@ -119,10 +119,14 @@ struct InlineRenderItem {
     std::u32string text;
     std::u32string display_text;
     std::optional<NodeId> id;             // Math/Image/Link
+    std::optional<NodeId> marker_owner;
     InlineStyle style;
     MathDisplayMode display = MathDisplayMode::Inline; // Math
     MathDelimiter math_delim = MathDelimiter::InlineDollar;
     std::string href, src, alt;            // Image/Link
+    std::optional<std::string> title;
+    std::optional<float> image_width;
+    std::optional<float> image_height;
     MarkerStyle marker_style;
     MarkerVisibility visibility = MarkerVisibility::WhenCaretInsideNode;
     MarkerRole marker_role = MarkerRole::Syntax;
@@ -160,8 +164,10 @@ struct RenderBlock {
     std::shared_ptr<RenderedMath> math_rendered;       // None in v1
     // Table
     std::vector<std::vector<InlineRenderItem>> table_cells;
+    std::vector<TextRange<CharOffset>> table_cell_ranges;
     std::vector<TableAlignment> table_aligns;
     std::size_t column_count = 0, row_count = 0;
+    bool table_header_row = true;
     // Image block (block-level, alt-only)
     // Quote / Callout / Footnote
     std::vector<RenderBlock> child_blocks;
@@ -178,6 +184,8 @@ struct RenderBlock {
     std::string alt;
     std::optional<std::string> title;
     std::optional<std::string> link;
+    std::optional<float> image_width;
+    std::optional<float> image_height;
 };
 
 struct RenderDiagnostic {
