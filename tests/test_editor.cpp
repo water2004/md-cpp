@@ -1574,12 +1574,17 @@ ELMD_TEST(test_link_and_image_commands_mutate_inline_tree) {
 }
 
 ELMD_TEST(test_insert_footnote_adds_unique_definition) {
-    Editor e("alpha [^1]: old");
+    Editor e("alpha\n\n[^1]: old");
     e.set_caret(CharOffset(5));
     Command command; command.kind = CommandKind::InsertFootnote;
     e.execute_command(command);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha[^2] [^1]: old\n\n[^2]: "));
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha[^2]\n\n[^1]: old\n\n[^2]: "));
     ELMD_CHECK(std::any_of(e.document().blocks.begin(), e.document().blocks.end(), [](auto const& block) { return block.kind == BlockKind::FootnoteDefinition; }));
+    ELMD_CHECK(e.document().blocks.front().children.back().kind == InlineKind::FootnoteRef);
+    ELMD_CHECK_EQ(e.document().blocks.front().children.back().label, std::string("2"));
+    ELMD_CHECK(e.document_selection().has_value());
+    ELMD_CHECK_EQ(e.document_selection()->active.node_id, e.document().blocks.back().quote_children.front().id);
+    ELMD_CHECK(e.has_document_undo());
 }
 
 ELMD_TEST(test_toggle_callout_wraps_and_unwraps_selected_lines) {
@@ -1592,6 +1597,20 @@ ELMD_TEST(test_toggle_callout_wraps_and_unwraps_selected_lines) {
     e.set_caret(CharOffset(20));
     e.execute_command(command);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha\nbeta"));
+}
+
+ELMD_TEST(test_callout_command_preserves_content_node_identity) {
+    Editor editor("alpha");
+    const auto paragraph_id = editor.document().blocks.front().id;
+    editor.set_document_selection(DocumentSelection::caret(
+        DocumentPosition{paragraph_id, 5, TextAffinity::Downstream}));
+    Command command; command.kind = CommandKind::ToggleCallout; command.callout_kind = U"warning";
+    editor.execute_command(command);
+    ELMD_CHECK(editor.document().blocks.front().kind == BlockKind::Callout);
+    ELMD_CHECK_EQ(editor.document().blocks.front().callout_kind, std::string("WARNING"));
+    ELMD_CHECK_EQ(editor.document().blocks.front().quote_children.front().id, paragraph_id);
+    editor.undo();
+    ELMD_CHECK_EQ(editor.document().blocks.front().id, paragraph_id);
 }
 
 ELMD_TEST(test_large_document_incremental_edit_keeps_distant_blocks) {

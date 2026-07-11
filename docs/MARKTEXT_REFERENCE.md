@@ -147,3 +147,4 @@ Muya 将段落、列表、列表项和引用表示为可直接插入、移除、
 * 块级格式化后的 Selection 和 Undo/Redo 继续绑定原内容节点。
 * 链接与图片命令直接插入 inline 节点；代码块、数学块、目录和表格命令直接插入对应 block 节点，并由 serializer 生成 Markdown。
 * 表格导航绑定 TableCell 身份；行列插入、删除、移动和对齐直接变换 Table、TableRow 与 TableCell，空单元格不得用空格文本占位。
+* Callout 包装和解包现有块子树；脚注命令从 AST 中分配标签并同时创建 FootnoteRef 与 FootnoteDefinition，不得扫描序列化文本。

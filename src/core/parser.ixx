@@ -433,6 +433,9 @@ public:
         bool ls = peek_line_start();
         if (ls) {
             if (auto b = try_parse_frontmatter())        return b;
+            if (peek1() == '[' && ch_at(pos+1) == '^') {
+                if (auto b = try_parse_footnote_definition()) return b;
+            }
             if (auto b = try_parse_link_definition())    return b;
             if (peek1() == '#') {
                 if (auto b = parse_heading()) return b;
@@ -448,9 +451,6 @@ public:
             if (auto b = try_parse_thematic_break())     return b;
             if (auto b = try_parse_list_or_task())       return b;
             if (try_match_toc())                          return parse_toc();
-            if (peek1() == '[' && ch_at(pos+1) == '^') {
-                if (auto b = try_parse_footnote_definition()) return b;
-            }
         }
         if (peek1() == '<') {
             if (auto b = try_parse_raw_html_block())     return b;

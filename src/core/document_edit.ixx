@@ -504,6 +504,28 @@ inline bool insert_image(
     return true;
 }
 
+inline bool insert_footnote_ref(
+    InlineVec& nodes,
+    std::size_t start,
+    std::size_t end,
+    std::string label,
+    NodeAllocator& allocator) {
+    if (start > end) std::swap(start, end);
+    const auto total = block_inline_text_content(nodes).size();
+    if (start > total || end > total) return false;
+    auto [left, remainder] = split_inlines(nodes, start, allocator);
+    auto [middle, right] = split_inlines(remainder, end - start, allocator);
+    static_cast<void>(middle);
+    InlineNode reference;
+    reference.id = allocator.allocate();
+    reference.kind = InlineKind::FootnoteRef;
+    reference.label = std::move(label);
+    left.push_back(std::move(reference));
+    left.insert(left.end(), std::make_move_iterator(right.begin()), std::make_move_iterator(right.end()));
+    nodes = std::move(left);
+    return true;
+}
+
 inline void erase_inline_range(InlineVec& nodes, std::size_t start, std::size_t count) {
     if (count == 0) return;
     std::size_t consumed = 0;
@@ -1686,6 +1708,47 @@ inline bool toggle_quote_in_blocks(BlockVec& blocks, NodeId first, NodeId last, 
     return true;
 }
 
+inline bool toggle_callout_in_blocks(
+    BlockVec& blocks,
+    NodeId first,
+    NodeId last,
+    std::string kind,
+    NodeAllocator& allocator) {
+    for (std::size_t index = 0; index < blocks.size(); ++index) {
+        auto& block = blocks[index];
+        if (block.kind == BlockKind::Callout) {
+            if (blocks_contain_id(block.quote_children, first) && blocks_contain_id(block.quote_children, last)) {
+                auto nested = direct_block_range(block.quote_children, first, last);
+                if (nested && nested->first == nested->second
+                    && block.quote_children[nested->first].kind == BlockKind::Callout
+                    && toggle_callout_in_blocks(block.quote_children, first, last, kind, allocator)) return true;
+                auto children = std::move(block.quote_children);
+                blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index));
+                blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(index),
+                    std::make_move_iterator(children.begin()), std::make_move_iterator(children.end()));
+                return true;
+            }
+        } else if (block.kind == BlockKind::BlockQuote || block.kind == BlockKind::FootnoteDefinition) {
+            if (toggle_callout_in_blocks(block.quote_children, first, last, kind, allocator)) return true;
+        }
+        for (auto& item : block.list_items) if (toggle_callout_in_blocks(item.children, first, last, kind, allocator)) return true;
+        for (auto& item : block.task_items) if (toggle_callout_in_blocks(item.children, first, last, kind, allocator)) return true;
+    }
+    auto range = direct_block_range(blocks, first, last);
+    if (!range) return false;
+    BlockNode callout;
+    callout.id = allocator.allocate();
+    callout.kind = BlockKind::Callout;
+    callout.callout_kind = std::move(kind);
+    callout.quote_children.assign(
+        std::make_move_iterator(blocks.begin() + static_cast<std::ptrdiff_t>(range->first)),
+        std::make_move_iterator(blocks.begin() + static_cast<std::ptrdiff_t>(range->second + 1)));
+    blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(range->first),
+        blocks.begin() + static_cast<std::ptrdiff_t>(range->second + 1));
+    blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(range->first), std::move(callout));
+    return true;
+}
+
 inline std::vector<BlockNode> split_paragraph_lines(BlockNode block, NodeAllocator& allocator) {
     if (block.kind != BlockKind::Paragraph) return {std::move(block)};
     std::vector<BlockNode> lines;
@@ -2458,6 +2521,86 @@ inline std::optional<DocumentTransaction> document_toggle_block_quote(
     transaction.after = std::move(after);
     transaction.selection_before = selection;
     transaction.selection_after = selection;
+    transaction.reason = DocumentTransactionReason::Structure;
+    return transaction;
+}
+
+inline std::optional<DocumentTransaction> document_toggle_callout(
+    const EditorDocument& document,
+    const DocumentSelection& selection,
+    std::string kind) {
+    if (kind.empty()) kind = "NOTE";
+    std::ranges::transform(kind, kind.begin(), [](unsigned char value) {
+        return static_cast<char>(std::toupper(value));
+    });
+    kind.erase(std::remove_if(kind.begin(), kind.end(), [](unsigned char value) {
+        return !(std::isalnum(value) || value == '-' || value == '_');
+    }), kind.end());
+    if (kind.empty()) kind = "NOTE";
+    EditorDocument after = document;
+    document_edit_detail::NodeAllocator allocator(after);
+    if (!document_edit_detail::toggle_callout_in_blocks(
+            after.blocks, selection.anchor.node_id, selection.active.node_id, std::move(kind), allocator)) return std::nullopt;
+    normalize_document(after);
+    ++after.revision;
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(after);
+    transaction.selection_before = selection;
+    transaction.selection_after = selection;
+    transaction.reason = DocumentTransactionReason::Structure;
+    return transaction;
+}
+
+inline std::optional<DocumentTransaction> document_insert_footnote(
+    const EditorDocument& document,
+    const DocumentSelection& selection,
+    std::string requested_label) {
+    if (!selection.is_caret()) {
+        auto deletion = document_delete_selection(document, selection);
+        if (!deletion) return std::nullopt;
+        auto insertion = document_insert_footnote(deletion->after, deletion->selection_after, std::move(requested_label));
+        if (!insertion) return std::nullopt;
+        insertion->before = document;
+        insertion->selection_before = selection;
+        return insertion;
+    }
+    requested_label.erase(std::remove_if(requested_label.begin(), requested_label.end(), [](unsigned char value) {
+        return value == '[' || value == ']' || value == '^' || value == '\r' || value == '\n';
+    }), requested_label.end());
+    std::unordered_set<std::string> labels;
+    std::function<void(const BlockVec&)> collect = [&](const BlockVec& blocks) {
+        for (const auto& block : blocks) {
+            if (block.kind == BlockKind::FootnoteDefinition) labels.insert(block.footnote_label);
+            collect(block.quote_children);
+            for (const auto& item : block.list_items) collect(item.children);
+            for (const auto& item : block.task_items) collect(item.children);
+        }
+    };
+    collect(document.blocks);
+    if (requested_label.empty()) {
+        std::size_t number = 1;
+        do requested_label = std::to_string(number++); while (labels.contains(requested_label));
+    }
+    EditorDocument after = document;
+    document_edit_detail::NodeAllocator allocator(after);
+    auto* owner = document_edit_detail::inline_owner_in_blocks(after.blocks, selection.active.node_id);
+    if (!owner || !document_edit_detail::insert_footnote_ref(
+            *owner, selection.active.offset, selection.active.offset, requested_label, allocator)) return std::nullopt;
+    BlockNode definition;
+    definition.id = allocator.allocate();
+    definition.kind = BlockKind::FootnoteDefinition;
+    definition.footnote_label = requested_label;
+    auto paragraph = document_edit_detail::empty_paragraph(allocator);
+    const auto target = paragraph.id;
+    definition.quote_children.push_back(std::move(paragraph));
+    after.blocks.push_back(std::move(definition));
+    ++after.revision;
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(after);
+    transaction.selection_before = selection;
+    transaction.selection_after = DocumentSelection::caret(DocumentPosition{target, 0, TextAffinity::Downstream});
     transaction.reason = DocumentTransactionReason::Structure;
     return transaction;
 }

@@ -204,6 +204,20 @@ public:
         return transaction;
     }
 
+    std::optional<DocumentTransaction> execute_document_toggle_callout(DocumentSelection selection, const Command& command) {
+        auto transaction = document_toggle_callout(document_, selection, cps_to_utf8(command.callout_kind));
+        if (!transaction) return std::nullopt;
+        apply_document_transaction_(*transaction);
+        return transaction;
+    }
+
+    std::optional<DocumentTransaction> execute_document_insert_footnote(DocumentSelection selection, const Command& command) {
+        auto transaction = document_insert_footnote(document_, selection, cps_to_utf8(command.text));
+        if (!transaction) return std::nullopt;
+        apply_document_transaction_(*transaction);
+        return transaction;
+    }
+
     bool undo_document() {
         auto state = document_history_.undo();
         if (!state) return false;
@@ -226,6 +240,16 @@ public:
 
     // Apply a Command. Returns the transaction if it produced a change.
     std::optional<Transaction> execute_command(const Command& cmd) {
+        if (cmd.kind == CommandKind::ToggleCallout || cmd.kind == CommandKind::InsertFootnote) {
+            if (!document_selection_) return std::nullopt;
+            const auto revision_before = buffer_.revision();
+            const auto selection_before = selection_;
+            const auto changed = cmd.kind == CommandKind::ToggleCallout
+                ? execute_document_toggle_callout(*document_selection_, cmd).has_value()
+                : execute_document_insert_footnote(*document_selection_, cmd).has_value();
+            if (!changed) return std::nullopt;
+            return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
+        }
         if (cmd.kind == CommandKind::MoveTableCellNext || cmd.kind == CommandKind::MoveTableCellPrevious
             || cmd.kind == CommandKind::InsertTableRowAbove || cmd.kind == CommandKind::InsertTableRowBelow
             || cmd.kind == CommandKind::DeleteTableRow || cmd.kind == CommandKind::MoveTableRowUp
