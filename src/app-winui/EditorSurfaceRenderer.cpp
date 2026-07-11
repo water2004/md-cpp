@@ -3,6 +3,7 @@
 #include "EditorSurfaceRenderer.h"
 
 import elmd.core.render_model;
+import elmd.core.layout_plan;
 import elmd.core.table_edit;
 import elmd.core.utf;
 
@@ -1256,6 +1257,35 @@ namespace winrt::ElMd
             }
         };
 
+        std::vector<elmd::BlockLayoutInput> layoutInputs;
+        layoutInputs.reserve(sessionCore.renderModel.blocks.size());
+        for (auto const& block : sessionCore.renderModel.blocks)
+        {
+            layoutInputs.push_back(elmd::BlockLayoutInput{
+                elmd::BlockId{ block.id.v },
+                estimatedBlockHeight(block),
+                block.kind == elmd::RenderBlockKind::Blank,
+                block.source_range.start.v <= caret && caret <= block.source_range.end.v,
+            });
+        }
+        auto layoutPlan = elmd::plan_document_layout(layoutInputs, elmd::LayoutPlanSettings{
+            documentTop,
+            styleSheet.verticalPadding,
+            scrollOffset,
+            resources.surfaceHeightDip,
+            styleSheet.blockGap,
+            styleSheet.blockGap * 0.5f,
+            1.0f,
+            2.0f,
+        });
+        bool layoutPlanChanged = false;
+        auto cacheMeasuredHeight = [&](std::uint64_t key, float measured)
+        {
+            auto found = blockHeightCache.find(key);
+            if (found == blockHeightCache.end() || std::abs(found->second - measured) > 0.5f) layoutPlanChanged = true;
+            blockHeightCache[key] = measured;
+        };
+
         if (sessionCore.renderModel.blocks.empty() && sourceText.empty())
         {
             auto emptyText = winrt::hstring(L"Open a Markdown file or start editing to see the WYSIWYG surface.");
@@ -1264,29 +1294,16 @@ namespace winrt::ElMd
             return;
         }
 
-        bool previousBlank = false;
         for (std::size_t blockIndex = 0; blockIndex < sessionCore.renderModel.blocks.size(); ++blockIndex)
         {
             auto const& block = sessionCore.renderModel.blocks[blockIndex];
-            bool currentBlank = block.kind == elmd::RenderBlockKind::Blank;
-            if (blockIndex > 0 && !(previousBlank && currentBlank))
-            {
-                if (previousBlank || currentBlank)
-                {
-                    y += styleSheet.blockGap * 0.5f;
-                }
-                else
-                {
-                    y += styleSheet.blockGap;
-                }
-            }
+            auto const& placement = layoutPlan.blocks[blockIndex];
+            y = placement.top - scrollOffset;
             auto cacheKey = blockCacheKey(block);
             auto blockStartY = y;
-            auto estimatedHeight = estimatedBlockHeight(block);
-            auto caretInside = block.source_range.start.v <= caret && caret <= block.source_range.end.v;
-            auto insidePrefetch = y + estimatedHeight >= -resources.surfaceHeightDip && y <= resources.surfaceHeightDip * 2.0f;
-            auto requestEmbedded = y >= -resources.surfaceHeightDip * 2.0f && y <= resources.surfaceHeightDip * 3.0f;
-            if (!caretInside && !insidePrefetch)
+            auto estimatedHeight = placement.height;
+            auto requestEmbedded = placement.request_embedded;
+            if (!placement.measure)
             {
                 VisualBlock placeholder;
                 placeholder.rect = D2D1::RectF(documentLeft, y, documentRight, y + estimatedHeight);
@@ -1296,8 +1313,6 @@ namespace winrt::ElMd
                 placeholder.sourceEnd = block.source_range.end.v;
                 placeholder.documentY = y + scrollOffset;
                 interactionMap.blocks.push_back(std::move(placeholder));
-                y += estimatedHeight;
-                previousBlank = currentBlank;
                 continue;
             }
             if (block.kind == elmd::RenderBlockKind::Table)
@@ -1560,8 +1575,7 @@ namespace winrt::ElMd
                         resources.d2dContext->DrawLine(D2D1::Point2F(visualTable.rect.left, boundary), D2D1::Point2F(visualTable.rect.right, boundary), resources.mutedBrush.Get(), 1.0f);
                     }
                     y = visualTable.rect.bottom;
-                    blockHeightCache[cacheKey] = y - blockStartY;
-                    previousBlank = false;
+                    cacheMeasuredHeight(cacheKey, y - blockStartY);
                     continue;
                 }
             }
@@ -1749,8 +1763,7 @@ namespace winrt::ElMd
                     interactionMap.blocks.push_back(std::move(placeholder));
                 }
                 y = quoteBottom;
-                blockHeightCache[cacheKey] = y - blockStartY;
-                previousBlank = false;
+                cacheMeasuredHeight(cacheKey, y - blockStartY);
                 continue;
             }
             IDWriteTextFormat* format = resources.textFormat.Get();
@@ -2509,8 +2522,7 @@ namespace winrt::ElMd
                 }
             }
             y += height;
-            blockHeightCache[cacheKey] = height;
-            previousBlank = currentBlank;
+            cacheMeasuredHeight(cacheKey, height);
         }
 
         auto drawPlus = [&](D2D1_POINT_2F center)
@@ -2630,7 +2642,8 @@ namespace winrt::ElMd
             }
         }
 
-        totalDocumentHeight = y + scrollOffset + styleSheet.verticalPadding;
+        totalDocumentHeight = layoutPlan.total_height;
+        if (layoutPlanChanged) Invalidate();
         auto maxScroll = MaximumScrollOffset();
         scrollOffset = (std::min)(scrollOffset, maxScroll);
         scrollTarget = (std::min)(scrollTarget, maxScroll);

@@ -37,10 +37,10 @@ script 执行 / iframe / 把 `<img>` 当图片 / 把 `<table>` 当表格 /
 | editor-outline | `src/core/{outline,slug}.ixx` | ✅ 已迁移 |
 | math/diagram-render | `src/core/math_renderer.ixx` + `src/app-winui/{MathJaxRenderer,MermaidRenderer,SvgNormalizer}.*` | ✅ MathJax 4/QuickJS + mermaid-rs-renderer + usvg path-only 标准化 |
 | editor-render | `src/core/{render_model,render_builder}.ixx` | ✅ 已迁移 |
-| editor-layout | core layout + `src/app-winui/EditorSurfaceRenderer.*` | ✅ DirectWrite 测量/命中测试、视口虚拟化、高度缓存、原生嵌入块绘制 |
+| editor-layout | `src/core/layout_plan.ixx` + `src/app-winui/EditorInteractionMap.*` | ✅ 全块预分配、DirectWrite 测量/命中测试、视口虚拟化、高度缓存 |
 | storage | `src/core/storage.ixx` | ✅ 新增（file_io+assets） |
 | export | `src/core/exporter.ixx` | ✅ 新增（markdown+html+plain_text） |
-| platform-windows | `src/platform/*.ixx` + app native renderer | ✅ D3D/DXGI/Direct2D/DirectWrite/WIC/TSF/clipboard/theme 已接入，core 仍保持纯 C++ |
+| platform-windows | `src/platform/*.ixx` + `src/app-winui/{EditorRenderResources,EditorStyleSheet}.*` | ✅ D3D/DXGI/Direct2D/DirectWrite/WIC/TSF/clipboard/theme 已接入，core 仍保持纯 C++ |
 | app-winui | `src/app-winui/*.cpp + *.xaml` | ✅ WinUI 3 壳、原生编辑面、文件操作、outline/diagnostics、MathJax、Mermaid、Tree-sitter |
 
 ### 缺失/待补的 core 模块
@@ -140,7 +140,8 @@ core 侧只接收规范定义的 `TextInputEvent`，不碰 Windows API。
 打开文件后在后台线程构建文档；编辑走增量 parser。ParseOutput/RenderModel/LayoutTree
 均带 revision，旧 revision 结果丢弃。纯 core 的 `DocumentLayoutPlan` 在绘制前为所有
 block 分配位置，并分别给出测量窗口和嵌入资源请求窗口。原生 renderer 只为 viewport 及预取区建立
-DirectWrite layout，离屏块复用高度缓存；Tree-sitter 只高亮可见代码块。MathJax 与
+DirectWrite layout，离屏块复用高度缓存；可见块的实测高度进入下一帧计划，不在当前绘制过程中推动
+后续块。Tree-sitter 只高亮可见代码块。MathJax 与
 Mermaid 各自单队列去重生成 SVG，后者在同一个 Rust 调用内直接经 usvg 标准化；队列、字符串缓存和
 Direct2D SVG 文档缓存都有硬预算，只有屏幕内 SVG 才创建原生文档。
 
