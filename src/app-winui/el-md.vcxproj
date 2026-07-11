@@ -111,6 +111,7 @@
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="EditorSession.h" />
+    <ClInclude Include="EditorRenderFrame.h" />
     <ClInclude Include="EditorStyleSheet.h" />
     <ClInclude Include="EditorInteractionMap.h" />
     <ClInclude Include="EditorContentPreparation.h" />

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "EditorRenderFrame.h"
 #include "MathJaxRenderer.h"
 #include "MermaidRenderer.h"
 #include "SvgNormalizer.h"
@@ -13,11 +14,6 @@
 
 namespace winrt::ElMd
 {
-    namespace detail
-    {
-        struct EditorSessionCore;
-    }
-
     struct EditorSurfaceRenderer
     {
         ~EditorSurfaceRenderer();
@@ -30,7 +26,7 @@ namespace winrt::ElMd
 
         void Initialize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel);
         void Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height);
-        void Render(detail::EditorSessionCore const& sessionCore);
+        void Render(detail::EditorRenderFrame const& frame);
         void SetTheme(Theme value);
         void SetInvalidateCallback(std::function<void()> callback);
 
@@ -59,7 +55,7 @@ namespace winrt::ElMd
         bool ScrollToSourceOffset(std::size_t sourceOffset);
 
     private:
-        void DrawDocument(detail::EditorSessionCore const& sessionCore);
+        void DrawDocument(detail::EditorRenderFrame const& frame);
 
         void Invalidate();
 

@@ -148,6 +148,9 @@
     <ClInclude Include="EditorSession.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="EditorRenderFrame.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="EditorStyleSheet.h">
       <Filter>Header Files</Filter>
     </ClInclude>

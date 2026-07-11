@@ -911,6 +911,49 @@ ELMD_TEST(test_empty_inline_format_commands_insert_editable_pairs) {
     ELMD_CHECK_EQ(math.selection().head().v, 1u);
 }
 
+ELMD_TEST(test_editor_auto_pairing_uses_semantic_transaction_pipeline) {
+    Editor emphasis;
+    auto firstEmphasis = emphasis.execute_command(Command::InsertText(U"*"));
+    ELMD_CHECK(firstEmphasis.has_value());
+    ELMD_CHECK_EQ(emphasis.buffer().text_utf8(), std::string("**"));
+    ELMD_CHECK_EQ(emphasis.selection().head().v, 1u);
+    auto secondEmphasis = emphasis.execute_command(Command::InsertText(U"*"));
+    ELMD_CHECK(secondEmphasis.has_value());
+    ELMD_CHECK_EQ(emphasis.buffer().text_utf8(), std::string("****"));
+    ELMD_CHECK_EQ(emphasis.selection().head().v, 2u);
+
+    Editor strike;
+    strike.execute_command(Command::InsertText(U"~"));
+    strike.execute_command(Command::InsertText(U"~"));
+    ELMD_CHECK_EQ(strike.buffer().text_utf8(), std::string("~~~~"));
+    ELMD_CHECK_EQ(strike.selection().head().v, 2u);
+
+    Editor math;
+    math.execute_command(Command::InsertText(U"$"));
+    math.execute_command(Command::InsertText(U"$"));
+    ELMD_CHECK_EQ(math.buffer().text_utf8(), std::string("$$$$"));
+    ELMD_CHECK_EQ(math.selection().head().v, 2u);
+    ELMD_CHECK(!math.document().blocks.empty());
+    ELMD_CHECK(math.document().blocks.front().kind == BlockKind::MathBlock);
+
+    Editor fence;
+    fence.execute_command(Command::InsertText(U"`"));
+    fence.execute_command(Command::InsertText(U"`"));
+    fence.execute_command(Command::InsertText(U"`"));
+    ELMD_CHECK_EQ(fence.buffer().text_utf8(), std::string("```\n\n```"));
+    ELMD_CHECK_EQ(fence.selection().head().v, 4u);
+    ELMD_CHECK(!fence.document().blocks.empty());
+    ELMD_CHECK(fence.document().blocks.front().kind == BlockKind::CodeBlock);
+
+    Editor deletion;
+    deletion.execute_command(Command::InsertText(U"_"));
+    Command backspace;
+    backspace.kind = CommandKind::DeleteBackward;
+    deletion.execute_command(backspace);
+    ELMD_CHECK(deletion.buffer().text_utf8().empty());
+    ELMD_CHECK_EQ(deletion.selection().head().v, 0u);
+}
+
 ELMD_TEST(test_inline_format_command_removes_surrounding_markers) {
     Editor e("**bold**");
     e.set_selection(Selection{CharOffset(2), CharOffset(6), TextAffinity::Downstream});

@@ -1,5 +1,4 @@
 #include "pch.h"
-#include "EditorSession.h"
 #include "EditorSurfaceRenderer.h"
 
 import elmd.core.render_model;
@@ -114,7 +113,7 @@ namespace winrt::ElMd
         scrollOffset = (std::min)(scrollOffset, maxScroll);
         scrollTarget = (std::min)(scrollTarget, maxScroll);
     }
-    void EditorSurfaceRenderer::DrawDocument(detail::EditorSessionCore const& sessionCore)
+    void EditorSurfaceRenderer::DrawDocument(detail::EditorRenderFrame const& frame)
     {
         auto remoteGeneration = renderCache.RemoteImageGeneration();
         if (remoteGeneration != observedRemoteImageGeneration)
@@ -122,22 +121,23 @@ namespace winrt::ElMd
             observedRemoteImageGeneration = remoteGeneration;
             blockLayoutCache.Clear();
         }
-        interactionMap.Clear(sessionCore.renderModel.blocks.size());
+        interactionMap.Clear(frame.renderModel.blocks.size());
         blockLayoutCache.Trim(32768);
         auto responsivePadding = (std::min)(styleSheet.horizontalPadding, (std::max)(12.0f, resources.surfaceWidthDip * 0.06f));
         auto documentLeft = responsivePadding;
         auto documentTop = styleSheet.verticalPadding;
         auto documentRight = (std::max)(documentLeft + 1.0f, (std::min)(resources.surfaceWidthDip - responsivePadding - 14.0f, documentLeft + styleSheet.documentWidth));
         auto y = documentTop - scrollOffset;
-        auto selection = sessionCore.editor.selection().normalized_range();
-        auto caret = sessionCore.editor.selection().active.v;
-        auto sourceText = sessionCore.editor.buffer().text_cps();
+        auto selectionState = frame.selection;
+        auto selection = selectionState.normalized_range();
+        auto caret = selectionState.active.v;
+        auto sourceText = frame.sourceText;
         std::unordered_set<std::uint64_t> mathFallbacks;
         ::Microsoft::WRL::ComPtr<ID2D1DeviceContext5> svgContext;
         auto svgSupported = SUCCEEDED(resources.d2dContext.As(&svgContext)) && svgContext;
         EditorSvgPainter svgPainter(resources, renderCache);
         EditorTextLayoutEngine textLayoutEngine(resources, styleSheet);
-        EditorInlineImageRenderer inlineImageRenderer(resources, renderCache, styleSheet, sessionCore.baseDirectory);
+        EditorInlineImageRenderer inlineImageRenderer(resources, renderCache, styleSheet, frame.baseDirectory);
 
         auto drawMathSvg = [&](MathJaxSvgFragment const& fragment, D2D1_POINT_2F origin, D2D1_COLOR_F color) -> bool
         {
@@ -159,8 +159,8 @@ namespace winrt::ElMd
         auto blockContentWidth = documentRight - documentLeft;
 
         std::vector<elmd::BlockLayoutInput> layoutInputs;
-        layoutInputs.reserve(sessionCore.renderModel.blocks.size());
-        for (auto const& block : sessionCore.renderModel.blocks)
+        layoutInputs.reserve(frame.renderModel.blocks.size());
+        for (auto const& block : frame.renderModel.blocks)
         {
             layoutInputs.push_back(elmd::BlockLayoutInput{
                 elmd::BlockId{ block.id.v },
@@ -185,7 +185,7 @@ namespace winrt::ElMd
             if (blockLayoutCache.Record(key, measured)) layoutPlanChanged = true;
         };
 
-        if (sessionCore.renderModel.blocks.empty() && sourceText.empty())
+        if (frame.renderModel.blocks.empty() && sourceText.empty())
         {
             auto emptyText = winrt::hstring(L"Open a Markdown file or start editing to see the WYSIWYG surface.");
             auto rect = D2D1::RectF(documentLeft, y, documentRight, y + 80.0f);
@@ -193,9 +193,9 @@ namespace winrt::ElMd
             return;
         }
 
-        for (std::size_t blockIndex = 0; blockIndex < sessionCore.renderModel.blocks.size(); ++blockIndex)
+        for (std::size_t blockIndex = 0; blockIndex < frame.renderModel.blocks.size(); ++blockIndex)
         {
-            auto const& block = sessionCore.renderModel.blocks[blockIndex];
+            auto const& block = frame.renderModel.blocks[blockIndex];
             auto const& placement = layoutPlan.blocks[blockIndex];
             y = placement.top - scrollOffset;
             auto cacheKey = blockLayoutCache.Key(block, blockContentWidth, static_cast<std::uint64_t>(theme));
@@ -483,7 +483,7 @@ namespace winrt::ElMd
                     }
                     else
                     {
-                        for (auto const* item : sessionCore.renderModel.outline.flat_items())
+                        for (auto const* item : frame.renderModel.outline.flat_items())
                         {
                             std::u32string label(static_cast<std::size_t>((std::max)(0, static_cast<int>(item->level) - 1) * 2), U' ');
                             label += U"• " + elmd::utf8_to_cps(item->title_plain_text) + U"\n";
@@ -530,7 +530,7 @@ namespace winrt::ElMd
                     break;
                 case elmd::RenderBlockKind::Image:
                 {
-                    blockImage = renderCache.LoadRasterImage(resources, sessionCore.baseDirectory, block.src);
+                    blockImage = renderCache.LoadRasterImage(resources, frame.baseDirectory, block.src);
                     showRawImage = block.source_range.start.v <= caret && caret <= block.source_range.end.v;
                     DisplayInlineText display;
                     if (showRawImage || !blockImage)
@@ -1013,9 +1013,9 @@ namespace winrt::ElMd
         scrollOffset = (std::min)(scrollOffset, maxScroll);
         scrollTarget = (std::min)(scrollTarget, maxScroll);
 
-        if (sessionCore.editor.selection().is_caret())
+        if (selectionState.is_caret())
         {
-            auto upstream = sessionCore.editor.selection().affinity == elmd::TextAffinity::Upstream;
+            auto upstream = selectionState.affinity == elmd::TextAffinity::Upstream;
             if (auto rect = CaretBounds(caret, upstream))
             {
                 resources.d2dContext->DrawLine(D2D1::Point2F(rect->left, rect->top), D2D1::Point2F(rect->left, rect->bottom), resources.caretBrush.Get(), 1.5f);
@@ -1149,7 +1149,7 @@ namespace winrt::ElMd
     {
         return interactionMap.VisualLineEnd(sourceOffset, upstream);
     }
-    void EditorSurfaceRenderer::Render(detail::EditorSessionCore const& sessionCore)
+    void EditorSurfaceRenderer::Render(detail::EditorRenderFrame const& frame)
     {
         if (!resources.Ready() || resizing || rendering)
         {
@@ -1171,7 +1171,7 @@ namespace winrt::ElMd
 
         resources.d2dContext->BeginDraw();
         resources.d2dContext->Clear(styleSheet.canvasColor);
-        DrawDocument(sessionCore);
+        DrawDocument(frame);
         auto ended = resources.d2dContext->EndDraw();
         if (ended == D2DERR_RECREATE_TARGET)
         {

@@ -89,7 +89,7 @@ namespace winrt::ElMd
         if (href.empty() || !state_->session) return;
         if (href.front() == '#')
         {
-            if (auto item = state_->session->Core().renderModel.outline.find_item_by_slug(href.substr(1)))
+            if (auto item = state_->session->RenderModel().outline.find_item_by_slug(href.substr(1)))
             {
                 state_->session->SetSelection(item->source_range.start.v, item->source_range.start.v);
                 if (state_->textInput) state_->textInput->NotifySelectionChanged();
@@ -156,7 +156,7 @@ namespace winrt::ElMd
             loaded.Open(file, text);
             co_await uiContext;
             if (!Active(state, generation)) co_return;
-            auto oldLength = state->session->Core().editor.text_cps().size();
+            auto oldLength = state->session->TextLength();
             *state->session = std::move(loaded);
             if (state->renderer) state->renderer->SetScrollOffset(0.0f);
             if (state->textInput) state->textInput->NotifyTextChanged(oldLength);
@@ -268,7 +268,7 @@ namespace winrt::ElMd
             auto boundary = lower.find_first_of("/?#");
             if (colon != std::string::npos && (boundary == std::string::npos || colon < boundary)) co_return;
             auto path = std::filesystem::path(winrt::to_hstring(href).c_str());
-            if (path.is_relative()) path = std::filesystem::path(state->session->Core().baseDirectory) / path;
+            if (path.is_relative()) path = std::filesystem::path(state->session->BaseDirectory()) / path;
             auto file = co_await winrt::Windows::Storage::StorageFile::GetFileFromPathAsync(path.lexically_normal().wstring());
             if (!Active(state, generation)) co_return;
             co_await winrt::Windows::System::Launcher::LaunchFileAsync(file);

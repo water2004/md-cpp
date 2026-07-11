@@ -40,15 +40,14 @@ namespace winrt::ElMd
 
     void EditorSession::RebuildCore()
     {
-        core_->sourceText = winrt::to_string(text_);
         core_->baseDirectory = file_ ? std::filesystem::path(file_.Path().c_str()).parent_path().wstring() : std::wstring{};
-        core_->editor = elmd::Editor(core_->sourceText);
+        core_->editor = elmd::Editor(winrt::to_string(text_));
         RebuildRenderModel();
     }
 
     void EditorSession::RebuildRenderModel()
     {
-        core_->renderModel = elmd::build_render_model(core_->editor.document(), core_->sourceText, core_->editor.outline());
+        core_->renderModel = elmd::build_render_model(core_->editor.document(), core_->editor.buffer().text_utf8(), core_->editor.outline());
     }
 
     bool EditorSession::ExecuteCommand(elmd::Command const& command)
@@ -83,8 +82,7 @@ namespace winrt::ElMd
             }
         }
 
-        core_->sourceText = elmd::cps_to_utf8(core_->editor.text_cps());
-        text_ = winrt::to_hstring(core_->sourceText);
+        text_ = winrt::to_hstring(core_->editor.buffer().text_utf8());
         revision_ = core_->editor.revision();
         RebuildRenderModel();
         return true;
@@ -141,8 +139,38 @@ namespace winrt::ElMd
         return revision_;
     }
 
-    detail::EditorSessionCore const& EditorSession::Core() const
+    std::size_t EditorSession::TextLength() const
     {
-        return *core_;
+        return core_->editor.buffer().text_cps().size();
+    }
+
+    std::u32string_view EditorSession::TextView() const
+    {
+        return core_->editor.buffer().text_cps();
+    }
+
+    elmd::Selection EditorSession::Selection() const
+    {
+        return core_->editor.selection();
+    }
+
+    elmd::RenderModel const& EditorSession::RenderModel() const
+    {
+        return core_->renderModel;
+    }
+
+    std::wstring const& EditorSession::BaseDirectory() const
+    {
+        return core_->baseDirectory;
+    }
+
+    detail::EditorRenderFrame EditorSession::RenderFrame() const
+    {
+        return detail::EditorRenderFrame{
+            core_->renderModel,
+            core_->editor.buffer().text_cps(),
+            core_->editor.selection(),
+            core_->baseDirectory,
+        };
     }
 }

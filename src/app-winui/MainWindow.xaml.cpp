@@ -354,7 +354,7 @@ namespace winrt::ElMd::implementation
     bool MainWindow::ExecuteEditorCommand(elmd::Command const& command)
     {
         keyboardController.ResetCaretGoal();
-        auto oldTextLength = editorSession.Core().editor.text_cps().size();
+        auto oldTextLength = editorSession.TextLength();
         if (!editorSession.ExecuteCommand(command))
         {
             return false;
@@ -365,7 +365,7 @@ namespace winrt::ElMd::implementation
         StatusText().Text(status);
         sidebarController.Refresh();
         RenderEditorSurface();
-        if (editorRenderer.ScrollToSourceOffset(editorSession.Core().editor.selection().active.v)) RenderEditorSurface();
+        if (editorRenderer.ScrollToSourceOffset(editorSession.Selection().active.v)) RenderEditorSurface();
         textInputController.NotifyTextChanged(oldTextLength);
         return true;
     }
@@ -419,7 +419,7 @@ namespace winrt::ElMd::implementation
     {
         try
         {
-            editorRenderer.Render(editorSession.Core());
+            editorRenderer.Render(editorSession.RenderFrame());
             scrollController.Sync();
         }
         catch (winrt::hresult_error const& error)

@@ -44,7 +44,7 @@ namespace winrt::ElMd
         if (!session_ || !executeCommand_) return false;
         if (character == U'\r' || character == U'\n') return InsertNewline();
         if (character < 0x20 || character == 0x7f) return false;
-        auto start = session_->Core().editor.selection().normalized_range().start.v;
+        auto start = session_->Selection().normalized_range().start.v;
         std::u32string text(1, character);
         if (!executeCommand_(elmd::Command::InsertText(text))) return false;
         if (textInput_) textInput_->RecordCharacterTextUpdate(start, std::move(text));
@@ -179,7 +179,7 @@ namespace winrt::ElMd
             case winrt::Windows::System::VirtualKey::Home:
             {
                 ResetCaretGoal();
-                auto selection = session_->Core().editor.selection();
+                auto selection = session_->Selection();
                 auto upstream = selection.affinity == elmd::TextAffinity::Upstream;
                 if (auto offset = renderer_->VisualLineStart(selection.active.v, upstream))
                 {
@@ -196,7 +196,7 @@ namespace winrt::ElMd
             case winrt::Windows::System::VirtualKey::End:
             {
                 ResetCaretGoal();
-                auto selection = session_->Core().editor.selection();
+                auto selection = session_->Selection();
                 auto upstream = selection.affinity == elmd::TextAffinity::Upstream;
                 if (auto offset = renderer_->VisualLineEnd(selection.active.v, upstream))
                 {
@@ -241,7 +241,7 @@ namespace winrt::ElMd
     bool EditorKeyboardController::MoveCaretVerticalStep(bool down, bool extend)
     {
         if (!session_ || !renderer_) return false;
-        auto selection = session_->Core().editor.selection();
+        auto selection = session_->Selection();
         auto upstream = selection.affinity == elmd::TextAffinity::Upstream;
         auto move = renderer_->MoveCaretVertically(selection.active.v, upstream, down, caretGoalX_);
         if (!move)

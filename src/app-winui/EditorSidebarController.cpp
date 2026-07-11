@@ -76,7 +76,7 @@ namespace winrt::ElMd
     {
         if (!session_ || !outline_) return;
         std::vector<std::size_t> headingOffsets;
-        for (auto const& block : session_->Core().renderModel.blocks)
+        for (auto const& block : session_->RenderModel().blocks)
         {
             if (block.kind == elmd::RenderBlockKind::Text && block.block_style.margin_top >= 4.0f && block.content_range.end.v > block.content_range.start.v)
             {
@@ -86,7 +86,7 @@ namespace winrt::ElMd
         std::vector<std::wstring> labels;
         std::vector<std::size_t> offsets;
         std::size_t headingIndex = 0;
-        for (auto const* item : session_->Core().renderModel.outline.flat_items())
+        for (auto const* item : session_->RenderModel().outline.flat_items())
         {
             std::wstring indent((std::max)(0, static_cast<int>(item->level) - 1) * 2, L' ');
             auto title = winrt::to_hstring(item->title_plain_text);
@@ -106,7 +106,7 @@ namespace winrt::ElMd
         if (!session_ || !diagnostics_) return;
         std::vector<std::wstring> labels;
         std::vector<std::size_t> offsets;
-        for (auto const& diagnostic : session_->Core().renderModel.diagnostics)
+        for (auto const& diagnostic : session_->RenderModel().diagnostics)
         {
             auto severity = L"Warning";
             if (diagnostic.severity == elmd::RenderDiagnostic::Sev::Info) severity = L"Info";

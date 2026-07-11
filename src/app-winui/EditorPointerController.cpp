@@ -224,7 +224,7 @@ namespace winrt::ElMd
     bool EditorPointerController::SelectWordAt(std::size_t offset)
     {
         if (!session_) return false;
-        auto const& text = session_->Core().editor.text_cps();
+        auto text = session_->TextView();
         if (text.empty()) return false;
         auto isWordChar = [](char32_t ch)
         {
@@ -245,7 +245,7 @@ namespace winrt::ElMd
     bool EditorPointerController::TryToggleTaskCheckboxAt(std::size_t offset)
     {
         if (!session_) return false;
-        auto const& text = session_->Core().editor.text_cps();
+        auto text = session_->TextView();
         auto lineStart = (std::min)(offset, text.size());
         while (lineStart > 0 && text[lineStart - 1] != U'\n') --lineStart;
         auto pos = lineStart;
@@ -280,7 +280,7 @@ namespace winrt::ElMd
             for (auto const& child : block.child_blocks) if (auto link = self(self, child)) return link;
             return std::nullopt;
         };
-        for (auto const& block : session_->Core().renderModel.blocks) if (auto link = scanBlock(scanBlock, block)) return link;
+        for (auto const& block : session_->RenderModel().blocks) if (auto link = scanBlock(scanBlock, block)) return link;
         return std::nullopt;
     }
 
@@ -314,7 +314,7 @@ namespace winrt::ElMd
             for (auto const& child : block.child_blocks) if (auto tooltip = self(self, child)) return tooltip;
             return std::nullopt;
         };
-        for (auto const& block : session_->Core().renderModel.blocks) if (auto tooltip = scanBlock(scanBlock, block)) return tooltip;
+        for (auto const& block : session_->RenderModel().blocks) if (auto tooltip = scanBlock(scanBlock, block)) return tooltip;
         return std::nullopt;
     }
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "EditorRenderFrame.h"
+
 import elmd.core.editor;
 import elmd.core.command;
 import elmd.core.render_model;
@@ -12,7 +14,6 @@ namespace winrt::ElMd
         {
             elmd::Editor editor;
             elmd::RenderModel renderModel;
-            std::string sourceText;
             std::wstring baseDirectory;
         };
     }
@@ -39,7 +40,12 @@ namespace winrt::ElMd
         winrt::hstring DisplayName() const;
         winrt::hstring Path() const;
         uint64_t Revision() const;
-        detail::EditorSessionCore const& Core() const;
+        std::size_t TextLength() const;
+        std::u32string_view TextView() const;
+        elmd::Selection Selection() const;
+        elmd::RenderModel const& RenderModel() const;
+        std::wstring const& BaseDirectory() const;
+        detail::EditorRenderFrame RenderFrame() const;
 
     private:
         void RebuildCore();

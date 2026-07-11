@@ -25,10 +25,9 @@ export namespace elmd {
 class Editor {
 public:
     Editor() { rebuild_document_full_(); }
-    explicit Editor(std::string text) { buffer_ = TextBuffer::from_text(std::move(text)); rebuild_document_full_(); }
+    explicit Editor(std::string text, MarkdownDialect dialect = default_dialect()) : dialect_(std::move(dialect)) { buffer_ = TextBuffer::from_text(std::move(text)); rebuild_document_full_(); }
 
     const TextBuffer& buffer() const { return buffer_; }
-    TextBuffer& mutable_buffer() { return buffer_; }
     const MarkdownDocument& document() const { return document_; }
     const DocumentSymbolIndex& symbols() const { return symbols_; }
     const Outline& outline() const { return outline_; }
@@ -40,6 +39,8 @@ public:
     Theme theme() const { return theme_; }
     void set_scale_factor(float s) { scale_factor_ = s; }
     float scale_factor() const { return scale_factor_; }
+    MarkdownDialect const& dialect() const { return dialect_; }
+    void set_dialect(MarkdownDialect dialect) { dialect_ = std::move(dialect); rebuild_document_full_(); }
     bool has_undo() const { return undo_.has_undo(); }
     bool has_redo() const { return undo_.has_redo(); }
 
@@ -158,9 +159,10 @@ private:
     UndoManager undo_{1000};
     Theme theme_ = Theme::Dark;
     float scale_factor_ = 1.0f;
+    MarkdownDialect dialect_ = default_dialect();
 
     void rebuild_document_full_() {
-        auto parsed = parse_text(buffer_.revision(), buffer_.text_utf8());
+        auto parsed = parse_text(buffer_.revision(), buffer_.text_utf8(), dialect_);
         document_ = std::move(parsed.document);
         symbols_ = std::move(parsed.symbols);
         outline_ = std::move(parsed.outline);
@@ -171,7 +173,7 @@ private:
             IncrementalParseEdit edit;
             edit.old_range = delta.edits[0].range;
             edit.replacement = delta.edits[0].replacement;
-            auto parsed = parse_incremental(ParseInput(buffer_.revision(), buffer_.text_utf8()), old_document, old_symbols, old_text, edit);
+            auto parsed = parse_incremental(ParseInput(buffer_.revision(), buffer_.text_utf8(), dialect_), old_document, old_symbols, old_text, edit);
             document_ = std::move(parsed.document);
             symbols_ = std::move(parsed.symbols);
             outline_ = std::move(parsed.outline);
