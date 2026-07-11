@@ -10,6 +10,7 @@ import elmd.core.source_structure;
 import elmd.core.utf;
 import elmd.core.dialect;
 import elmd.core.table_edit;
+import elmd.core.auto_pair;
 import elmd.core.command;
 
 export namespace elmd {
@@ -539,6 +540,7 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
 
     switch (cmd.kind) {
         case CommandKind::InsertText: {
+            if (auto paired = auto_pair_insert_transaction(text_cps, selection, revision, cmd.text)) return paired;
             std::size_t new_pos = sel.start.v + cmd.text.size();
             Transaction t(revision, selection, caret_after(CharOffset(new_pos)), TransactionReason::Typing);
             t.with_edit(sel, cmd.text);
@@ -574,6 +576,7 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
                 t.with_edit(sel, U"");
                 return t;
             }
+            if (auto paired = auto_pair_backspace_transaction(text_cps, selection, revision)) return paired;
             if (auto quote_line = quote_source_line_at(text_cps, sel.start); quote_line && !quote_line->empty && sel.start == quote_line->content_range.start && !quote_line->marker_ranges.empty()) {
                 std::optional<QuoteSourceLine> previous_line;
                 if (quote_line->source_range.start.v > 0) previous_line = quote_source_line_at(text_cps, CharOffset(quote_line->source_range.start.v - 1));
