@@ -22,6 +22,100 @@ ELMD_TEST(test_new_editor_empty) {
     ELMD_CHECK(e.buffer().is_empty());
 }
 
+ELMD_TEST(test_document_projection_does_not_reparse_incomplete_markdown) {
+    EditorDocument document;
+    document.revision = 7;
+    BlockNode paragraph;
+    paragraph.id = NodeId(1);
+    paragraph.kind = BlockKind::Paragraph;
+    paragraph.children.push_back(InlineNode::text_node(NodeId(2), U"\\["));
+    document.blocks.push_back(std::move(paragraph));
+
+    auto projection = project_document(document);
+    ELMD_CHECK_EQ(projection.markdown, std::u32string(U"\\["));
+    ELMD_CHECK(projection.source_map.find_node_by_id(NodeId(1)) != nullptr);
+    auto* text_range = projection.source_map.find_node_by_id(NodeId(2));
+    ELMD_CHECK(text_range != nullptr);
+    if (text_range) {
+        ELMD_CHECK_EQ(text_range->content_range.start.v, 0u);
+        ELMD_CHECK_EQ(text_range->content_range.end.v, 2u);
+    }
+}
+
+ELMD_TEST(test_document_projection_maps_empty_inline_structure_without_parser_rebinding) {
+    EditorDocument document;
+    document.revision = 3;
+    BlockNode paragraph;
+    paragraph.id = NodeId(10);
+    paragraph.kind = BlockKind::Paragraph;
+    InlineNode strong;
+    strong.id = NodeId(11);
+    strong.kind = InlineKind::Strong;
+    strong.opening_marker = U"**";
+    strong.closing_marker = U"**";
+    paragraph.children.push_back(std::move(strong));
+    document.blocks.push_back(std::move(paragraph));
+
+    auto projection = project_document(document);
+    ELMD_CHECK_EQ(projection.markdown, std::u32string(U"****"));
+    auto* range = projection.source_map.find_node_by_id(NodeId(11));
+    ELMD_CHECK(range != nullptr);
+    if (range) {
+        ELMD_CHECK_EQ(range->source_range.start.v, 0u);
+        ELMD_CHECK_EQ(range->source_range.end.v, 4u);
+        ELMD_CHECK_EQ(range->content_range.start.v, 2u);
+        ELMD_CHECK_EQ(range->content_range.end.v, 2u);
+        ELMD_CHECK_EQ(range->marker_ranges.size(), 2u);
+    }
+}
+
+ELMD_TEST(test_document_projection_maps_nested_quote_and_list_nodes_directly) {
+    EditorDocument document;
+    document.revision = 5;
+    BlockNode quote;
+    quote.id = NodeId(20);
+    quote.kind = BlockKind::BlockQuote;
+    BlockNode quoted_paragraph;
+    quoted_paragraph.id = NodeId(21);
+    quoted_paragraph.kind = BlockKind::Paragraph;
+    quoted_paragraph.children.push_back(InlineNode::text_node(NodeId(22), U"alpha"));
+    quote.quote_children.push_back(std::move(quoted_paragraph));
+    document.blocks.push_back(std::move(quote));
+
+    BlockNode list;
+    list.id = NodeId(30);
+    list.kind = BlockKind::List;
+    ListItem item;
+    item.id = NodeId(31);
+    item.marker = U"- ";
+    BlockNode item_paragraph;
+    item_paragraph.id = NodeId(32);
+    item_paragraph.kind = BlockKind::Paragraph;
+    item_paragraph.children.push_back(InlineNode::text_node(NodeId(33), U"beta"));
+    item.children.push_back(std::move(item_paragraph));
+    list.list_items.push_back(std::move(item));
+    document.blocks.push_back(std::move(list));
+
+    auto projection = project_document(document);
+    document.source_map = projection.source_map;
+    ELMD_CHECK_EQ(projection.markdown, std::u32string(U"> alpha\n\n- beta"));
+    for (auto id : {20u, 21u, 22u, 30u, 31u, 32u, 33u}) {
+        ELMD_CHECK(document.source_map.find_node_by_id(NodeId(id)) != nullptr);
+    }
+    auto quoted = document_position_from_source_offset(document, CharOffset(4));
+    ELMD_CHECK(quoted.has_value());
+    if (quoted) {
+        ELMD_CHECK_EQ(quoted->node_id, NodeId(21));
+        ELMD_CHECK_EQ(quoted->offset, 2u);
+    }
+    auto listed = document_position_from_source_offset(document, CharOffset(13));
+    ELMD_CHECK(listed.has_value());
+    if (listed) {
+        ELMD_CHECK_EQ(listed->node_id, NodeId(32));
+        ELMD_CHECK_EQ(listed->offset, 2u);
+    }
+}
+
 ELMD_TEST(test_editor_document_enter_keeps_ast_authoritative_and_projects_markdown) {
     Editor editor("alphaomega");
     ELMD_CHECK(!editor.document().blocks.empty());
