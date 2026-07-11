@@ -25,6 +25,9 @@
     <ClCompile Include="..\core\diagnostics.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\dialect.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\document.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\document_edit.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\document_position.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\document_projection.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\editor.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\error.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\extension.ixx"><Filter>Core Modules</Filter></ClCompile>
@@ -36,6 +39,7 @@
     <ClCompile Include="..\core\render_builder.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\render_model.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\selection.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\serializer.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\semantic_edit.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\slug.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\source_map.ixx"><Filter>Core Modules</Filter></ClCompile>

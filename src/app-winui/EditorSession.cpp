@@ -121,7 +121,7 @@ namespace winrt::ElMd
 
     winrt::hstring EditorSession::Text() const
     {
-        return text_;
+        return core_ ? winrt::to_hstring(core_->editor.markdown_utf8()) : text_;
     }
 
     winrt::hstring EditorSession::DisplayName() const

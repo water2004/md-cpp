@@ -22,6 +22,7 @@ import elmd.core.document_projection;
 import elmd.core.symbols;
 import elmd.core.outline;
 import elmd.core.parser;
+import elmd.core.serializer;
 
 export namespace elmd {
 
@@ -35,6 +36,8 @@ public:
     const DocumentSymbolIndex& symbols() const { return symbols_; }
     const Outline& outline() const { return outline_; }
     std::u32string text_cps() const { return std::u32string(buffer_.text_cps()); }
+    std::u32string markdown_cps() const { return serialize_markdown_cps(document_); }
+    std::string markdown_utf8() const { return serialize_markdown(document_); }
     Selection selection() const { return selection_; }
     std::uint64_t revision() const { return buffer_.revision(); }
     void set_selection(Selection s) {

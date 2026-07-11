@@ -35,15 +35,23 @@ ELMD_TEST(test_export_html_escapes_div) {
     ELMD_CHECK(html.find("<div>hello</div>\n") == std::string::npos);
 }
 
-ELMD_TEST(test_export_markdown_preserves_source) {
+ELMD_TEST(test_export_markdown_serializes_document) {
     std::string src = "# Title\n\nHello *world*.\n";
     auto out = parse_text(1, src);
     ExportOptions opts;
-    auto res = export_markdown(src, out.document, opts);
+    auto res = export_markdown(out.document, opts);
     ELMD_CHECK(res.ok);
-    ELMD_CHECK_EQ(res.value.content, src);
+    ELMD_CHECK_EQ(res.value.content, std::string("# Title\n\nHello *world*."));
     ELMD_CHECK_EQ(res.value.mime_type, std::string("text/markdown"));
     ELMD_CHECK_EQ(res.value.extension, std::string("md"));
+}
+
+ELMD_TEST(test_export_markdown_uses_authoritative_document) {
+    auto out = parse_text(1, "**alpha**");
+    ExportOptions opts;
+    auto result = export_markdown(out.document, opts);
+    ELMD_CHECK(result.ok);
+    if (result.ok) ELMD_CHECK_EQ(result.value.content, std::string("**alpha**"));
 }
 
 ELMD_TEST(test_export_plain_text_mime) {

@@ -7,6 +7,7 @@ import std;
 import elmd.core.ast;
 import elmd.core.document;
 import elmd.core.settings;
+import elmd.core.serializer;
 import elmd.core.error;
 import elmd.core.utf;
 
@@ -59,11 +60,10 @@ inline std::string escape_text(std::string_view text) {
     return out;
 }
 
-inline EditorResult<ExportArtifact> export_markdown(std::string_view source,
-                                                    const MarkdownDocument&,
+inline EditorResult<ExportArtifact> export_markdown(const EditorDocument& document,
                                                     const ExportOptions&) {
     ExportArtifact a;
-    a.content = std::string(source);
+    a.content = serialize_markdown(document);
     a.mime_type = "text/markdown";
     a.extension = "md";
     return a;
