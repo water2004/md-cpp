@@ -1110,11 +1110,7 @@ namespace winrt::ElMd
             observedRemoteImageGeneration = remoteGeneration;
             blockHeightCache.clear();
         }
-        visualBlocks.clear();
-        visualLines.clear();
-        visualTables.clear();
-        visualMathHits.clear();
-        visualBlocks.reserve(sessionCore.renderModel.blocks.size());
+        interactionMap.Clear(sessionCore.renderModel.blocks.size());
         if (blockHeightCache.size() > 32768) blockHeightCache.clear();
         auto responsivePadding = (std::min)(styleSheet.horizontalPadding, (std::max)(12.0f, surfaceWidthDip * 0.06f));
         auto documentLeft = responsivePadding;
@@ -1373,7 +1369,7 @@ namespace winrt::ElMd
 
         auto addVisualLinesForBlock = [&](std::size_t blockIndex)
         {
-            auto const& block = visualBlocks[blockIndex];
+            auto const& block = interactionMap.blocks[blockIndex];
             if (!block.layout || block.displayToSource.empty())
             {
                 return;
@@ -1410,7 +1406,7 @@ namespace winrt::ElMd
                 visualLine.displayEnd = visibleEndPosition;
                 visualLine.wrapContinuation = lineIndex > 0 && prevNewlineLength == 0;
                 visualLine.rect = D2D1::RectF(block.textOrigin.x, lineTop, block.textOrigin.x + block.textWidth, lineTop + line.height);
-                visualLines.push_back(visualLine);
+                interactionMap.lines.push_back(visualLine);
                 textPosition = lineEndPosition;
                 lineTop += line.height;
                 prevNewlineLength = line.newlineLength;
@@ -1492,7 +1488,7 @@ namespace winrt::ElMd
                 placeholder.sourceStart = block.source_range.start.v;
                 placeholder.sourceEnd = block.source_range.end.v;
                 placeholder.documentY = y + scrollOffset;
-                visualBlocks.push_back(std::move(placeholder));
+                interactionMap.blocks.push_back(std::move(placeholder));
                 y += estimatedHeight;
                 previousBlank = currentBlank;
                 continue;
@@ -1626,16 +1622,16 @@ namespace winrt::ElMd
                         cell.textWidth = (std::max)(1.0f, cell.rect.right - cell.rect.left - 20.0f);
                     }
 
-                    auto tableIndex = visualTables.size();
-                    visualTables.push_back(std::move(table));
-                    auto& visualTable = visualTables.back();
+                    auto tableIndex = interactionMap.tables.size();
+                    interactionMap.tables.push_back(std::move(table));
+                    auto& visualTable = interactionMap.tables.back();
                     VisualBlock visualBlock;
                     visualBlock.rect = visualTable.rect;
                     visualBlock.sourceStart = visualTable.sourceStart;
                     visualBlock.sourceEnd = visualTable.sourceEnd;
                     visualBlock.documentY = y + scrollOffset;
-                    auto visualBlockIndex = visualBlocks.size();
-                    visualBlocks.push_back(std::move(visualBlock));
+                    auto visualBlockIndex = interactionMap.blocks.size();
+                    interactionMap.blocks.push_back(std::move(visualBlock));
 
                     d2dContext->FillRectangle(D2D1::RectF(visualTable.rect.left, visualTable.rowBoundaries[0], visualTable.rect.right, visualTable.rowBoundaries[1]), panelBrush.Get());
                     for (std::size_t cellIndex = 0; cellIndex < visualTable.cells.size(); ++cellIndex)
@@ -1686,7 +1682,7 @@ namespace winrt::ElMd
                                     auto strikeY = mathY + overlay.fragment.height * 0.52f;
                                     d2dContext->DrawLine(D2D1::Point2F(cell.textOrigin.x + pointX, strikeY), D2D1::Point2F(mathX + overlay.fragment.width, strikeY), textBrush.Get(), 1.5f);
                                 }
-                                visualMathHits.push_back(VisualMathHit{
+                                interactionMap.mathHits.push_back(VisualMathHit{
                                     D2D1::RectF(mathX, mathY, mathX + overlay.fragment.width, mathY + overlay.fragment.height),
                                     overlay.sourceStart,
                                     overlay.sourceEnd,
@@ -1725,7 +1721,7 @@ namespace winrt::ElMd
                                         line.displayEnd = visibleEndPosition;
                                         line.wrapContinuation = lineIndex > 0 && previousNewlineLength == 0;
                                         line.rect = D2D1::RectF(cell.rect.left, lineTop, cell.rect.right, lineTop + metric.height);
-                                        visualLines.push_back(std::move(line));
+                                        interactionMap.lines.push_back(std::move(line));
                                         addedVisualLine = true;
                                         textPosition = lineEndPosition;
                                         lineTop += metric.height;
@@ -1745,7 +1741,7 @@ namespace winrt::ElMd
                             line.displayStart = 0;
                             line.displayEnd = static_cast<std::uint32_t>(cell.text.size());
                             line.rect = cell.rect;
-                            visualLines.push_back(std::move(line));
+                            interactionMap.lines.push_back(std::move(line));
                         }
                     }
                     for (auto boundary : visualTable.columnBoundaries)
@@ -1918,7 +1914,7 @@ namespace winrt::ElMd
                             auto mathX = fragment.origin.x + pointX + overlay.leadingSpace;
                             auto mathY = fragment.origin.y + metrics.top;
                             if (!drawMathSvg(overlay.fragment, D2D1::Point2F(mathX, mathY), styleSheet.textColor)) drawMathFallback(overlay.sourceStart, overlay.sourceEnd, D2D1::Point2F(mathX, mathY));
-                            visualMathHits.push_back(VisualMathHit{D2D1::RectF(mathX, mathY, mathX + overlay.fragment.width, mathY + overlay.fragment.height), overlay.sourceStart, overlay.sourceEnd, overlay.progressStart, overlay.progressEnd});
+                            interactionMap.mathHits.push_back(VisualMathHit{D2D1::RectF(mathX, mathY, mathX + overlay.fragment.width, mathY + overlay.fragment.height), overlay.sourceStart, overlay.sourceEnd, overlay.progressStart, overlay.progressEnd});
                         }
                     }
                     VisualBlock visualBlock;
@@ -1931,8 +1927,8 @@ namespace winrt::ElMd
                     visualBlock.text = std::move(fragment.display.text);
                     visualBlock.displayToSource = std::move(fragment.display.displayToSource);
                     visualBlock.layout = std::move(fragment.layout);
-                    visualBlocks.push_back(std::move(visualBlock));
-                    addVisualLinesForBlock(visualBlocks.size() - 1);
+                    interactionMap.blocks.push_back(std::move(visualBlock));
+                    addVisualLinesForBlock(interactionMap.blocks.size() - 1);
                 }
                 if (quoteFragments.empty())
                 {
@@ -1943,7 +1939,7 @@ namespace winrt::ElMd
                     placeholder.sourceStart = block.source_range.start.v;
                     placeholder.sourceEnd = block.source_range.end.v;
                     placeholder.documentY = y + scrollOffset;
-                    visualBlocks.push_back(std::move(placeholder));
+                    interactionMap.blocks.push_back(std::move(placeholder));
                 }
                 y = quoteBottom;
                 blockHeightCache[cacheKey] = y - blockStartY;
@@ -2592,7 +2588,7 @@ namespace winrt::ElMd
                         auto localEnd = static_cast<std::size_t>(segmentEnd - preview.displayStart);
                         auto hitStart = (std::min)(preview.sourceStart + localStart, preview.sourceEnd);
                         auto hitEnd = (std::min)(preview.sourceStart + localEnd, preview.sourceEnd);
-                        visualMathHits.push_back(VisualMathHit{
+                        interactionMap.mathHits.push_back(VisualMathHit{
                             D2D1::RectF(metric.left - 2.0f, metric.top - 2.0f, metric.left + metric.width + 2.0f, metric.top + metric.height + 2.0f),
                             hitStart,
                             hitEnd,
@@ -2620,7 +2616,7 @@ namespace winrt::ElMd
                             auto strikeY = mathY + overlay.fragment.height * 0.52f;
                             d2dContext->DrawLine(D2D1::Point2F(origin.x + pointX, strikeY), D2D1::Point2F(mathX + overlay.fragment.width, strikeY), textBrush.Get(), 1.5f);
                         }
-                        visualMathHits.push_back(VisualMathHit{
+                        interactionMap.mathHits.push_back(VisualMathHit{
                             D2D1::RectF(mathX, mathY, mathX + overlay.fragment.width, mathY + overlay.fragment.height),
                             overlay.sourceStart,
                             overlay.sourceEnd,
@@ -2646,7 +2642,7 @@ namespace winrt::ElMd
                             auto strikeY = origins[fragmentIndex].y + fragment.height * 0.52f;
                             d2dContext->DrawLine(D2D1::Point2F(origins[fragmentIndex].x, strikeY), D2D1::Point2F(origins[fragmentIndex].x + fragment.width, strikeY), textBrush.Get(), 1.5f);
                         }
-                        visualMathHits.push_back(VisualMathHit{
+                        interactionMap.mathHits.push_back(VisualMathHit{
                             D2D1::RectF(origins[fragmentIndex].x - 2.0f, origins[fragmentIndex].y - 2.0f, origins[fragmentIndex].x + fragment.width + 2.0f, origins[fragmentIndex].y + fragment.height + 2.0f),
                             preview.contentStart,
                             preview.contentEnd,
@@ -2688,21 +2684,21 @@ namespace winrt::ElMd
                 visualBlock.displayToSource = std::move(displayToSource);
                 visualBlock.layout = layout;
                 visualBlock.thematicBreak = thematicBreak;
-                visualBlocks.push_back(std::move(visualBlock));
+                interactionMap.blocks.push_back(std::move(visualBlock));
                 if (thematicBreak)
                 {
                     VisualLine visualLine;
-                    visualLine.blockIndex = visualBlocks.size() - 1;
+                    visualLine.blockIndex = interactionMap.blocks.size() - 1;
                     visualLine.sourceStart = sourceStart;
                     visualLine.sourceEnd = sourceEnd;
                     visualLine.displayStart = 0;
                     visualLine.displayEnd = 1;
-                    visualLine.rect = visualBlocks.back().rect;
-                    visualLines.push_back(std::move(visualLine));
+                    visualLine.rect = interactionMap.blocks.back().rect;
+                    interactionMap.lines.push_back(std::move(visualLine));
                 }
                 else
                 {
-                    addVisualLinesForBlock(visualBlocks.size() - 1);
+                    addVisualLinesForBlock(interactionMap.blocks.size() - 1);
                 }
             }
             y += height;
@@ -2753,7 +2749,7 @@ namespace winrt::ElMd
         };
         if (pointerPosition)
         {
-            for (auto const& table : visualTables)
+            for (auto const& table : interactionMap.tables)
             {
                 if (!table.editable) continue;
                 auto pointer = *pointerPosition;
@@ -2811,7 +2807,7 @@ namespace winrt::ElMd
         }
         if (draggedTableAction && tableDropIndex)
         {
-            for (auto const& table : visualTables)
+            for (auto const& table : interactionMap.tables)
             {
                 if (draggedTableAction->sourceOffset < table.sourceStart || draggedTableAction->sourceOffset > table.sourceEnd) continue;
                 if (draggedTableAction->kind == TableActionKind::DragRow && *tableDropIndex < table.rowBoundaries.size())
@@ -2904,7 +2900,7 @@ namespace winrt::ElMd
 
     std::optional<EditorSurfaceRenderer::TableAction> EditorSurfaceRenderer::TableActionAt(float x, float y) const
     {
-        for (auto const& table : visualTables)
+        for (auto const& table : interactionMap.tables)
         {
             if (!table.editable) continue;
             auto source_for_row = [&](std::size_t row) {
@@ -2970,7 +2966,7 @@ namespace winrt::ElMd
 
     std::optional<std::size_t> EditorSurfaceRenderer::TableDropIndexAt(float x, float y, bool rows) const
     {
-        for (auto const& table : visualTables)
+        for (auto const& table : interactionMap.tables)
         {
             if (!table.editable) continue;
             if (draggedTableAction && (draggedTableAction->sourceOffset < table.sourceStart || draggedTableAction->sourceOffset > table.sourceEnd)) continue;
@@ -3022,7 +3018,7 @@ namespace winrt::ElMd
             return scrollOffset != previous;
         }
 
-        for (auto const& block : visualBlocks)
+        for (auto const& block : interactionMap.blocks)
         {
             if (block.sourceStart <= sourceOffset && sourceOffset <= block.sourceEnd)
             {
@@ -3035,377 +3031,30 @@ namespace winrt::ElMd
         return false;
     }
 
-    std::optional<std::size_t> EditorSurfaceRenderer::LineIndexFor(std::size_t sourceOffset, bool upstream) const
+    std::optional<std::size_t> EditorSurfaceRenderer::HitTest(float x, float y, bool* outUpstream) const
     {
-        if (visualLines.empty())
-        {
-            return std::nullopt;
-        }
-
-        std::optional<std::size_t> firstContaining;
-        std::optional<std::size_t> lastContaining;
-        for (std::size_t index = 0; index < visualLines.size(); ++index)
-        {
-            auto const& line = visualLines[index];
-            if (line.sourceStart <= sourceOffset && sourceOffset <= line.sourceEnd)
-            {
-                if (!firstContaining)
-                {
-                    firstContaining = index;
-                }
-                lastContaining = index;
-            }
-        }
-        if (firstContaining)
-        {
-            return upstream ? firstContaining : lastContaining;
-        }
-
-        std::optional<std::size_t> prev;
-        std::optional<std::size_t> next;
-        for (std::size_t index = 0; index < visualLines.size(); ++index)
-        {
-            if (visualLines[index].sourceEnd <= sourceOffset)
-            {
-                prev = index;
-            }
-            if (!next && visualLines[index].sourceStart >= sourceOffset)
-            {
-                next = index;
-            }
-        }
-        if (prev && next)
-        {
-            auto distPrev = sourceOffset - visualLines[*prev].sourceEnd;
-            auto distNext = visualLines[*next].sourceStart - sourceOffset;
-            if (distPrev == distNext)
-            {
-                return upstream ? prev : next;
-            }
-            return distPrev <= distNext ? prev : next;
-        }
-        if (prev)
-        {
-            return prev;
-        }
-        return next;
-    }
-
-    std::optional<D2D1_RECT_F> EditorSurfaceRenderer::CaretRectOnLine(VisualLine const& line, std::size_t sourceOffset, bool upstream) const
-    {
-        if (line.blockIndex >= visualBlocks.size())
-        {
-            return std::nullopt;
-        }
-        auto const& block = visualBlocks[line.blockIndex];
-        auto clamped = (std::min)((std::max)(sourceOffset, line.sourceStart), line.sourceEnd);
-        if (block.thematicBreak)
-        {
-            auto lineHeight = (std::min)(styleSheet.body.lineHeight, (line.rect.bottom - line.rect.top) * 0.46f);
-            auto top = clamped <= line.sourceStart ? line.rect.top : line.rect.bottom - lineHeight;
-            return D2D1::RectF(line.rect.left, top, line.rect.left + 2.0f, top + lineHeight);
-        }
-        IDWriteTextLayout* layout = block.layout.Get();
-        D2D1_POINT_2F textOrigin = block.textOrigin;
-        std::vector<std::size_t> const* displayToSource = &block.displayToSource;
-        if (line.tableIndex < visualTables.size() && line.cellIndex < visualTables[line.tableIndex].cells.size())
-        {
-            auto const& cell = visualTables[line.tableIndex].cells[line.cellIndex];
-            layout = cell.layout.Get();
-            textOrigin = cell.textOrigin;
-            displayToSource = &cell.displayToSource;
-        }
-        if (!layout)
-        {
-            return D2D1::RectF(line.rect.left, line.rect.top, line.rect.left + 2.0f, line.rect.bottom);
-        }
-
-        auto displayPos = DisplayPositionForSource(*displayToSource, clamped);
-        displayPos = (std::min)((std::max)(displayPos, static_cast<std::size_t>(line.displayStart)), static_cast<std::size_t>(line.displayEnd));
-
-        UINT32 hitPos = static_cast<UINT32>(displayPos);
-        BOOL trailing = FALSE;
-        bool atLineEnd = displayPos == line.displayEnd;
-        if (atLineEnd && upstream && displayPos > line.displayStart)
-        {
-            hitPos = static_cast<UINT32>(displayPos - 1);
-            trailing = TRUE;
-        }
-
-        FLOAT caretX = 0.0f;
-        FLOAT caretY = 0.0f;
-        DWRITE_HIT_TEST_METRICS metrics{};
-        if (SUCCEEDED(layout->HitTestTextPosition(hitPos, trailing, &caretX, &caretY, &metrics)))
-        {
-            auto left = textOrigin.x + caretX;
-            auto top = line.rect.top;
-            auto bottom = line.rect.bottom;
-            return D2D1::RectF(left, top, left + 2.0f, bottom);
-        }
-        return D2D1::RectF(line.rect.left, line.rect.top, line.rect.left + 2.0f, line.rect.bottom);
+        return interactionMap.HitTest(x, y, outUpstream);
     }
 
     std::optional<D2D1_RECT_F> EditorSurfaceRenderer::CaretBounds(std::size_t sourceOffset, bool upstream) const
     {
-        auto index = LineIndexFor(sourceOffset, upstream);
-        if (!index)
-        {
-            return std::nullopt;
-        }
-        return CaretRectOnLine(visualLines[*index], sourceOffset, upstream);
-    }
-
-    std::optional<std::size_t> EditorSurfaceRenderer::VisualLineStart(std::size_t sourceOffset, bool upstream) const
-    {
-        auto index = LineIndexFor(sourceOffset, upstream);
-        if (!index)
-        {
-            return std::nullopt;
-        }
-        return visualLines[*index].sourceStart;
-    }
-
-    std::optional<std::size_t> EditorSurfaceRenderer::VisualLineEnd(std::size_t sourceOffset, bool upstream) const
-    {
-        auto index = LineIndexFor(sourceOffset, upstream);
-        if (!index)
-        {
-            return std::nullopt;
-        }
-        return visualLines[*index].sourceEnd;
-    }
-
-    std::optional<std::size_t> EditorSurfaceRenderer::HitTest(float x, float y, bool* outUpstream) const
-    {
-        if (outUpstream)
-        {
-            *outUpstream = false;
-        }
-        for (auto hit = visualMathHits.rbegin(); hit != visualMathHits.rend(); ++hit)
-        {
-            if (x < hit->rect.left || x > hit->rect.right || y < hit->rect.top || y > hit->rect.bottom)
-            {
-                continue;
-            }
-            auto width = (std::max)(1.0f, hit->rect.right - hit->rect.left);
-            auto local = (std::clamp)((x - hit->rect.left) / width, 0.0f, 1.0f);
-            auto progress = hit->progressStart + local * (hit->progressEnd - hit->progressStart);
-            auto length = hit->sourceEnd - hit->sourceStart;
-            auto offset = hit->sourceStart + static_cast<std::size_t>(std::llround(progress * static_cast<float>(length)));
-            return (std::min)(offset, hit->sourceEnd);
-        }
-        if (visualLines.empty())
-        {
-            return std::nullopt;
-        }
-
-        std::size_t best = 0;
-        float bestDist = (std::numeric_limits<float>::max)();
-        for (std::size_t index = 0; index < visualLines.size(); ++index)
-        {
-            auto const& rect = visualLines[index].rect;
-            float dist = 0.0f;
-            if (y < rect.top)
-            {
-                dist = rect.top - y;
-            }
-            else if (y > rect.bottom)
-            {
-                dist = y - rect.bottom;
-            }
-            if (visualLines[index].tableIndex < visualTables.size())
-            {
-                if (x < rect.left) dist += rect.left - x;
-                else if (x > rect.right) dist += x - rect.right;
-            }
-            if (dist < bestDist)
-            {
-                bestDist = dist;
-                best = index;
-            }
-            if (dist == 0.0f)
-            {
-                break;
-            }
-        }
-
-        auto const& line = visualLines[best];
-        auto const& block = visualBlocks[line.blockIndex];
-        if (block.thematicBreak)
-        {
-            if (outUpstream) *outUpstream = false;
-            auto midpoint = (block.rect.top + block.rect.bottom) * 0.5f;
-            return y < midpoint ? line.sourceStart : line.sourceEnd;
-        }
-        IDWriteTextLayout* layout = block.layout.Get();
-        D2D1_POINT_2F textOrigin = block.textOrigin;
-        std::vector<std::size_t> const* displayToSource = &block.displayToSource;
-        if (line.tableIndex < visualTables.size() && line.cellIndex < visualTables[line.tableIndex].cells.size())
-        {
-            auto const& cell = visualTables[line.tableIndex].cells[line.cellIndex];
-            layout = cell.layout.Get();
-            textOrigin = cell.textOrigin;
-            displayToSource = &cell.displayToSource;
-        }
-        if (!layout)
-        {
-            if (outUpstream)
-            {
-                *outUpstream = false;
-            }
-            return line.sourceStart;
-        }
-
-        BOOL isTrailingHit = FALSE;
-        BOOL isInside = FALSE;
-        DWRITE_HIT_TEST_METRICS metrics{};
-        float localX = x - textOrigin.x;
-        float localY = (line.rect.top + line.rect.bottom) * 0.5f - textOrigin.y;
-        if (SUCCEEDED(layout->HitTestPoint(localX, localY, &isTrailingHit, &isInside, &metrics)))
-        {
-            auto displayPos = static_cast<std::size_t>(metrics.textPosition + (isTrailingHit ? metrics.length : 0));
-            displayPos = (std::min)((std::max)(displayPos, static_cast<std::size_t>(line.displayStart)), static_cast<std::size_t>(line.displayEnd));
-            std::size_t srcOff = displayPos < displayToSource->size() ? (*displayToSource)[displayPos] : line.sourceEnd;
-            srcOff = (std::min)((std::max)(srcOff, line.sourceStart), line.sourceEnd);
-            if (outUpstream)
-            {
-                bool nextIsWrap = best + 1 < visualLines.size()
-                    && visualLines[best + 1].blockIndex == line.blockIndex
-                    && visualLines[best + 1].wrapContinuation
-                    && visualLines[best + 1].displayStart == line.displayEnd;
-                *outUpstream = srcOff == line.sourceEnd && nextIsWrap;
-            }
-            return srcOff;
-        }
-
-        if (outUpstream)
-        {
-            *outUpstream = false;
-        }
-        return line.sourceStart;
+        return interactionMap.CaretBounds(sourceOffset, upstream, styleSheet.body.lineHeight);
     }
 
     std::optional<EditorSurfaceRenderer::CaretMove> EditorSurfaceRenderer::MoveCaretVertically(std::size_t sourceOffset, bool upstream, bool down, float& goalX) const
     {
-        auto current = LineIndexFor(sourceOffset, upstream);
-        if (!current || visualLines.empty())
-        {
-            return std::nullopt;
-        }
-
-        float x = goalX;
-        if (x < 0.0f)
-        {
-            if (auto rect = CaretRectOnLine(visualLines[*current], sourceOffset, upstream))
-            {
-                x = rect->left;
-            }
-            else
-            {
-                x = visualLines[*current].rect.left;
-            }
-            goalX = x;
-        }
-
-        if (!down && *current == 0)
-        {
-            return CaretMove{ visualLines.front().sourceStart, false };
-        }
-        if (down && *current + 1 >= visualLines.size())
-        {
-            return CaretMove{ visualLines.back().sourceEnd, true };
-        }
-
-        std::size_t targetIndex = down ? *current + 1 : *current - 1;
-        auto const& currentLine = visualLines[*current];
-        if (currentLine.tableIndex < visualTables.size() && currentLine.cellIndex < visualTables[currentLine.tableIndex].cells.size())
-        {
-            auto const& table = visualTables[currentLine.tableIndex];
-            auto const& cell = table.cells[currentLine.cellIndex];
-            auto adjacentIsSameCell = down
-                ? *current + 1 < visualLines.size()
-                    && visualLines[*current + 1].tableIndex == currentLine.tableIndex
-                    && visualLines[*current + 1].cellIndex == currentLine.cellIndex
-                : *current > 0
-                    && visualLines[*current - 1].tableIndex == currentLine.tableIndex
-                    && visualLines[*current - 1].cellIndex == currentLine.cellIndex;
-            if (adjacentIsSameCell)
-            {
-                targetIndex = down ? *current + 1 : *current - 1;
-            }
-            else if (down && cell.row + 1 < table.rowCount)
-            {
-                auto targetCell = (cell.row + 1) * table.columnCount + cell.column;
-                for (std::size_t index = 0; index < visualLines.size(); ++index)
-                {
-                    if (visualLines[index].tableIndex == currentLine.tableIndex && visualLines[index].cellIndex == targetCell) { targetIndex = index; break; }
-                }
-            }
-            else if (!down && cell.row > 0)
-            {
-                auto targetCell = (cell.row - 1) * table.columnCount + cell.column;
-                for (std::size_t index = visualLines.size(); index > 0; --index)
-                {
-                    if (visualLines[index - 1].tableIndex == currentLine.tableIndex && visualLines[index - 1].cellIndex == targetCell) { targetIndex = index - 1; break; }
-                }
-            }
-            else if (down)
-            {
-                auto lastCell = table.rowCount * table.columnCount - 1;
-                for (std::size_t index = *current; index < visualLines.size(); ++index)
-                {
-                    if (visualLines[index].tableIndex == currentLine.tableIndex && visualLines[index].cellIndex == lastCell)
-                    {
-                        targetIndex = (std::min)(index + 1, visualLines.size() - 1);
-                        break;
-                    }
-                }
-            }
-            else
-            {
-                for (std::size_t index = *current; index > 0; --index)
-                {
-                    if (visualLines[index - 1].tableIndex != currentLine.tableIndex) { targetIndex = index - 1; break; }
-                }
-            }
-        }
-        auto const& target = visualLines[targetIndex];
-        auto const& block = visualBlocks[target.blockIndex];
-
-        std::size_t srcOff = target.sourceStart;
-        IDWriteTextLayout* layout = block.layout.Get();
-        D2D1_POINT_2F textOrigin = block.textOrigin;
-        std::vector<std::size_t> const* displayToSource = &block.displayToSource;
-        if (target.tableIndex < visualTables.size() && target.cellIndex < visualTables[target.tableIndex].cells.size())
-        {
-            auto const& cell = visualTables[target.tableIndex].cells[target.cellIndex];
-            layout = cell.layout.Get();
-            textOrigin = cell.textOrigin;
-            displayToSource = &cell.displayToSource;
-        }
-        if (layout)
-        {
-            float targetX = (std::min)((std::max)(x, target.rect.left), target.rect.right - 1.0f);
-            float localX = targetX - textOrigin.x;
-            float localY = (target.rect.top + target.rect.bottom) * 0.5f - textOrigin.y;
-            BOOL isTrailingHit = FALSE;
-            BOOL isInside = FALSE;
-            DWRITE_HIT_TEST_METRICS metrics{};
-            if (SUCCEEDED(layout->HitTestPoint(localX, localY, &isTrailingHit, &isInside, &metrics)))
-            {
-                auto displayPos = static_cast<std::size_t>(metrics.textPosition + (isTrailingHit ? metrics.length : 0));
-                displayPos = (std::min)((std::max)(displayPos, static_cast<std::size_t>(target.displayStart)), static_cast<std::size_t>(target.displayEnd));
-                srcOff = displayPos < displayToSource->size() ? (*displayToSource)[displayPos] : target.sourceEnd;
-            }
-        }
-        srcOff = (std::min)((std::max)(srcOff, target.sourceStart), target.sourceEnd);
-        bool newUpstream = false;
-        auto downstreamLine = LineIndexFor(srcOff, false);
-        auto upstreamLine = LineIndexFor(srcOff, true);
-        if ((!downstreamLine || *downstreamLine != targetIndex) && upstreamLine && *upstreamLine == targetIndex) newUpstream = true;
-        return CaretMove{ srcOff, newUpstream };
+        return interactionMap.MoveCaretVertically(sourceOffset, upstream, down, goalX, styleSheet.body.lineHeight);
     }
 
+    std::optional<std::size_t> EditorSurfaceRenderer::VisualLineStart(std::size_t sourceOffset, bool upstream) const
+    {
+        return interactionMap.VisualLineStart(sourceOffset, upstream);
+    }
+
+    std::optional<std::size_t> EditorSurfaceRenderer::VisualLineEnd(std::size_t sourceOffset, bool upstream) const
+    {
+        return interactionMap.VisualLineEnd(sourceOffset, upstream);
+    }
     void EditorSurfaceRenderer::Render(detail::EditorSessionCore const& sessionCore)
     {
         if (!swapChain || !d3dDevice || !d3dContext || resizing || rendering)

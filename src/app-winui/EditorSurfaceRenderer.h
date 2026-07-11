@@ -5,6 +5,7 @@
 #include "SvgNormalizer.h"
 #include "TreeSitterHighlighter.h"
 #include "EditorStyleSheet.h"
+#include "EditorInteractionMap.h"
 
 namespace winrt::ElMd
 {
@@ -29,11 +30,7 @@ namespace winrt::ElMd
         void SetTheme(Theme value);
         void SetInvalidateCallback(std::function<void()> callback);
 
-        struct CaretMove
-        {
-            std::size_t offset = 0;
-            bool upstream = false;
-        };
+        using CaretMove = EditorCaretMove;
 
         enum class TableActionKind
         {
@@ -120,72 +117,11 @@ namespace winrt::ElMd
             std::atomic_uint64_t generation = 0;
         };
 
-        struct VisualBlock
-        {
-            D2D1_RECT_F rect{};
-            D2D1_POINT_2F textOrigin{};
-            float textWidth = 0.0f;
-            std::size_t sourceStart = 0;
-            std::size_t sourceEnd = 0;
-            float documentY = 0.0f;
-            std::u32string text;
-            std::vector<std::size_t> displayToSource;
-            ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
-            bool thematicBreak = false;
-        };
-
-        struct VisualLine
-        {
-            std::size_t blockIndex = 0;
-            std::size_t tableIndex = (std::numeric_limits<std::size_t>::max)();
-            std::size_t cellIndex = (std::numeric_limits<std::size_t>::max)();
-            std::size_t sourceStart = 0;
-            std::size_t sourceEnd = 0;
-            std::uint32_t displayStart = 0;
-            std::uint32_t displayEnd = 0;
-            bool wrapContinuation = false;
-            D2D1_RECT_F rect{};
-        };
-
-        struct VisualTableCell
-        {
-            D2D1_RECT_F rect{};
-            D2D1_POINT_2F textOrigin{};
-            float textWidth = 0.0f;
-            float textHeight = 0.0f;
-            std::size_t sourceStart = 0;
-            std::size_t sourceEnd = 0;
-            std::size_t row = 0;
-            std::size_t column = 0;
-            std::u32string text;
-            std::vector<std::size_t> displayToSource;
-            ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
-        };
-
-        struct VisualTable
-        {
-            D2D1_RECT_F rect{};
-            std::size_t sourceStart = 0;
-            std::size_t sourceEnd = 0;
-            std::size_t rowCount = 0;
-            std::size_t columnCount = 0;
-            bool editable = true;
-            std::vector<float> rowBoundaries;
-            std::vector<float> columnBoundaries;
-            std::vector<VisualTableCell> cells;
-        };
-
-        struct VisualMathHit
-        {
-            D2D1_RECT_F rect{};
-            std::size_t sourceStart = 0;
-            std::size_t sourceEnd = 0;
-            float progressStart = 0.0f;
-            float progressEnd = 1.0f;
-        };
-
-        std::optional<std::size_t> LineIndexFor(std::size_t sourceOffset, bool upstream) const;
-        std::optional<D2D1_RECT_F> CaretRectOnLine(VisualLine const& line, std::size_t sourceOffset, bool upstream) const;
+        using VisualBlock = EditorVisualBlock;
+        using VisualLine = EditorVisualLine;
+        using VisualTableCell = EditorVisualTableCell;
+        using VisualTable = EditorVisualTable;
+        using VisualMathHit = EditorVisualMathHit;
 
         void RebuildTextFormats();
         void ResetBrushes();
@@ -223,10 +159,7 @@ namespace winrt::ElMd
         std::atomic_bool mathInvalidationQueued = false;
         Theme theme = Theme::Dark;
         EditorStyleSheet styleSheet = CreateEditorStyleSheet(true);
-        std::vector<VisualBlock> visualBlocks;
-        std::vector<VisualLine> visualLines;
-        std::vector<VisualTable> visualTables;
-        std::vector<VisualMathHit> visualMathHits;
+        EditorInteractionMap interactionMap;
         std::unordered_map<std::uint64_t, float> blockHeightCache;
         std::unordered_map<std::uint64_t, CachedTextLayout> textLayoutCache;
         std::deque<std::uint64_t> textLayoutCacheOrder;
