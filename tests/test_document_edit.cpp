@@ -557,3 +557,128 @@ ELMD_TEST(test_task_list_indent_and_outdent_preserve_checked_item) {
     ELMD_CHECK_EQ(outdented->selection_after.active.node_id, paragraph_id);
     ELMD_CHECK(validate_document(outdented->after).empty());
 }
+
+ELMD_TEST(test_delete_selection_across_list_items_merges_into_first_item) {
+    auto parsed = parse_text(1, "- alpha\n- beta\n- gamma");
+    const auto first_id = parsed.document.blocks[0].list_items[0].children[0].id;
+    const auto second_id = parsed.document.blocks[0].list_items[1].children[0].id;
+    DocumentSelection selection{
+        DocumentPosition{first_id, 2, TextAffinity::Downstream},
+        DocumentPosition{second_id, 2, TextAffinity::Downstream}};
+    auto transaction = document_delete_selection(parsed.document, selection);
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    const auto& list = transaction->after.blocks[0];
+    ELMD_CHECK_EQ(list.list_items.size(), 2u);
+    ELMD_CHECK_EQ(list.list_items[0].children[0].id, first_id);
+    ELMD_CHECK_EQ(block_inline_text_content(list.list_items[0].children[0].children), std::u32string(U"alta"));
+    ELMD_CHECK_EQ(block_inline_text_content(list.list_items[1].children[0].children), std::u32string(U"gamma"));
+    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, first_id);
+    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 2u);
+    ELMD_CHECK(validate_document(transaction->after).empty());
+}
+
+ELMD_TEST(test_delete_selection_across_list_items_moves_last_item_subtree) {
+    auto parsed = parse_text(1, "- alpha\n- beta\n  - child\n- gamma");
+    const auto first_id = parsed.document.blocks[0].list_items[0].children[0].id;
+    const auto second_id = parsed.document.blocks[0].list_items[1].children[0].id;
+    DocumentSelection selection{
+        DocumentPosition{first_id, 2, TextAffinity::Downstream},
+        DocumentPosition{second_id, 2, TextAffinity::Downstream}};
+    auto transaction = document_delete_selection(parsed.document, selection);
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    const auto& list = transaction->after.blocks[0];
+    ELMD_CHECK_EQ(list.list_items.size(), 2u);
+    ELMD_CHECK_EQ(list.list_items[0].children.size(), 2u);
+    ELMD_CHECK_EQ(block_inline_text_content(list.list_items[0].children[0].children), std::u32string(U"alta"));
+    ELMD_CHECK(list.list_items[0].children[1].kind == BlockKind::List);
+    ELMD_CHECK_EQ(block_inline_text_content(list.list_items[0].children[1].list_items[0].children[0].children), std::u32string(U"child"));
+    ELMD_CHECK_EQ(block_inline_text_content(list.list_items[1].children[0].children), std::u32string(U"gamma"));
+    ELMD_CHECK(validate_document(transaction->after).empty());
+}
+
+ELMD_TEST(test_delete_selection_from_quote_into_following_paragraph_keeps_first_context) {
+    auto parsed = parse_text(1, "> alpha\n\nomega");
+    const auto quote_id = parsed.document.blocks[0].quote_children[0].id;
+    const auto paragraph_id = parsed.document.blocks[1].id;
+    DocumentSelection selection{
+        DocumentPosition{quote_id, 2, TextAffinity::Downstream},
+        DocumentPosition{paragraph_id, 3, TextAffinity::Downstream}};
+    auto transaction = document_delete_selection(parsed.document, selection);
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
+    ELMD_CHECK(transaction->after.blocks[0].kind == BlockKind::BlockQuote);
+    ELMD_CHECK_EQ(transaction->after.blocks[0].quote_children[0].id, quote_id);
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("> alga"));
+    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, quote_id);
+    ELMD_CHECK(validate_document(transaction->after).empty());
+}
+
+ELMD_TEST(test_delete_selection_into_nested_list_preserves_content_after_endpoint) {
+    auto parsed = parse_text(1, "start\n\n- one\n- two\n\nafter");
+    const auto first_id = parsed.document.blocks[0].id;
+    const auto nested_id = parsed.document.blocks[1].list_items[0].children[0].id;
+    DocumentSelection selection{
+        DocumentPosition{first_id, 2, TextAffinity::Downstream},
+        DocumentPosition{nested_id, 2, TextAffinity::Downstream}};
+    auto transaction = document_delete_selection(parsed.document, selection);
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(transaction->after.blocks.size(), 3u);
+    ELMD_CHECK_EQ(transaction->after.blocks[0].id, first_id);
+    ELMD_CHECK_EQ(block_inline_text_content(transaction->after.blocks[0].children), std::u32string(U"ste"));
+    ELMD_CHECK(transaction->after.blocks[1].kind == BlockKind::List);
+    ELMD_CHECK_EQ(transaction->after.blocks[1].list_items.size(), 1u);
+    ELMD_CHECK_EQ(block_inline_text_content(transaction->after.blocks[1].list_items[0].children[0].children), std::u32string(U"two"));
+    ELMD_CHECK_EQ(block_inline_text_content(transaction->after.blocks[2].children), std::u32string(U"after"));
+    ELMD_CHECK(validate_document(transaction->after).empty());
+}
+
+ELMD_TEST(test_delete_selection_removes_atomic_blocks_between_endpoints) {
+    auto parsed = parse_text(1, "alpha\n\n---\n\nomega");
+    const auto first_id = parsed.document.blocks[0].id;
+    const auto last_id = parsed.document.blocks[2].id;
+    DocumentSelection selection{
+        DocumentPosition{first_id, 2, TextAffinity::Downstream},
+        DocumentPosition{last_id, 3, TextAffinity::Downstream}};
+    auto transaction = document_delete_selection(parsed.document, selection);
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("alga"));
+    ELMD_CHECK(validate_document(transaction->after).empty());
+}
+
+ELMD_TEST(test_delete_selection_normalizes_reverse_document_order) {
+    auto parsed = parse_text(1, "alpha\n\nomega");
+    const auto first_id = parsed.document.blocks[0].id;
+    const auto last_id = parsed.document.blocks[1].id;
+    DocumentSelection selection{
+        DocumentPosition{last_id, 3, TextAffinity::Upstream},
+        DocumentPosition{first_id, 2, TextAffinity::Downstream}};
+    auto transaction = document_delete_selection(parsed.document, selection);
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("alga"));
+    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, first_id);
+    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 2u);
+}
+
+ELMD_TEST(test_delete_selection_across_task_items_moves_trailing_blocks) {
+    auto parsed = parse_text(1, "- [ ] alpha\n- [x] beta\n      - child");
+    const auto first_id = parsed.document.blocks[0].task_items[0].children[0].id;
+    const auto second_id = parsed.document.blocks[0].task_items[1].children[0].id;
+    DocumentSelection selection{
+        DocumentPosition{first_id, 2, TextAffinity::Downstream},
+        DocumentPosition{second_id, 2, TextAffinity::Downstream}};
+    auto transaction = document_delete_selection(parsed.document, selection);
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    const auto& task_list = transaction->after.blocks[0];
+    ELMD_CHECK_EQ(task_list.task_items.size(), 1u);
+    ELMD_CHECK_EQ(block_inline_text_content(task_list.task_items[0].children[0].children), std::u32string(U"alta"));
+    ELMD_CHECK_EQ(task_list.task_items[0].children.size(), 2u);
+    ELMD_CHECK(validate_document(transaction->after).empty());
+}

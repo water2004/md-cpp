@@ -125,6 +125,28 @@ ELMD_TEST(test_editor_list_indent_commands_use_document_history) {
     ELMD_CHECK_EQ(editor.document_selection()->active.offset, 1u);
 }
 
+ELMD_TEST(test_editor_cross_container_selection_delete_uses_document_history) {
+    Editor editor("> alpha\n\nomega");
+    const auto quote_id = editor.document().blocks[0].quote_children[0].id;
+    const auto paragraph_id = editor.document().blocks[1].id;
+    DocumentSelection selection{
+        DocumentPosition{quote_id, 2, TextAffinity::Downstream},
+        DocumentPosition{paragraph_id, 3, TextAffinity::Downstream}};
+    editor.set_document_selection(selection);
+    Command command;
+    command.kind = CommandKind::DeleteSelection;
+    ELMD_CHECK(editor.execute_command(command).has_value());
+    ELMD_CHECK_EQ(editor.markdown_utf8(), std::string("> alga"));
+    ELMD_CHECK(editor.document_selection().has_value());
+    ELMD_CHECK_EQ(editor.document_selection()->active.node_id, quote_id);
+    ELMD_CHECK_EQ(editor.document_selection()->active.offset, 2u);
+    ELMD_CHECK(editor.undo_document());
+    ELMD_CHECK_EQ(editor.markdown_utf8(), std::string("> alpha\n\nomega"));
+    ELMD_CHECK(editor.document_selection().has_value());
+    ELMD_CHECK_EQ(editor.document_selection()->anchor.node_id, quote_id);
+    ELMD_CHECK_EQ(editor.document_selection()->active.node_id, paragraph_id);
+}
+
 ELMD_TEST(test_editor_enter_at_paragraph_end_projects_empty_node_caret_anchor) {
     Editor editor("alpha");
     const auto first_id = editor.document().blocks.front().id;

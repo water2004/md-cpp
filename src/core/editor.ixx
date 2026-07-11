@@ -58,7 +58,10 @@ public:
     bool has_document_undo() const { return document_history_.has_undo(); }
     bool has_document_redo() const { return document_history_.has_redo(); }
     std::optional<DocumentSelection> document_selection() const { return document_selection_; }
-    void set_document_selection(DocumentSelection selection) { document_selection_ = std::move(selection); }
+    void set_document_selection(DocumentSelection selection) {
+        document_selection_ = std::move(selection);
+        synchronize_legacy_selection_();
+    }
 
     std::optional<DocumentTransaction> execute_document_enter(DocumentSelection selection) {
         auto transaction = document_enter(document_, selection);
@@ -152,16 +155,15 @@ public:
                 }
             }
         }
-        if (cmd.kind == CommandKind::DeleteBackward || cmd.kind == CommandKind::DeleteForward) {
-            if (!selection_.is_caret() && document_selection_
-                && document_selection_->anchor.node_id == document_selection_->active.node_id) {
+        if (cmd.kind == CommandKind::DeleteBackward || cmd.kind == CommandKind::DeleteForward || cmd.kind == CommandKind::DeleteSelection) {
+            if (!selection_.is_caret() && document_selection_) {
                 const auto revision_before = buffer_.revision();
                 const auto selection_before = selection_;
                 const auto changed = execute_document_delete_selection(*document_selection_).has_value();
                 if (!changed) return std::nullopt;
                 return Transaction(revision_before, selection_before, selection_, TransactionReason::Delete);
             }
-            if (selection_.is_caret()) {
+            if (selection_.is_caret() && cmd.kind != CommandKind::DeleteSelection) {
                 auto position = current_document_caret_();
                 if (position) {
                     const auto revision_before = buffer_.revision();
