@@ -97,6 +97,29 @@ ELMD_TEST(test_editor_enter_at_paragraph_end_projects_empty_node_caret_anchor) {
     ELMD_CHECK_EQ(editor.selection().active.v, 7u);
 }
 
+ELMD_TEST(test_editor_document_range_delete_restores_ast_and_selection_on_undo) {
+    Editor editor("alpha\n\nomega");
+    const auto first_id = editor.document().blocks[0].id;
+    const auto last_id = editor.document().blocks[1].id;
+    DocumentSelection selection{
+        DocumentPosition{first_id, 2, TextAffinity::Downstream},
+        DocumentPosition{last_id, 3, TextAffinity::Downstream}};
+    auto transaction = editor.execute_document_delete_selection(selection);
+
+    ELMD_CHECK(transaction.has_value());
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alga"));
+    ELMD_CHECK_EQ(editor.document().blocks.size(), 1u);
+    ELMD_CHECK_EQ(editor.document().blocks[0].id, first_id);
+    ELMD_CHECK(editor.undo_document());
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alpha\n\nomega"));
+    ELMD_CHECK_EQ(editor.document().blocks.size(), 2u);
+    ELMD_CHECK(editor.document_selection().has_value());
+    if (editor.document_selection()) {
+        ELMD_CHECK_EQ(editor.document_selection()->anchor.node_id, first_id);
+        ELMD_CHECK_EQ(editor.document_selection()->active.node_id, last_id);
+    }
+}
+
 ELMD_TEST(test_editor_insert_text) {
     Editor e;
     e.execute_command(Command::InsertText(U"hello"));

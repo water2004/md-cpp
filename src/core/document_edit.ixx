@@ -339,6 +339,13 @@ inline std::optional<DocumentPosition> merge_top_level_paragraph_forward(BlockVe
     return std::nullopt;
 }
 
+inline std::optional<std::size_t> top_level_paragraph_index(const BlockVec& blocks, NodeId id) {
+    for (std::size_t index = 0; index < blocks.size(); ++index) {
+        if (blocks[index].id == id && blocks[index].kind == BlockKind::Paragraph) return index;
+    }
+    return std::nullopt;
+}
+
 inline bool split_direct_paragraph(BlockVec& blocks, std::size_t index, std::size_t offset, NodeAllocator& allocator, DocumentPosition& after) {
     auto& paragraph = blocks[index];
     auto [left, right] = split_inlines(paragraph.children, offset, allocator);
@@ -673,6 +680,58 @@ inline std::optional<DocumentTransaction> document_delete_forward(
     transaction.after = std::move(after);
     transaction.selection_before = selection;
     transaction.selection_after = DocumentSelection::caret(target);
+    transaction.reason = DocumentTransactionReason::Delete;
+    return transaction;
+}
+
+inline std::optional<DocumentTransaction> document_delete_selection(
+    const EditorDocument& document,
+    const DocumentSelection& selection) {
+    if (selection.is_caret()) return std::nullopt;
+    EditorDocument after = document;
+    auto anchor = selection.anchor;
+    auto active = selection.active;
+
+    if (anchor.node_id == active.node_id) {
+        const auto start = (std::min)(anchor.offset, active.offset);
+        const auto end = (std::max)(anchor.offset, active.offset);
+        if (start == end || !document_edit_detail::erase_text_in_blocks(after.blocks, anchor.node_id, start, end - start)) return std::nullopt;
+        ++after.revision;
+        DocumentTransaction transaction;
+        transaction.before = document;
+        transaction.after = std::move(after);
+        transaction.selection_before = selection;
+        transaction.selection_after = DocumentSelection::caret(DocumentPosition{anchor.node_id, start, TextAffinity::Downstream});
+        transaction.reason = DocumentTransactionReason::Delete;
+        return transaction;
+    }
+
+    auto anchor_index = document_edit_detail::top_level_paragraph_index(after.blocks, anchor.node_id);
+    auto active_index = document_edit_detail::top_level_paragraph_index(after.blocks, active.node_id);
+    if (!anchor_index || !active_index) return std::nullopt;
+    if (*anchor_index > *active_index) {
+        std::swap(anchor_index, active_index);
+        std::swap(anchor, active);
+    }
+    auto& first = after.blocks[*anchor_index];
+    auto& last = after.blocks[*active_index];
+    const auto first_length = block_inline_text_content(first.children).size();
+    document_edit_detail::erase_inline_range(first.children, (std::min)(anchor.offset, first_length), first_length - (std::min)(anchor.offset, first_length));
+    document_edit_detail::erase_inline_range(last.children, 0, active.offset);
+    first.children.insert(
+        first.children.end(),
+        std::make_move_iterator(last.children.begin()),
+        std::make_move_iterator(last.children.end()));
+    after.blocks.erase(
+        after.blocks.begin() + static_cast<std::ptrdiff_t>(*anchor_index + 1),
+        after.blocks.begin() + static_cast<std::ptrdiff_t>(*active_index + 1));
+    normalize_document(after);
+    ++after.revision;
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(after);
+    transaction.selection_before = selection;
+    transaction.selection_after = DocumentSelection::caret(DocumentPosition{first.id, anchor.offset, TextAffinity::Downstream});
     transaction.reason = DocumentTransactionReason::Delete;
     return transaction;
 }

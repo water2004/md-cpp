@@ -262,3 +262,43 @@ ELMD_TEST(test_delete_at_top_level_paragraph_end_merges_ast_siblings) {
     ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("alphabeta"));
     ELMD_CHECK_EQ(transaction->selection_after.active.offset, 5u);
 }
+
+ELMD_TEST(test_delete_selection_inside_inline_tree_preserves_container) {
+    BlockNode block;
+    block.id = NodeId(1);
+    block.kind = BlockKind::Paragraph;
+    InlineNode strong;
+    strong.id = NodeId(2);
+    strong.kind = InlineKind::Strong;
+    strong.children.push_back(InlineNode::text_node(NodeId(3), U"alphabet"));
+    block.children.push_back(strong);
+    DocumentSelection selection{
+        DocumentPosition{NodeId(1), 2, TextAffinity::Downstream},
+        DocumentPosition{NodeId(1), 6, TextAffinity::Downstream}};
+
+    auto transaction = document_delete_selection(document_with({block}), selection);
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(transaction->after.blocks[0].children[0].id, NodeId(2));
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("**alet**"));
+    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 2u);
+}
+
+ELMD_TEST(test_delete_selection_across_top_level_paragraphs_merges_tree_range) {
+    auto document = document_with({
+        paragraph(1, 2, U"alpha"),
+        paragraph(3, 4, U"middle"),
+        paragraph(5, 6, U"omega")});
+    DocumentSelection selection{
+        DocumentPosition{NodeId(1), 2, TextAffinity::Downstream},
+        DocumentPosition{NodeId(5), 3, TextAffinity::Downstream}};
+
+    auto transaction = document_delete_selection(document, selection);
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
+    ELMD_CHECK_EQ(transaction->after.blocks[0].id, NodeId(1));
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("alga"));
+    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, NodeId(1));
+    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 2u);
+}
