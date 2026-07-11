@@ -5,6 +5,7 @@
 #include "EditorScrollController.h"
 #include "EditorTextInputController.h"
 #include "EditorPointerController.h"
+#include "EditorKeyboardController.h"
 #include "MainWindow.g.h"
 
 namespace winrt::ElMd::implementation
@@ -27,9 +28,6 @@ namespace winrt::ElMd::implementation
         void HandleDiagnosticsSelection(winrt::Windows::Foundation::IInspectable const& selectedItem);
         void RegisterCommandHandlers();
         bool ExecuteEditorCommand(elmd::Command const& command);
-        bool InsertEditorNewline();
-        bool HandleEditorCharacter(char32_t character);
-        bool HandleEditorKey(winrt::Windows::System::VirtualKey key);
         void HandlePointerWheel(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
         winrt::fire_and_forget OpenLinkAsync(std::string href);
         void CopySelectionToClipboard();
@@ -48,8 +46,7 @@ namespace winrt::ElMd::implementation
         winrt::ElMd::EditorScrollController scrollController;
         winrt::ElMd::EditorTextInputController textInputController;
         winrt::ElMd::EditorPointerController pointerController;
-        float caretGoalX = -1.0f;
-        bool MoveCaretVerticalStep(bool down, bool extend);
+        winrt::ElMd::EditorKeyboardController keyboardController;
         std::vector<std::size_t> outlineOffsets;
         std::vector<std::size_t> diagnosticOffsets;
         std::vector<std::wstring> outlineLabels;

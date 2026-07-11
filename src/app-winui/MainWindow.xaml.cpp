@@ -14,6 +14,15 @@ namespace winrt::ElMd::implementation
         InitializeComponent();
         RegisterCommandHandlers();
         InitializeTextInput();
+        keyboardController.Attach(
+            editorSession,
+            editorRenderer,
+            textInputController,
+            [this](elmd::Command const& command) { return ExecuteEditorCommand(command); },
+            [this] { CopySelectionToClipboard(); },
+            [this] { CutSelectionToClipboard(); },
+            [this] { PasteClipboardAsync(); },
+            [this] { RenderEditorSurface(); });
         pointerController.Attach(
             editorSession,
             editorRenderer,
@@ -22,11 +31,12 @@ namespace winrt::ElMd::implementation
             [this](elmd::Command const& command) { return ExecuteEditorCommand(command); },
             [this] { RenderEditorSurface(); },
             [this](std::string href) { OpenLinkAsync(std::move(href)); },
-            [this] { caretGoalX = -1.0f; });
+            [this] { keyboardController.ResetCaretGoal(); });
 
         Closed([this](auto const&, auto const&)
         {
             pointerController.Detach();
+            keyboardController.Detach();
             textInputController.Detach();
             scrollController.Detach();
         });
@@ -60,19 +70,19 @@ namespace winrt::ElMd::implementation
         EditorSurface().IsTabStop(true);
         EditorSurface().CharacterReceived([this](auto const&, Microsoft::UI::Xaml::Input::CharacterReceivedRoutedEventArgs const& args)
         {
-            args.Handled(HandleEditorCharacter(args.Character()));
+            args.Handled(keyboardController.Character(args.Character()));
         });
 
         EditorSurface().KeyDown([this](auto const&, Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args)
         {
-            args.Handled(HandleEditorKey(args.Key()));
+            args.Handled(keyboardController.Key(args.Key()));
         });
 
         auto enterAccelerator = Microsoft::UI::Xaml::Input::KeyboardAccelerator();
         enterAccelerator.Key(winrt::Windows::System::VirtualKey::Enter);
         enterAccelerator.Invoked([this](auto const&, Microsoft::UI::Xaml::Input::KeyboardAcceleratorInvokedEventArgs const& args)
         {
-            args.Handled(InsertEditorNewline());
+            args.Handled(keyboardController.InsertNewline());
         });
         EditorSurface().KeyboardAccelerators().Append(enterAccelerator);
 
@@ -322,7 +332,7 @@ namespace winrt::ElMd::implementation
 
     bool MainWindow::ExecuteEditorCommand(elmd::Command const& command)
     {
-        caretGoalX = -1.0f;
+        keyboardController.ResetCaretGoal();
         auto oldTextLength = editorSession.Core().editor.text_cps().size();
         if (!editorSession.ExecuteCommand(command))
         {
@@ -337,248 +347,6 @@ namespace winrt::ElMd::implementation
         RenderEditorSurface();
         if (editorRenderer.ScrollToSourceOffset(editorSession.Core().editor.selection().active.v)) RenderEditorSurface();
         textInputController.NotifyTextChanged(oldTextLength);
-        return true;
-    }
-
-    bool MainWindow::InsertEditorNewline()
-    {
-        textInputController.ClearPendingCharacterTextUpdate();
-        elmd::Command command;
-        auto keyState = [](winrt::Windows::System::VirtualKey virtualKey)
-        {
-            return winrt::Microsoft::UI::Input::InputKeyboardSource::GetKeyStateForCurrentThread(virtualKey);
-        };
-        auto isDown = [&](winrt::Windows::System::VirtualKey virtualKey)
-        {
-            return (static_cast<std::uint32_t>(keyState(virtualKey)) & 0x1u) != 0;
-        };
-        auto shift = isDown(winrt::Windows::System::VirtualKey::Shift)
-            || isDown(winrt::Windows::System::VirtualKey::LeftShift)
-            || isDown(winrt::Windows::System::VirtualKey::RightShift);
-        command.kind = shift ? elmd::CommandKind::InsertSoftBreak : elmd::CommandKind::InsertNewline;
-        return ExecuteEditorCommand(command);
-    }
-
-    bool MainWindow::HandleEditorCharacter(char32_t character)
-    {
-        if (character == U'\r' || character == U'\n')
-        {
-            return InsertEditorNewline();
-        }
-
-        if (character < 0x20 || character == 0x7f)
-        {
-            return false;
-        }
-
-        auto start = editorSession.Core().editor.selection().normalized_range().start.v;
-        std::u32string text(1, character);
-        if (!ExecuteEditorCommand(elmd::Command::InsertText(text)))
-        {
-            return false;
-        }
-        textInputController.RecordCharacterTextUpdate(start, std::move(text));
-        return true;
-    }
-
-    bool MainWindow::HandleEditorKey(winrt::Windows::System::VirtualKey key)
-    {
-        elmd::Command command;
-        textInputController.ClearPendingCharacterTextUpdate();
-        auto keyState = [](winrt::Windows::System::VirtualKey virtualKey)
-        {
-            return winrt::Microsoft::UI::Input::InputKeyboardSource::GetKeyStateForCurrentThread(virtualKey);
-        };
-        auto isDown = [&](winrt::Windows::System::VirtualKey virtualKey)
-        {
-            return (static_cast<std::uint32_t>(keyState(virtualKey)) & 0x1u) != 0;
-        };
-        auto ctrl = isDown(winrt::Windows::System::VirtualKey::Control)
-            || isDown(winrt::Windows::System::VirtualKey::LeftControl)
-            || isDown(winrt::Windows::System::VirtualKey::RightControl);
-        auto shift = isDown(winrt::Windows::System::VirtualKey::Shift)
-            || isDown(winrt::Windows::System::VirtualKey::LeftShift)
-            || isDown(winrt::Windows::System::VirtualKey::RightShift);
-        auto alt = isDown(winrt::Windows::System::VirtualKey::Menu)
-            || isDown(winrt::Windows::System::VirtualKey::LeftMenu)
-            || isDown(winrt::Windows::System::VirtualKey::RightMenu);
-
-        if (ctrl)
-        {
-            switch (key)
-            {
-                case winrt::Windows::System::VirtualKey::Up:
-                    command.kind = alt ? elmd::CommandKind::MoveTableRowUp : elmd::CommandKind::InsertTableRowAbove;
-                    break;
-                case winrt::Windows::System::VirtualKey::Down:
-                    command.kind = alt ? elmd::CommandKind::MoveTableRowDown : elmd::CommandKind::InsertTableRowBelow;
-                    break;
-                case winrt::Windows::System::VirtualKey::Left:
-                    command.kind = alt ? elmd::CommandKind::MoveTableColumnLeft : elmd::CommandKind::InsertTableColumnLeft;
-                    break;
-                case winrt::Windows::System::VirtualKey::Right:
-                    command.kind = alt ? elmd::CommandKind::MoveTableColumnRight : elmd::CommandKind::InsertTableColumnRight;
-                    break;
-                case winrt::Windows::System::VirtualKey::Back:
-                    command.kind = elmd::CommandKind::DeleteTableRow;
-                    break;
-                case winrt::Windows::System::VirtualKey::Delete:
-                    command.kind = elmd::CommandKind::DeleteTableColumn;
-                    break;
-                case winrt::Windows::System::VirtualKey::Home:
-                    command.kind = elmd::CommandKind::MoveDocumentStart;
-                    command.extend_selection = shift;
-                    break;
-                case winrt::Windows::System::VirtualKey::End:
-                    command.kind = elmd::CommandKind::MoveDocumentEnd;
-                    command.extend_selection = shift;
-                    break;
-                case winrt::Windows::System::VirtualKey::Number1:
-                    command.kind = elmd::CommandKind::SetHeading;
-                    command.level = 1;
-                    break;
-                case winrt::Windows::System::VirtualKey::Number2:
-                    command.kind = elmd::CommandKind::SetHeading;
-                    command.level = 2;
-                    break;
-                case winrt::Windows::System::VirtualKey::Number7:
-                    command.kind = elmd::CommandKind::ToggleOrderedList;
-                    break;
-                case winrt::Windows::System::VirtualKey::Number8:
-                    command.kind = elmd::CommandKind::ToggleUnorderedList;
-                    break;
-                case winrt::Windows::System::VirtualKey::Number9:
-                    command.kind = elmd::CommandKind::ToggleTaskList;
-                    break;
-                case winrt::Windows::System::VirtualKey::B:
-                    command.kind = elmd::CommandKind::ToggleStrong;
-                    break;
-                case winrt::Windows::System::VirtualKey::I:
-                    command.kind = elmd::CommandKind::ToggleEmphasis;
-                    break;
-                case winrt::Windows::System::VirtualKey::Q:
-                    command.kind = elmd::CommandKind::ToggleBlockQuote;
-                    break;
-                case winrt::Windows::System::VirtualKey::T:
-                    command.kind = elmd::CommandKind::InsertTable;
-                    command.rows = 2;
-                    command.cols = 3;
-                    break;
-                case winrt::Windows::System::VirtualKey::Z:
-                    command.kind = shift ? elmd::CommandKind::Redo : elmd::CommandKind::Undo;
-                    break;
-                case winrt::Windows::System::VirtualKey::Y:
-                    command.kind = elmd::CommandKind::Redo;
-                    break;
-                case winrt::Windows::System::VirtualKey::A:
-                    command.kind = elmd::CommandKind::SelectAll;
-                    break;
-                case winrt::Windows::System::VirtualKey::C:
-                    CopySelectionToClipboard();
-                    return true;
-                case winrt::Windows::System::VirtualKey::X:
-                    CutSelectionToClipboard();
-                    return true;
-                case winrt::Windows::System::VirtualKey::V:
-                    PasteClipboardAsync();
-                    return true;
-                default:
-                    return false;
-            }
-
-            ExecuteEditorCommand(command);
-            return true;
-        }
-
-        switch (key)
-        {
-            case winrt::Windows::System::VirtualKey::Back:
-                command.kind = elmd::CommandKind::DeleteBackward;
-                break;
-            case winrt::Windows::System::VirtualKey::Delete:
-                command.kind = elmd::CommandKind::DeleteForward;
-                break;
-            case winrt::Windows::System::VirtualKey::Enter:
-                return InsertEditorNewline();
-            case winrt::Windows::System::VirtualKey::Left:
-                command.kind = elmd::CommandKind::MoveLeft;
-                command.extend_selection = shift;
-                caretGoalX = -1.0f;
-                break;
-            case winrt::Windows::System::VirtualKey::Right:
-                command.kind = elmd::CommandKind::MoveRight;
-                command.extend_selection = shift;
-                caretGoalX = -1.0f;
-                break;
-            case winrt::Windows::System::VirtualKey::Up:
-                return MoveCaretVerticalStep(false, shift);
-            case winrt::Windows::System::VirtualKey::Down:
-                return MoveCaretVerticalStep(true, shift);
-            case winrt::Windows::System::VirtualKey::Home:
-            {
-                caretGoalX = -1.0f;
-                auto selection = editorSession.Core().editor.selection();
-                auto upstream = selection.affinity == elmd::TextAffinity::Upstream;
-                if (auto offset = editorRenderer.VisualLineStart(selection.active.v, upstream))
-                {
-                    editorSession.SetSelection(shift ? selection.anchor.v : *offset, *offset, elmd::TextAffinity::Downstream);
-                    textInputController.NotifySelectionChanged();
-                    RenderEditorSurface();
-                    if (editorRenderer.ScrollToSourceOffset(*offset)) RenderEditorSurface();
-                    return true;
-                }
-                command.kind = elmd::CommandKind::MoveLineStart;
-                command.extend_selection = shift;
-                break;
-            }
-            case winrt::Windows::System::VirtualKey::End:
-            {
-                caretGoalX = -1.0f;
-                auto selection = editorSession.Core().editor.selection();
-                auto upstream = selection.affinity == elmd::TextAffinity::Upstream;
-                if (auto offset = editorRenderer.VisualLineEnd(selection.active.v, upstream))
-                {
-                    editorSession.SetSelection(shift ? selection.anchor.v : *offset, *offset, elmd::TextAffinity::Upstream);
-                    textInputController.NotifySelectionChanged();
-                    RenderEditorSurface();
-                    if (editorRenderer.ScrollToSourceOffset(*offset)) RenderEditorSurface();
-                    return true;
-                }
-                command.kind = elmd::CommandKind::MoveLineEnd;
-                command.extend_selection = shift;
-                break;
-            }
-            case winrt::Windows::System::VirtualKey::Tab:
-                command.kind = shift ? elmd::CommandKind::MoveTableCellPrevious : elmd::CommandKind::MoveTableCellNext;
-                if (!ExecuteEditorCommand(command))
-                {
-                    ExecuteEditorCommand(elmd::Command::InsertText(U"\t"));
-                }
-                return true;
-            default:
-                return false;
-        }
-
-        ExecuteEditorCommand(command);
-        return true;
-    }
-
-    bool MainWindow::MoveCaretVerticalStep(bool down, bool extend)
-    {
-        auto selection = editorSession.Core().editor.selection();
-        auto upstream = selection.affinity == elmd::TextAffinity::Upstream;
-        auto move = editorRenderer.MoveCaretVertically(selection.active.v, upstream, down, caretGoalX);
-        if (!move)
-        {
-            caretGoalX = -1.0f;
-            return false;
-        }
-
-        auto affinity = move->upstream ? elmd::TextAffinity::Upstream : elmd::TextAffinity::Downstream;
-        editorSession.SetSelection(extend ? selection.anchor.v : move->offset, move->offset, affinity);
-        textInputController.NotifySelectionChanged();
-        RenderEditorSurface();
-        if (editorRenderer.ScrollToSourceOffset(move->offset)) RenderEditorSurface();
         return true;
     }
 
