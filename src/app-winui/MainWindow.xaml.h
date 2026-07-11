@@ -2,6 +2,7 @@
 
 #include "EditorSession.h"
 #include "EditorSurfaceRenderer.h"
+#include "EditorScrollController.h"
 #include "MainWindow.g.h"
 
 namespace winrt::ElMd::implementation
@@ -15,10 +16,6 @@ namespace winrt::ElMd::implementation
         void InitializeTextInput();
         void ResizeEditorSurface(double width, double height);
         void RenderEditorSurface();
-        void UpdateEditorScrollBar();
-        void StartScrollAnimation();
-        void StopScrollAnimation();
-        void OnScrollFrame(winrt::Windows::Foundation::IInspectable const&, winrt::Windows::Foundation::IInspectable const&);
         void SetSidebarExpanded(bool expanded);
         void UpdateTheme();
         winrt::ElMd::EditorSurfaceRenderer::Theme CurrentRendererTheme();
@@ -57,6 +54,7 @@ namespace winrt::ElMd::implementation
         winrt::hstring lastCommand = L"Ready";
         winrt::ElMd::EditorSession editorSession;
         winrt::ElMd::EditorSurfaceRenderer editorRenderer;
+        winrt::ElMd::EditorScrollController scrollController;
         winrt::Windows::UI::Text::Core::CoreTextEditContext textEditContext{ nullptr };
         std::size_t textInputKnownLength = 0;
         bool textInputFocused = false;
@@ -65,11 +63,7 @@ namespace winrt::ElMd::implementation
         std::size_t pendingCharacterStart = 0;
         std::u32string pendingCharacterText;
         bool pointerSelecting = false;
-        bool scrollBarUpdating = false;
         std::optional<std::string> hoverTooltip;
-        winrt::event_token scrollRenderingToken{};
-        bool scrollRenderingActive = false;
-        std::chrono::steady_clock::time_point lastScrollFrame{};
         std::size_t pointerAnchor = 0;
         std::optional<winrt::ElMd::EditorSurfaceRenderer::TableAction> tableDrag;
         std::optional<std::size_t> tableDropIndex;

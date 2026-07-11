@@ -15,14 +15,7 @@ namespace winrt::ElMd::implementation
         RegisterCommandHandlers();
         InitializeTextInput();
 
-        Closed([this](auto const&, auto const&) { StopScrollAnimation(); });
-
-        EditorScrollBar().ValueChanged([this](auto const&, Microsoft::UI::Xaml::Controls::Primitives::RangeBaseValueChangedEventArgs const& args)
-        {
-            if (scrollBarUpdating) return;
-            editorRenderer.SetScrollOffset(static_cast<float>(args.NewValue()));
-            RenderEditorSurface();
-        });
+        Closed([this](auto const&, auto const&) { scrollController.Detach(); });
 
         SidebarButton().Click([this](auto const&, auto const&)
         {
@@ -916,8 +909,7 @@ namespace winrt::ElMd::implementation
     void MainWindow::HandlePointerWheel(Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
     {
         auto delta = args.GetCurrentPoint(EditorSurface()).Properties().MouseWheelDelta();
-        editorRenderer.QueueScrollBy(static_cast<float>(-delta));
-        StartScrollAnimation();
+        scrollController.QueueScrollBy(static_cast<float>(-delta));
         args.Handled(true);
     }
 
@@ -1303,6 +1295,7 @@ namespace winrt::ElMd::implementation
         UpdateTheme();
         editorRenderer.SetInvalidateCallback([this] { RenderEditorSurface(); });
         editorRenderer.Initialize(EditorSurface());
+        scrollController.Attach(editorRenderer, EditorScrollBar(), EditorScrollBarColumn(), [this] { RenderEditorSurface(); });
         RenderEditorSurface();
         EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Programmatic);
     }
@@ -1325,60 +1318,12 @@ namespace winrt::ElMd::implementation
         try
         {
             editorRenderer.Render(editorSession.Core());
-            UpdateEditorScrollBar();
+            scrollController.Sync();
         }
         catch (winrt::hresult_error const& error)
         {
             SetStatus(L"Render failed: " + error.message());
         }
-    }
-
-    void MainWindow::UpdateEditorScrollBar()
-    {
-        scrollBarUpdating = true;
-        auto maximum = static_cast<double>(editorRenderer.MaximumScrollOffset());
-        auto viewport = static_cast<double>(editorRenderer.ViewportHeight());
-        if (std::fabs(EditorScrollBar().Maximum() - maximum) > 0.5) EditorScrollBar().Maximum(maximum);
-        if (std::fabs(EditorScrollBar().ViewportSize() - viewport) > 0.5) EditorScrollBar().ViewportSize(viewport);
-        auto largeChange = (std::max)(48.0, viewport * 0.9);
-        if (std::fabs(EditorScrollBar().LargeChange() - largeChange) > 0.5) EditorScrollBar().LargeChange(largeChange);
-        auto value = static_cast<double>((std::min)(editorRenderer.ScrollOffset(), static_cast<float>(maximum)));
-        if (std::fabs(EditorScrollBar().Value() - value) > 0.1) EditorScrollBar().Value(value);
-        auto visible = maximum > 0.5;
-        auto visibility = visible ? Microsoft::UI::Xaml::Visibility::Visible : Microsoft::UI::Xaml::Visibility::Collapsed;
-        if (EditorScrollBar().Visibility() != visibility)
-        {
-            EditorScrollBar().Visibility(visibility);
-            EditorScrollBarColumn().Width(Microsoft::UI::Xaml::GridLengthHelper::FromPixels(visible ? 16.0 : 0.0));
-        }
-        scrollBarUpdating = false;
-    }
-
-    void MainWindow::StartScrollAnimation()
-    {
-        lastScrollFrame = std::chrono::steady_clock::now();
-        if (scrollRenderingActive) return;
-        scrollRenderingToken = Microsoft::UI::Xaml::Media::CompositionTarget::Rendering({ this, &MainWindow::OnScrollFrame });
-        scrollRenderingActive = true;
-    }
-
-    void MainWindow::StopScrollAnimation()
-    {
-        if (!scrollRenderingActive) return;
-        Microsoft::UI::Xaml::Media::CompositionTarget::Rendering(scrollRenderingToken);
-        scrollRenderingActive = false;
-    }
-
-    void MainWindow::OnScrollFrame(Windows::Foundation::IInspectable const&, Windows::Foundation::IInspectable const&)
-    {
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed = lastScrollFrame.time_since_epoch().count() == 0
-            ? 1.0f / 60.0f
-            : std::chrono::duration<float>(now - lastScrollFrame).count();
-        lastScrollFrame = now;
-        auto active = editorRenderer.AdvanceScrollAnimation((std::min)(elapsed, 0.05f));
-        RenderEditorSurface();
-        if (!active) StopScrollAnimation();
     }
 
     void MainWindow::SetSidebarExpanded(bool expanded)

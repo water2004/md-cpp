@@ -115,6 +115,7 @@
     <ClInclude Include="EditorInteractionMap.h" />
     <ClInclude Include="EditorContentPreparation.h" />
     <ClInclude Include="EditorRenderResources.h" />
+    <ClInclude Include="EditorScrollController.h" />
     <ClInclude Include="EditorSurfaceRenderer.h" />
     <ClInclude Include="MathJaxRenderer.h" />
     <ClInclude Include="MermaidRenderer.h" />
@@ -233,6 +234,7 @@
     <ClCompile Include="EditorInteractionMap.cpp" />
     <ClCompile Include="EditorContentPreparation.cpp" />
     <ClCompile Include="EditorRenderResources.cpp" />
+    <ClCompile Include="EditorScrollController.cpp" />
     <ClCompile Include="EditorSurfaceRenderer.cpp" />
     <ClCompile Include="MathJaxRenderer.cpp" />
     <ClCompile Include="MermaidRenderer.cpp" />
