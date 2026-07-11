@@ -8,6 +8,7 @@ import elmd.core.table_edit;
 import elmd.core.utf;
 
 #include "EditorContentPreparation.h"
+#include "EditorInlineImageRenderer.h"
 #include "EditorSvgPainter.h"
 #include "EditorTextLayoutEngine.h"
 
@@ -130,6 +131,7 @@ namespace winrt::ElMd
         auto svgSupported = SUCCEEDED(resources.d2dContext.As(&svgContext)) && svgContext;
         EditorSvgPainter svgPainter(resources, renderCache);
         EditorTextLayoutEngine textLayoutEngine(resources, styleSheet);
+        EditorInlineImageRenderer inlineImageRenderer(resources, renderCache, styleSheet, sessionCore.baseDirectory);
 
         auto drawMathSvg = [&](MathJaxSvgFragment const& fragment, D2D1_POINT_2F origin, D2D1_COLOR_F color) -> bool
         {
@@ -146,82 +148,6 @@ namespace winrt::ElMd
             auto fallback = ToWide(std::u32string_view(sourceText).substr(start, end - start));
             if (fallback.empty()) fallback = L"formula";
             resources.d2dContext->DrawTextW(fallback.c_str(), static_cast<UINT32>(fallback.size()), resources.codeFormat.Get(), D2D1::RectF(origin.x, origin.y, documentRight, origin.y + styleSheet.code.lineHeight * 3.0f), resources.textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
-        };
-
-        struct InlineImageDraw
-        {
-            std::uint32_t displayStart = 0;
-            std::optional<EditorRenderCache::RasterImage> image;
-            std::wstring alt;
-            float width = 0.0f;
-            float height = 0.0f;
-        };
-
-        auto resolveInlineImages = [&](IDWriteTextLayout* layout, std::vector<DisplayInlineText::ImageOverlay> const& overlays, float availableWidth)
-        {
-            std::vector<InlineImageDraw> resolved;
-            if (!layout) return resolved;
-            if (!overlays.empty()) layout->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_DEFAULT, 0.0f, 0.0f);
-            resolved.reserve(overlays.size());
-            for (auto const& overlay : overlays)
-            {
-                InlineImageDraw draw;
-                draw.displayStart = overlay.displayStart;
-                draw.image = renderCache.LoadRasterImage(resources, sessionCore.baseDirectory, overlay.source);
-                draw.alt = winrt::to_hstring(overlay.alt.empty() ? std::string("image") : overlay.alt).c_str();
-                if (draw.image)
-                {
-                    draw.width = overlay.width.value_or(draw.image->width);
-                    draw.height = overlay.height.value_or(draw.image->height);
-                    if (overlay.width && !overlay.height) draw.height = draw.image->height * draw.width / draw.image->width;
-                    if (!overlay.width && overlay.height) draw.width = draw.image->width * draw.height / draw.image->height;
-                    auto scale = (std::min)(1.0f, (std::min)((std::max)(48.0f, availableWidth * 0.75f) / draw.width, 240.0f / draw.height));
-                    draw.width = (std::max)(1.0f, draw.width * scale);
-                    draw.height = (std::max)(styleSheet.body.lineHeight, draw.height * scale);
-                }
-                else
-                {
-                    draw.width = overlay.width.value_or((std::min)((std::max)(48.0f, static_cast<float>(draw.alt.size()) * styleSheet.body.size * 0.56f), (std::max)(48.0f, availableWidth)));
-                    draw.height = overlay.height.value_or(styleSheet.body.lineHeight);
-                }
-                ApplyInlinePlaceholder(layout, draw.displayStart, draw.width, draw.height, draw.height);
-                resolved.push_back(std::move(draw));
-            }
-            return resolved;
-        };
-
-        auto drawInlineImages = [&](IDWriteTextLayout* layout, D2D1_POINT_2F origin, std::vector<InlineImageDraw> const& images)
-        {
-            if (!layout) return;
-            UINT32 lineCount = 0;
-            if (layout->GetLineMetrics(nullptr, 0, &lineCount) != E_NOT_SUFFICIENT_BUFFER || lineCount == 0) return;
-            std::vector<DWRITE_LINE_METRICS> lineMetrics(lineCount);
-            if (FAILED(layout->GetLineMetrics(lineMetrics.data(), lineCount, &lineCount))) return;
-            for (auto const& image : images)
-            {
-                float pointX = 0.0f;
-                float ignoredY = 0.0f;
-                DWRITE_HIT_TEST_METRICS hit{};
-                if (FAILED(layout->HitTestTextPosition(image.displayStart, FALSE, &pointX, &ignoredY, &hit))) continue;
-                UINT32 lineStart = 0;
-                float lineTop = 0.0f;
-                for (UINT32 line = 0; line < lineCount; ++line)
-                {
-                    auto lineEnd = lineStart + lineMetrics[line].length;
-                    if (image.displayStart < lineEnd || line + 1 == lineCount) break;
-                    lineStart = lineEnd;
-                    lineTop += lineMetrics[line].height;
-                }
-                auto rect = D2D1::RectF(origin.x + pointX, origin.y + lineTop, origin.x + pointX + image.width, origin.y + lineTop + image.height);
-                if (image.image)
-                {
-                    resources.d2dContext->DrawBitmap(image.image->bitmap.Get(), rect, 1.0f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
-                }
-                else
-                {
-                    resources.d2dContext->DrawTextW(image.alt.c_str(), static_cast<UINT32>(image.alt.size()), resources.textFormat.Get(), rect, resources.mutedBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
-                }
-            }
         };
 
         auto addVisualLinesForBlock = [&](std::size_t blockIndex)
@@ -381,7 +307,7 @@ namespace winrt::ElMd
                     auto columnWidth = tableWidth / static_cast<float>(table.columnCount);
                     std::vector<float> rowHeights(table.rowCount, styleSheet.body.lineHeight + 16.0f);
                     std::vector<DisplayInlineText> tableDisplays;
-                    std::vector<std::vector<InlineImageDraw>> tableImageDraws;
+                    std::vector<std::vector<EditorInlineImageRenderer::ImageDraw>> tableImageDraws;
                     tableDisplays.reserve(table.rowCount * table.columnCount);
                     tableImageDraws.reserve(table.rowCount * table.columnCount);
 
@@ -458,7 +384,7 @@ namespace winrt::ElMd
                                     rowHeights[row] = (std::max)(rowHeights[row], metrics.height + 16.0f);
                                 }
                             }
-                            auto imageDraws = resolveInlineImages(layout.Get(), display.imageOverlays, (std::max)(1.0f, columnWidth - 20.0f));
+                            auto imageDraws = inlineImageRenderer.Resolve(layout.Get(), display.imageOverlays, (std::max)(1.0f, columnWidth - 20.0f));
                             VisualTableCell cell;
                             cell.sourceStart = sourceStart;
                             cell.sourceEnd = sourceEnd;
@@ -535,7 +461,7 @@ namespace winrt::ElMd
                                 }
                             }
                             resources.d2dContext->DrawTextLayout(cell.textOrigin, cell.layout.Get(), resources.textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
-                            drawInlineImages(cell.layout.Get(), cell.textOrigin, tableImageDraws[cellIndex]);
+                            inlineImageRenderer.Draw(cell.layout.Get(), cell.textOrigin, tableImageDraws[cellIndex]);
                             for (auto const& overlay : cellDisplay.mathOverlays)
                             {
                                 float pointX = 0.0f;
@@ -647,7 +573,7 @@ namespace winrt::ElMd
                     std::size_t sourceStart = 0;
                     std::size_t sourceEnd = 0;
                     bool code = false;
-                    std::vector<InlineImageDraw> images;
+                    std::vector<EditorInlineImageRenderer::ImageDraw> images;
                 };
                 std::vector<QuoteBox> quoteBoxes;
                 std::vector<QuoteFragment> quoteFragments;
@@ -691,7 +617,7 @@ namespace winrt::ElMd
                     auto layout = textLayoutEngine.Create(ToWide(display.text), format, textWidth);
                     textLayoutEngine.ApplyStyles(layout.Get(), display.ranges);
                     ApplyMathInlineObjects(layout.Get(), display.mathOverlays);
-                    auto images = resolveInlineImages(layout.Get(), display.imageOverlays, textWidth);
+                    auto images = inlineImageRenderer.Resolve(layout.Get(), display.imageOverlays, textWidth);
                     auto fallbackHeight = code ? styleSheet.code.lineHeight : styleSheet.body.lineHeight;
                     auto fragmentHeight = textLayoutEngine.MeasureHeight(layout.Get(), fallbackHeight) + verticalPadding * 2.0f;
                     QuoteFragment fragment;
@@ -774,7 +700,7 @@ namespace winrt::ElMd
                             }
                         }
                         resources.d2dContext->DrawTextLayout(fragment.origin, fragment.layout.Get(), fragment.code ? resources.codeBrush.Get() : resources.textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
-                        drawInlineImages(fragment.layout.Get(), fragment.origin, fragment.images);
+                        inlineImageRenderer.Draw(fragment.layout.Get(), fragment.origin, fragment.images);
                         for (auto const& overlay : fragment.display.mathOverlays)
                         {
                             float pointX = 0.0f;
@@ -1197,7 +1123,7 @@ namespace winrt::ElMd
                     renderCache.StoreTextLayout(layoutKey, layout, bytes);
                 }
             }
-            auto inlineImageDraws = resolveInlineImages(layout.Get(), inlineImageOverlays, textWidth);
+            auto inlineImageDraws = inlineImageRenderer.Resolve(layout.Get(), inlineImageOverlays, textWidth);
             std::optional<D2D1_POINT_2F> blockMathOrigin;
             std::vector<std::vector<D2D1_POINT_2F>> inlineMathPreviewOrigins;
             std::optional<D2D1_POINT_2F> blockMermaidOrigin;
@@ -1413,7 +1339,7 @@ namespace winrt::ElMd
                 }
 
                 resources.d2dContext->DrawTextLayout(origin, layout.Get(), brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
-                drawInlineImages(layout.Get(), origin, inlineImageDraws);
+                inlineImageRenderer.Draw(layout.Get(), origin, inlineImageDraws);
 
                 for (auto const& preview : inlineMathPreviews)
                 {
