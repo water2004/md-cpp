@@ -306,7 +306,8 @@ ELMD_TEST(test_editor_incremental_unclosed_bracket_math) {
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("\\["));
     auto model = build_render_model(e.document(), e.buffer().text_utf8(), e.outline());
     ELMD_CHECK_EQ(model.blocks.size(), 1u);
-    ELMD_CHECK(model.blocks[0].kind == RenderBlockKind::Math);
+    ELMD_CHECK(model.blocks[0].kind == RenderBlockKind::Text);
+    ELMD_CHECK(e.document().blocks[0].kind == BlockKind::Paragraph);
 }
 
 ELMD_TEST(test_editor_incremental_inline_math_keeps_exact_source_mapping) {
@@ -403,13 +404,17 @@ ELMD_TEST(test_editor_insert_math_block) {
     ELMD_CHECK(s.find("$$") != std::string::npos);
 }
 
-ELMD_TEST(test_insert_text_transaction) {
+ELMD_TEST(test_insert_text_uses_document_transaction) {
     Editor e("hello");
     e.set_caret(CharOffset(5));
-    auto t = semantic_transaction(Command::InsertText(U" world"), e.text_cps(), e.document(), Selection::caret(CharOffset(5)), 1);
-    ELMD_CHECK(t && t->edits.size() == 1);
-    auto s = t->apply_to(e.text_cps());
-    ELMD_CHECK(cps_to_utf8(s) == "hello world");
+    const auto paragraph_id = e.document().blocks.front().id;
+    auto transaction = e.execute_command(Command::InsertText(U" world"));
+    ELMD_CHECK(transaction.has_value());
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("hello world"));
+    ELMD_CHECK_EQ(e.document().blocks.front().id, paragraph_id);
+    ELMD_CHECK(e.has_document_undo());
+    e.undo();
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("hello"));
 }
 
 ELMD_TEST(test_delete_transaction) {
@@ -526,7 +531,7 @@ ELMD_TEST(test_typing_into_empty_table_cell_updates_source_and_ast) {
     auto emptyCellOffset = table->rows[2].cells[0].content_range.start;
     e.set_caret(emptyCellOffset);
     e.execute_command(Command::InsertText(U"x"));
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A | B |\n| --- | --- |\n| x  | 2 |\n"));
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A | B |\n| --- | --- |\n| x | 2 |"));
     ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
     ELMD_CHECK(e.document().blocks[0].kind == BlockKind::Table);
     auto const& row = e.document().blocks[0].table_rows[0];
@@ -1232,7 +1237,7 @@ ELMD_TEST(test_empty_inline_format_commands_insert_editable_pairs) {
     ELMD_CHECK_EQ(math.selection().head().v, 1u);
 }
 
-ELMD_TEST(test_editor_auto_pairing_uses_semantic_transaction_pipeline) {
+ELMD_TEST(test_editor_auto_pairing_uses_document_tree_transactions) {
     Editor emphasis;
     auto firstEmphasis = emphasis.execute_command(Command::InsertText(U"*"));
     ELMD_CHECK(firstEmphasis.has_value());
@@ -1252,8 +1257,8 @@ ELMD_TEST(test_editor_auto_pairing_uses_semantic_transaction_pipeline) {
     Editor math;
     math.execute_command(Command::InsertText(U"$"));
     math.execute_command(Command::InsertText(U"$"));
-    ELMD_CHECK_EQ(math.buffer().text_utf8(), std::string("$$$$"));
-    ELMD_CHECK_EQ(math.selection().head().v, 2u);
+    ELMD_CHECK_EQ(math.buffer().text_utf8(), std::string("$$\n\n$$"));
+    ELMD_CHECK_EQ(math.selection().head().v, 3u);
     ELMD_CHECK(!math.document().blocks.empty());
     ELMD_CHECK(math.document().blocks.front().kind == BlockKind::MathBlock);
 
@@ -1273,6 +1278,73 @@ ELMD_TEST(test_editor_auto_pairing_uses_semantic_transaction_pipeline) {
     deletion.execute_command(backspace);
     ELMD_CHECK(deletion.buffer().text_utf8().empty());
     ELMD_CHECK_EQ(deletion.selection().head().v, 0u);
+}
+
+ELMD_TEST(test_typing_inside_auto_pair_promotes_ast_inline_node) {
+    Editor emphasis;
+    emphasis.execute_command(Command::InsertText(U"*"));
+    const auto paragraph_id = emphasis.document().blocks.front().id;
+    emphasis.execute_command(Command::InsertText(U"value"));
+    ELMD_CHECK_EQ(emphasis.buffer().text_utf8(), std::string("*value*"));
+    ELMD_CHECK_EQ(emphasis.document().blocks.front().id, paragraph_id);
+    ELMD_CHECK_EQ(emphasis.document().blocks.front().children.size(), 1u);
+    ELMD_CHECK(emphasis.document().blocks.front().children.front().kind == InlineKind::Emphasis);
+    ELMD_CHECK_EQ(block_inline_text_content(emphasis.document().blocks.front().children), std::u32string(U"value"));
+    ELMD_CHECK(emphasis.document_selection().has_value());
+    if (emphasis.document_selection()) {
+        ELMD_CHECK_EQ(emphasis.document_selection()->active.node_id, paragraph_id);
+        ELMD_CHECK_EQ(emphasis.document_selection()->active.offset, 5u);
+        ELMD_CHECK(emphasis.document_selection()->active.affinity == TextAffinity::Upstream);
+    }
+
+    Editor strong;
+    strong.execute_command(Command::InsertText(U"*"));
+    strong.execute_command(Command::InsertText(U"*"));
+    strong.execute_command(Command::InsertText(U"bold"));
+    ELMD_CHECK_EQ(strong.buffer().text_utf8(), std::string("**bold**"));
+    ELMD_CHECK(strong.document().blocks.front().children.front().kind == InlineKind::Strong);
+}
+
+ELMD_TEST(test_insert_text_replaces_cross_node_selection_in_document_tree) {
+    Editor editor("alpha\n\nomega");
+    const auto first_id = editor.document().blocks[0].id;
+    const auto second_id = editor.document().blocks[1].id;
+    editor.set_document_selection(DocumentSelection{
+        DocumentPosition{first_id, 2, TextAffinity::Downstream},
+        DocumentPosition{second_id, 3, TextAffinity::Downstream}});
+    auto transaction = editor.execute_command(Command::InsertText(U"X"));
+    ELMD_CHECK(transaction.has_value());
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alXga"));
+    ELMD_CHECK_EQ(editor.document().blocks.size(), 1u);
+    ELMD_CHECK_EQ(editor.document().blocks.front().id, first_id);
+    ELMD_CHECK(editor.document_selection().has_value());
+    if (editor.document_selection()) {
+        ELMD_CHECK_EQ(editor.document_selection()->active.node_id, first_id);
+        ELMD_CHECK_EQ(editor.document_selection()->active.offset, 3u);
+    }
+    editor.undo();
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alpha\n\nomega"));
+    ELMD_CHECK_EQ(editor.document().blocks[0].id, first_id);
+    ELMD_CHECK_EQ(editor.document().blocks[1].id, second_id);
+    ELMD_CHECK(editor.document_selection().has_value());
+    if (editor.document_selection()) ELMD_CHECK(!editor.document_selection()->is_caret());
+}
+
+ELMD_TEST(test_table_text_input_and_delete_share_document_history) {
+    Editor editor("| H |\n| --- |\n| X |");
+    const auto cell_id = editor.document().blocks.front().table_rows.front().cells.front().id;
+    editor.set_document_selection(DocumentSelection::caret(DocumentPosition{cell_id, 1, TextAffinity::Downstream}));
+    editor.execute_command(Command::InsertText(U"Y"));
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("| H |\n| --- |\n| XY |"));
+    Command backspace;
+    backspace.kind = CommandKind::DeleteBackward;
+    editor.execute_command(backspace);
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("| H |\n| --- |\n| X |"));
+    editor.undo();
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("| H |\n| --- |\n| XY |"));
+    editor.undo();
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("| H |\n| --- |\n| X |"));
+    ELMD_CHECK_EQ(editor.document().blocks.front().table_rows.front().cells.front().id, cell_id);
 }
 
 ELMD_TEST(test_inline_format_command_removes_surrounding_markers) {

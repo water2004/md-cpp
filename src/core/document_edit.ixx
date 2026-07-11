@@ -183,7 +183,65 @@ inline std::pair<InlineVec, InlineVec> split_inlines(const InlineVec& nodes, std
     return {std::move(left), std::move(right)};
 }
 
-inline bool insert_text_in_inlines(InlineVec& nodes, std::size_t offset, std::u32string_view text, NodeAllocator& allocator) {
+struct TypingInsertResult {
+    bool changed = false;
+    std::size_t offset = 0;
+    TextAffinity affinity = TextAffinity::Downstream;
+};
+
+inline bool paired_marker(char32_t marker) {
+    return marker == U'*' || marker == U'_' || marker == U'$' || marker == U'`';
+}
+
+inline std::optional<InlineKind> formatted_kind(char32_t marker, std::size_t count) {
+    if ((marker == U'*' || marker == U'_') && count == 1) return InlineKind::Emphasis;
+    if ((marker == U'*' || marker == U'_') && count == 2) return InlineKind::Strong;
+    if (marker == U'~' && count == 2) return InlineKind::Strike;
+    if (marker == U'$' && count == 1) return InlineKind::InlineMath;
+    if (marker == U'`') return InlineKind::InlineCode;
+    return std::nullopt;
+}
+
+inline void replace_text_with_format(
+    InlineVec& nodes,
+    std::size_t index,
+    std::size_t format_start,
+    std::size_t marker_count,
+    std::size_t content_end,
+    char32_t marker,
+    InlineKind kind,
+    NodeAllocator& allocator) {
+    auto original = std::move(nodes[index]);
+    const auto format_end = content_end + marker_count;
+    InlineVec replacement;
+    if (format_start > 0) {
+        replacement.push_back(InlineNode::text_node(original.id, original.text.substr(0, format_start)));
+    }
+    InlineNode formatted;
+    formatted.id = format_start == 0 ? original.id : allocator.allocate();
+    formatted.kind = kind;
+    formatted.opening_marker = std::u32string(marker_count, marker);
+    formatted.closing_marker = std::u32string(marker_count, marker);
+    auto content = original.text.substr(format_start + marker_count, content_end - format_start - marker_count);
+    if (kind == InlineKind::InlineCode || kind == InlineKind::InlineMath) {
+        formatted.text = std::move(content);
+    } else if (!content.empty()) {
+        formatted.children.push_back(InlineNode::text_node(allocator.allocate(), std::move(content)));
+    }
+    replacement.push_back(std::move(formatted));
+    if (format_end < original.text.size()) {
+        replacement.push_back(InlineNode::text_node(allocator.allocate(), original.text.substr(format_end)));
+    }
+    nodes.erase(nodes.begin() + static_cast<std::ptrdiff_t>(index));
+    nodes.insert(nodes.begin() + static_cast<std::ptrdiff_t>(index),
+        std::make_move_iterator(replacement.begin()), std::make_move_iterator(replacement.end()));
+}
+
+inline TypingInsertResult insert_typing_in_inlines(
+    InlineVec& nodes,
+    std::size_t offset,
+    std::u32string_view text,
+    NodeAllocator& allocator) {
     std::size_t consumed = 0;
     for (std::size_t index = 0; index < nodes.size(); ++index) {
         auto& node = nodes[index];
@@ -196,22 +254,86 @@ inline bool insert_text_in_inlines(InlineVec& nodes, std::size_t offset, std::u3
         const bool container = node.kind == InlineKind::Emphasis || node.kind == InlineKind::Strong
             || node.kind == InlineKind::Strike || node.kind == InlineKind::Span || node.kind == InlineKind::Link;
         if (container) {
-            if (node.children.empty()) node.children.push_back(InlineNode::text_node(allocator.allocate(), std::u32string(text)));
-            else insert_text_in_inlines(node.children, local, text, allocator);
-            return true;
+            char32_t closing = 0;
+            if (node.kind == InlineKind::Emphasis) closing = node.closing_marker.empty() ? U'*' : node.closing_marker.front();
+            else if (node.kind == InlineKind::Strong) closing = node.closing_marker.empty() ? U'*' : node.closing_marker.front();
+            else if (node.kind == InlineKind::Strike) closing = U'~';
+            if (text.size() == 1 && text.front() == closing && local == length) {
+                return TypingInsertResult{false, consumed + length, TextAffinity::Downstream};
+            }
+            auto nested = insert_typing_in_inlines(node.children, local, text, allocator);
+            nested.offset += consumed;
+            return nested;
         }
-        if (node.kind == InlineKind::Text || node.kind == InlineKind::InlineCode
-            || node.kind == InlineKind::InlineMath || node.kind == InlineKind::UnsupportedMarkup) {
+        if (node.kind == InlineKind::InlineCode || node.kind == InlineKind::InlineMath) {
+            const auto closing = node.kind == InlineKind::InlineCode
+                ? (node.closing_marker.empty() ? U'`' : node.closing_marker.front())
+                : (node.math_delim == MathDelimiter::InlineParen ? U')' : U'$');
+            if (text.size() == 1 && text.front() == closing && local == length) {
+                return TypingInsertResult{false, consumed + length, TextAffinity::Downstream};
+            }
             node.text.insert((std::min)(local, node.text.size()), text);
-            return true;
+            return TypingInsertResult{true, consumed + local + text.size(), TextAffinity::Upstream};
+        }
+        if (node.kind == InlineKind::Text || node.kind == InlineKind::UnsupportedMarkup) {
+            if (text.size() == 1 && paired_marker(text.front())) {
+                const auto marker = text.front();
+                std::size_t left = 0;
+                while (left < local && node.text[local - left - 1] == marker) ++left;
+                std::size_t right = 0;
+                while (local + right < node.text.size() && node.text[local + right] == marker) ++right;
+                if (left > 0 && left == right && left < 2) {
+                    node.text.insert(local, std::u32string(2, marker));
+                    return TypingInsertResult{true, consumed + local + 1, TextAffinity::Downstream};
+                }
+                if (right > 0) return TypingInsertResult{false, consumed + local + 1, TextAffinity::Downstream};
+                node.text.insert(local, std::u32string(2, marker));
+                return TypingInsertResult{true, consumed + local + 1, TextAffinity::Downstream};
+            }
+            if (text.size() == 1 && text.front() == U'~') {
+                if (local > 0 && node.text[local - 1] == U'~') {
+                    node.text.replace(local - 1, 1, U"~~~~");
+                    return TypingInsertResult{true, consumed + local + 1, TextAffinity::Downstream};
+                }
+                node.text.insert(local, text);
+                return TypingInsertResult{true, consumed + local + 1, TextAffinity::Downstream};
+            }
+
+            node.text.insert((std::min)(local, node.text.size()), text);
+            const auto inserted_end = local + text.size();
+            std::size_t left = 0;
+            while (left < local) {
+                const auto candidate = node.text[local - left - 1];
+                if (candidate != U'*' && candidate != U'_' && candidate != U'$' && candidate != U'`' && candidate != U'~') break;
+                if (left > 0 && candidate != node.text[local - 1]) break;
+                ++left;
+            }
+            if (left > 0) {
+                const auto marker = node.text[local - 1];
+                std::size_t right = 0;
+                while (inserted_end + right < node.text.size() && node.text[inserted_end + right] == marker) ++right;
+                if (left == right) {
+                    if (auto kind = formatted_kind(marker, left)) {
+                        const auto format_start = local - left;
+                        replace_text_with_format(nodes, index, format_start, left, inserted_end, marker, *kind, allocator);
+                        return TypingInsertResult{true, consumed + format_start + text.size(), TextAffinity::Upstream};
+                    }
+                }
+            }
+            return TypingInsertResult{true, consumed + inserted_end, TextAffinity::Downstream};
         }
         InlineNode inserted = InlineNode::text_node(allocator.allocate(), std::u32string(text));
         const auto insertion_index = local == 0 ? index : index + 1;
         nodes.insert(nodes.begin() + static_cast<std::ptrdiff_t>(insertion_index), std::move(inserted));
-        return true;
+        return TypingInsertResult{true, consumed + local + text.size(), TextAffinity::Downstream};
+    }
+
+    if (text.size() == 1 && paired_marker(text.front())) {
+        nodes.push_back(InlineNode::text_node(allocator.allocate(), std::u32string(2, text.front())));
+        return TypingInsertResult{true, offset + 1, TextAffinity::Downstream};
     }
     nodes.push_back(InlineNode::text_node(allocator.allocate(), std::u32string(text)));
-    return true;
+    return TypingInsertResult{true, offset + text.size(), TextAffinity::Downstream};
 }
 
 inline void erase_inline_range(InlineVec& nodes, std::size_t start, std::size_t count) {
@@ -510,16 +632,61 @@ inline bool backspace_in_code_blocks(
 
 inline bool split_paragraph_in_blocks(BlockVec& blocks, NodeId id, std::size_t offset, NodeAllocator& allocator, DocumentPosition& after);
 
-inline bool insert_text_in_blocks(BlockVec& blocks, NodeId id, std::size_t offset, std::u32string_view text, NodeAllocator& allocator) {
+inline std::optional<TypingInsertResult> insert_typing_in_blocks(
+    BlockVec& blocks,
+    NodeId id,
+    std::size_t offset,
+    std::u32string_view text,
+    NodeAllocator& allocator) {
     for (auto& block : blocks) {
         if (block.id == id && block.kind == BlockKind::Paragraph) {
-            return insert_text_in_inlines(block.children, offset, text, allocator);
+            if (text.size() == 1 && block.children.size() == 1 && block.children.front().kind == InlineKind::Text) {
+                const auto& raw = block.children.front().text;
+                if (text.front() == U'$' && offset == 1 && raw == U"$$") {
+                    block.kind = BlockKind::MathBlock;
+                    block.children.clear();
+                    block.tex.clear();
+                    block.math_delim = MathDelimiter::BlockDollar;
+                    return TypingInsertResult{true, 0, TextAffinity::Upstream};
+                }
+                if (text.front() == U'`' && offset == 2 && raw == U"````") {
+                    block.kind = BlockKind::CodeBlock;
+                    block.children.clear();
+                    block.code_text.clear();
+                    block.language.reset();
+                    block.code_indented = false;
+                    return TypingInsertResult{true, 0, TextAffinity::Upstream};
+                }
+            }
+            return insert_typing_in_inlines(block.children, offset, text, allocator);
         }
-        if (insert_text_in_blocks(block.quote_children, id, offset, text, allocator)) return true;
-        for (auto& item : block.list_items) if (insert_text_in_blocks(item.children, id, offset, text, allocator)) return true;
-        for (auto& item : block.task_items) if (insert_text_in_blocks(item.children, id, offset, text, allocator)) return true;
+        if (block.id == id && block.kind == BlockKind::CodeBlock) {
+            block.code_text.insert((std::min)(offset, block.code_text.size()), text);
+            return TypingInsertResult{true, offset + text.size(), TextAffinity::Downstream};
+        }
+        if (block.id == id && block.kind == BlockKind::MathBlock) {
+            block.tex.insert((std::min)(offset, block.tex.size()), text);
+            return TypingInsertResult{true, offset + text.size(), TextAffinity::Downstream};
+        }
+        if (block.kind == BlockKind::Table) {
+            for (auto& cell : block.table_header) {
+                if (cell.id == id) return insert_typing_in_inlines(cell.children, offset, text, allocator);
+            }
+            for (auto& row : block.table_rows) {
+                for (auto& cell : row.cells) {
+                    if (cell.id == id) return insert_typing_in_inlines(cell.children, offset, text, allocator);
+                }
+            }
+        }
+        if (auto result = insert_typing_in_blocks(block.quote_children, id, offset, text, allocator)) return result;
+        for (auto& item : block.list_items) {
+            if (auto result = insert_typing_in_blocks(item.children, id, offset, text, allocator)) return result;
+        }
+        for (auto& item : block.task_items) {
+            if (auto result = insert_typing_in_blocks(item.children, id, offset, text, allocator)) return result;
+        }
     }
-    return false;
+    return std::nullopt;
 }
 
 inline bool erase_text_in_blocks(BlockVec& blocks, NodeId id, std::size_t start, std::size_t count) {
@@ -531,6 +698,18 @@ inline bool erase_text_in_blocks(BlockVec& blocks, NodeId id, std::size_t start,
         if (block.id == id && block.kind == BlockKind::CodeBlock && start <= block.code_text.size()) {
             block.code_text.erase(start, (std::min)(count, block.code_text.size() - start));
             return true;
+        }
+        if (block.id == id && block.kind == BlockKind::MathBlock && start <= block.tex.size()) {
+            block.tex.erase(start, (std::min)(count, block.tex.size() - start));
+            return true;
+        }
+        if (block.kind == BlockKind::Table) {
+            for (auto& cell : block.table_header) {
+                if (cell.id == id) { erase_inline_range(cell.children, start, count); return true; }
+            }
+            for (auto& row : block.table_rows) for (auto& cell : row.cells) {
+                if (cell.id == id) { erase_inline_range(cell.children, start, count); return true; }
+            }
         }
         if (erase_text_in_blocks(block.quote_children, id, start, count)) return true;
         for (auto& item : block.list_items) if (erase_text_in_blocks(item.children, id, start, count)) return true;
@@ -562,6 +741,10 @@ inline bool erase_empty_inline_at(InlineVec& nodes, std::size_t offset) {
 inline bool erase_empty_inline_in_blocks(BlockVec& blocks, NodeId id, std::size_t offset) {
     for (auto& block : blocks) {
         if (block.id == id && block.kind == BlockKind::Paragraph) return erase_empty_inline_at(block.children, offset);
+        if (block.kind == BlockKind::Table) {
+            for (auto& cell : block.table_header) if (cell.id == id) return erase_empty_inline_at(cell.children, offset);
+            for (auto& row : block.table_rows) for (auto& cell : row.cells) if (cell.id == id) return erase_empty_inline_at(cell.children, offset);
+        }
         if (erase_empty_inline_in_blocks(block.quote_children, id, offset)) return true;
         for (auto& item : block.list_items) if (erase_empty_inline_in_blocks(item.children, id, offset)) return true;
         for (auto& item : block.task_items) if (erase_empty_inline_in_blocks(item.children, id, offset)) return true;
@@ -597,6 +780,10 @@ inline bool erase_adjacent_pair_in_inlines(InlineVec& nodes, std::size_t offset)
 inline bool erase_adjacent_pair_in_blocks(BlockVec& blocks, NodeId id, std::size_t offset) {
     for (auto& block : blocks) {
         if (block.id == id && block.kind == BlockKind::Paragraph) return erase_adjacent_pair_in_inlines(block.children, offset);
+        if (block.kind == BlockKind::Table) {
+            for (auto& cell : block.table_header) if (cell.id == id) return erase_adjacent_pair_in_inlines(cell.children, offset);
+            for (auto& row : block.table_rows) for (auto& cell : row.cells) if (cell.id == id) return erase_adjacent_pair_in_inlines(cell.children, offset);
+        }
         if (erase_adjacent_pair_in_blocks(block.quote_children, id, offset)) return true;
         for (auto& item : block.list_items) if (erase_adjacent_pair_in_blocks(item.children, id, offset)) return true;
         for (auto& item : block.task_items) if (erase_adjacent_pair_in_blocks(item.children, id, offset)) return true;
@@ -608,6 +795,11 @@ inline std::optional<std::size_t> editable_length_in_blocks(const BlockVec& bloc
     for (const auto& block : blocks) {
         if (block.id == id && block.kind == BlockKind::Paragraph) return block_inline_text_content(block.children).size();
         if (block.id == id && block.kind == BlockKind::CodeBlock) return block.code_text.size();
+        if (block.id == id && block.kind == BlockKind::MathBlock) return block.tex.size();
+        if (block.kind == BlockKind::Table) {
+            for (const auto& cell : block.table_header) if (cell.id == id) return block_inline_text_content(cell.children).size();
+            for (const auto& row : block.table_rows) for (const auto& cell : row.cells) if (cell.id == id) return block_inline_text_content(cell.children).size();
+        }
         if (auto length = editable_length_in_blocks(block.quote_children, id)) return length;
         for (const auto& item : block.list_items) if (auto length = editable_length_in_blocks(item.children, id)) return length;
         for (const auto& item : block.task_items) if (auto length = editable_length_in_blocks(item.children, id)) return length;
@@ -860,6 +1052,38 @@ struct DirectParagraphLocation {
     std::size_t item = 0;
     std::size_t child = 0;
 };
+
+inline bool delete_selection_in_table(
+    BlockVec& blocks,
+    DocumentPosition anchor,
+    DocumentPosition active,
+    DocumentPosition& after) {
+    for (auto& block : blocks) {
+        if (block.kind == BlockKind::Table) {
+            std::vector<TableCell*> cells;
+            for (auto& cell : block.table_header) cells.push_back(&cell);
+            for (auto& row : block.table_rows) for (auto& cell : row.cells) cells.push_back(&cell);
+            auto first = std::find_if(cells.begin(), cells.end(), [&](const auto* cell) { return cell->id == anchor.node_id; });
+            auto last = std::find_if(cells.begin(), cells.end(), [&](const auto* cell) { return cell->id == active.node_id; });
+            if (first != cells.end() && last != cells.end()) {
+                if (first > last) {
+                    std::swap(first, last);
+                    std::swap(anchor, active);
+                }
+                const auto first_length = block_inline_text_content((*first)->children).size();
+                erase_inline_range((*first)->children, (std::min)(anchor.offset, first_length), first_length - (std::min)(anchor.offset, first_length));
+                for (auto cursor = first + 1; cursor < last; ++cursor) (*cursor)->children.clear();
+                if (last != first) erase_inline_range((*last)->children, 0, active.offset);
+                after = DocumentPosition{(*first)->id, (std::min)(anchor.offset, first_length), TextAffinity::Downstream};
+                return true;
+            }
+        }
+        if (delete_selection_in_table(block.quote_children, anchor, active, after)) return true;
+        for (auto& item : block.list_items) if (delete_selection_in_table(item.children, anchor, active, after)) return true;
+        for (auto& item : block.task_items) if (delete_selection_in_table(item.children, anchor, active, after)) return true;
+    }
+    return false;
+}
 
 inline std::optional<DirectParagraphLocation> direct_paragraph_in_list(const BlockNode& list, NodeId id) {
     for (std::size_t item_index = 0; item_index < list.list_items.size(); ++item_index) {
@@ -1310,19 +1534,36 @@ inline std::optional<DocumentTransaction> document_outdent_list_item(
     return transaction;
 }
 
+inline std::optional<DocumentTransaction> document_delete_selection(
+    const EditorDocument& document,
+    const DocumentSelection& selection);
+
 inline std::optional<DocumentTransaction> document_insert_text(
     const EditorDocument& document,
     const DocumentSelection& selection,
     std::u32string_view text) {
-    if (!selection.is_caret() || text.empty()) return std::nullopt;
+    if (text.empty()) return std::nullopt;
+    if (!selection.is_caret()) {
+        auto deletion = document_delete_selection(document, selection);
+        if (!deletion) return std::nullopt;
+        auto insertion = document_insert_text(deletion->after, deletion->selection_after, text);
+        if (!insertion) return std::nullopt;
+        insertion->before = document;
+        insertion->selection_before = selection;
+        return insertion;
+    }
     EditorDocument after = document;
     document_edit_detail::NodeAllocator allocator(after);
-    if (!document_edit_detail::insert_text_in_blocks(
-            after.blocks, selection.active.node_id, selection.active.offset, text, allocator)) return std::nullopt;
-    normalize_document(after);
-    ++after.revision;
+    auto inserted = document_edit_detail::insert_typing_in_blocks(
+        after.blocks, selection.active.node_id, selection.active.offset, text, allocator);
+    if (!inserted) return std::nullopt;
+    if (inserted->changed) {
+        normalize_document(after);
+        ++after.revision;
+    }
     auto target = selection.active;
-    target.offset += text.size();
+    target.offset = inserted->offset;
+    target.affinity = inserted->affinity;
     DocumentTransaction transaction;
     transaction.before = document;
     transaction.after = std::move(after);
@@ -1415,6 +1656,19 @@ inline std::optional<DocumentTransaction> document_delete_selection(
         transaction.after = std::move(after);
         transaction.selection_before = selection;
         transaction.selection_after = DocumentSelection::caret(DocumentPosition{anchor.node_id, start, TextAffinity::Downstream});
+        transaction.reason = DocumentTransactionReason::Delete;
+        return transaction;
+    }
+
+    DocumentPosition table_target;
+    if (document_edit_detail::delete_selection_in_table(after.blocks, anchor, active, table_target)) {
+        normalize_document(after);
+        ++after.revision;
+        DocumentTransaction transaction;
+        transaction.before = document;
+        transaction.after = std::move(after);
+        transaction.selection_before = selection;
+        transaction.selection_after = DocumentSelection::caret(table_target);
         transaction.reason = DocumentTransactionReason::Delete;
         return transaction;
     }

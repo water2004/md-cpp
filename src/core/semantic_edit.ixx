@@ -364,13 +364,6 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
     };
 
     switch (cmd.kind) {
-        case CommandKind::InsertText: {
-            if (auto paired = auto_pair_insert_transaction(text_cps, selection, revision, cmd.text)) return paired;
-            std::size_t new_pos = sel.start.v + cmd.text.size();
-            Transaction t(revision, selection, caret_after(CharOffset(new_pos)), TransactionReason::Typing);
-            t.with_edit(sel, cmd.text);
-            return t;
-        }
         case CommandKind::DeleteBackward: {
             if (auto table = table_source_at(text_cps, sel.start.v)) {
                 if (!selection.is_caret()) {

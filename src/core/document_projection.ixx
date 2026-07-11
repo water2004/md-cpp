@@ -3,6 +3,7 @@ import std;
 import elmd.core.ast;
 import elmd.core.document;
 import elmd.core.document_position;
+import elmd.core.selection;
 import elmd.core.diagnostics;
 import elmd.core.metadata;
 import elmd.core.outline;
@@ -106,7 +107,8 @@ inline std::optional<CharOffset> source_offset_from_logical(
     const EditorDocument& document,
     const InlineVec& nodes,
     std::size_t logical_offset,
-    CharOffset fallback_start) {
+    CharOffset fallback_start,
+    TextAffinity affinity) {
     std::size_t consumed = 0;
     auto cursor = fallback_start.v;
     for (const auto& node : nodes) {
@@ -122,10 +124,13 @@ inline std::optional<CharOffset> source_offset_from_logical(
         const bool container = node.kind == InlineKind::Emphasis || node.kind == InlineKind::Strong
             || node.kind == InlineKind::Strike || node.kind == InlineKind::Span || node.kind == InlineKind::Link;
         if (container) {
+            if (local == length && affinity == TextAffinity::Downstream && range) return range->source_range.end;
             const auto content_start = range ? range->content_range.start : CharOffset(cursor);
-            if (auto nested = source_offset_from_logical(document, node.children, local, content_start)) return nested;
+            if (auto nested = source_offset_from_logical(document, node.children, local, content_start, affinity)) return nested;
             return range ? range->content_range.end : CharOffset(cursor);
         }
+        if ((node.kind == InlineKind::InlineCode || node.kind == InlineKind::InlineMath)
+            && local == length && affinity == TextAffinity::Downstream && range) return range->source_range.end;
         const auto content_start = range ? range->content_range.start.v : cursor;
         return CharOffset(content_start + (std::min)(local, length));
     }
@@ -171,6 +176,24 @@ inline std::optional<DocumentPosition> position_in_blocks(
                 }
             }
         }
+        if (block.kind == BlockKind::MathBlock) {
+            const auto* range = document.source_map.find_node_by_id(block.id);
+            if (range && source_offset.v >= range->content_range.start.v && source_offset.v <= range->content_range.end.v) {
+                return DocumentPosition{block.id, source_offset.v - range->content_range.start.v, TextAffinity::Downstream};
+            }
+        }
+        if (block.kind == BlockKind::Table) {
+            auto position_in_cell = [&](const TableCell& cell) -> std::optional<DocumentPosition> {
+                const auto* range = document.source_map.find_node_by_id(cell.id);
+                if (!range || source_offset.v < range->content_range.start.v || source_offset.v > range->content_range.end.v) return std::nullopt;
+                const auto offset = logical_offset_from_source(document, cell.children, source_offset, range->content_range.start);
+                return DocumentPosition{cell.id, offset, TextAffinity::Downstream};
+            };
+            for (const auto& cell : block.table_header) if (auto position = position_in_cell(cell)) return position;
+            for (const auto& row : block.table_rows) {
+                for (const auto& cell : row.cells) if (auto position = position_in_cell(cell)) return position;
+            }
+        }
         if (auto position = position_in_blocks(document, block.quote_children, source_offset)) return position;
         for (const auto& item : block.list_items) {
             if (auto position = position_in_blocks(document, item.children, source_offset)) return position;
@@ -212,8 +235,41 @@ inline std::optional<CharOffset> source_offset_from_document_position(
         const auto logical_length = block_inline_text_content(paragraph->children).size();
         if (paragraph->children.empty()) return range->content_range.start;
         if (auto source = document_projection_detail::source_offset_from_logical(
-                document, paragraph->children, (std::min)(position.offset, logical_length), range->content_range.start)) return source;
+                document, paragraph->children, (std::min)(position.offset, logical_length), range->content_range.start, position.affinity)) return source;
         return range->content_range.end;
+    }
+    std::function<const BlockNode*(const BlockVec&)> find_math = [&](const BlockVec& blocks) -> const BlockNode* {
+        for (const auto& block : blocks) {
+            if (block.id == position.node_id && block.kind == BlockKind::MathBlock) return &block;
+            if (const auto* nested = find_math(block.quote_children)) return nested;
+            for (const auto& item : block.list_items) if (const auto* nested = find_math(item.children)) return nested;
+            for (const auto& item : block.task_items) if (const auto* nested = find_math(item.children)) return nested;
+        }
+        return nullptr;
+    };
+    if (const auto* math = find_math(document.blocks)) {
+        const auto* math_range = document.source_map.find_node_by_id(math->id);
+        if (!math_range) return std::nullopt;
+        return CharOffset(math_range->content_range.start.v + (std::min)(position.offset, math->tex.size()));
+    }
+    std::function<const TableCell*(const BlockVec&)> find_cell = [&](const BlockVec& blocks) -> const TableCell* {
+        for (const auto& block : blocks) {
+            for (const auto& cell : block.table_header) if (cell.id == position.node_id) return &cell;
+            for (const auto& row : block.table_rows) for (const auto& cell : row.cells) if (cell.id == position.node_id) return &cell;
+            if (const auto* nested = find_cell(block.quote_children)) return nested;
+            for (const auto& item : block.list_items) if (const auto* nested = find_cell(item.children)) return nested;
+            for (const auto& item : block.task_items) if (const auto* nested = find_cell(item.children)) return nested;
+        }
+        return nullptr;
+    };
+    if (const auto* cell = find_cell(document.blocks)) {
+        const auto* cell_range = document.source_map.find_node_by_id(cell->id);
+        if (!cell_range) return std::nullopt;
+        const auto logical_length = block_inline_text_content(cell->children).size();
+        if (cell->children.empty()) return cell_range->content_range.start;
+        if (auto source = document_projection_detail::source_offset_from_logical(
+                document, cell->children, (std::min)(position.offset, logical_length), cell_range->content_range.start, position.affinity)) return source;
+        return cell_range->content_range.end;
     }
     std::function<const BlockNode*(const BlockVec&)> find_code = [&](const BlockVec& blocks) -> const BlockNode* {
         for (const auto& block : blocks) {

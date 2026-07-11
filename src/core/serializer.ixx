@@ -420,9 +420,12 @@ inline std::size_t map_table_cells(
     SourceMap& source_map) {
     for (const auto& cell : cells) {
         const auto content = serialize_inlines(cell.children);
-        const auto content_start = find_serialized(markdown, content, cursor, limit);
+        const auto boundary = cursor < limit && markdown[cursor] == U'|' ? cursor : (cursor > 0 ? cursor - 1 : cursor);
+        const auto content_start = content.empty()
+            ? (std::min)(boundary + 2, limit)
+            : find_serialized(markdown, content, cursor, limit);
         const auto content_end = map_inlines(cell.children, markdown, content_start, limit, source_map);
-        const auto source_start = content_start > 0 ? content_start - 1 : content_start;
+        const auto source_start = boundary;
         auto source_end = content_end;
         while (source_end < limit && markdown[source_end] != U'|') ++source_end;
         if (source_end < limit) ++source_end;
@@ -456,7 +459,12 @@ inline std::size_t map_block(
             markers.push_back(char_range(content_end, source_end));
         }
     } else if (block.kind == BlockKind::MathBlock) {
-        content_start = find_serialized(markdown, block.tex, source_start, source_end);
+        if (block.tex.empty()) {
+            const auto newline = markdown.find(U'\n', source_start);
+            content_start = newline == std::u32string::npos || newline >= source_end ? source_end : newline + 1;
+        } else {
+            content_start = find_serialized(markdown, block.tex, source_start, source_end);
+        }
         content_end = (std::min)(content_start + block.tex.size(), source_end);
         markers.push_back(char_range(source_start, content_start));
         markers.push_back(char_range(content_end, source_end));
@@ -473,7 +481,13 @@ inline std::size_t map_block(
         map_list(block, markdown, source_start, source_end, source_map);
     } else if (block.kind == BlockKind::Table) {
         auto cursor = map_table_cells(block.table_header, markdown, source_start, source_end, source_map);
+        auto separator_end = markdown.find(U'\n', cursor);
+        if (separator_end != std::u32string::npos && separator_end < source_end) {
+            separator_end = markdown.find(U'\n', separator_end + 1);
+            cursor = separator_end == std::u32string::npos || separator_end >= source_end ? source_end : separator_end + 1;
+        }
         for (const auto& row : block.table_rows) {
+            if (cursor < source_end && markdown[cursor] == U'\n') ++cursor;
             const auto row_start = cursor;
             cursor = map_table_cells(row.cells, markdown, cursor, source_end, source_map);
             source_map.node_ranges.emplace_back(row.id, char_range(row_start, cursor), char_range(row_start, cursor));

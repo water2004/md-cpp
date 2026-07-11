@@ -73,7 +73,12 @@ public:
     std::optional<DocumentTransaction> execute_document_insert_text(DocumentSelection selection, std::u32string_view text) {
         auto transaction = document_insert_text(document_, selection, text);
         if (!transaction) return std::nullopt;
-        apply_document_transaction_(*transaction);
+        if (transaction->before.revision == transaction->after.revision) {
+            document_selection_ = transaction->selection_after;
+            synchronize_legacy_selection_();
+        } else {
+            apply_document_transaction_(*transaction);
+        }
         return transaction;
     }
 
@@ -134,6 +139,13 @@ public:
 
     // Apply a Command. Returns the transaction if it produced a change.
     std::optional<Transaction> execute_command(const Command& cmd) {
+        if (cmd.kind == CommandKind::InsertText) {
+            if (!document_selection_) return std::nullopt;
+            const auto revision_before = buffer_.revision();
+            const auto selection_before = selection_;
+            if (!execute_document_insert_text(*document_selection_, cmd.text)) return std::nullopt;
+            return Transaction(revision_before, selection_before, selection_, TransactionReason::Typing);
+        }
         if ((cmd.kind == CommandKind::IndentListItem || cmd.kind == CommandKind::OutdentListItem) && selection_.is_caret()) {
             auto position = current_document_caret_();
             if (!position) return std::nullopt;
@@ -312,6 +324,15 @@ private:
         document_ = std::move(parsed.document);
         symbols_ = std::move(parsed.symbols);
         outline_ = std::move(parsed.outline);
+        if (document_.blocks.empty()) {
+            normalize_document(document_);
+            auto projection = project_document(document_, dialect_);
+            document_.source_map = std::move(projection.source_map);
+        }
+        auto anchor = document_position_from_source_offset(document_, selection_.anchor);
+        auto active = document_position_from_source_offset(document_, selection_.active);
+        if (anchor && active) document_selection_ = DocumentSelection{*anchor, *active};
+        else document_selection_.reset();
     }
 
     void refresh_projection_from_document_() {
