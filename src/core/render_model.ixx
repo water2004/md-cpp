@@ -172,6 +172,8 @@ struct RenderBlock {
     // Quote / Callout / Footnote
     std::vector<RenderBlock> child_blocks;
     std::size_t quote_depth = 0;
+    std::size_t container_depth = 0;
+    std::size_t container_indent_columns = 0;
     std::string callout_kind;
     std::optional<std::vector<InlineRenderItem>> callout_title;
     std::string footnote_label;

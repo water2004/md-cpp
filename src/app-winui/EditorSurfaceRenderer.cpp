@@ -579,7 +579,14 @@ namespace winrt::ElMd
                 AppendMathFragments(display, *math, contentStart, contentEnd, false, item.style);
                 continue;
             }
-            AppendDisplayText(display, InlineText(item), item.source_range.start.v, item.style, item.kind == elmd::InlineRenderItem::Kind::Marker);
+            if (item.kind == elmd::InlineRenderItem::Kind::Marker && item.source_range.start == item.source_range.end && !item.display_text.empty())
+            {
+                AppendGeneratedText(display, item.display_text, item.source_range.start.v, item.style);
+            }
+            else
+            {
+                AppendDisplayText(display, InlineText(item), item.source_range.start.v, item.style, item.kind == elmd::InlineRenderItem::Kind::Marker);
+            }
         }
         if (!display.text.empty() && display.text.back() == U'\n') AppendGeneratedText(display, U"\u200B", sourceEnd, elmd::InlineStyle::plain());
         display.displayToSource.push_back(sourceEnd);
@@ -2467,12 +2474,57 @@ namespace winrt::ElMd
             auto origin = D2D1::Point2F(documentLeft + inset, y + textTop);
             if (layout)
             {
+                std::vector<std::pair<UINT32, UINT32>> nestedCodeDisplayRanges;
+                for (auto const& child : block.child_blocks)
+                {
+                    if (child.kind != elmd::RenderBlockKind::Code && child.kind != elmd::RenderBlockKind::Quote) continue;
+                    auto displayStart = DisplayPositionForSource(displayToSource, child.content_range.start.v);
+                    auto displayEnd = DisplayPositionForSource(displayToSource, child.content_range.end.v);
+                    if (displayStart >= displayEnd || displayStart > (std::numeric_limits<UINT32>::max)() || displayEnd > (std::numeric_limits<UINT32>::max)()) continue;
+                    auto start = static_cast<UINT32>(displayStart);
+                    auto length = static_cast<UINT32>(displayEnd - displayStart);
+                    UINT32 actualCount = 0;
+                    auto hr = layout->HitTestTextRange(start, length, origin.x, origin.y, nullptr, 0, &actualCount);
+                    if (hr != E_NOT_SUFFICIENT_BUFFER || actualCount == 0) continue;
+                    std::vector<DWRITE_HIT_TEST_METRICS> metrics(actualCount);
+                    if (FAILED(layout->HitTestTextRange(start, length, origin.x, origin.y, metrics.data(), actualCount, &actualCount))) continue;
+                    auto top = (std::numeric_limits<float>::max)();
+                    auto bottom = (std::numeric_limits<float>::lowest)();
+                    for (UINT32 metricIndex = 0; metricIndex < actualCount; ++metricIndex)
+                    {
+                        auto const& metric = metrics[metricIndex];
+                        top = (std::min)(top, metric.top);
+                        bottom = (std::max)(bottom, metric.top + metric.height);
+                    }
+                    if (top <= bottom)
+                    {
+                        auto indent = static_cast<float>(child.container_indent_columns) * styleSheet.body.size * 0.55f;
+                        auto left = (std::min)(documentRight - 1.0f, documentLeft + inset + indent);
+                        if (child.kind == elmd::RenderBlockKind::Code)
+                        {
+                            auto rect = D2D1::RoundedRect(D2D1::RectF(left, top - 6.0f, documentRight, bottom + 6.0f), 5.0f, 5.0f);
+                            d2dContext->FillRoundedRectangle(rect, panelBrush.Get());
+                            nestedCodeDisplayRanges.push_back({start, start + length});
+                        }
+                        else
+                        {
+                            auto rect = D2D1::RectF(left, top - 4.0f, documentRight, bottom + 4.0f);
+                            d2dContext->FillRectangle(rect, nestedQuoteBrush.Get());
+                            d2dContext->DrawLine(D2D1::Point2F(left + 1.5f, rect.top), D2D1::Point2F(left + 1.5f, rect.bottom), mutedBrush.Get(), 3.0f);
+                        }
+                    }
+                }
                 for (auto const& range : inlineRanges)
                 {
                     if (!range.style.code || range.length == 0)
                     {
                         continue;
                     }
+                    auto rangeEnd = range.start + range.length;
+                    auto nestedCode = std::any_of(nestedCodeDisplayRanges.begin(), nestedCodeDisplayRanges.end(), [&](auto const& nested) {
+                        return nested.first <= range.start && rangeEnd <= nested.second;
+                    });
+                    if (nestedCode) continue;
 
                     UINT32 actualCount = 0;
                     auto hr = layout->HitTestTextRange(range.start, range.length, origin.x, origin.y, nullptr, 0, &actualCount);

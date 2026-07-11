@@ -610,6 +610,45 @@ ELMD_TEST(test_enter_continues_task_list_unchecked) {
     ELMD_CHECK_EQ(e.selection().head().v, 18u);
 }
 
+ELMD_TEST(test_enter_exits_list_one_level_before_exiting_blockquote) {
+    Editor e("> * alpha");
+    e.set_caret(CharOffset(9));
+    Command newline; newline.kind = CommandKind::InsertNewline;
+    e.execute_command(newline);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> * alpha  \n> * "));
+    e.execute_command(newline);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> * alpha\n> "));
+    ELMD_CHECK_EQ(e.selection().head().v, 12u);
+    ELMD_CHECK(e.selection().affinity == TextAffinity::Downstream);
+    e.execute_command(newline);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> * alpha\n"));
+    ELMD_CHECK_EQ(e.selection().head().v, 10u);
+}
+
+ELMD_TEST(test_empty_list_item_reuses_following_empty_quote_line) {
+    std::string source =
+        "> #### The quarterly results look great!\n"
+        "> \n"
+        "> * Revenue was off the chart.\n"
+        "> * Profits were higher than ever.\n"
+        "> \n"
+        "> _Everything_ is going according to **plan**.";
+    Editor e(source);
+    auto profits_end = source.find("\n> \n", source.find("Profits"));
+    ELMD_CHECK(profits_end != std::string::npos);
+    if (profits_end == std::string::npos) return;
+    e.set_caret(CharOffset(profits_end));
+    Command newline; newline.kind = CommandKind::InsertNewline;
+    e.execute_command(newline);
+    auto continued = source;
+    continued.insert(profits_end, "  \n> * ");
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), continued);
+    e.execute_command(newline);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), source);
+    ELMD_CHECK_EQ(e.selection().head().v, profits_end + 3u);
+    ELMD_CHECK(e.selection().affinity == TextAffinity::Downstream);
+}
+
 ELMD_TEST(test_enter_continues_blockquote) {
     Editor e("> alpha");
     e.set_caret(CharOffset(7));
@@ -651,7 +690,7 @@ ELMD_TEST(test_enter_exits_nested_blockquotes_one_level_at_a_time) {
     e.execute_command(newline);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > alpha\n> "));
     ELMD_CHECK_EQ(e.selection().head().v, 12u);
-    ELMD_CHECK(e.selection().affinity == TextAffinity::Upstream);
+    ELMD_CHECK(e.selection().affinity == TextAffinity::Downstream);
     e.execute_command(newline);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > alpha\n"));
     ELMD_CHECK_EQ(e.selection().head().v, 10u);
@@ -665,7 +704,7 @@ ELMD_TEST(test_backspace_exits_nested_blockquotes_one_level_at_a_time) {
     e.execute_command(backspace);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > alpha\n> "));
     ELMD_CHECK_EQ(e.selection().head().v, 12u);
-    ELMD_CHECK(e.selection().affinity == TextAffinity::Upstream);
+    ELMD_CHECK(e.selection().affinity == TextAffinity::Downstream);
     e.execute_command(backspace);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > alpha"));
     ELMD_CHECK_EQ(e.selection().head().v, 9u);
@@ -746,7 +785,7 @@ ELMD_TEST(test_blockquote_newline_with_following_block_keeps_an_editable_quote_l
     e.execute_command(newline);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha  \n> \n\nafter"));
     ELMD_CHECK_EQ(e.selection().head().v, 12u);
-    ELMD_CHECK(e.selection().affinity == TextAffinity::Upstream);
+    ELMD_CHECK(e.selection().affinity == TextAffinity::Downstream);
     e.execute_command(Command::InsertText(U"11111"));
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha  \n> 11111\n\nafter"));
     ELMD_CHECK_EQ(e.selection().head().v, 17u);
@@ -756,7 +795,7 @@ ELMD_TEST(test_blockquote_newline_with_following_block_keeps_an_editable_quote_l
     e.execute_command(newline);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha  \n> 11111  \n> \n\nafter"));
     ELMD_CHECK_EQ(e.selection().head().v, 22u);
-    ELMD_CHECK(e.selection().affinity == TextAffinity::Upstream);
+    ELMD_CHECK(e.selection().affinity == TextAffinity::Downstream);
 }
 
 ELMD_TEST(test_backspace_removes_an_empty_blockquote_prefix_atomically) {

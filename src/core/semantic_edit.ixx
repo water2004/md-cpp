@@ -85,7 +85,34 @@ inline std::optional<MarkdownNewlineEdit> markdown_newline_edit(const std::u32st
         }
     }
 
-    if (empty_item && (!marker.empty() || !base_prefix.empty())) return MarkdownNewlineEdit{CharRange(CharOffset(ls), CharOffset(le)), U"", CharOffset(ls)};
+    if (empty_item && !marker.empty()) {
+        if (!base_prefix.empty()) {
+            auto next_line_start = le < cps.size() && cps[le] == U'\n' ? le + 1 : le;
+            auto next_quote = next_line_start < cps.size() ? quote_source_line_at(cps, CharOffset(next_line_start)) : std::nullopt;
+            bool matching_empty_quote = false;
+            if (next_quote && next_quote->empty && next_quote->source_range.start.v == next_line_start) {
+                auto next_prefix = std::u32string(cps.begin() + next_line_start, cps.begin() + next_quote->content_range.start.v);
+                matching_empty_quote = next_prefix == base_prefix;
+            }
+            if (matching_empty_quote) {
+                if (ls >= 3 && cps[ls - 1] == U'\n' && cps[ls - 2] == U' ' && cps[ls - 3] == U' ') {
+                    return MarkdownNewlineEdit{CharRange(CharOffset(ls - 3), CharOffset(next_line_start)), U"\n",
+                                               CharOffset(ls - 2 + base_prefix.size())};
+                }
+                return MarkdownNewlineEdit{CharRange(CharOffset(ls), CharOffset(next_line_start)), U"",
+                                           CharOffset(ls + base_prefix.size())};
+            }
+            if (ls >= 3 && cps[ls - 1] == U'\n' && cps[ls - 2] == U' ' && cps[ls - 3] == U' ') {
+                auto replacement = std::u32string(U"\n") + base_prefix;
+                return MarkdownNewlineEdit{CharRange(CharOffset(ls - 3), CharOffset(le)), replacement,
+                                           CharOffset(ls - 3 + replacement.size())};
+            }
+            return MarkdownNewlineEdit{CharRange(CharOffset(ls), CharOffset(le)), base_prefix,
+                                       CharOffset(ls + base_prefix.size())};
+        }
+        return MarkdownNewlineEdit{CharRange(CharOffset(ls), CharOffset(le)), U"", CharOffset(ls)};
+    }
+    if (empty_item && !base_prefix.empty()) return MarkdownNewlineEdit{CharRange(CharOffset(ls), CharOffset(le)), U"", CharOffset(ls)};
 
     std::u32string insert;
     insert.push_back(U'\n');
@@ -437,13 +464,11 @@ inline std::optional<Transaction> semantic_newline_transaction(const std::u32str
                     auto edit_start = empty_quote->source_range.start.v - 3;
                     auto replacement = std::u32string(U"\n") + remaining;
                     auto after = caret_after(CharOffset(edit_start + replacement.size()));
-                    after.affinity = TextAffinity::Upstream;
                     Transaction transaction(revision, selection, after, TransactionReason::StructuralCommand);
                     transaction.with_edit(CharRange(CharOffset(edit_start), empty_quote->content_range.end), replacement);
                     return transaction;
                 }
                 auto after = caret_after(innermost.start);
-                after.affinity = TextAffinity::Upstream;
                 Transaction transaction(revision, selection, after, TransactionReason::StructuralCommand);
                 transaction.with_edit(CharRange(innermost.start, empty_quote->content_range.end), U"");
                 return transaction;
@@ -460,7 +485,6 @@ inline std::optional<Transaction> semantic_newline_transaction(const std::u32str
                 return transaction;
             }
             auto after = caret_after(markdown_edit ? markdown_edit->caret : CharOffset(sel.start.v + 1));
-            if (continued_quote) after.affinity = TextAffinity::Upstream;
             Transaction transaction(revision, selection, after, TransactionReason::StructuralCommand);
             if (markdown_edit) transaction.with_edit(markdown_edit->range, markdown_edit->text);
             else transaction.with_edit(sel, U"\n");
@@ -566,7 +590,7 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
                 return transaction;
             }
             if (auto container_edit = empty_container_backspace_edit(text_cps, sel)) {
-                Transaction transaction(revision, selection, backward_caret(container_edit->caret), TransactionReason::StructuralCommand);
+                Transaction transaction(revision, selection, caret_after(container_edit->caret), TransactionReason::StructuralCommand);
                 transaction.with_edit(container_edit->range, container_edit->text);
                 return transaction;
             }

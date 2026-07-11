@@ -748,6 +748,51 @@ ELMD_TEST(test_tab_indented_code_block) {
     ELMD_CHECK_EQ(cps_to_utf8(out.document.blocks[0].code_text), std::string("code\n"));
 }
 
+ELMD_TEST(test_indented_code_block_inside_ordered_list_keeps_block_semantics) {
+    auto out = parse_text(1,
+        "1.  Open the file.\n"
+        "\n"
+        "2.  Find the following code block on line 21:\n"
+        "\n"
+        "        <html>\n"
+        "          <head>\n"
+        "            <title>Test</title>\n"
+        "          </head>\n"
+        "\n"
+        "3.  Update the title to match the name of your website.\n");
+    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    if (out.document.blocks.empty()) return;
+    auto const& list = out.document.blocks.front();
+    ELMD_CHECK(list.kind == BlockKind::List);
+    ELMD_CHECK_EQ(list.list_items.size(), 3u);
+    if (list.list_items.size() < 2) return;
+    auto const& second = list.list_items[1];
+    auto code = std::find_if(second.children.begin(), second.children.end(), [](auto const& child) {
+        return child.kind == BlockKind::CodeBlock;
+    });
+    ELMD_CHECK(code != second.children.end());
+    if (code != second.children.end()) {
+        ELMD_CHECK(code->code_indented);
+        ELMD_CHECK_EQ(cps_to_utf8(code->code_text), std::string("<html>\n  <head>\n    <title>Test</title>\n  </head>\n"));
+    }
+}
+
+ELMD_TEST(test_list_container_indent_without_four_extra_columns_is_not_code) {
+    auto out = parse_text(1,
+        "1. First\n"
+        "2. Second\n"
+        "\n"
+        "   <html>\n"
+        "\n"
+        "3. Third\n");
+    auto* list = first_of(out.document.blocks, BlockKind::List);
+    ELMD_CHECK(list != nullptr);
+    if (!list || list->list_items.size() < 2) return;
+    ELMD_CHECK(std::none_of(list->list_items[1].children.begin(), list->list_items[1].children.end(), [](auto const& child) {
+        return child.kind == BlockKind::CodeBlock;
+    }));
+}
+
 ELMD_TEST(test_blockquote_preserves_paragraph_text) {
     auto out = parse_text(1, "> quoted text\n");
     auto* quote = first_of(out.document.blocks, BlockKind::BlockQuote);

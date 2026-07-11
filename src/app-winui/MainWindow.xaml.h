@@ -17,6 +17,8 @@ namespace winrt::ElMd::implementation
         void RenderEditorSurface();
         void UpdateEditorScrollBar();
         void StartScrollAnimation();
+        void StopScrollAnimation();
+        void OnScrollFrame(winrt::Windows::Foundation::IInspectable const&, winrt::Windows::Foundation::IInspectable const&);
         void SetSidebarExpanded(bool expanded);
         void UpdateTheme();
         winrt::ElMd::EditorSurfaceRenderer::Theme CurrentRendererTheme();
@@ -65,7 +67,8 @@ namespace winrt::ElMd::implementation
         bool pointerSelecting = false;
         bool scrollBarUpdating = false;
         std::optional<std::string> hoverTooltip;
-        winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer scrollAnimationTimer{ nullptr };
+        winrt::event_token scrollRenderingToken{};
+        bool scrollRenderingActive = false;
         std::chrono::steady_clock::time_point lastScrollFrame{};
         std::size_t pointerAnchor = 0;
         std::optional<winrt::ElMd::EditorSurfaceRenderer::TableAction> tableDrag;

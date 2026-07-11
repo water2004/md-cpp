@@ -80,7 +80,17 @@ struct Builder {
         std::size_t cursor = source_offset;
         push_marker(out, cursor, U"\n", MarkerRole::Structural);
     }
-    void append_list_contents(std::vector<InlineRenderItem>& out, const BlockNode& list, std::size_t depth) {
+    void append_generated_indent(std::vector<InlineRenderItem>& out, std::size_t source_offset, std::size_t columns) {
+        if (columns == 0) return;
+        InlineRenderItem marker;
+        marker.kind = InlineRenderItem::Kind::Marker;
+        marker.source_range = CharRange(CharOffset(source_offset), CharOffset(source_offset));
+        marker.display_text = std::u32string(columns, U' ');
+        marker.marker_role = MarkerRole::Structural;
+        marker.visibility = MarkerVisibility::Always;
+        out.push_back(std::move(marker));
+    }
+    void append_list_contents(std::vector<InlineRenderItem>& out, const BlockNode& list, std::size_t depth, std::size_t indent_columns = 0) {
         auto append_items = [&](auto const& items, bool tasks) {
             for (std::size_t index = 0; index < items.size(); ++index) {
                 auto const& item = items[index];
@@ -94,19 +104,22 @@ struct Builder {
                     else marker = U"- ";
                 }
                 if (tasks) {
-                    push_marker(out, cursor, marker, MarkerRole::TaskCheckbox);
+                    auto display = std::u32string(indent_columns, U' ') + (marker.empty() ? U"- [ ] " : marker);
+                    push_marker(out, cursor, marker, MarkerRole::TaskCheckbox, std::move(display));
                 } else if (list.list_ordered) {
-                    auto display = utf8_to_cps(std::to_string(list.list_start + index)) + std::u32string(1, list.list_delimiter) + U" ";
+                    auto display = std::u32string(indent_columns, U' ') + utf8_to_cps(std::to_string(list.list_start + index)) + std::u32string(1, list.list_delimiter) + U" ";
                     push_marker(out, cursor, marker, MarkerRole::ListNumber, std::move(display));
                 } else {
-                    auto indentation = marker.size() >= 2 ? marker.size() - 2 : std::size_t{};
-                    push_marker(out, cursor, marker, MarkerRole::ListBullet, std::u32string(indentation, U' ') + U"\u2022 ");
+                    push_marker(out, cursor, marker, MarkerRole::ListBullet, std::u32string(indent_columns, U' ') + U"\u2022 ");
                 }
                 bool first_child = true;
                 for (auto const& child : item.children) {
                     auto child_source = node_source_range(child.id);
                     if (!first_child) append_block_break(out, child_source.start.v > 0 ? child_source.start.v - 1 : child_source.start.v);
-                    append_nested_block(out, child, depth + 1);
+                    auto marker_columns = tasks ? std::size_t{6}
+                        : list.list_ordered ? std::to_string(list.list_start + index).size() + 2
+                        : std::size_t{2};
+                    append_nested_block(out, child, depth + 1, indent_columns + marker_columns);
                     first_child = false;
                 }
                 if (index + 1 < items.size()) {
@@ -118,7 +131,7 @@ struct Builder {
         if (list.kind == BlockKind::TaskList) append_items(list.task_items, true);
         else append_items(list.list_items, false);
     }
-    void append_nested_block(std::vector<InlineRenderItem>& out, const BlockNode& block, std::size_t depth) {
+    void append_nested_block(std::vector<InlineRenderItem>& out, const BlockNode& block, std::size_t depth, std::size_t indent_columns) {
         auto content = node_content_range(block.id);
         switch (block.kind) {
             case BlockKind::Paragraph:
@@ -131,7 +144,7 @@ struct Builder {
             }
             case BlockKind::List:
             case BlockKind::TaskList:
-                append_list_contents(out, block, depth);
+                append_list_contents(out, block, depth, indent_columns);
                 return;
             case BlockKind::BlockQuote:
             case BlockKind::Callout:
@@ -145,7 +158,7 @@ struct Builder {
                         marker.kind = InlineRenderItem::Kind::Marker;
                         marker.source_range = marker_range;
                         marker.text = std::u32string(source.substr(start, end - start));
-                        marker.display_text = U"\u2502 ";
+                        marker.display_text = std::u32string(indent_columns, U' ');
                         marker.marker_role = MarkerRole::Structural;
                         marker.visibility = MarkerVisibility::Always;
                         out.push_back(std::move(marker));
@@ -155,12 +168,13 @@ struct Builder {
                 for (auto const& child : block.quote_children) {
                     auto child_source = node_source_range(child.id);
                     if (!first) append_block_break(out, child_source.start.v > 0 ? child_source.start.v - 1 : child_source.start.v);
-                    append_nested_block(out, child, depth + 1);
+                    append_nested_block(out, child, depth + 1, indent_columns);
                     first = false;
                 }
                 return;
             }
             case BlockKind::CodeBlock: {
+                append_generated_indent(out, content.start.v, indent_columns);
                 auto item = InlineRenderItem::plain_text(block.code_text, content);
                 item.style.code = true;
                 out.push_back(std::move(item));
@@ -454,6 +468,41 @@ struct Builder {
         }
     }
 
+    std::size_t list_marker_columns(const BlockNode& list, std::size_t index) const {
+        if (list.kind == BlockKind::TaskList) return 6;
+        if (list.list_ordered) return std::to_string(list.list_start + index).size() + 2;
+        return 2;
+    }
+
+    void collect_nested_blocks(RenderBlock& parent, const BlockNode& child, std::size_t depth, std::size_t indent_columns) {
+        if (child.kind == BlockKind::CodeBlock || child.kind == BlockKind::BlockQuote) {
+            auto rendered = build_block(child);
+            rendered.container_depth = depth;
+            rendered.container_indent_columns = indent_columns;
+            parent.child_blocks.push_back(std::move(rendered));
+            return;
+        }
+        if (child.kind == BlockKind::List) {
+            for (std::size_t index = 0; index < child.list_items.size(); ++index) {
+                auto const& item = child.list_items[index];
+                auto next_indent = indent_columns + list_marker_columns(child, index);
+                for (auto const& nested : item.children) collect_nested_blocks(parent, nested, depth + 1, next_indent);
+            }
+            return;
+        }
+        if (child.kind == BlockKind::TaskList) {
+            for (std::size_t index = 0; index < child.task_items.size(); ++index) {
+                auto const& item = child.task_items[index];
+                auto next_indent = indent_columns + list_marker_columns(child, index);
+                for (auto const& nested : item.children) collect_nested_blocks(parent, nested, depth + 1, next_indent);
+            }
+            return;
+        }
+        if (child.kind == BlockKind::Callout || child.kind == BlockKind::FootnoteDefinition) {
+            for (auto const& nested : child.quote_children) collect_nested_blocks(parent, nested, depth, indent_columns);
+        }
+    }
+
     RenderBlock build_block(const BlockNode& b) {
         using BK = BlockKind;
         auto base_range = [&]() -> TextRange<CharOffset> {
@@ -548,11 +597,21 @@ struct Builder {
             case BK::List: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::list());
                 append_list_contents(rb.inline_items, b, 0);
+                for (std::size_t index = 0; index < b.list_items.size(); ++index) {
+                    auto const& item = b.list_items[index];
+                    auto indent = list_marker_columns(b, index);
+                    for (auto const& child : item.children) collect_nested_blocks(rb, child, 1, indent);
+                }
                 return with_content_range(std::move(rb));
             }
             case BK::TaskList: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::list());
                 append_list_contents(rb.inline_items, b, 0);
+                for (std::size_t index = 0; index < b.task_items.size(); ++index) {
+                    auto const& item = b.task_items[index];
+                    auto indent = list_marker_columns(b, index);
+                    for (auto const& child : item.children) collect_nested_blocks(rb, child, 1, indent);
+                }
                 return with_content_range(std::move(rb));
             }
             case BK::CodeBlock: {

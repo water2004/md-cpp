@@ -150,6 +150,68 @@ ELMD_TEST(builds_indented_code_block_with_source_markers) {
     }
 }
 
+ELMD_TEST(list_render_model_retains_nested_code_block_identity) {
+    auto model = build_model(
+        "1.  Open the file.\n"
+        "\n"
+        "2.  Find the following code block on line 21:\n"
+        "\n"
+        "        <html>\n"
+        "          <head>\n"
+        "            <title>Test</title>\n"
+        "          </head>\n"
+        "\n"
+        "3.  Update the title to match the name of your website.\n");
+    ELMD_CHECK_EQ(model.blocks.size(), 1u);
+    if (model.blocks.empty()) return;
+    auto const& list = model.blocks.front();
+    ELMD_CHECK(list.kind == RenderBlockKind::Text);
+    auto code = std::find_if(list.child_blocks.begin(), list.child_blocks.end(), [](auto const& child) {
+        return child.kind == RenderBlockKind::Code;
+    });
+    ELMD_CHECK(code != list.child_blocks.end());
+    if (code != list.child_blocks.end()) {
+        ELMD_CHECK(code->code_indented);
+        ELMD_CHECK_EQ(code->code_text, std::u32string(U"<html>\n  <head>\n    <title>Test</title>\n  </head>\n"));
+        ELMD_CHECK_EQ(code->code_marker_ranges.size(), 4u);
+    }
+    bool styled_code = false;
+    for (auto const& item : list.inline_items) {
+        if (item.kind == InlineRenderItem::Kind::Text && item.style.code) styled_code = true;
+    }
+    ELMD_CHECK(styled_code);
+}
+
+ELMD_TEST(list_render_model_retains_nested_quote_identity_and_indent) {
+    auto m = build_model("- first\n- second\n  > quoted\n- third\n");
+    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    if (m.blocks.empty()) return;
+    auto const& list = m.blocks[0];
+    auto quote = std::find_if(list.child_blocks.begin(), list.child_blocks.end(), [](auto const& child) {
+        return child.kind == RenderBlockKind::Quote;
+    });
+    ELMD_CHECK(quote != list.child_blocks.end());
+    if (quote != list.child_blocks.end()) {
+        ELMD_CHECK_EQ(quote->container_depth, 1u);
+        ELMD_CHECK_EQ(quote->container_indent_columns, 2u);
+    }
+}
+
+ELMD_TEST(nested_list_markers_use_semantic_depth) {
+    auto m = build_model("1. first\n2. second\n   - nested\n   - nested again\n3. third\n");
+    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    if (m.blocks.empty()) return;
+    std::vector<std::u32string> bullets;
+    for (auto const& item : m.blocks[0].inline_items) {
+        if (item.marker_role == MarkerRole::ListBullet) bullets.push_back(item.display_text);
+    }
+    ELMD_CHECK_EQ(bullets.size(), 2u);
+    if (bullets.size() == 2) {
+        ELMD_CHECK_EQ(bullets[0], U"   \u2022 ");
+        ELMD_CHECK_EQ(bullets[1], U"   \u2022 ");
+    }
+}
+
 ELMD_TEST(thematic_break_remains_an_atomic_render_block) {
     auto model = build_model("---");
     ELMD_CHECK_EQ(model.blocks.size(), 1u);
@@ -298,10 +360,12 @@ ELMD_TEST(nested_list_blocks_reach_the_render_model) {
     bool quote = false;
     for (auto const& item : m.blocks[0].inline_items) {
         if (item.kind == InlineRenderItem::Kind::Image) image = true;
-        if (item.kind == InlineRenderItem::Kind::Marker && item.display_text == U"\u2502 ") quote = true;
         else if (item.kind == InlineRenderItem::Kind::Link) for (auto const& child : item.children) text += child.text;
         else text += item.text;
     }
+    quote = std::any_of(m.blocks[0].child_blocks.begin(), m.blocks[0].child_blocks.end(), [](auto const& child) {
+        return child.kind == RenderBlockKind::Quote;
+    });
     ELMD_CHECK(text.find(U"parent") != std::u32string::npos);
     ELMD_CHECK(text.find(U"child") != std::u32string::npos);
     ELMD_CHECK(text.find(U"grandchild") != std::u32string::npos);
