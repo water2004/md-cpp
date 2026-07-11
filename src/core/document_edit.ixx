@@ -55,6 +55,14 @@ public:
         return result;
     }
 
+    void clear() {
+        undo_.clear();
+        redo_.clear();
+    }
+
+    bool has_undo() const { return !undo_.empty(); }
+    bool has_redo() const { return !redo_.empty(); }
+
 private:
     std::size_t capacity_;
     std::vector<DocumentTransaction> undo_;
@@ -307,6 +315,70 @@ inline bool enter_list(BlockVec& owner, std::size_t list_index, NodeId id, std::
     return false;
 }
 
+inline bool enter_task_list(BlockVec& owner, std::size_t list_index, NodeId id, std::size_t offset, NodeAllocator& allocator, DocumentPosition& after) {
+    auto& list = owner[list_index];
+    for (std::size_t item_index = 0; item_index < list.task_items.size(); ++item_index) {
+        auto& item = list.task_items[item_index];
+        for (std::size_t child_index = 0; child_index < item.children.size(); ++child_index) {
+            auto& child = item.children[child_index];
+            if (child.id != id) continue;
+            const bool empty = block_is_empty_paragraph(child);
+            if (empty && item.children.size() == 1) {
+                BlockNode paragraph = std::move(child);
+                after = DocumentPosition{paragraph.id, 0, TextAffinity::Downstream};
+                if (list.task_items.size() == 1) {
+                    owner[list_index] = std::move(paragraph);
+                } else if (item_index == 0) {
+                    list.task_items.erase(list.task_items.begin());
+                    owner.insert(owner.begin() + static_cast<std::ptrdiff_t>(list_index), std::move(paragraph));
+                } else if (item_index + 1 == list.task_items.size()) {
+                    list.task_items.pop_back();
+                    owner.insert(owner.begin() + static_cast<std::ptrdiff_t>(list_index + 1), std::move(paragraph));
+                } else {
+                    BlockNode trailing = list;
+                    trailing.id = allocator.allocate();
+                    trailing.task_items.assign(
+                        std::make_move_iterator(list.task_items.begin() + static_cast<std::ptrdiff_t>(item_index + 1)),
+                        std::make_move_iterator(list.task_items.end()));
+                    list.task_items.erase(list.task_items.begin() + static_cast<std::ptrdiff_t>(item_index), list.task_items.end());
+                    owner.insert(owner.begin() + static_cast<std::ptrdiff_t>(list_index + 1), std::move(paragraph));
+                    owner.insert(owner.begin() + static_cast<std::ptrdiff_t>(list_index + 2), std::move(trailing));
+                }
+                return true;
+            }
+
+            TaskListItem next;
+            next.id = allocator.allocate();
+            next.checked = false;
+            if (empty) {
+                const auto move_from = child_index == 0 ? 1 : child_index;
+                next.children.assign(
+                    std::make_move_iterator(item.children.begin() + static_cast<std::ptrdiff_t>(move_from)),
+                    std::make_move_iterator(item.children.end()));
+                item.children.erase(item.children.begin() + static_cast<std::ptrdiff_t>(move_from), item.children.end());
+                if (next.children.empty()) next.children.push_back(empty_paragraph(allocator));
+            } else {
+                auto [left, right] = split_inlines(child.children, offset, allocator);
+                child.children = std::move(left);
+                BlockNode paragraph;
+                paragraph.id = allocator.allocate();
+                paragraph.kind = BlockKind::Paragraph;
+                paragraph.children = std::move(right);
+                next.children.push_back(std::move(paragraph));
+                next.children.insert(next.children.end(),
+                    std::make_move_iterator(item.children.begin() + static_cast<std::ptrdiff_t>(child_index + 1)),
+                    std::make_move_iterator(item.children.end()));
+                item.children.erase(item.children.begin() + static_cast<std::ptrdiff_t>(child_index + 1), item.children.end());
+            }
+            after = DocumentPosition{next.children.front().id, 0, TextAffinity::Downstream};
+            list.task_items.insert(list.task_items.begin() + static_cast<std::ptrdiff_t>(item_index + 1), std::move(next));
+            return true;
+        }
+        if (split_paragraph_in_blocks(item.children, id, offset, allocator, after)) return true;
+    }
+    return false;
+}
+
 inline bool split_paragraph_in_blocks(BlockVec& blocks, NodeId id, std::size_t offset, NodeAllocator& allocator, DocumentPosition& after) {
     for (std::size_t index = 0; index < blocks.size(); ++index) {
         auto& block = blocks[index];
@@ -315,8 +387,9 @@ inline bool split_paragraph_in_blocks(BlockVec& blocks, NodeId id, std::size_t o
             if (enter_quote(blocks, index, id, offset, allocator, after)) return true;
         } else if (block.kind == BlockKind::List) {
             if (enter_list(blocks, index, id, offset, allocator, after)) return true;
+        } else if (block.kind == BlockKind::TaskList) {
+            if (enter_task_list(blocks, index, id, offset, allocator, after)) return true;
         } else {
-            for (auto& item : block.task_items) if (split_paragraph_in_blocks(item.children, id, offset, allocator, after)) return true;
         }
     }
     return false;

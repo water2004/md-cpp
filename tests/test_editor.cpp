@@ -11,12 +11,41 @@ import elmd.core.source_structure;
 import elmd.core.table_edit;
 import elmd.core.render_builder;
 import elmd.core.render_model;
+import elmd.core.document_position;
 
 using namespace elmd;
 
 ELMD_TEST(test_new_editor_empty) {
     Editor e;
     ELMD_CHECK(e.buffer().is_empty());
+}
+
+ELMD_TEST(test_editor_document_enter_keeps_ast_authoritative_and_projects_markdown) {
+    Editor editor("alphaomega");
+    ELMD_CHECK(!editor.document().blocks.empty());
+    if (editor.document().blocks.empty()) return;
+    const auto original_id = editor.document().blocks.front().id;
+    auto transaction = editor.execute_document_enter(DocumentSelection::caret(
+        DocumentPosition{original_id, 5, TextAffinity::Downstream}));
+
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alpha\n\nomega"));
+    ELMD_CHECK_EQ(editor.document().blocks.size(), 2u);
+    ELMD_CHECK_EQ(editor.document().blocks.front().id, original_id);
+    ELMD_CHECK(editor.document_selection().has_value());
+    if (!editor.document_selection()) return;
+    ELMD_CHECK_EQ(editor.document_selection()->active.node_id, editor.document().blocks[1].id);
+    ELMD_CHECK(editor.document().source_map.find_node_by_id(editor.document().blocks[1].id) != nullptr);
+
+    ELMD_CHECK(editor.undo_document());
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alphaomega"));
+    ELMD_CHECK_EQ(editor.document().blocks.size(), 1u);
+    ELMD_CHECK_EQ(editor.document().blocks.front().id, original_id);
+
+    ELMD_CHECK(editor.redo_document());
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alpha\n\nomega"));
+    ELMD_CHECK_EQ(editor.document().blocks.size(), 2u);
 }
 
 ELMD_TEST(test_editor_insert_text) {

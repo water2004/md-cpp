@@ -16,6 +16,9 @@ import elmd.core.input;
 import elmd.core.utf;
 import elmd.core.dialect;
 import elmd.core.document;
+import elmd.core.document_edit;
+import elmd.core.document_position;
+import elmd.core.document_projection;
 import elmd.core.symbols;
 import elmd.core.outline;
 import elmd.core.parser;
@@ -43,9 +46,46 @@ public:
     void set_dialect(MarkdownDialect dialect) { dialect_ = std::move(dialect); rebuild_document_full_(); }
     bool has_undo() const { return undo_.has_undo(); }
     bool has_redo() const { return undo_.has_redo(); }
+    bool has_document_undo() const { return document_history_.has_undo(); }
+    bool has_document_redo() const { return document_history_.has_redo(); }
+    std::optional<DocumentSelection> document_selection() const { return document_selection_; }
+    void set_document_selection(DocumentSelection selection) { document_selection_ = std::move(selection); }
+
+    std::optional<DocumentTransaction> execute_document_enter(DocumentSelection selection) {
+        auto transaction = document_enter(document_, selection);
+        if (!transaction) return std::nullopt;
+        document_history_.push(*transaction);
+        document_ = transaction->after;
+        document_selection_ = transaction->selection_after;
+        refresh_projection_from_document_();
+        synchronize_legacy_selection_();
+        return transaction;
+    }
+
+    bool undo_document() {
+        auto state = document_history_.undo();
+        if (!state) return false;
+        document_ = std::move(state->first);
+        document_selection_ = state->second;
+        refresh_projection_from_document_();
+        synchronize_legacy_selection_();
+        return true;
+    }
+
+    bool redo_document() {
+        auto state = document_history_.redo();
+        if (!state) return false;
+        document_ = std::move(state->first);
+        document_selection_ = state->second;
+        refresh_projection_from_document_();
+        synchronize_legacy_selection_();
+        return true;
+    }
 
     // Apply a Command. Returns the transaction if it produced a change.
     std::optional<Transaction> execute_command(const Command& cmd) {
+        document_history_.clear();
+        document_selection_.reset();
         std::u32string text(buffer_.text_cps());
         auto txn = semantic_transaction(cmd, text, document_, selection_, buffer_.revision());
         if (!txn) return std::nullopt;
@@ -157,6 +197,8 @@ private:
     Outline outline_;
     Selection selection_;
     UndoManager undo_{1000};
+    DocumentHistory document_history_{1000};
+    std::optional<DocumentSelection> document_selection_;
     Theme theme_ = Theme::Dark;
     float scale_factor_ = 1.0f;
     MarkdownDialect dialect_ = default_dialect();
@@ -166,6 +208,35 @@ private:
         document_ = std::move(parsed.document);
         symbols_ = std::move(parsed.symbols);
         outline_ = std::move(parsed.outline);
+    }
+
+    void refresh_projection_from_document_() {
+        auto projection = project_document(document_, dialect_);
+        TextDelta delta;
+        delta.revision_before = buffer_.revision();
+        BufferTextEdit edit;
+        edit.range = CharRange(CharOffset(0), CharOffset(buffer_.text_cps().size()));
+        edit.replacement = projection.markdown;
+        delta.edits.push_back(std::move(edit));
+        buffer_.apply_delta(delta);
+        document_.revision = buffer_.revision();
+        document_.source_map = std::move(projection.source_map);
+        document_.metadata = std::move(projection.metadata);
+        document_.diagnostics = std::move(projection.diagnostics);
+        symbols_ = std::move(projection.symbols);
+        outline_ = std::move(projection.outline);
+        outline_.revision = document_.revision;
+    }
+
+    void synchronize_legacy_selection_() {
+        if (!document_selection_) return;
+        auto anchor = source_offset_from_document_position(document_, document_selection_->anchor);
+        auto active = source_offset_from_document_position(document_, document_selection_->active);
+        if (anchor && active) {
+            selection_.anchor = *anchor;
+            selection_.active = *active;
+            selection_.affinity = document_selection_->active.affinity;
+        }
     }
 
     void refresh_document_after_delta_(const std::string& old_text, const MarkdownDocument& old_document, const DocumentSymbolIndex& old_symbols, const TextDelta& delta) {

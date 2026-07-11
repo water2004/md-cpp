@@ -153,3 +153,41 @@ ELMD_TEST(test_document_history_restores_document_and_node_selection) {
     ELMD_CHECK(redone->second.active.node_id == transaction->selection_after.active.node_id);
     ELMD_CHECK_EQ(redone->second.active.offset, 0u);
 }
+
+ELMD_TEST(test_enter_splits_task_item_and_resets_new_checkbox) {
+    BlockNode task_list;
+    task_list.id = NodeId(1);
+    task_list.kind = BlockKind::TaskList;
+    TaskListItem item;
+    item.id = NodeId(2);
+    item.checked = true;
+    item.marker = U"- [x] ";
+    item.children.push_back(paragraph(3, 4, U"alphabeta"));
+    task_list.task_items.push_back(std::move(item));
+
+    auto transaction = document_enter(document_with({task_list}), caret(3, 5));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(transaction->after.blocks[0].task_items.size(), 2u);
+    ELMD_CHECK(transaction->after.blocks[0].task_items[0].checked);
+    ELMD_CHECK(!transaction->after.blocks[0].task_items[1].checked);
+    ELMD_CHECK(transaction->after.blocks[0].task_items[1].marker.empty());
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("- [x] alpha\n- [ ] beta"));
+}
+
+ELMD_TEST(test_enter_empty_only_task_item_exits_task_list) {
+    BlockNode task_list;
+    task_list.id = NodeId(1);
+    task_list.kind = BlockKind::TaskList;
+    TaskListItem item;
+    item.id = NodeId(2);
+    item.children.push_back(paragraph(3, 0, U""));
+    task_list.task_items.push_back(std::move(item));
+
+    auto transaction = document_enter(document_with({task_list}), caret(3));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
+    ELMD_CHECK_EQ(transaction->after.blocks[0].kind, BlockKind::Paragraph);
+    ELMD_CHECK(validate_document(transaction->after).empty());
+}
