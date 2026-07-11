@@ -125,6 +125,34 @@ public:
         return transaction;
     }
 
+    std::optional<DocumentTransaction> execute_document_set_heading(DocumentSelection selection, std::uint8_t level) {
+        auto transaction = document_set_heading(document_, selection, level);
+        if (!transaction) return std::nullopt;
+        apply_document_transaction_(*transaction);
+        return transaction;
+    }
+
+    std::optional<DocumentTransaction> execute_document_toggle_block_quote(DocumentSelection selection) {
+        auto transaction = document_toggle_block_quote(document_, selection);
+        if (!transaction) return std::nullopt;
+        apply_document_transaction_(*transaction);
+        return transaction;
+    }
+
+    std::optional<DocumentTransaction> execute_document_toggle_list(DocumentSelection selection, bool ordered, bool task) {
+        auto transaction = document_toggle_list(document_, selection, ordered, task);
+        if (!transaction) return std::nullopt;
+        apply_document_transaction_(*transaction);
+        return transaction;
+    }
+
+    std::optional<DocumentTransaction> execute_document_toggle_task_checkbox(DocumentSelection selection) {
+        auto transaction = document_toggle_task_checkbox(document_, selection);
+        if (!transaction) return std::nullopt;
+        apply_document_transaction_(*transaction);
+        return transaction;
+    }
+
     bool undo_document() {
         auto state = document_history_.undo();
         if (!state) return false;
@@ -147,6 +175,29 @@ public:
 
     // Apply a Command. Returns the transaction if it produced a change.
     std::optional<Transaction> execute_command(const Command& cmd) {
+        if (cmd.kind == CommandKind::SetHeading || cmd.kind == CommandKind::ClearHeading
+            || cmd.kind == CommandKind::ToggleBlockQuote || cmd.kind == CommandKind::ToggleUnorderedList
+            || cmd.kind == CommandKind::ToggleOrderedList || cmd.kind == CommandKind::ToggleTaskList
+            || cmd.kind == CommandKind::ToggleTaskCheckbox) {
+            if (!document_selection_) return std::nullopt;
+            const auto revision_before = buffer_.revision();
+            const auto selection_before = selection_;
+            bool changed = false;
+            if (cmd.kind == CommandKind::SetHeading || cmd.kind == CommandKind::ClearHeading) {
+                changed = execute_document_set_heading(*document_selection_,
+                    cmd.kind == CommandKind::ClearHeading ? 0 : (std::min)(cmd.level, std::uint8_t{6})).has_value();
+            } else if (cmd.kind == CommandKind::ToggleBlockQuote) {
+                changed = execute_document_toggle_block_quote(*document_selection_).has_value();
+            } else if (cmd.kind == CommandKind::ToggleTaskCheckbox) {
+                changed = execute_document_toggle_task_checkbox(*document_selection_).has_value();
+            } else {
+                changed = execute_document_toggle_list(*document_selection_,
+                    cmd.kind == CommandKind::ToggleOrderedList,
+                    cmd.kind == CommandKind::ToggleTaskList).has_value();
+            }
+            if (!changed) return std::nullopt;
+            return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
+        }
         if (cmd.kind == CommandKind::ToggleStrong || cmd.kind == CommandKind::ToggleEmphasis
             || cmd.kind == CommandKind::ToggleStrikethrough || cmd.kind == CommandKind::ToggleInlineCode
             || cmd.kind == CommandKind::InsertMathInline) {

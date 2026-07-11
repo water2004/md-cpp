@@ -62,14 +62,30 @@ inline void collect_block_symbols(const BlockVec& blocks, DocumentSymbolIndex& s
     }
 }
 
-inline const BlockNode* find_paragraph(const BlockVec& blocks, NodeId id) {
+inline const BlockNode* find_text_block(const BlockVec& blocks, NodeId id) {
     for (const auto& block : blocks) {
-        if (block.id == id && block.kind == BlockKind::Paragraph) return &block;
-        if (const auto* nested = find_paragraph(block.quote_children, id)) return nested;
-        for (const auto& item : block.list_items) if (const auto* nested = find_paragraph(item.children, id)) return nested;
-        for (const auto& item : block.task_items) if (const auto* nested = find_paragraph(item.children, id)) return nested;
+        if (block.id == id && (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading)) return &block;
+        if (const auto* nested = find_text_block(block.quote_children, id)) return nested;
+        for (const auto& item : block.list_items) if (const auto* nested = find_text_block(item.children, id)) return nested;
+        for (const auto& item : block.task_items) if (const auto* nested = find_text_block(item.children, id)) return nested;
     }
     return nullptr;
+}
+
+inline std::optional<DocumentPosition> first_position_in_blocks(const BlockVec& blocks) {
+    for (const auto& block : blocks) {
+        if (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading
+            || block.kind == BlockKind::CodeBlock || block.kind == BlockKind::MathBlock) {
+            return DocumentPosition{block.id, 0, TextAffinity::Downstream};
+        }
+        if (auto position = first_position_in_blocks(block.quote_children)) return position;
+        for (const auto& item : block.list_items) if (auto position = first_position_in_blocks(item.children)) return position;
+        for (const auto& item : block.task_items) if (auto position = first_position_in_blocks(item.children)) return position;
+        if (block.kind == BlockKind::Table && !block.table_header.empty()) {
+            return DocumentPosition{block.table_header.front().id, 0, TextAffinity::Downstream};
+        }
+    }
+    return std::nullopt;
 }
 
 inline std::size_t logical_offset_from_source(
@@ -142,7 +158,7 @@ inline std::optional<DocumentPosition> position_in_blocks(
     const BlockVec& blocks,
     CharOffset source_offset) {
     for (const auto& block : blocks) {
-        if (block.kind == BlockKind::Paragraph) {
+        if (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading) {
             const auto* range = document.source_map.find_node_by_id(block.id);
             if (range && source_offset.v >= range->content_range.start.v && source_offset.v <= range->content_range.end.v) {
                 const auto offset = logical_offset_from_source(document, block.children, source_offset, range->content_range.start);
@@ -197,9 +213,17 @@ inline std::optional<DocumentPosition> position_in_blocks(
         if (auto position = position_in_blocks(document, block.quote_children, source_offset)) return position;
         for (const auto& item : block.list_items) {
             if (auto position = position_in_blocks(document, item.children, source_offset)) return position;
+            const auto* range = document.source_map.find_node_by_id(item.id);
+            if (range && source_offset.v >= range->source_range.start.v && source_offset.v <= range->source_range.end.v) {
+                if (auto position = first_position_in_blocks(item.children)) return position;
+            }
         }
         for (const auto& item : block.task_items) {
             if (auto position = position_in_blocks(document, item.children, source_offset)) return position;
+            const auto* range = document.source_map.find_node_by_id(item.id);
+            if (range && source_offset.v >= range->source_range.start.v && source_offset.v <= range->source_range.end.v) {
+                if (auto position = first_position_in_blocks(item.children)) return position;
+            }
         }
     }
     return std::nullopt;
@@ -229,7 +253,7 @@ inline std::optional<DocumentPosition> document_position_from_source_offset(
 inline std::optional<CharOffset> source_offset_from_document_position(
     const EditorDocument& document,
     DocumentPosition position) {
-    const auto* paragraph = document_projection_detail::find_paragraph(document.blocks, position.node_id);
+    const auto* paragraph = document_projection_detail::find_text_block(document.blocks, position.node_id);
     const auto* range = document.source_map.find_node_by_id(position.node_id);
     if (paragraph && range) {
         const auto logical_length = block_inline_text_content(paragraph->children).size();

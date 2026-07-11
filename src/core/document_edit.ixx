@@ -1492,6 +1492,286 @@ inline bool split_paragraph_in_blocks(BlockVec& blocks, NodeId id, std::size_t o
     return false;
 }
 
+enum class ListStyle {
+    Unordered,
+    Ordered,
+    Task,
+};
+
+inline bool block_contains_id(const BlockNode& block, NodeId id) {
+    if (block.id == id) return true;
+    std::function<bool(const InlineVec&)> inlines_contain = [&](const InlineVec& nodes) {
+        for (const auto& node : nodes) {
+            if (node.id == id || inlines_contain(node.children)) return true;
+        }
+        return false;
+    };
+    if (inlines_contain(block.children)) return true;
+    for (const auto& cell : block.table_header) if (cell.id == id || inlines_contain(cell.children)) return true;
+    for (const auto& row : block.table_rows) {
+        for (const auto& cell : row.cells) if (cell.id == id || inlines_contain(cell.children)) return true;
+    }
+    if (contains_block(block.quote_children, id)) return true;
+    for (const auto& item : block.list_items) if (item.id == id || contains_block(item.children, id)) return true;
+    for (const auto& item : block.task_items) if (item.id == id || contains_block(item.children, id)) return true;
+    return false;
+}
+
+inline bool blocks_contain_id(const BlockVec& blocks, NodeId id) {
+    return std::any_of(blocks.begin(), blocks.end(), [&](const auto& block) { return block_contains_id(block, id); });
+}
+
+inline std::optional<std::pair<std::size_t, std::size_t>> direct_block_range(
+    const BlockVec& blocks,
+    NodeId first,
+    NodeId last) {
+    std::optional<std::size_t> first_index;
+    std::optional<std::size_t> last_index;
+    for (std::size_t index = 0; index < blocks.size(); ++index) {
+        if (!first_index && block_contains_id(blocks[index], first)) first_index = index;
+        if (!last_index && block_contains_id(blocks[index], last)) last_index = index;
+    }
+    if (!first_index || !last_index) return std::nullopt;
+    if (*first_index > *last_index) std::swap(first_index, last_index);
+    return std::pair{*first_index, *last_index};
+}
+
+inline bool set_heading_in_blocks(BlockVec& blocks, NodeId id, std::uint8_t level) {
+    for (auto& block : blocks) {
+        if ((block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading) && block_contains_id(block, id)) {
+            block.kind = level == 0 ? BlockKind::Paragraph : BlockKind::Heading;
+            block.level = level;
+            if (level == 0) block.slug.clear();
+            return true;
+        }
+        if (set_heading_in_blocks(block.quote_children, id, level)) return true;
+        for (auto& item : block.list_items) if (set_heading_in_blocks(item.children, id, level)) return true;
+        for (auto& item : block.task_items) if (set_heading_in_blocks(item.children, id, level)) return true;
+    }
+    return false;
+}
+
+inline bool toggle_quote_in_blocks(BlockVec& blocks, NodeId first, NodeId last, NodeAllocator& allocator) {
+    for (std::size_t index = 0; index < blocks.size(); ++index) {
+        auto& block = blocks[index];
+        if (block.kind == BlockKind::BlockQuote) {
+            if (blocks_contain_id(block.quote_children, first) && blocks_contain_id(block.quote_children, last)) {
+                auto nested = direct_block_range(block.quote_children, first, last);
+                if (nested && nested->first == nested->second
+                    && block.quote_children[nested->first].kind == BlockKind::BlockQuote
+                    && toggle_quote_in_blocks(block.quote_children, first, last, allocator)) return true;
+                auto children = std::move(block.quote_children);
+                blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index));
+                blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(index),
+                    std::make_move_iterator(children.begin()), std::make_move_iterator(children.end()));
+                return true;
+            }
+        } else if (block.kind == BlockKind::Callout || block.kind == BlockKind::FootnoteDefinition) {
+            if (toggle_quote_in_blocks(block.quote_children, first, last, allocator)) return true;
+        }
+        for (auto& item : block.list_items) if (toggle_quote_in_blocks(item.children, first, last, allocator)) return true;
+        for (auto& item : block.task_items) if (toggle_quote_in_blocks(item.children, first, last, allocator)) return true;
+    }
+    auto range = direct_block_range(blocks, first, last);
+    if (!range) return false;
+    BlockNode quote;
+    quote.id = allocator.allocate();
+    quote.kind = BlockKind::BlockQuote;
+    quote.quote_children.assign(
+        std::make_move_iterator(blocks.begin() + static_cast<std::ptrdiff_t>(range->first)),
+        std::make_move_iterator(blocks.begin() + static_cast<std::ptrdiff_t>(range->second + 1)));
+    blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(range->first),
+        blocks.begin() + static_cast<std::ptrdiff_t>(range->second + 1));
+    blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(range->first), std::move(quote));
+    return true;
+}
+
+inline std::vector<BlockNode> split_paragraph_lines(BlockNode block, NodeAllocator& allocator) {
+    if (block.kind != BlockKind::Paragraph) return {std::move(block)};
+    std::vector<BlockNode> lines;
+    BlockNode current = block;
+    current.children.clear();
+    for (auto& child : block.children) {
+        if (child.kind == InlineKind::SoftBreak || child.kind == InlineKind::HardBreak) {
+            lines.push_back(std::move(current));
+            current = BlockNode{};
+            current.id = allocator.allocate();
+            current.kind = BlockKind::Paragraph;
+        } else {
+            current.children.push_back(std::move(child));
+        }
+    }
+    lines.push_back(std::move(current));
+    return lines;
+}
+
+inline bool list_matches(const BlockNode& block, ListStyle style) {
+    if (style == ListStyle::Task) return block.kind == BlockKind::TaskList;
+    return block.kind == BlockKind::List && block.list_ordered == (style == ListStyle::Ordered);
+}
+
+inline void convert_list(BlockNode& block, ListStyle style) {
+    if (style == ListStyle::Task) {
+        std::vector<TaskListItem> items;
+        items.reserve(block.list_items.size());
+        for (auto& item : block.list_items) {
+            TaskListItem task;
+            task.id = item.id;
+            task.children = std::move(item.children);
+            items.push_back(std::move(task));
+        }
+        block.kind = BlockKind::TaskList;
+        block.task_items = std::move(items);
+        block.list_items.clear();
+        return;
+    }
+    if (block.kind == BlockKind::TaskList) {
+        std::vector<ListItem> items;
+        items.reserve(block.task_items.size());
+        for (auto& task : block.task_items) {
+            ListItem item;
+            item.id = task.id;
+            item.children = std::move(task.children);
+            items.push_back(std::move(item));
+        }
+        block.kind = BlockKind::List;
+        block.list_items = std::move(items);
+        block.task_items.clear();
+    }
+    block.kind = BlockKind::List;
+    block.list_ordered = style == ListStyle::Ordered;
+    block.list_start = 1;
+    block.list_delimiter = U'.';
+    for (auto& item : block.list_items) item.marker.clear();
+}
+
+inline BlockVec unwrap_list(BlockNode& block, NodeAllocator& allocator) {
+    BlockVec result;
+    const auto simple = block.kind == BlockKind::TaskList
+        ? std::all_of(block.task_items.begin(), block.task_items.end(), [](const auto& item) {
+            return item.children.size() == 1 && item.children.front().kind == BlockKind::Paragraph;
+        })
+        : std::all_of(block.list_items.begin(), block.list_items.end(), [](const auto& item) {
+            return item.children.size() == 1 && item.children.front().kind == BlockKind::Paragraph;
+        });
+    if (simple) {
+        BlockNode merged;
+        bool first = true;
+        auto append = [&](BlockNode& paragraph) {
+            if (first) {
+                merged = std::move(paragraph);
+                first = false;
+                return;
+            }
+            InlineNode break_node;
+            break_node.id = allocator.allocate();
+            break_node.kind = InlineKind::SoftBreak;
+            merged.children.push_back(std::move(break_node));
+            merged.children.insert(merged.children.end(),
+                std::make_move_iterator(paragraph.children.begin()), std::make_move_iterator(paragraph.children.end()));
+        };
+        if (block.kind == BlockKind::TaskList) {
+            for (auto& item : block.task_items) append(item.children.front());
+        } else {
+            for (auto& item : block.list_items) append(item.children.front());
+        }
+        if (!first) result.push_back(std::move(merged));
+        return result;
+    }
+    if (block.kind == BlockKind::TaskList) {
+        for (auto& item : block.task_items) {
+            result.insert(result.end(), std::make_move_iterator(item.children.begin()), std::make_move_iterator(item.children.end()));
+        }
+    } else {
+        for (auto& item : block.list_items) {
+            result.insert(result.end(), std::make_move_iterator(item.children.begin()), std::make_move_iterator(item.children.end()));
+        }
+    }
+    return result;
+}
+
+inline bool toggle_list_in_blocks(BlockVec& blocks, NodeId first, NodeId last, ListStyle style, NodeAllocator& allocator) {
+    for (std::size_t index = 0; index < blocks.size(); ++index) {
+        auto& block = blocks[index];
+        if (block.kind == BlockKind::BlockQuote || block.kind == BlockKind::Callout || block.kind == BlockKind::FootnoteDefinition) {
+            if (toggle_list_in_blocks(block.quote_children, first, last, style, allocator)) return true;
+        }
+        if (block.kind == BlockKind::List || block.kind == BlockKind::TaskList) {
+            if (block_contains_id(block, first) && block_contains_id(block, last)) {
+                for (auto& item : block.list_items) {
+                    auto nested = direct_block_range(item.children, first, last);
+                    if (nested && nested->first == nested->second
+                        && (item.children[nested->first].kind == BlockKind::List || item.children[nested->first].kind == BlockKind::TaskList)
+                        && toggle_list_in_blocks(item.children, first, last, style, allocator)) return true;
+                }
+                for (auto& item : block.task_items) {
+                    auto nested = direct_block_range(item.children, first, last);
+                    if (nested && nested->first == nested->second
+                        && (item.children[nested->first].kind == BlockKind::List || item.children[nested->first].kind == BlockKind::TaskList)
+                        && toggle_list_in_blocks(item.children, first, last, style, allocator)) return true;
+                }
+                if (list_matches(block, style)) {
+                    auto children = unwrap_list(block, allocator);
+                    blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index));
+                    blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(index),
+                        std::make_move_iterator(children.begin()), std::make_move_iterator(children.end()));
+                } else {
+                    convert_list(block, style);
+                }
+                return true;
+            }
+        }
+    }
+    auto range = direct_block_range(blocks, first, last);
+    if (!range) return false;
+    BlockVec selected;
+    selected.assign(
+        std::make_move_iterator(blocks.begin() + static_cast<std::ptrdiff_t>(range->first)),
+        std::make_move_iterator(blocks.begin() + static_cast<std::ptrdiff_t>(range->second + 1)));
+    blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(range->first),
+        blocks.begin() + static_cast<std::ptrdiff_t>(range->second + 1));
+    BlockNode list;
+    list.id = allocator.allocate();
+    list.kind = style == ListStyle::Task ? BlockKind::TaskList : BlockKind::List;
+    list.list_ordered = style == ListStyle::Ordered;
+    for (auto& selected_block : selected) {
+        auto lines = split_paragraph_lines(std::move(selected_block), allocator);
+        for (auto& line : lines) {
+            if (style == ListStyle::Task) {
+                TaskListItem item;
+                item.id = allocator.allocate();
+                item.children.push_back(std::move(line));
+                list.task_items.push_back(std::move(item));
+            } else {
+                ListItem item;
+                item.id = allocator.allocate();
+                item.children.push_back(std::move(line));
+                list.list_items.push_back(std::move(item));
+            }
+        }
+    }
+    blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(range->first), std::move(list));
+    return true;
+}
+
+inline bool toggle_task_checkbox_in_blocks(BlockVec& blocks, NodeId id) {
+    for (auto& block : blocks) {
+        if (block.kind == BlockKind::TaskList) {
+            for (auto& item : block.task_items) {
+                if (blocks_contain_id(item.children, id)) {
+                    item.checked = !item.checked;
+                    item.marker.clear();
+                    return true;
+                }
+                if (toggle_task_checkbox_in_blocks(item.children, id)) return true;
+            }
+        }
+        if (toggle_task_checkbox_in_blocks(block.quote_children, id)) return true;
+        for (auto& item : block.list_items) if (toggle_task_checkbox_in_blocks(item.children, id)) return true;
+    }
+    return false;
+}
+
 inline void normalize_blocks(BlockVec& blocks, NodeAllocator& allocator) {
     for (auto& block : blocks) {
         if (block.kind == BlockKind::BlockQuote || block.kind == BlockKind::Callout || block.kind == BlockKind::FootnoteDefinition) {
@@ -1668,6 +1948,80 @@ inline std::optional<DocumentTransaction> document_toggle_inline_format(
     transaction.selection_before = selection;
     transaction.selection_after = selection_after;
     transaction.reason = DocumentTransactionReason::Format;
+    return transaction;
+}
+
+inline std::optional<DocumentTransaction> document_set_heading(
+    const EditorDocument& document,
+    const DocumentSelection& selection,
+    std::uint8_t level) {
+    if (selection.anchor.node_id != selection.active.node_id || level > 6) return std::nullopt;
+    EditorDocument after = document;
+    if (!document_edit_detail::set_heading_in_blocks(after.blocks, selection.active.node_id, level)) return std::nullopt;
+    ++after.revision;
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(after);
+    transaction.selection_before = selection;
+    transaction.selection_after = selection;
+    transaction.reason = DocumentTransactionReason::Structure;
+    return transaction;
+}
+
+inline std::optional<DocumentTransaction> document_toggle_block_quote(
+    const EditorDocument& document,
+    const DocumentSelection& selection) {
+    EditorDocument after = document;
+    document_edit_detail::NodeAllocator allocator(after);
+    if (!document_edit_detail::toggle_quote_in_blocks(
+            after.blocks, selection.anchor.node_id, selection.active.node_id, allocator)) return std::nullopt;
+    normalize_document(after);
+    ++after.revision;
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(after);
+    transaction.selection_before = selection;
+    transaction.selection_after = selection;
+    transaction.reason = DocumentTransactionReason::Structure;
+    return transaction;
+}
+
+inline std::optional<DocumentTransaction> document_toggle_list(
+    const EditorDocument& document,
+    const DocumentSelection& selection,
+    bool ordered,
+    bool task) {
+    EditorDocument after = document;
+    document_edit_detail::NodeAllocator allocator(after);
+    const auto style = task
+        ? document_edit_detail::ListStyle::Task
+        : ordered ? document_edit_detail::ListStyle::Ordered : document_edit_detail::ListStyle::Unordered;
+    if (!document_edit_detail::toggle_list_in_blocks(
+            after.blocks, selection.anchor.node_id, selection.active.node_id, style, allocator)) return std::nullopt;
+    normalize_document(after);
+    ++after.revision;
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(after);
+    transaction.selection_before = selection;
+    transaction.selection_after = selection;
+    transaction.reason = DocumentTransactionReason::Structure;
+    return transaction;
+}
+
+inline std::optional<DocumentTransaction> document_toggle_task_checkbox(
+    const EditorDocument& document,
+    const DocumentSelection& selection) {
+    if (!selection.is_caret()) return std::nullopt;
+    EditorDocument after = document;
+    if (!document_edit_detail::toggle_task_checkbox_in_blocks(after.blocks, selection.active.node_id)) return std::nullopt;
+    ++after.revision;
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(after);
+    transaction.selection_before = selection;
+    transaction.selection_after = selection;
+    transaction.reason = DocumentTransactionReason::Structure;
     return transaction;
 }
 

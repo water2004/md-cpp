@@ -1442,6 +1442,63 @@ ELMD_TEST(test_clear_heading_preserves_text) {
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("title"));
 }
 
+ELMD_TEST(test_heading_command_mutates_document_node_and_history) {
+    Editor editor("title");
+    const auto paragraph_id = editor.document().blocks.front().id;
+    editor.set_document_selection(DocumentSelection::caret(
+        DocumentPosition{paragraph_id, 5, TextAffinity::Downstream}));
+    Command command; command.kind = CommandKind::SetHeading; command.level = 3;
+    ELMD_CHECK(editor.execute_command(command).has_value());
+    ELMD_CHECK(editor.document().blocks.front().kind == BlockKind::Heading);
+    ELMD_CHECK_EQ(editor.document().blocks.front().id, paragraph_id);
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("### title"));
+    ELMD_CHECK(editor.has_document_undo());
+    editor.undo();
+    ELMD_CHECK(editor.document().blocks.front().kind == BlockKind::Paragraph);
+    ELMD_CHECK_EQ(editor.document().blocks.front().id, paragraph_id);
+}
+
+ELMD_TEST(test_quote_command_wraps_document_range_without_reparsing) {
+    Editor editor("alpha\n\nbeta");
+    const auto first_id = editor.document().blocks[0].id;
+    const auto second_id = editor.document().blocks[1].id;
+    editor.set_document_selection(DocumentSelection{
+        DocumentPosition{first_id, 0, TextAffinity::Downstream},
+        DocumentPosition{second_id, 4, TextAffinity::Downstream}});
+    Command command; command.kind = CommandKind::ToggleBlockQuote;
+    ELMD_CHECK(editor.execute_command(command).has_value());
+    ELMD_CHECK_EQ(editor.document().blocks.size(), 1u);
+    ELMD_CHECK(editor.document().blocks.front().kind == BlockKind::BlockQuote);
+    ELMD_CHECK_EQ(editor.document().blocks.front().quote_children[0].id, first_id);
+    ELMD_CHECK_EQ(editor.document().blocks.front().quote_children[1].id, second_id);
+    editor.execute_command(command);
+    ELMD_CHECK_EQ(editor.document().blocks.size(), 2u);
+    ELMD_CHECK_EQ(editor.document().blocks[0].id, first_id);
+    ELMD_CHECK_EQ(editor.document().blocks[1].id, second_id);
+}
+
+ELMD_TEST(test_list_commands_convert_document_container_in_place) {
+    Editor editor("alpha\nbeta");
+    const auto paragraph_id = editor.document().blocks.front().id;
+    editor.set_document_selection(DocumentSelection{
+        DocumentPosition{paragraph_id, 0, TextAffinity::Downstream},
+        DocumentPosition{paragraph_id, 10, TextAffinity::Downstream}});
+    Command ordered; ordered.kind = CommandKind::ToggleOrderedList;
+    editor.execute_command(ordered);
+    ELMD_CHECK(editor.document().blocks.front().kind == BlockKind::List);
+    ELMD_CHECK(editor.document().blocks.front().list_ordered);
+    ELMD_CHECK_EQ(editor.document().blocks.front().list_items.front().children.front().id, paragraph_id);
+    const auto list_id = editor.document().blocks.front().id;
+    Command task; task.kind = CommandKind::ToggleTaskList;
+    editor.execute_command(task);
+    ELMD_CHECK(editor.document().blocks.front().kind == BlockKind::TaskList);
+    ELMD_CHECK_EQ(editor.document().blocks.front().id, list_id);
+    ELMD_CHECK_EQ(editor.document().blocks.front().task_items.front().children.front().id, paragraph_id);
+    editor.undo();
+    ELMD_CHECK(editor.document().blocks.front().kind == BlockKind::List);
+    ELMD_CHECK_EQ(editor.document().blocks.front().id, list_id);
+}
+
 ELMD_TEST(test_insert_image_uses_selection_as_alt_text) {
     Editor e("diagram");
     e.set_selection(Selection{CharOffset(0), CharOffset(7), TextAffinity::Downstream});
