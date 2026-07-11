@@ -207,6 +207,31 @@ ELMD_TEST(test_unmatched_inline_delimiters_are_text) {
     ELMD_CHECK(cps_to_utf8(block_inline_text_content(out.document.blocks[0].children)) == "Hello **world\nnext ~~line\nplain *text\ncode `span");
 }
 
+ELMD_TEST(test_backslash_escapes_all_ascii_punctuation) {
+    auto out = parse_text(1, R"(\!\"\#\$\%\&\'\*\+\,\-\.\/\:\;\<\=\>\?\@\[\\\]\^\_\`\{\|\}\~)");
+    auto* paragraph = first_of(out.document.blocks, BlockKind::Paragraph);
+    ELMD_CHECK(paragraph != nullptr);
+    if (paragraph) {
+        auto actual = cps_to_utf8(block_inline_text_content(paragraph->children));
+        ELMD_CHECK_EQ(actual, std::string("!\"#$%&'*+,-./:;<=>?@[\\]^_`{|}~"));
+    }
+}
+
+ELMD_TEST(test_structural_inlines_inside_emphasis) {
+    auto out = parse_text(1, "**[link](https://example.com) and `code` and <span>html</span>**\n");
+    auto* paragraph = first_of(out.document.blocks, BlockKind::Paragraph);
+    ELMD_CHECK(paragraph != nullptr);
+    if (paragraph) {
+        auto strong = std::find_if(paragraph->children.begin(), paragraph->children.end(), [](auto const& node) { return node.kind == InlineKind::Strong; });
+        ELMD_CHECK(strong != paragraph->children.end());
+        if (strong != paragraph->children.end()) {
+            ELMD_CHECK(inlines_have_kind(strong->children, InlineKind::Link));
+            ELMD_CHECK(inlines_have_kind(strong->children, InlineKind::InlineCode));
+            ELMD_CHECK(inlines_have_kind(strong->children, InlineKind::Span));
+        }
+    }
+}
+
 ELMD_TEST(test_parse_inline_math) {
     auto out = parse_text(1, "Hello $x+1$ world\n");
     auto* p = first_of(out.document.blocks, BlockKind::Paragraph);
@@ -377,6 +402,24 @@ ELMD_TEST(test_parse_link) {
     ELMD_CHECK(p && inlines_have_kind(p->children, InlineKind::Link));
 }
 
+ELMD_TEST(test_reference_links_and_autolinks_resolve) {
+    auto out = parse_text(1, "[full][target] [collapsed][] <https://example.com> <me@example.com>\n\n[target]: https://example.com \"Title\"\n[collapsed]: /relative\n");
+    auto* paragraph = first_of(out.document.blocks, BlockKind::Paragraph);
+    ELMD_CHECK(paragraph != nullptr);
+    if (paragraph) {
+        std::vector<std::string> hrefs;
+        for (auto const& node : paragraph->children) if (node.kind == InlineKind::Link) hrefs.push_back(node.href);
+        ELMD_CHECK_EQ(hrefs.size(), 4u);
+        if (hrefs.size() == 4) {
+            ELMD_CHECK_EQ(hrefs[0], std::string("https://example.com"));
+            ELMD_CHECK_EQ(hrefs[1], std::string("/relative"));
+            ELMD_CHECK_EQ(hrefs[2], std::string("https://example.com"));
+            ELMD_CHECK_EQ(hrefs[3], std::string("mailto:me@example.com"));
+        }
+    }
+    ELMD_CHECK_EQ(std::count_if(out.document.blocks.begin(), out.document.blocks.end(), [](auto const& block) { return block.kind == BlockKind::LinkDefinition; }), 2);
+}
+
 ELMD_TEST(test_parse_image) {
     auto out = parse_text(1, "![alt](image.png)\n");
     auto* image = first_of(out.document.blocks, BlockKind::ImageBlock);
@@ -487,6 +530,32 @@ ELMD_TEST(test_safe_inline_html_is_structural) {
     auto out = parse_text(1, "hello <span>world</span>\n");
     auto* p = first_of(out.document.blocks, BlockKind::Paragraph);
     ELMD_CHECK(p && inlines_have_kind(p->children, InlineKind::Span));
+}
+
+ELMD_TEST(test_unsafe_inline_html_targets_are_removed) {
+    auto out = parse_text(1, "<a href=\" JavaScript:alert(1)\">unsafe</a> <img src=\"data:text/html;base64,QQ==\">\n");
+    auto* paragraph = first_of(out.document.blocks, BlockKind::Paragraph);
+    ELMD_CHECK(paragraph != nullptr);
+    if (paragraph) {
+        auto link = std::find_if(paragraph->children.begin(), paragraph->children.end(), [](auto const& node) { return node.kind == InlineKind::Link; });
+        auto image = std::find_if(paragraph->children.begin(), paragraph->children.end(), [](auto const& node) { return node.kind == InlineKind::Image; });
+        ELMD_CHECK(link != paragraph->children.end());
+        ELMD_CHECK(image != paragraph->children.end());
+        if (link != paragraph->children.end()) ELMD_CHECK(link->href.empty());
+        if (image != paragraph->children.end()) ELMD_CHECK(image->href.empty());
+    }
+}
+
+ELMD_TEST(test_nested_lists_preserve_nested_block_structure) {
+    auto out = parse_text(1, "- parent\n  - child\n    1. grandchild\n\n  > quote\n\n  ![alt](image.png)\n");
+    auto* list = first_of(out.document.blocks, BlockKind::List);
+    ELMD_CHECK(list != nullptr);
+    if (list && !list->list_items.empty()) {
+        auto const& children = list->list_items[0].children;
+        ELMD_CHECK(std::any_of(children.begin(), children.end(), [](auto const& block) { return block.kind == BlockKind::List; }));
+        ELMD_CHECK(std::any_of(children.begin(), children.end(), [](auto const& block) { return block.kind == BlockKind::BlockQuote; }));
+        ELMD_CHECK(std::any_of(children.begin(), children.end(), [](auto const& block) { return block.kind == BlockKind::ImageBlock; }));
+    }
 }
 
 ELMD_TEST(test_html_img_is_an_image_block) {

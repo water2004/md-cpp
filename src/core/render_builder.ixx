@@ -67,6 +67,139 @@ inline void push_marker(std::vector<InlineRenderItem>& out, std::size_t& cursor,
 
 struct Builder {
     const SourceMap* sm = nullptr;
+    TextRange<CharOffset> node_source_range(NodeId id) const {
+        if (const auto* range = sm ? sm->find_node_by_id(id) : nullptr) return range->source_range;
+        return {};
+    }
+    TextRange<CharOffset> node_content_range(NodeId id) const {
+        if (const auto* range = sm ? sm->find_node_by_id(id) : nullptr) return range->content_range;
+        return {};
+    }
+    void append_block_break(std::vector<InlineRenderItem>& out, std::size_t source_offset) {
+        std::size_t cursor = source_offset;
+        push_marker(out, cursor, U"\n", MarkerRole::Structural);
+    }
+    void append_list_contents(std::vector<InlineRenderItem>& out, const BlockNode& list, std::size_t depth) {
+        auto append_items = [&](auto const& items, bool tasks) {
+            for (std::size_t index = 0; index < items.size(); ++index) {
+                auto const& item = items[index];
+                auto item_source = node_source_range(item.id);
+                auto item_content = node_content_range(item.id);
+                std::size_t cursor = item_source.start.v;
+                auto marker = item.marker;
+                if (marker.empty()) {
+                    if constexpr (requires { item.checked; }) marker = item.checked ? U"- [x] " : U"- [ ] ";
+                    else if (list.list_ordered) marker = utf8_to_cps(std::to_string(list.list_start + index)) + std::u32string(1, list.list_delimiter) + U" ";
+                    else marker = U"- ";
+                }
+                if (tasks) {
+                    push_marker(out, cursor, marker, MarkerRole::TaskCheckbox);
+                } else if (list.list_ordered) {
+                    push_marker(out, cursor, marker, MarkerRole::ListNumber);
+                } else {
+                    auto indentation = marker.size() >= 2 ? marker.size() - 2 : std::size_t{};
+                    push_marker(out, cursor, marker, MarkerRole::ListBullet, std::u32string(indentation, U' ') + U"\u2022 ");
+                }
+                bool first_child = true;
+                for (auto const& child : item.children) {
+                    auto child_source = node_source_range(child.id);
+                    if (!first_child) append_block_break(out, child_source.start.v > 0 ? child_source.start.v - 1 : child_source.start.v);
+                    append_nested_block(out, child, depth + 1);
+                    first_child = false;
+                }
+                if (index + 1 < items.size()) {
+                    auto newline = item_source.end.v > item_content.end.v && item_source.end.v > 0 ? item_source.end.v - 1 : item_source.end.v;
+                    append_block_break(out, newline);
+                }
+            }
+        };
+        if (list.kind == BlockKind::TaskList) append_items(list.task_items, true);
+        else append_items(list.list_items, false);
+    }
+    void append_nested_block(std::vector<InlineRenderItem>& out, const BlockNode& block, std::size_t depth) {
+        auto content = node_content_range(block.id);
+        switch (block.kind) {
+            case BlockKind::Paragraph:
+            case BlockKind::Heading: {
+                InlineStyle style = InlineStyle::plain();
+                if (block.kind == BlockKind::Heading) style.heading_level = block.level;
+                auto items = build_inlines(block.children, content.start.v, style);
+                out.insert(out.end(), std::make_move_iterator(items.begin()), std::make_move_iterator(items.end()));
+                return;
+            }
+            case BlockKind::List:
+            case BlockKind::TaskList:
+                append_list_contents(out, block, depth);
+                return;
+            case BlockKind::BlockQuote:
+            case BlockKind::Callout:
+            case BlockKind::FootnoteDefinition: {
+                bool first = true;
+                for (auto const& child : block.quote_children) {
+                    auto child_source = node_source_range(child.id);
+                    if (!first) append_block_break(out, child_source.start.v > 0 ? child_source.start.v - 1 : child_source.start.v);
+                    append_nested_block(out, child, depth + 1);
+                    first = false;
+                }
+                return;
+            }
+            case BlockKind::CodeBlock: {
+                auto item = InlineRenderItem::plain_text(block.code_text, content);
+                item.style.code = true;
+                out.push_back(std::move(item));
+                return;
+            }
+            case BlockKind::MathBlock: {
+                InlineRenderItem item;
+                item.kind = InlineRenderItem::Kind::Math;
+                item.id = block.id;
+                item.source_range = node_source_range(block.id);
+                item.text = block.tex;
+                item.display = MathDisplayMode::Block;
+                item.math_delim = block.math_delim;
+                out.push_back(std::move(item));
+                return;
+            }
+            case BlockKind::ImageBlock: {
+                InlineRenderItem item;
+                item.kind = InlineRenderItem::Kind::Image;
+                item.id = block.id;
+                item.source_range = node_source_range(block.id);
+                item.src = block.src;
+                item.alt = block.image_alt;
+                out.push_back(std::move(item));
+                return;
+            }
+            case BlockKind::Table: {
+                auto append_cell = [&](TableCell const& cell) {
+                    auto cell_content = node_content_range(cell.id);
+                    auto items = build_inlines(cell.children, cell_content.start.v, InlineStyle::plain());
+                    out.insert(out.end(), std::make_move_iterator(items.begin()), std::make_move_iterator(items.end()));
+                };
+                for (std::size_t index = 0; index < block.table_header.size(); ++index) {
+                    if (index) append_block_break(out, node_source_range(block.table_header[index].id).start.v);
+                    append_cell(block.table_header[index]);
+                }
+                for (auto const& row : block.table_rows) for (auto const& cell : row.cells) {
+                    append_block_break(out, node_source_range(cell.id).start.v);
+                    append_cell(cell);
+                }
+                return;
+            }
+            case BlockKind::UnsupportedMarkup: {
+                auto item = InlineRenderItem::plain_text(utf8_to_cps(block.raw), node_source_range(block.id));
+                out.push_back(std::move(item));
+                return;
+            }
+            case BlockKind::ThematicBreak: {
+                auto item = InlineRenderItem::plain_text(U"\u2014", node_source_range(block.id));
+                out.push_back(std::move(item));
+                return;
+            }
+            default:
+                return;
+        }
+    }
     std::vector<InlineRenderItem> build_inlines(const InlineVec& nodes, std::size_t content_start, const InlineStyle& base) {
         std::vector<InlineRenderItem> out;
         std::size_t cursor = content_start;
@@ -358,57 +491,12 @@ struct Builder {
             }
             case BK::List: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::list());
-                std::size_t cursor = base_range().start.v;
-                for (std::size_t i = 0; i < b.list_items.size(); ++i) {
-                    const auto& item = b.list_items[i];
-                    const auto* item_range = sm ? sm->find_node_by_id(item.id) : nullptr;
-                    if (item_range) cursor = item_range->source_range.start.v;
-                    auto marker = item.marker;
-                    if (marker.empty()) {
-                        marker = b.list_ordered
-                            ? utf8_to_cps(std::to_string(b.list_start + i)) + std::u32string(1, b.list_delimiter) + U" "
-                            : U"- ";
-                    }
-                    if (b.list_ordered) {
-                        push_marker(rb.inline_items, cursor, std::move(marker), MarkerRole::ListNumber);
-                    } else {
-                        push_marker(rb.inline_items, cursor, std::move(marker), MarkerRole::ListBullet, U"\u2022 ");
-                    }
-                    for (const auto& ch : b.list_items[i].children) {
-                        if (ch.kind == BlockKind::Paragraph) {
-                            auto content_start = item_range ? item_range->content_range.start.v : cursor;
-                            auto items = build_inlines(ch.children, content_start, InlineStyle::plain());
-                            for (auto& it : items) rb.inline_items.push_back(std::move(it));
-                        }
-                    }
-                    if (i + 1 < b.list_items.size() && item_range && item_range->source_range.end.v > item_range->content_range.end.v) {
-                        cursor = item_range->source_range.end.v - 1;
-                        push_marker(rb.inline_items, cursor, U"\n", MarkerRole::Structural);
-                    }
-                }
+                append_list_contents(rb.inline_items, b, 0);
                 return with_content_range(std::move(rb));
             }
             case BK::TaskList: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::list());
-                std::size_t cursor = base_range().start.v;
-                for (std::size_t i = 0; i < b.task_items.size(); ++i) {
-                    const auto& ti = b.task_items[i];
-                    const auto* item_range = sm ? sm->find_node_by_id(ti.id) : nullptr;
-                    if (item_range) cursor = item_range->source_range.start.v;
-                    auto marker = ti.marker.empty() ? (ti.checked ? U"- [x] " : U"- [ ] ") : ti.marker;
-                    push_marker(rb.inline_items, cursor, std::move(marker), MarkerRole::TaskCheckbox);
-                    for (const auto& ch : ti.children) {
-                        if (ch.kind == BlockKind::Paragraph) {
-                            auto content_start = item_range ? item_range->content_range.start.v : cursor;
-                            auto items = build_inlines(ch.children, content_start, InlineStyle::plain());
-                            for (auto& it : items) rb.inline_items.push_back(std::move(it));
-                        }
-                    }
-                    if (i + 1 < b.task_items.size() && item_range && item_range->source_range.end.v > item_range->content_range.end.v) {
-                        cursor = item_range->source_range.end.v - 1;
-                        push_marker(rb.inline_items, cursor, U"\n", MarkerRole::Structural);
-                    }
-                }
+                append_list_contents(rb.inline_items, b, 0);
                 return with_content_range(std::move(rb));
             }
             case BK::CodeBlock: {
@@ -512,7 +600,11 @@ inline RenderModel build_render_model(const MarkdownDocument& doc,
     auto structure = build_source_structure(doc, source);
     for (const auto& span : structure.blocks) {
         if (span.kind == SourceBlockKind::Semantic && span.document_block_index && *span.document_block_index < doc.blocks.size()) {
-            blocks.push_back(bd.build_block(doc.blocks[*span.document_block_index]));
+            auto rendered = bd.build_block(doc.blocks[*span.document_block_index]);
+            auto start = (std::min)(rendered.source_range.start.v, source.size());
+            auto end = (std::min)((std::max)(rendered.source_range.end.v, start), source.size());
+            rendered.source_fingerprint = static_cast<std::uint64_t>(std::hash<std::u32string_view>{}(std::u32string_view(source).substr(start, end - start)));
+            blocks.push_back(std::move(rendered));
             continue;
         }
         RenderBlock blank;
@@ -520,6 +612,9 @@ inline RenderModel build_render_model(const MarkdownDocument& doc,
         blank.id = NodeId(0x8000000000000000ull | (span.content_range.start.v & 0x7fffffffffffffffull));
         blank.source_range = span.source_range;
         blank.content_range = span.content_range;
+        auto start = (std::min)(span.source_range.start.v, source.size());
+        auto end = (std::min)((std::max)(span.source_range.end.v, start), source.size());
+        blank.source_fingerprint = static_cast<std::uint64_t>(std::hash<std::u32string_view>{}(std::u32string_view(source).substr(start, end - start)));
         blank.block_style = BlockStyle::paragraph();
         blocks.push_back(std::move(blank));
     }

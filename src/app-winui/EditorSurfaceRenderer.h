@@ -91,6 +91,7 @@ namespace winrt::ElMd
         };
 
         std::optional<CachedRasterImage> LoadRasterImage(std::wstring const& baseDirectory, std::string_view source);
+        void QueueRemoteImage(std::string source);
 
         struct VisualBlock
         {
@@ -233,8 +234,16 @@ namespace winrt::ElMd
         std::vector<VisualMathHit> visualMathHits;
         std::unordered_map<std::uint64_t, float> blockHeightCache;
         std::unordered_map<std::wstring, CachedRasterImage> rasterImageCache;
+        std::unordered_set<std::wstring> rasterImageFailed;
         std::deque<std::wstring> rasterImageCacheOrder;
         std::size_t rasterImageCacheBytes = 0;
+        std::mutex remoteImageMutex;
+        std::unordered_map<std::string, std::vector<std::uint8_t>> remoteImageData;
+        std::unordered_set<std::string> remoteImagePending;
+        std::unordered_set<std::string> remoteImageFailed;
+        std::deque<std::string> remoteImageOrder;
+        std::size_t remoteImageBytes = 0;
+        winrt::Microsoft::UI::Dispatching::DispatcherQueue renderDispatcher{ nullptr };
         std::unordered_map<std::uint64_t, CachedSvgDocument> svgDocumentCache;
         std::deque<std::uint64_t> svgDocumentCacheOrder;
         std::size_t svgDocumentCacheBytes = 0;

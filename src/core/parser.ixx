@@ -236,11 +236,24 @@ public:
     }
 
     static bool safe_link_target(std::string_view value, bool image) {
-        auto lower = std::string(value);
+        std::size_t start = 0;
+        std::size_t end = value.size();
+        while (start < end && static_cast<unsigned char>(value[start]) <= 0x20) ++start;
+        while (end > start && static_cast<unsigned char>(value[end - 1]) <= 0x20) --end;
+        auto lower = std::string(value.substr(start, end - start));
         std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-        if (lower.starts_with("javascript:") || lower.starts_with("vbscript:")) return false;
-        if (lower.starts_with("data:")) return image && lower.starts_with("data:image/");
+        auto colon = lower.find(':');
+        auto boundary = lower.find_first_of("/?#");
+        if (colon != std::string::npos && (boundary == std::string::npos || colon < boundary)) {
+            auto scheme = lower.substr(0, colon);
+            if (scheme == "http" || scheme == "https" || (!image && scheme == "mailto")) return true;
+            return image && scheme == "data" && lower.starts_with("data:image/");
+        }
         return true;
+    }
+
+    static bool ascii_punctuation(char32_t value) {
+        return (value >= U'!' && value <= U'/') || (value >= U':' && value <= U'@') || (value >= U'[' && value <= U'`') || (value >= U'{' && value <= U'~');
     }
 
     std::optional<std::pair<std::u32string, std::size_t>> html_entity_at(std::size_t at, std::size_t limit) const {
@@ -554,8 +567,7 @@ public:
                 if (auto n = try_parse_inline_paren_math(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
             }
             if (peek1() == U'\\' && (!stop_at || pos + 1 < *stop_at)) {
-                static constexpr std::u32string_view escapable = U"\\`*_{}[]()#+-.!|";
-                if (escapable.find(peek2()) != std::u32string_view::npos) {
+                if (ascii_punctuation(peek2())) {
                     flush();
                     auto start = pos;
                     auto value = peek2();
@@ -766,6 +778,43 @@ public:
                     out.push_back(std::move(*node));
                     continue;
                 }
+            }
+            if (peek1() == U'\\' && (!stop_at || pos + 1 < *stop_at) && ascii_punctuation(peek2())) {
+                flush();
+                auto start = pos;
+                auto value = peek2();
+                advance_n(2);
+                NodeId id = next_node_id();
+                NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start + 1), CharOffset(pos)));
+                range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(start + 1)));
+                source_ranges.push_back(std::move(range));
+                out.push_back(InlineNode::text_node(id, std::u32string(1, value)));
+                continue;
+            }
+            if (peek1() == U'&') {
+                auto limit = stop_at.value_or(cps.size());
+                if (auto entity = html_entity_at(pos, limit)) {
+                    flush();
+                    auto start = pos;
+                    pos = entity->second;
+                    NodeId id = next_node_id();
+                    push_range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(pos)));
+                    out.push_back(InlineNode::text_node(id, std::move(entity->first)));
+                    continue;
+                }
+            }
+            if (peek1() == U'`') {
+                if (auto node = try_parse_inline_code(stop_at)) { flush(); out.push_back(std::move(*node)); continue; }
+            }
+            if (peek1() == U'!' && peek2() == U'[') {
+                if (auto node = try_parse_link_or_image(stop_at)) { flush(); out.push_back(std::move(*node)); continue; }
+            }
+            if (peek1() == U'[') {
+                if (auto node = try_parse_link_or_image(stop_at)) { flush(); out.push_back(std::move(*node)); continue; }
+            }
+            if (peek1() == U'<') {
+                if (auto node = try_parse_autolink(stop_at)) { flush(); out.push_back(std::move(*node)); continue; }
+                if (auto node = try_parse_raw_html_inline(stop_at)) { flush(); out.push_back(std::move(*node)); continue; }
             }
             buf.push_back(peek1()); advance();
         }

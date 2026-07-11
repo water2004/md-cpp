@@ -179,6 +179,23 @@ ELMD_TEST(list_inline_math_reaches_the_render_model_with_exact_ranges) {
     ELMD_CHECK_EQ(math_ranges[1].end.v, 31u);
 }
 
+ELMD_TEST(nested_list_blocks_reach_the_render_model) {
+    auto m = build_model("- parent\n  - child\n    1. grandchild\n\n  > quoted\n\n  ![diagram](image.png)\n");
+    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    std::u32string text;
+    bool image = false;
+    for (auto const& item : m.blocks[0].inline_items) {
+        if (item.kind == InlineRenderItem::Kind::Image) image = true;
+        else if (item.kind == InlineRenderItem::Kind::Link) for (auto const& child : item.children) text += child.text;
+        else text += item.text;
+    }
+    ELMD_CHECK(text.find(U"parent") != std::u32string::npos);
+    ELMD_CHECK(text.find(U"child") != std::u32string::npos);
+    ELMD_CHECK(text.find(U"grandchild") != std::u32string::npos);
+    ELMD_CHECK(text.find(U"quoted") != std::u32string::npos);
+    ELMD_CHECK(image);
+}
+
 ELMD_TEST(math_inside_emphasis_renders_without_inheriting_text_style) {
     auto m = build_model("**before $x$ after** *\\(y\\)* ~~$z$~~\n- **$q$**\n");
     std::vector<InlineRenderItem> math;

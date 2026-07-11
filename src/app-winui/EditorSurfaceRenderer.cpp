@@ -62,6 +62,32 @@ namespace winrt::ElMd
         return svg;
     }
 
+    std::optional<std::vector<std::uint8_t>> DecodeBase64(std::string_view source)
+    {
+        static constexpr std::string_view alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        if (source.size() > 24 * 1024 * 1024) return std::nullopt;
+        std::vector<std::uint8_t> result;
+        result.reserve(source.size() * 3 / 4);
+        std::uint32_t accumulator = 0;
+        unsigned bits = 0;
+        for (auto ch : source)
+        {
+            if (ch == '=') break;
+            if (ch == '\r' || ch == '\n' || ch == ' ' || ch == '\t') continue;
+            auto position = alphabet.find(ch);
+            if (position == std::string_view::npos) return std::nullopt;
+            accumulator = (accumulator << 6) | static_cast<std::uint32_t>(position);
+            bits += 6;
+            if (bits >= 8)
+            {
+                bits -= 8;
+                result.push_back(static_cast<std::uint8_t>((accumulator >> bits) & 0xff));
+                if (result.size() > 16 * 1024 * 1024) return std::nullopt;
+            }
+        }
+        return result;
+    }
+
     std::optional<MathJaxSvg> NormalizeMathJaxSvg(MathJaxSvg const& source, SvgNormalizer& normalizer, D2D1_COLOR_F color, float fontSize, bool allowQueue)
     {
         MathJaxSvg result = source;
@@ -819,6 +845,7 @@ namespace winrt::ElMd
         surfaceWidth = width;
         surfaceHeight = height;
         auto dispatcher = panel.DispatcherQueue();
+        renderDispatcher = dispatcher;
         auto completion = [this, dispatcher]
         {
             if (mathInvalidationQueued.exchange(true)) return;
@@ -872,36 +899,157 @@ namespace winrt::ElMd
         scrollTarget = (std::min)(scrollTarget, maxScroll);
     }
 
+    void EditorSurfaceRenderer::QueueRemoteImage(std::string source)
+    {
+        {
+            std::scoped_lock lock(remoteImageMutex);
+            if (remoteImageData.contains(source) || remoteImagePending.contains(source) || remoteImageFailed.contains(source)) return;
+            remoteImagePending.insert(source);
+        }
+        try
+        {
+            auto operation = winrt::Windows::Web::Http::HttpClient{}.GetBufferAsync(winrt::Windows::Foundation::Uri(winrt::to_hstring(source)));
+            operation.Completed([this, source = std::move(source)](auto const& async, winrt::Windows::Foundation::AsyncStatus status)
+            {
+                std::vector<std::uint8_t> bytes;
+                if (status == winrt::Windows::Foundation::AsyncStatus::Completed)
+                {
+                    try
+                    {
+                        auto buffer = async.GetResults();
+                        if (buffer.Length() <= 16 * 1024 * 1024)
+                        {
+                            bytes.resize(buffer.Length());
+                            auto reader = winrt::Windows::Storage::Streams::DataReader::FromBuffer(buffer);
+                            reader.ReadBytes(winrt::array_view<std::uint8_t>(bytes));
+                        }
+                    }
+                    catch (...) {}
+                }
+                {
+                    std::scoped_lock lock(remoteImageMutex);
+                    remoteImagePending.erase(source);
+                    if (bytes.empty())
+                    {
+                        remoteImageFailed.insert(source);
+                    }
+                    else
+                    {
+                        while (!remoteImageOrder.empty() && (remoteImageData.size() >= 16 || remoteImageBytes + bytes.size() > 32 * 1024 * 1024))
+                        {
+                            auto oldest = std::move(remoteImageOrder.front());
+                            remoteImageOrder.pop_front();
+                            auto found = remoteImageData.find(oldest);
+                            if (found == remoteImageData.end()) continue;
+                            remoteImageBytes -= found->second.size();
+                            remoteImageData.erase(found);
+                        }
+                        if (bytes.size() <= 32 * 1024 * 1024)
+                        {
+                            remoteImageBytes += bytes.size();
+                            remoteImageOrder.push_back(source);
+                            remoteImageData.emplace(source, std::move(bytes));
+                        }
+                    }
+                }
+                if (renderDispatcher)
+                {
+                    renderDispatcher.TryEnqueue([this]
+                    {
+                        blockHeightCache.clear();
+                        if (invalidateCallback) invalidateCallback();
+                    });
+                }
+            });
+        }
+        catch (...)
+        {
+            std::scoped_lock lock(remoteImageMutex);
+            remoteImagePending.erase(source);
+            remoteImageFailed.insert(std::move(source));
+        }
+    }
+
     std::optional<EditorSurfaceRenderer::CachedRasterImage> EditorSurfaceRenderer::LoadRasterImage(std::wstring const& baseDirectory, std::string_view source)
     {
-        if (!wicFactory || !d2dContext || source.empty() || source.find("://") != std::string_view::npos || source.starts_with("data:")) return std::nullopt;
-        auto sourceText = winrt::to_hstring(std::string(source));
-        std::filesystem::path path(sourceText.c_str());
-        if (path.is_relative())
+        if (!wicFactory || !d2dContext || source.empty()) return std::nullopt;
+        std::wstring key;
+        std::vector<std::uint8_t> encoded;
+        auto remote = source.starts_with("https://") || source.starts_with("http://");
+        auto data = source.starts_with("data:image/");
+        std::filesystem::path path;
+        if (remote)
         {
-            if (baseDirectory.empty()) return std::nullopt;
-            path = std::filesystem::path(baseDirectory) / path;
+            key = L"url:" + std::wstring(winrt::to_hstring(std::string(source)));
+            if (auto found = rasterImageCache.find(key); found != rasterImageCache.end()) return found->second;
+            if (rasterImageFailed.contains(key)) return std::nullopt;
+            {
+                std::scoped_lock lock(remoteImageMutex);
+                auto found = remoteImageData.find(std::string(source));
+                if (found != remoteImageData.end()) encoded = found->second;
+            }
+            if (encoded.empty())
+            {
+                QueueRemoteImage(std::string(source));
+                return std::nullopt;
+            }
         }
-        std::error_code error;
-        auto absolute = std::filesystem::weakly_canonical(path, error);
-        if (error) absolute = path.lexically_normal();
-        auto key = absolute.wstring();
+        else if (data)
+        {
+            auto comma = source.find(',');
+            if (comma == std::string_view::npos || source.substr(0, comma).find(";base64") == std::string_view::npos) return std::nullopt;
+            key = L"data:" + std::to_wstring(source.size()) + L":" + std::to_wstring(std::hash<std::string_view>{}(source));
+            if (auto found = rasterImageCache.find(key); found != rasterImageCache.end()) return found->second;
+            if (rasterImageFailed.contains(key)) return std::nullopt;
+            auto decoded = DecodeBase64(source.substr(comma + 1));
+            if (!decoded || decoded->empty()) return std::nullopt;
+            encoded = std::move(*decoded);
+        }
+        else
+        {
+            auto sourceText = winrt::to_hstring(std::string(source));
+            path = std::filesystem::path(sourceText.c_str());
+            if (path.has_root_directory() && !path.has_root_name() && !baseDirectory.empty()) path = std::filesystem::path(baseDirectory) / path.relative_path();
+            if (path.is_relative())
+            {
+                if (baseDirectory.empty()) return std::nullopt;
+                path = std::filesystem::path(baseDirectory) / path;
+            }
+            std::error_code error;
+            auto absolute = std::filesystem::weakly_canonical(path, error);
+            if (error) absolute = path.lexically_normal();
+            key = absolute.wstring();
+            path = std::move(absolute);
+        }
         if (auto found = rasterImageCache.find(key); found != rasterImageCache.end()) return found->second;
+        if (rasterImageFailed.contains(key)) return std::nullopt;
+        auto fail = [&]() -> std::optional<CachedRasterImage>
+        {
+            rasterImageFailed.insert(key);
+            return std::nullopt;
+        };
 
         ::Microsoft::WRL::ComPtr<IWICBitmapDecoder> decoder;
-        if (FAILED(wicFactory->CreateDecoderFromFilename(key.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad, decoder.GetAddressOf()))) return std::nullopt;
+        ::Microsoft::WRL::ComPtr<IWICStream> stream;
+        if (!encoded.empty())
+        {
+            if (encoded.size() > (std::numeric_limits<DWORD>::max)()) return fail();
+            if (FAILED(wicFactory->CreateStream(stream.GetAddressOf())) || FAILED(stream->InitializeFromMemory(encoded.data(), static_cast<DWORD>(encoded.size())))) return fail();
+            if (FAILED(wicFactory->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad, decoder.GetAddressOf()))) return fail();
+        }
+        else if (FAILED(wicFactory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad, decoder.GetAddressOf()))) return fail();
         ::Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> frame;
-        if (FAILED(decoder->GetFrame(0, frame.GetAddressOf()))) return std::nullopt;
+        if (FAILED(decoder->GetFrame(0, frame.GetAddressOf()))) return fail();
         UINT width = 0;
         UINT height = 0;
-        if (FAILED(frame->GetSize(&width, &height)) || width == 0 || height == 0) return std::nullopt;
+        if (FAILED(frame->GetSize(&width, &height)) || width == 0 || height == 0) return fail();
         auto pixels = static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height);
-        if (pixels > 16ull * 1024ull * 1024ull) return std::nullopt;
+        if (pixels > 16ull * 1024ull * 1024ull) return fail();
         ::Microsoft::WRL::ComPtr<IWICFormatConverter> converter;
-        if (FAILED(wicFactory->CreateFormatConverter(converter.GetAddressOf()))) return std::nullopt;
-        if (FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeMedianCut))) return std::nullopt;
+        if (FAILED(wicFactory->CreateFormatConverter(converter.GetAddressOf()))) return fail();
+        if (FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeMedianCut))) return fail();
         CachedRasterImage image;
-        if (FAILED(d2dContext->CreateBitmapFromWicBitmap(converter.Get(), nullptr, image.bitmap.GetAddressOf())) || !image.bitmap) return std::nullopt;
+        if (FAILED(d2dContext->CreateBitmapFromWicBitmap(converter.Get(), nullptr, image.bitmap.GetAddressOf())) || !image.bitmap) return fail();
         image.width = static_cast<float>(width);
         image.height = static_cast<float>(height);
         image.bytes = static_cast<std::size_t>(pixels * 4);
@@ -1157,10 +1305,7 @@ namespace winrt::ElMd
 
         auto blockCacheKey = [&](elmd::RenderBlock const& block)
         {
-            auto start = (std::min)(block.source_range.start.v, sourceText.size());
-            auto end = (std::min)((std::max)(block.source_range.end.v, start), sourceText.size());
-            auto source = std::u32string_view(sourceText).substr(start, end - start);
-            auto value = static_cast<std::uint64_t>(std::hash<std::u32string_view>{}(source));
+            auto value = block.source_fingerprint;
             value ^= static_cast<std::uint64_t>(block.kind) * 0x9e3779b97f4a7c15ull;
             value ^= static_cast<std::uint64_t>(std::llround((documentRight - documentLeft) * 16.0f)) << 17;
             value ^= static_cast<std::uint64_t>(theme) << 61;

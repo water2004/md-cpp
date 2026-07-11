@@ -141,6 +141,7 @@ enum class RenderBlockKind {
 struct RenderBlock {
     RenderBlockKind kind = RenderBlockKind::Text;
     NodeId id{};
+    std::uint64_t source_fingerprint = 0;
     TextRange<CharOffset> source_range;
     TextRange<CharOffset> content_range;
     BlockStyle block_style;

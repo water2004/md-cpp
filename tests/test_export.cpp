@@ -54,12 +54,22 @@ ELMD_TEST(test_export_plain_text_mime) {
 }
 
 ELMD_TEST(test_export_html_link_sanitizes_javascript) {
-    std::string src = "[click](javascript:evil)\n";
+    std::string src = "[click](JaVaScRiPt:evil)\n";
     auto out = parse_text(1, src);
     ExportOptions opts;
     auto res = export_html("", out.document, opts);
     ELMD_CHECK(res.ok);
     ELMD_CHECK(res.value.content.find("href=\"javascript:") == std::string::npos);
+    ELMD_CHECK(res.value.content.find("JaVaScRiPt:") == std::string::npos);
+}
+
+ELMD_TEST(test_export_html_only_allows_data_urls_for_images) {
+    auto out = parse_text(1, "![ok](data:image/png;base64,QQ==)\n\n![bad](data:text/html;base64,QQ==)\n");
+    ExportOptions opts;
+    auto res = export_html("", out.document, opts);
+    ELMD_CHECK(res.ok);
+    ELMD_CHECK(res.value.content.find("data:image/png") != std::string::npos);
+    ELMD_CHECK(res.value.content.find("data:text/html") == std::string::npos);
 }
 
 ELMD_TEST(test_export_html_drop_policy) {

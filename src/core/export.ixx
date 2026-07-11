@@ -79,6 +79,24 @@ inline EditorResult<ExportArtifact> export_plain_text(std::string_view source) {
 
 namespace detail {
 
+inline std::string sanitized_target(std::string_view value, bool image) {
+    std::size_t start = 0;
+    std::size_t end = value.size();
+    while (start < end && static_cast<unsigned char>(value[start]) <= 0x20) ++start;
+    while (end > start && static_cast<unsigned char>(value[end - 1]) <= 0x20) --end;
+    std::string result(value.substr(start, end - start));
+    std::string lower = result;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    auto colon = lower.find(':');
+    auto boundary = lower.find_first_of("/?#");
+    if (colon != std::string::npos && (boundary == std::string::npos || colon < boundary)) {
+        auto scheme = lower.substr(0, colon);
+        auto allowed = scheme == "http" || scheme == "https" || (!image && scheme == "mailto") || (image && scheme == "data" && lower.starts_with("data:image/"));
+        if (!allowed) return {};
+    }
+    return result;
+}
+
 inline std::string inline_to_html(const InlineNode& n, ExportRawHtmlPolicy pol) {
     using K = InlineKind;
     switch (n.kind) {
@@ -110,15 +128,13 @@ inline std::string inline_to_html(const InlineNode& n, ExportRawHtmlPolicy pol) 
             for (const auto& c : n.children) s += inline_to_html(c, pol);
             std::string title_attr;
             if (n.title) title_attr = " title=\"" + escape_text(*n.title) + "\"";
-            std::string href = escape_text(n.href);
-            // Only allow http(s) / relative; never javascript:
-            if (href.rfind("javascript:", 0) == 0) href.clear();
+            std::string href = escape_text(sanitized_target(n.href, false));
             return "<a href=\"" + href + "\"" + title_attr + ">" + s + "</a>";
         }
         case K::Image: {
             std::string title_attr;
             if (n.title) title_attr = " title=\"" + escape_text(*n.title) + "\"";
-            return "<img src=\"" + escape_text(n.href) + "\" alt=\"" + escape_text(n.alt) + "\"" + title_attr + " />";
+            return "<img src=\"" + escape_text(sanitized_target(n.href, true)) + "\" alt=\"" + escape_text(n.alt) + "\"" + title_attr + " />";
         }
         case K::InlineMath:
             return "<span class=\"math-inline\">" + escape_raw_html(cps_to_utf8(n.text)) + "</span>";
@@ -223,8 +239,8 @@ inline std::string block_to_html(const BlockNode& b, ExportRawHtmlPolicy pol) {
         }
         case BK::ImageBlock: {
             auto title = b.image_title ? " title=\"" + escape_text(*b.image_title) + "\"" : std::string{};
-            auto image = "<img src=\"" + escape_text(b.src) + "\" alt=\"" + escape_text(b.image_alt) + "\"" + title + " />";
-            if (b.image_link) image = "<a href=\"" + escape_text(*b.image_link) + "\">" + image + "</a>";
+            auto image = "<img src=\"" + escape_text(sanitized_target(b.src, true)) + "\" alt=\"" + escape_text(b.image_alt) + "\"" + title + " />";
+            if (b.image_link) image = "<a href=\"" + escape_text(sanitized_target(*b.image_link, false)) + "\">" + image + "</a>";
             return image + "\n";
         }
         case BK::Extension:
