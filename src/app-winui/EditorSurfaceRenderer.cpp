@@ -8,6 +8,8 @@ import elmd.core.table_edit;
 import elmd.core.utf;
 
 #include "EditorContentPreparation.h"
+#include "EditorSvgPainter.h"
+#include "EditorTextLayoutEngine.h"
 
 namespace winrt::ElMd
 {
@@ -126,33 +128,13 @@ namespace winrt::ElMd
         std::unordered_set<std::uint64_t> mathFallbacks;
         ::Microsoft::WRL::ComPtr<ID2D1DeviceContext5> svgContext;
         auto svgSupported = SUCCEEDED(resources.d2dContext.As(&svgContext)) && svgContext;
-
-        auto drawSvg = [&](std::uint64_t renderId, std::string const& source, float width, float height, D2D1_POINT_2F origin) -> bool
-        {
-            if (renderId == 0 || source.empty() || width <= 0.0f || height <= 0.0f || !svgSupported)
-            {
-                return false;
-            }
-            if (origin.x + width < 0.0f || origin.y + height < 0.0f || origin.x > resources.surfaceWidthDip || origin.y > resources.surfaceHeightDip)
-            {
-                return true;
-            }
-
-            auto document = renderCache.FindOrCreateSvgDocument(svgContext.Get(), renderId, source, width, height);
-            if (!document) return false;
-            document->SetViewportSize(D2D1::SizeF(width, height));
-            D2D1_MATRIX_3X2_F transform{};
-            svgContext->GetTransform(&transform);
-            svgContext->SetTransform(D2D1::Matrix3x2F::Translation(origin.x, origin.y) * transform);
-            svgContext->DrawSvgDocument(document.Get());
-            svgContext->SetTransform(transform);
-            return true;
-        };
+        EditorSvgPainter svgPainter(resources, renderCache);
+        EditorTextLayoutEngine textLayoutEngine(resources, styleSheet);
 
         auto drawMathSvg = [&](MathJaxSvgFragment const& fragment, D2D1_POINT_2F origin, D2D1_COLOR_F color) -> bool
         {
             (void)color;
-            return fragment.svg && drawSvg(fragment.renderId, *fragment.svg, fragment.width, fragment.height, origin);
+            return fragment.svg && svgPainter.Draw(fragment.renderId, *fragment.svg, fragment.width, fragment.height, origin);
         };
 
         auto drawMathFallback = [&](std::size_t start, std::size_t end, D2D1_POINT_2F origin)
@@ -164,87 +146,6 @@ namespace winrt::ElMd
             auto fallback = ToWide(std::u32string_view(sourceText).substr(start, end - start));
             if (fallback.empty()) fallback = L"formula";
             resources.d2dContext->DrawTextW(fallback.c_str(), static_cast<UINT32>(fallback.size()), resources.codeFormat.Get(), D2D1::RectF(origin.x, origin.y, documentRight, origin.y + styleSheet.code.lineHeight * 3.0f), resources.textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
-        };
-
-        auto createLayout = [&](std::wstring const& text, IDWriteTextFormat* format, float width)
-        {
-            ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
-            auto hr = resources.dwriteFactory->CreateTextLayout(text.c_str(), static_cast<UINT32>(text.size()), format, width, 100000.0f, layout.GetAddressOf());
-            if (FAILED(hr) || !layout)
-            {
-                return ::Microsoft::WRL::ComPtr<IDWriteTextLayout>{};
-            }
-            return layout;
-        };
-
-        auto applyInlineStyles = [&](IDWriteTextLayout* layout, std::vector<InlineStyleRange> const& ranges)
-        {
-            if (!layout)
-            {
-                return;
-            }
-
-            for (auto const& range : ranges)
-            {
-                DWRITE_TEXT_RANGE textRange{ range.start, range.length };
-                if (range.style.bold)
-                {
-                    layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, textRange);
-                }
-                if (range.style.italic)
-                {
-                    layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, textRange);
-                }
-                if (range.style.link)
-                {
-                    layout->SetUnderline(true, textRange);
-                }
-                if (range.style.strikethrough)
-                {
-                    layout->SetStrikethrough(true, textRange);
-                }
-                if (range.style.code)
-                {
-                    layout->SetFontFamilyName(styleSheet.code.family.c_str(), textRange);
-                    layout->SetFontSize(styleSheet.code.size, textRange);
-                }
-                if (range.style.heading_level)
-                {
-                    auto level = *range.style.heading_level;
-                    auto size = level == 1 ? styleSheet.heading1.size
-                        : level == 2 ? styleSheet.heading2.size
-                        : level == 3 ? styleSheet.heading3.size
-                        : level == 4 ? styleSheet.body.size * 1.15f
-                        : styleSheet.body.size;
-                    layout->SetFontSize(size, textRange);
-                    layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, textRange);
-                }
-                if (range.marker && !range.style.heading_level)
-                {
-                    layout->SetFontSize(styleSheet.body.size * 0.82f, textRange);
-                }
-                auto syntaxIndex = static_cast<std::size_t>(range.syntax);
-                if (range.syntax != SyntaxHighlightKind::None && syntaxIndex < resources.syntaxBrushes.size() && resources.syntaxBrushes[syntaxIndex])
-                {
-                    layout->SetDrawingEffect(resources.syntaxBrushes[syntaxIndex].Get(), textRange);
-                }
-            }
-        };
-
-        auto measureTextHeight = [&](IDWriteTextLayout* layout, float fallbackHeight)
-        {
-            if (!layout)
-            {
-                return fallbackHeight;
-            }
-
-            DWRITE_TEXT_METRICS metrics{};
-            if (FAILED(layout->GetMetrics(&metrics)))
-            {
-                return fallbackHeight;
-            }
-
-            return (std::max)(fallbackHeight, metrics.height);
         };
 
         struct InlineImageDraw
@@ -535,12 +436,12 @@ namespace winrt::ElMd
                                 display.displayToSource.push_back(sourceEnd);
                             }
                             auto wide = ToWide(display.text);
-                            auto layout = createLayout(wide, resources.textFormat.Get(), (std::max)(1.0f, columnWidth - 20.0f));
+                            auto layout = textLayoutEngine.Create(wide, resources.textFormat.Get(), (std::max)(1.0f, columnWidth - 20.0f));
                             auto cellTextHeight = styleSheet.body.lineHeight;
                             if (layout)
                             {
                                 layout->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
-                                applyInlineStyles(layout.Get(), display.ranges);
+                                textLayoutEngine.ApplyStyles(layout.Get(), display.ranges);
                                 ApplyMathInlineObjects(layout.Get(), display.mathOverlays);
                                 if (row == 0 && block.table_header_row)
                                 {
@@ -787,12 +688,12 @@ namespace winrt::ElMd
                     auto horizontalPadding = code ? 12.0f : 0.0f;
                     auto verticalPadding = code ? 8.0f : 0.0f;
                     auto textWidth = (std::max)(1.0f, contentRight - contentLeft - horizontalPadding * 2.0f);
-                    auto layout = createLayout(ToWide(display.text), format, textWidth);
-                    applyInlineStyles(layout.Get(), display.ranges);
+                    auto layout = textLayoutEngine.Create(ToWide(display.text), format, textWidth);
+                    textLayoutEngine.ApplyStyles(layout.Get(), display.ranges);
                     ApplyMathInlineObjects(layout.Get(), display.mathOverlays);
                     auto images = resolveInlineImages(layout.Get(), display.imageOverlays, textWidth);
                     auto fallbackHeight = code ? styleSheet.code.lineHeight : styleSheet.body.lineHeight;
-                    auto fragmentHeight = measureTextHeight(layout.Get(), fallbackHeight) + verticalPadding * 2.0f;
+                    auto fragmentHeight = textLayoutEngine.MeasureHeight(layout.Get(), fallbackHeight) + verticalPadding * 2.0f;
                     QuoteFragment fragment;
                     fragment.origin = D2D1::Point2F(contentLeft + horizontalPadding, cursorY + verticalPadding);
                     fragment.rect = D2D1::RectF(contentLeft, cursorY, contentRight, cursorY + fragmentHeight);
@@ -1287,8 +1188,8 @@ namespace winrt::ElMd
             }
             if (!layout)
             {
-                layout = createLayout(ToWide(text), format, textWidth);
-                applyInlineStyles(layout.Get(), inlineRanges);
+                layout = textLayoutEngine.Create(ToWide(text), format, textWidth);
+                textLayoutEngine.ApplyStyles(layout.Get(), inlineRanges);
                 ApplyMathInlineObjects(layout.Get(), inlineMathOverlays);
                 if (cacheableLayout && layout)
                 {
@@ -1307,12 +1208,12 @@ namespace winrt::ElMd
             {
                 auto fallbackHeight = format == resources.codeFormat.Get() ? styleSheet.code.lineHeight : styleSheet.body.lineHeight;
                 auto bottomPadding = fillPanel ? 16.0f : 8.0f;
-                height = textTop + measureTextHeight(layout.Get(), fallbackHeight) + bottomPadding;
+                height = textTop + textLayoutEngine.MeasureHeight(layout.Get(), fallbackHeight) + bottomPadding;
             }
             if (!inlineMathPreviews.empty())
             {
                 auto availableWidth = (std::max)(1.0f, documentRight - documentLeft - inset * 2.0f);
-                auto previewY = y + textTop + measureTextHeight(layout.Get(), styleSheet.body.lineHeight) + 8.0f;
+                auto previewY = y + textTop + textLayoutEngine.MeasureHeight(layout.Get(), styleSheet.body.lineHeight) + 8.0f;
                 inlineMathPreviewOrigins.reserve(inlineMathPreviews.size());
                 for (auto const& preview : inlineMathPreviews)
                 {
@@ -1351,7 +1252,7 @@ namespace winrt::ElMd
                 auto previewX = documentLeft + (std::max)(inset, (documentRight - documentLeft - previewWidth) * 0.5f);
                 if (showRawMath)
                 {
-                    auto rawHeight = measureTextHeight(layout.Get(), styleSheet.code.lineHeight);
+                    auto rawHeight = textLayoutEngine.MeasureHeight(layout.Get(), styleSheet.code.lineHeight);
                     auto previewY = y + textTop + rawHeight + 10.0f;
                     height = textTop + rawHeight + 10.0f + blockMath->height + 16.0f;
                     blockMathOrigin = D2D1::Point2F(previewX, previewY);
@@ -1371,7 +1272,7 @@ namespace winrt::ElMd
                 auto previewX = documentLeft + (documentRight - documentLeft - blockMermaidWidth) * 0.5f;
                 if (showRawMermaid)
                 {
-                    auto rawHeight = measureTextHeight(layout.Get(), styleSheet.code.lineHeight);
+                    auto rawHeight = textLayoutEngine.MeasureHeight(layout.Get(), styleSheet.code.lineHeight);
                     auto previewY = y + textTop + rawHeight + 10.0f;
                     height = textTop + rawHeight + 10.0f + blockMermaidHeight + 16.0f;
                     blockMermaidOrigin = D2D1::Point2F(previewX, previewY);
@@ -1396,7 +1297,7 @@ namespace winrt::ElMd
                 auto imageY = y + 8.0f;
                 if (showRawImage)
                 {
-                    auto rawHeight = measureTextHeight(layout.Get(), styleSheet.body.lineHeight);
+                    auto rawHeight = textLayoutEngine.MeasureHeight(layout.Get(), styleSheet.body.lineHeight);
                     imageY = y + textTop + rawHeight + 8.0f;
                 }
                 blockImageRect = D2D1::RectF(imageX, imageY, imageX + imageWidth, imageY + imageHeight);
@@ -1610,7 +1511,7 @@ namespace winrt::ElMd
                 }
                 if (blockMermaidOrigin && blockMermaid)
                 {
-                    drawSvg(blockMermaid->renderId, blockMermaid->svg, blockMermaidWidth, blockMermaidHeight, *blockMermaidOrigin);
+                    svgPainter.Draw(blockMermaid->renderId, blockMermaid->svg, blockMermaidWidth, blockMermaidHeight, *blockMermaidOrigin);
                 }
                 if (blockImageRect && blockImage && blockImage->bitmap)
                 {

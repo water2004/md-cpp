@@ -36,7 +36,7 @@ script 执行 / iframe / 把 `<img>` 当图片 / 把 `<table>` 当表格 /
 | editor-core | `src/core/{editor,command,transaction,undo,selection,input,scheduler,caret}.ixx` | ✅ 已迁移（命令 nullopt 项与 Rust 保持一致，editor 层处理） |
 | editor-outline | `src/core/{outline,slug}.ixx` | ✅ 已迁移 |
 | math/diagram-render | `src/core/math_renderer.ixx` + `src/app-winui/{MathJaxRenderer,MermaidRenderer,SvgNormalizer}.*` | ✅ MathJax 4/QuickJS + mermaid-rs-renderer + usvg path-only 标准化 |
-| editor-render | `src/core/{render_model,render_builder}.ixx` + `src/app-winui/EditorContentPreparation.*` | ✅ 语义模型与平台内联内容准备分层 |
+| editor-render | `src/core/{render_model,render_builder}.ixx` + `src/app-winui/{EditorContentPreparation,EditorTextLayoutEngine,EditorSvgPainter}.*` | ✅ 语义模型、平台内联内容准备、DirectWrite 布局与 SVG 绘制入口分层 |
 | editor-layout | `src/core/layout_plan.ixx` + `src/app-winui/EditorInteractionMap.*` | ✅ 全块预分配、DirectWrite 测量/命中测试、视口虚拟化、高度缓存 |
 | storage | `src/core/storage.ixx` | ✅ 新增（file_io+assets） |
 | export | `src/core/exporter.ixx` | ✅ 新增（markdown+html+plain_text） |
