@@ -122,39 +122,6 @@ inline std::optional<Transaction> task_checkbox_transaction(const std::u32string
     return t;
 }
 
-inline Transaction inline_toggle_transaction(const std::u32string& marker, const std::u32string& text_cps, const Selection& selection, std::uint64_t revision) {
-    auto sel = selection.normalized_range();
-    auto marker_size = marker.size();
-    if (sel.is_empty()) {
-        auto replacement = marker + marker;
-        Transaction transaction(revision, selection, Selection::caret(CharOffset(sel.start.v + marker_size)), TransactionReason::FormatCommand);
-        transaction.with_edit(sel, std::move(replacement));
-        return transaction;
-    }
-    auto selected = std::u32string(text_cps.begin() + sel.start.v, text_cps.begin() + sel.end.v);
-    if (selected.size() >= marker_size * 2 && selected.starts_with(marker) && selected.ends_with(marker)) {
-        auto inner = selected.substr(marker_size, selected.size() - marker_size * 2);
-        Selection after{CharOffset(sel.start.v), CharOffset(sel.start.v + inner.size()), TextAffinity::Downstream};
-        Transaction transaction(revision, selection, after, TransactionReason::FormatCommand);
-        transaction.with_edit(sel, std::move(inner));
-        return transaction;
-    }
-    auto surrounded = sel.start.v >= marker_size && sel.end.v + marker_size <= text_cps.size()
-        && std::equal(marker.begin(), marker.end(), text_cps.begin() + sel.start.v - marker_size)
-        && std::equal(marker.begin(), marker.end(), text_cps.begin() + sel.end.v);
-    if (surrounded) {
-        Selection after{CharOffset(sel.start.v - marker_size), CharOffset(sel.end.v - marker_size), TextAffinity::Downstream};
-        Transaction transaction(revision, selection, after, TransactionReason::FormatCommand);
-        transaction.with_edit(CharRange(CharOffset(sel.start.v - marker_size), CharOffset(sel.end.v + marker_size)), std::move(selected));
-        return transaction;
-    }
-    auto replacement = marker + selected + marker;
-    Selection after{CharOffset(sel.start.v + marker_size), CharOffset(sel.end.v + marker_size), TextAffinity::Downstream};
-    Transaction transaction(revision, selection, after, TransactionReason::FormatCommand);
-    transaction.with_edit(sel, std::move(replacement));
-    return transaction;
-}
-
 inline std::optional<Transaction> quote_toggle_transaction(const std::u32string& text_cps, const Selection& selection, std::uint64_t revision) {
     auto sel = selection.normalized_range();
     auto start = find_line_start(text_cps, sel.start.v);
@@ -544,30 +511,6 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
         case CommandKind::MovePageUp:
         case CommandKind::MovePageDown:
             return std::nullopt;
-        case CommandKind::ToggleStrong:
-        case CommandKind::ToggleEmphasis:
-        case CommandKind::ToggleStrikethrough:
-        case CommandKind::ToggleInlineCode: {
-            if (cmd.kind == CommandKind::ToggleStrong) return inline_toggle_transaction(U"**", text_cps, selection, revision);
-            if (cmd.kind == CommandKind::ToggleEmphasis) return inline_toggle_transaction(U"*", text_cps, selection, revision);
-            if (cmd.kind == CommandKind::ToggleStrikethrough) return inline_toggle_transaction(U"~~", text_cps, selection, revision);
-            return inline_toggle_transaction(U"`", text_cps, selection, revision);
-        }
-        case CommandKind::InsertMathInline: {
-            if (sel.is_empty()) {
-                std::u32string tmpl = U"$$";
-                std::size_t new_pos = sel.start.v + 1;
-                Transaction t(revision, selection, caret_after(CharOffset(new_pos)), TransactionReason::FormatCommand);
-                t.with_edit(sel, std::move(tmpl));
-                return t;
-            }
-            auto sel_text = std::u32string(text_cps.begin() + sel.start.v, text_cps.begin() + sel.end.v);
-            std::u32string wrapped; wrapped.push_back('$'); wrapped += sel_text; wrapped.push_back('$');
-            std::size_t new_pos = sel.start.v + wrapped.size();
-            Transaction t(revision, selection, caret_after(CharOffset(new_pos)), TransactionReason::FormatCommand);
-            t.with_edit(sel, std::move(wrapped));
-            return t;
-        }
         case CommandKind::InsertMathBlock: {
             std::u32string block; block.push_back('\n'); block += U"$$\n\n$$\n";
             std::size_t new_pos = sel.start.v + 4;

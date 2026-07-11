@@ -263,6 +263,9 @@ inline TypingInsertResult insert_typing_in_inlines(
             }
             auto nested = insert_typing_in_inlines(node.children, local, text, allocator);
             nested.offset += consumed;
+            if (nested.changed && node.kind != InlineKind::Span && node.kind != InlineKind::Link) {
+                nested.affinity = TextAffinity::Upstream;
+            }
             return nested;
         }
         if (node.kind == InlineKind::InlineCode || node.kind == InlineKind::InlineMath) {
@@ -334,6 +337,71 @@ inline TypingInsertResult insert_typing_in_inlines(
     }
     nodes.push_back(InlineNode::text_node(allocator.allocate(), std::u32string(text)));
     return TypingInsertResult{true, offset + text.size(), TextAffinity::Downstream};
+}
+
+inline InlineVec* inline_owner_in_blocks(BlockVec& blocks, NodeId id) {
+    for (auto& block : blocks) {
+        if ((block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading) && block.id == id) return &block.children;
+        if (block.kind == BlockKind::Table) {
+            for (auto& cell : block.table_header) if (cell.id == id) return &cell.children;
+            for (auto& row : block.table_rows) for (auto& cell : row.cells) if (cell.id == id) return &cell.children;
+        }
+        if (auto* owner = inline_owner_in_blocks(block.quote_children, id)) return owner;
+        for (auto& item : block.list_items) if (auto* owner = inline_owner_in_blocks(item.children, id)) return owner;
+        for (auto& item : block.task_items) if (auto* owner = inline_owner_in_blocks(item.children, id)) return owner;
+    }
+    return nullptr;
+}
+
+inline std::u32string default_opening_marker(InlineKind kind) {
+    if (kind == InlineKind::Emphasis) return U"*";
+    if (kind == InlineKind::Strong) return U"**";
+    if (kind == InlineKind::Strike) return U"~~";
+    if (kind == InlineKind::InlineCode) return U"`";
+    if (kind == InlineKind::InlineMath) return U"$";
+    return {};
+}
+
+inline bool toggle_inline_format(
+    InlineVec& nodes,
+    std::size_t start,
+    std::size_t end,
+    InlineKind kind,
+    NodeAllocator& allocator) {
+    if (start > end) std::swap(start, end);
+    const auto total = block_inline_text_content(nodes).size();
+    if (start > total || end > total) return false;
+    auto [left, remainder] = split_inlines(nodes, start, allocator);
+    auto [middle, right] = split_inlines(remainder, end - start, allocator);
+    InlineVec replacement;
+    replacement.reserve(left.size() + right.size() + 2);
+    replacement.insert(replacement.end(), std::make_move_iterator(left.begin()), std::make_move_iterator(left.end()));
+
+    if (middle.size() == 1 && middle.front().kind == kind) {
+        auto formatted = std::move(middle.front());
+        if (kind == InlineKind::InlineCode || kind == InlineKind::InlineMath) {
+            if (!formatted.text.empty()) replacement.push_back(InlineNode::text_node(formatted.id, std::move(formatted.text)));
+        } else {
+            replacement.insert(replacement.end(),
+                std::make_move_iterator(formatted.children.begin()), std::make_move_iterator(formatted.children.end()));
+        }
+    } else {
+        InlineNode formatted;
+        formatted.id = allocator.allocate();
+        formatted.kind = kind;
+        formatted.opening_marker = default_opening_marker(kind);
+        formatted.closing_marker = formatted.opening_marker;
+        if (kind == InlineKind::InlineCode || kind == InlineKind::InlineMath) {
+            formatted.text = block_inline_text_content(middle);
+        } else {
+            formatted.children = std::move(middle);
+        }
+        replacement.push_back(std::move(formatted));
+    }
+
+    replacement.insert(replacement.end(), std::make_move_iterator(right.begin()), std::make_move_iterator(right.end()));
+    nodes = std::move(replacement);
+    return true;
 }
 
 inline void erase_inline_range(InlineVec& nodes, std::size_t start, std::size_t count) {
@@ -1570,6 +1638,36 @@ inline std::optional<DocumentTransaction> document_insert_text(
     transaction.selection_before = selection;
     transaction.selection_after = DocumentSelection::caret(target);
     transaction.reason = DocumentTransactionReason::InsertText;
+    return transaction;
+}
+
+inline std::optional<DocumentTransaction> document_toggle_inline_format(
+    const EditorDocument& document,
+    const DocumentSelection& selection,
+    InlineKind kind) {
+    if (selection.anchor.node_id != selection.active.node_id) return std::nullopt;
+    if (kind != InlineKind::Emphasis && kind != InlineKind::Strong && kind != InlineKind::Strike
+        && kind != InlineKind::InlineCode && kind != InlineKind::InlineMath) return std::nullopt;
+    EditorDocument after = document;
+    auto* owner = document_edit_detail::inline_owner_in_blocks(after.blocks, selection.active.node_id);
+    if (!owner) return std::nullopt;
+    document_edit_detail::NodeAllocator allocator(after);
+    const auto start = (std::min)(selection.anchor.offset, selection.active.offset);
+    const auto end = (std::max)(selection.anchor.offset, selection.active.offset);
+    if (!document_edit_detail::toggle_inline_format(*owner, start, end, kind, allocator)) return std::nullopt;
+    normalize_document(after);
+    ++after.revision;
+    auto selection_after = selection;
+    if (selection.is_caret()) {
+        selection_after = DocumentSelection::caret(DocumentPosition{
+            selection.active.node_id, selection.active.offset, TextAffinity::Upstream});
+    }
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(after);
+    transaction.selection_before = selection;
+    transaction.selection_after = selection_after;
+    transaction.reason = DocumentTransactionReason::Format;
     return transaction;
 }
 

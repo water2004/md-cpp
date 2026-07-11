@@ -427,14 +427,81 @@ ELMD_TEST(test_delete_transaction) {
     else ELMD_CHECK(false);
 }
 
-ELMD_TEST(test_toggle_strong_transaction) {
+ELMD_TEST(test_toggle_strong_uses_document_transaction) {
     Editor e("hello");
-    auto text = e.text_cps();
-    Selection sel{CharOffset(0), CharOffset(5), TextAffinity::Downstream};
-    Command tc; tc.kind = CommandKind::ToggleStrong;
-    auto t = semantic_transaction(tc, text, e.document(), sel, 1);
-    ELMD_CHECK(t);
-    if (t) { auto s = t->apply_to(text); ELMD_CHECK(cps_to_utf8(s) == "**hello**"); }
+    const auto paragraph_id = e.document().blocks.front().id;
+    e.set_selection(Selection{CharOffset(0), CharOffset(5), TextAffinity::Downstream});
+    Command command; command.kind = CommandKind::ToggleStrong;
+    auto transaction = e.execute_command(command);
+    ELMD_CHECK(transaction.has_value());
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("**hello**"));
+    ELMD_CHECK_EQ(e.document().blocks.front().id, paragraph_id);
+    ELMD_CHECK(e.document().blocks.front().children.front().kind == InlineKind::Strong);
+    e.undo();
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("hello"));
+}
+
+ELMD_TEST(test_inline_format_commands_wrap_and_unwrap_inline_subtrees) {
+    Editor emphasis("alpha");
+    const auto paragraph_id = emphasis.document().blocks.front().id;
+    emphasis.set_document_selection(DocumentSelection{
+        DocumentPosition{paragraph_id, 1, TextAffinity::Downstream},
+        DocumentPosition{paragraph_id, 4, TextAffinity::Downstream}});
+    Command command; command.kind = CommandKind::ToggleEmphasis;
+    emphasis.execute_command(command);
+    ELMD_CHECK_EQ(emphasis.buffer().text_utf8(), std::string("a*lph*a"));
+    ELMD_CHECK_EQ(emphasis.document().blocks.front().id, paragraph_id);
+    ELMD_CHECK(emphasis.document().blocks.front().children[1].kind == InlineKind::Emphasis);
+    emphasis.execute_command(command);
+    ELMD_CHECK_EQ(emphasis.buffer().text_utf8(), std::string("alpha"));
+
+    Editor code("value");
+    code.set_document_selection(DocumentSelection{
+        DocumentPosition{code.document().blocks.front().id, 0, TextAffinity::Downstream},
+        DocumentPosition{code.document().blocks.front().id, 5, TextAffinity::Downstream}});
+    command.kind = CommandKind::ToggleInlineCode;
+    code.execute_command(command);
+    ELMD_CHECK_EQ(code.buffer().text_utf8(), std::string("`value`"));
+    ELMD_CHECK(code.document().blocks.front().children.front().kind == InlineKind::InlineCode);
+
+    Editor math("x+y");
+    math.set_document_selection(DocumentSelection{
+        DocumentPosition{math.document().blocks.front().id, 0, TextAffinity::Downstream},
+        DocumentPosition{math.document().blocks.front().id, 3, TextAffinity::Downstream}});
+    command.kind = CommandKind::InsertMathInline;
+    math.execute_command(command);
+    ELMD_CHECK_EQ(math.buffer().text_utf8(), std::string("$x+y$"));
+    ELMD_CHECK(math.document().blocks.front().children.front().kind == InlineKind::InlineMath);
+}
+
+ELMD_TEST(test_typing_into_empty_format_node_stays_before_closing_marker) {
+    Editor editor;
+    Command strong; strong.kind = CommandKind::ToggleStrong;
+    editor.execute_command(strong);
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("****"));
+    editor.execute_command(Command::InsertText(U"x"));
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("**x**"));
+    ELMD_CHECK_EQ(editor.selection().head().v, 3u);
+    ELMD_CHECK(editor.document().blocks.front().children.front().kind == InlineKind::Strong);
+    editor.undo();
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("****"));
+    editor.undo();
+    ELMD_CHECK(editor.buffer().text_utf8().empty());
+}
+
+ELMD_TEST(test_inline_format_inside_table_cell_is_ast_native) {
+    Editor editor("| H |\n| --- |\n| X |");
+    const auto cell_id = editor.document().blocks.front().table_rows.front().cells.front().id;
+    editor.set_document_selection(DocumentSelection{
+        DocumentPosition{cell_id, 0, TextAffinity::Downstream},
+        DocumentPosition{cell_id, 1, TextAffinity::Downstream}});
+    Command strong; strong.kind = CommandKind::ToggleStrong;
+    editor.execute_command(strong);
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("| H |\n| --- |\n| **X** |"));
+    ELMD_CHECK(editor.document().blocks.front().table_rows.front().cells.front().children.front().kind == InlineKind::Strong);
+    editor.undo();
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("| H |\n| --- |\n| X |"));
+    ELMD_CHECK_EQ(editor.document().blocks.front().table_rows.front().cells.front().id, cell_id);
 }
 
 ELMD_TEST(test_insert_table_contains_header) {

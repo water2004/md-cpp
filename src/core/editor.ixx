@@ -16,6 +16,7 @@ import elmd.core.input;
 import elmd.core.utf;
 import elmd.core.dialect;
 import elmd.core.document;
+import elmd.core.ast;
 import elmd.core.document_edit;
 import elmd.core.document_position;
 import elmd.core.document_projection;
@@ -117,6 +118,13 @@ public:
         return transaction;
     }
 
+    std::optional<DocumentTransaction> execute_document_toggle_inline_format(DocumentSelection selection, InlineKind kind) {
+        auto transaction = document_toggle_inline_format(document_, selection, kind);
+        if (!transaction) return std::nullopt;
+        apply_document_transaction_(*transaction);
+        return transaction;
+    }
+
     bool undo_document() {
         auto state = document_history_.undo();
         if (!state) return false;
@@ -139,6 +147,20 @@ public:
 
     // Apply a Command. Returns the transaction if it produced a change.
     std::optional<Transaction> execute_command(const Command& cmd) {
+        if (cmd.kind == CommandKind::ToggleStrong || cmd.kind == CommandKind::ToggleEmphasis
+            || cmd.kind == CommandKind::ToggleStrikethrough || cmd.kind == CommandKind::ToggleInlineCode
+            || cmd.kind == CommandKind::InsertMathInline) {
+            if (!document_selection_) return std::nullopt;
+            auto kind = InlineKind::Strong;
+            if (cmd.kind == CommandKind::ToggleEmphasis) kind = InlineKind::Emphasis;
+            else if (cmd.kind == CommandKind::ToggleStrikethrough) kind = InlineKind::Strike;
+            else if (cmd.kind == CommandKind::ToggleInlineCode) kind = InlineKind::InlineCode;
+            else if (cmd.kind == CommandKind::InsertMathInline) kind = InlineKind::InlineMath;
+            const auto revision_before = buffer_.revision();
+            const auto selection_before = selection_;
+            if (!execute_document_toggle_inline_format(*document_selection_, kind)) return std::nullopt;
+            return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
+        }
         if (cmd.kind == CommandKind::InsertText) {
             if (!document_selection_) return std::nullopt;
             const auto revision_before = buffer_.revision();
