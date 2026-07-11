@@ -118,6 +118,7 @@
     <ClInclude Include="EditorRenderCache.h" />
     <ClInclude Include="EditorSvgPainter.h" />
     <ClInclude Include="EditorTextLayoutEngine.h" />
+    <ClInclude Include="EditorTableInteraction.h" />
     <ClInclude Include="EditorScrollController.h" />
     <ClInclude Include="EditorTextInputController.h" />
     <ClInclude Include="EditorPointerController.h" />
@@ -245,6 +246,7 @@
     <ClCompile Include="EditorRenderCache.cpp" />
     <ClCompile Include="EditorSvgPainter.cpp" />
     <ClCompile Include="EditorTextLayoutEngine.cpp" />
+    <ClCompile Include="EditorTableInteraction.cpp" />
     <ClCompile Include="EditorScrollController.cpp" />
     <ClCompile Include="EditorTextInputController.cpp" />
     <ClCompile Include="EditorPointerController.cpp" />

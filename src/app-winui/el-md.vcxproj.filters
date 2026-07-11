@@ -80,6 +80,9 @@
     <ClCompile Include="EditorTextLayoutEngine.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="EditorTableInteraction.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="EditorScrollController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -152,6 +155,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EditorTextLayoutEngine.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EditorTableInteraction.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EditorScrollController.h">

@@ -8,6 +8,7 @@
 #include "EditorInteractionMap.h"
 #include "EditorRenderCache.h"
 #include "EditorRenderResources.h"
+#include "EditorTableInteraction.h"
 
 namespace winrt::ElMd
 {
@@ -34,22 +35,8 @@ namespace winrt::ElMd
 
         using CaretMove = EditorCaretMove;
 
-        enum class TableActionKind
-        {
-            InsertRow,
-            InsertColumn,
-            DeleteRow,
-            DeleteColumn,
-            DragRow,
-            DragColumn,
-        };
-
-        struct TableAction
-        {
-            TableActionKind kind = TableActionKind::InsertRow;
-            std::size_t sourceOffset = 0;
-            std::size_t index = 0;
-        };
+        using TableActionKind = EditorTableActionKind;
+        using TableAction = EditorTableAction;
 
         std::optional<std::size_t> HitTest(float x, float y, bool* outUpstream = nullptr) const;
         std::optional<D2D1_RECT_F> CaretBounds(std::size_t sourceOffset, bool upstream = false) const;
