@@ -259,7 +259,7 @@ inline std::string block_to_html(const BlockNode& b, ExportRawHtmlPolicy pol) {
 } // namespace detail
 
 inline EditorResult<ExportArtifact> export_html(std::string_view /*source*/,
-                                                const MarkdownDocument& doc,
+                                                const EditorDocument& doc,
                                                 const ExportOptions& opts) {
     std::string html = "<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n";
     if (doc.metadata.title) html += "<title>" + escape_text(*doc.metadata.title) + "</title>\n";

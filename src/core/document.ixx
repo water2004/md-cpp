@@ -1,4 +1,4 @@
-// elmd.core.document — MarkdownDocument, the parse output root.
+// elmd.core.document — EditorDocument, the parsed and editable document root.
 export module elmd.core.document;
 import std;
 import elmd.core.types;
@@ -21,7 +21,5 @@ struct EditorDocument {
         EditorDocument d; d.revision = rev; return d;
     }
 };
-
-using MarkdownDocument = EditorDocument;
 
 } // namespace elmd

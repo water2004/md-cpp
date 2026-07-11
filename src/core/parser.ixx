@@ -46,7 +46,7 @@ struct ParseInput {
 
 struct ParseOutput {
     std::uint64_t revision = 1;
-    MarkdownDocument document;
+    EditorDocument document;
     DocumentSymbolIndex symbols;
     Outline outline;
     std::vector<Diagnostic> diagnostics;
@@ -2134,19 +2134,19 @@ public:
 
 } // namespace detail
 
-inline std::size_t block_source_start(const MarkdownDocument& doc, std::size_t block_index) {
+inline std::size_t block_source_start(const EditorDocument& doc, std::size_t block_index) {
     if (block_index >= doc.blocks.size()) return 0;
     if (const auto* range = doc.source_map.find_node_by_id(doc.blocks[block_index].id)) return range->source_range.start.v;
     return 0;
 }
 
-inline CharRange block_source_range(const MarkdownDocument& doc, std::size_t block_index) {
+inline CharRange block_source_range(const EditorDocument& doc, std::size_t block_index) {
     if (block_index >= doc.blocks.size()) return CharRange{};
     if (const auto* range = doc.source_map.find_node_by_id(doc.blocks[block_index].id)) return range->source_range;
     return CharRange{};
 }
 
-inline std::optional<std::size_t> block_index_for_edit_offset(const MarkdownDocument& doc, std::size_t offset) {
+inline std::optional<std::size_t> block_index_for_edit_offset(const EditorDocument& doc, std::size_t offset) {
     for (std::size_t i = 0; i < doc.blocks.size(); ++i) {
         auto range = block_source_range(doc, i);
         if (offset < range.start.v) return i;
@@ -2191,7 +2191,7 @@ inline std::uint64_t max_node_id_in_block(const BlockNode& block) {
     return max_id;
 }
 
-inline std::uint64_t next_node_counter_after(const MarkdownDocument& doc) {
+inline std::uint64_t next_node_counter_after(const EditorDocument& doc) {
     std::uint64_t max_id = 0;
     for (const auto& block : doc.blocks) max_id = (std::max)(max_id, max_node_id_in_block(block));
     for (const auto& range : doc.source_map.node_ranges) max_id = (std::max)(max_id, range.node_id.v);
@@ -2204,7 +2204,7 @@ inline std::u32string slice_cps(std::u32string_view text, CharRange range) {
     return std::u32string(text.substr(start, end - start));
 }
 
-inline bool shifted_old_block_matches_new_text(const std::u32string& old_cps, const std::u32string& new_cps, const MarkdownDocument& old_doc, std::size_t old_block_index, std::ptrdiff_t delta) {
+inline bool shifted_old_block_matches_new_text(const std::u32string& old_cps, const std::u32string& new_cps, const EditorDocument& old_doc, std::size_t old_block_index, std::ptrdiff_t delta) {
     auto old_range = block_source_range(old_doc, old_block_index);
     if (old_range.is_empty()) return false;
     std::ptrdiff_t shifted_start = static_cast<std::ptrdiff_t>(old_range.start.v) + delta;
@@ -2231,7 +2231,7 @@ inline std::optional<NodeSourceRange> shifted_range_for_node(const SourceMap& so
     return std::nullopt;
 }
 
-inline void append_old_block_ranges(SourceMap& target, const MarkdownDocument& old_doc, std::size_t begin, std::size_t end, std::ptrdiff_t delta) {
+inline void append_old_block_ranges(SourceMap& target, const EditorDocument& old_doc, std::size_t begin, std::size_t end, std::ptrdiff_t delta) {
     for (std::size_t i = begin; i < end && i < old_doc.blocks.size(); ++i) {
         auto block_range = block_source_range(old_doc, i);
         for (const auto& range : old_doc.source_map.node_ranges) {
@@ -2271,7 +2271,7 @@ inline DocumentMetadata metadata_from_cps(const std::u32string& cps) {
     return metadata;
 }
 
-inline ParseOutput finish_parse_output(std::uint64_t revision, MarkdownDocument document, DocumentSymbolIndex symbols) {
+inline ParseOutput finish_parse_output(std::uint64_t revision, EditorDocument document, DocumentSymbolIndex symbols) {
     document.revision = revision;
     auto outline = build_outline_from_blocks(revision, document.blocks);
     ParseOutput out;
@@ -2330,13 +2330,13 @@ inline bool block_contains_node_id(const BlockNode& block, NodeId id) {
     return scan_block(scan_block, block);
 }
 
-inline bool retained_blocks_contain_node_id(const MarkdownDocument& doc, std::size_t prefix_end, std::size_t suffix_begin, NodeId id) {
+inline bool retained_blocks_contain_node_id(const EditorDocument& doc, std::size_t prefix_end, std::size_t suffix_begin, NodeId id) {
     for (std::size_t i = 0; i < prefix_end && i < doc.blocks.size(); ++i) if (block_contains_node_id(doc.blocks[i], id)) return true;
     for (std::size_t i = suffix_begin; i < doc.blocks.size(); ++i) if (block_contains_node_id(doc.blocks[i], id)) return true;
     return false;
 }
 
-inline DocumentSymbolIndex retained_symbols(const DocumentSymbolIndex& old_symbols, const MarkdownDocument& old_doc, std::size_t prefix_end, std::size_t suffix_begin) {
+inline DocumentSymbolIndex retained_symbols(const DocumentSymbolIndex& old_symbols, const EditorDocument& old_doc, std::size_t prefix_end, std::size_t suffix_begin) {
     DocumentSymbolIndex symbols;
     for (const auto& item : old_symbols.headings) if (retained_blocks_contain_node_id(old_doc, prefix_end, suffix_begin, item.node_id)) symbols.headings.push_back(item);
     for (const auto& item : old_symbols.footnotes) if (retained_blocks_contain_node_id(old_doc, prefix_end, suffix_begin, item.node_id)) symbols.footnotes.push_back(item);
@@ -2347,7 +2347,7 @@ inline DocumentSymbolIndex retained_symbols(const DocumentSymbolIndex& old_symbo
     return symbols;
 }
 
-inline void refresh_metadata(MarkdownDocument& doc, const std::u32string& cps) {
+inline void refresh_metadata(EditorDocument& doc, const std::u32string& cps) {
     bool has_frontmatter = false;
     for (const auto& block : doc.blocks) {
         if (block.kind == BlockKind::Frontmatter) {
@@ -2359,7 +2359,7 @@ inline void refresh_metadata(MarkdownDocument& doc, const std::u32string& cps) {
     if (!has_frontmatter) doc.metadata = metadata_from_cps(cps);
 }
 
-inline ParseOutput parse_incremental(const ParseInput& input, const MarkdownDocument& old_document, const DocumentSymbolIndex& old_symbols, const std::string& old_text, const IncrementalParseEdit& edit) {
+inline ParseOutput parse_incremental(const ParseInput& input, const EditorDocument& old_document, const DocumentSymbolIndex& old_symbols, const std::string& old_text, const IncrementalParseEdit& edit) {
     if (old_document.blocks.empty()) return parse(input);
     std::u32string old_cps = utf8_to_cps(old_text);
     std::u32string new_cps = utf8_to_cps(input.text);
@@ -2400,7 +2400,7 @@ inline ParseOutput parse_incremental(const ParseInput& input, const MarkdownDocu
         if (suffix_begin) break;
     }
 
-    MarkdownDocument doc;
+    EditorDocument doc;
     doc.revision = input.revision;
     doc.blocks.reserve(scan_old_start + rebuilt_blocks.size() + (suffix_begin ? old_document.blocks.size() - *suffix_begin : 0));
     for (std::size_t i = 0; i < scan_old_start; ++i) doc.blocks.push_back(old_document.blocks[i]);
@@ -2435,7 +2435,7 @@ inline ParseOutput parse_incremental(const ParseInput& input, const MarkdownDocu
 inline ParseOutput parse(const ParseInput& input) {
     detail::Parser p(&input);
     auto blocks = p.parse_blocks(nullptr);
-    MarkdownDocument doc;
+    EditorDocument doc;
     doc.revision = input.revision;
     doc.blocks = std::move(blocks);
 

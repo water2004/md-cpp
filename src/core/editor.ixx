@@ -32,7 +32,7 @@ public:
     explicit Editor(std::string text, MarkdownDialect dialect = default_dialect()) : dialect_(std::move(dialect)) { buffer_ = TextBuffer::from_text(std::move(text)); rebuild_document_full_(); }
 
     const TextBuffer& buffer() const { return buffer_; }
-    const MarkdownDocument& document() const { return document_; }
+    const EditorDocument& document() const { return document_; }
     const DocumentSymbolIndex& symbols() const { return symbols_; }
     const Outline& outline() const { return outline_; }
     std::u32string text_cps() const { return std::u32string(buffer_.text_cps()); }
@@ -265,7 +265,7 @@ public:
 
 private:
     TextBuffer buffer_;
-    MarkdownDocument document_;
+    EditorDocument document_;
     DocumentSymbolIndex symbols_;
     Outline outline_;
     Selection selection_;
@@ -331,7 +331,7 @@ private:
         synchronize_legacy_selection_();
     }
 
-    void refresh_document_after_delta_(const std::string& old_text, const MarkdownDocument& old_document, const DocumentSymbolIndex& old_symbols, const TextDelta& delta) {
+    void refresh_document_after_delta_(const std::string& old_text, const EditorDocument& old_document, const DocumentSymbolIndex& old_symbols, const TextDelta& delta) {
         if (delta.edits.size() == 1) {
             IncrementalParseEdit edit;
             edit.old_range = delta.edits[0].range;

@@ -331,7 +331,7 @@ inline std::optional<Transaction> quote_toggle_transaction(const std::u32string&
     return transaction;
 }
 
-inline const NodeSourceRange* block_range_at(const MarkdownDocument& document, std::size_t block_index) {
+inline const NodeSourceRange* block_range_at(const EditorDocument& document, std::size_t block_index) {
     if (block_index >= document.blocks.size()) return nullptr;
     return document.source_map.find_node_by_id(document.blocks[block_index].id);
 }
@@ -360,7 +360,7 @@ struct SemanticEditPlan {
     std::optional<std::size_t> block_index;
 };
 
-inline SemanticEditPlan plan_newline(const std::u32string& text, const MarkdownDocument& document, const Selection& selection) {
+inline SemanticEditPlan plan_newline(const std::u32string& text, const EditorDocument& document, const Selection& selection) {
     if (!selection.is_caret()) return {SemanticEditIntent::InsertParagraphBlockAfter, std::nullopt};
     auto structure = build_source_structure(document, text);
     if (source_blank_at(structure, selection.head())) return {SemanticEditIntent::InsertEmptySiblingBlock, std::nullopt};
@@ -384,7 +384,7 @@ inline SemanticEditPlan plan_newline(const std::u32string& text, const MarkdownD
     return {SemanticEditIntent::InsertParagraphBlockAfter, block_index};
 }
 
-inline std::optional<Transaction> semantic_newline_transaction(const std::u32string& text_cps, const MarkdownDocument& document, const Selection& selection, std::uint64_t revision) {
+inline std::optional<Transaction> semantic_newline_transaction(const std::u32string& text_cps, const EditorDocument& document, const Selection& selection, std::uint64_t revision) {
     auto sel = selection.normalized_range();
     auto caret_after = [&](CharOffset p) { return Selection::caret(p); };
     auto plan = plan_newline(text_cps, document, selection);
@@ -516,7 +516,7 @@ inline std::optional<Transaction> semantic_newline_transaction(const std::u32str
 
 inline std::optional<Transaction> semantic_transaction(const Command& cmd,
                                                        const std::u32string& text_cps,
-                                                       const MarkdownDocument& document,
+                                                       const EditorDocument& document,
                                                        const Selection& selection,
                                                        std::uint64_t revision) {
     auto sel = selection.normalized_range();

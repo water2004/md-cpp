@@ -84,7 +84,7 @@ inline SourceBlockSpan terminal_blank_at(std::size_t offset) {
     return line;
 }
 
-inline SourceStructure build_source_structure(const MarkdownDocument& document, std::u32string_view text) {
+inline SourceStructure build_source_structure(const EditorDocument& document, std::u32string_view text) {
     SourceStructure structure;
     std::vector<SourceBlockSpan> semantic;
     semantic.reserve(document.blocks.size());

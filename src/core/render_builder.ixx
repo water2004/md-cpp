@@ -710,7 +710,7 @@ struct Builder {
     }
 };
 
-inline RenderModel build_render_model(const MarkdownDocument& doc,
+inline RenderModel build_render_model(const EditorDocument& doc,
                                       const std::string& source_text,
                                       const Outline& outline) {
     Builder bd; bd.sm = &doc.source_map;

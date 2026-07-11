@@ -18,7 +18,7 @@ static RenderModel build_model(const std::string& src) {
 }
 
 ELMD_TEST(test_empty_document_yields_editable_blank_model) {
-    MarkdownDocument doc = MarkdownDocument::empty(1);
+    EditorDocument doc = EditorDocument::empty(1);
     Outline o = Outline::empty(1);
     auto m = build_render_model(doc, "", o);
     ELMD_CHECK_EQ(m.blocks.size(), 1u);

@@ -16,7 +16,7 @@ struct EditorSnapshot {
     std::uint64_t revision = 0;
     std::string text;
     Selection selection;
-    MarkdownDocument markdown_doc;
+    EditorDocument markdown_doc;
     RenderModel render_model;
     LayoutTree layout_tree;
     Outline outline;
