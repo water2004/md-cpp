@@ -6,6 +6,7 @@
 #include "EditorTextInputController.h"
 #include "EditorPointerController.h"
 #include "EditorKeyboardController.h"
+#include "EditorDocumentController.h"
 #include "MainWindow.g.h"
 
 namespace winrt::ElMd::implementation
@@ -29,16 +30,8 @@ namespace winrt::ElMd::implementation
         void RegisterCommandHandlers();
         bool ExecuteEditorCommand(elmd::Command const& command);
         void HandlePointerWheel(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
-        winrt::fire_and_forget OpenLinkAsync(std::string href);
-        void CopySelectionToClipboard();
-        void CutSelectionToClipboard();
-        winrt::fire_and_forget PasteClipboardAsync();
-        winrt::fire_and_forget InsertImageAsync();
         void SetStatus(winrt::hstring const& text);
         HWND WindowHandle();
-        winrt::fire_and_forget OpenDocumentAsync();
-        winrt::fire_and_forget SaveDocumentAsync();
-        winrt::fire_and_forget SaveDocumentAsAsync();
 
         winrt::hstring lastCommand = L"Ready";
         winrt::ElMd::EditorSession editorSession;
@@ -47,6 +40,7 @@ namespace winrt::ElMd::implementation
         winrt::ElMd::EditorTextInputController textInputController;
         winrt::ElMd::EditorPointerController pointerController;
         winrt::ElMd::EditorKeyboardController keyboardController;
+        winrt::ElMd::EditorDocumentController documentController;
         std::vector<std::size_t> outlineOffsets;
         std::vector<std::size_t> diagnosticOffsets;
         std::vector<std::wstring> outlineLabels;

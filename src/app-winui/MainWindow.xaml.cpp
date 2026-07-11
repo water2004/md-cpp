@@ -14,14 +14,29 @@ namespace winrt::ElMd::implementation
         InitializeComponent();
         RegisterCommandHandlers();
         InitializeTextInput();
+        documentController.Attach(
+            editorSession,
+            editorRenderer,
+            textInputController,
+            [this](elmd::Command const& command) { return ExecuteEditorCommand(command); },
+            [this](winrt::hstring const& status) { SetStatus(status); },
+            [this]
+            {
+                Title(L"el-md - " + editorSession.DisplayName());
+                UpdateOutlinePanel();
+                UpdateDiagnosticsPanel();
+                RenderEditorSurface();
+            },
+            [this] { RenderEditorSurface(); },
+            [this] { return WindowHandle(); });
         keyboardController.Attach(
             editorSession,
             editorRenderer,
             textInputController,
             [this](elmd::Command const& command) { return ExecuteEditorCommand(command); },
-            [this] { CopySelectionToClipboard(); },
-            [this] { CutSelectionToClipboard(); },
-            [this] { PasteClipboardAsync(); },
+            [this] { documentController.CopySelection(); },
+            [this] { documentController.CutSelection(); },
+            [this] { documentController.PasteClipboard(); },
             [this] { RenderEditorSurface(); });
         pointerController.Attach(
             editorSession,
@@ -30,11 +45,12 @@ namespace winrt::ElMd::implementation
             EditorSurface(),
             [this](elmd::Command const& command) { return ExecuteEditorCommand(command); },
             [this] { RenderEditorSurface(); },
-            [this](std::string href) { OpenLinkAsync(std::move(href)); },
+            [this](std::string href) { documentController.OpenLink(std::move(href)); },
             [this] { keyboardController.ResetCaretGoal(); });
 
         Closed([this](auto const&, auto const&)
         {
+            documentController.Detach();
             pointerController.Detach();
             keyboardController.Detach();
             textInputController.Detach();
@@ -150,12 +166,12 @@ namespace winrt::ElMd::implementation
     {
         OpenButton().Click([this](auto const&, auto const&)
         {
-            OpenDocumentAsync();
+            documentController.OpenDocument();
         });
 
         SaveButton().Click([this](auto const&, auto const&)
         {
-            SaveDocumentAsync();
+            documentController.SaveDocument();
         });
 
         BoldButton().Click([this](auto const&, auto const&)
@@ -270,7 +286,7 @@ namespace winrt::ElMd::implementation
 
         ImageButton().Click([this](auto const&, auto const&)
         {
-            InsertImageAsync();
+            documentController.InsertImage();
         });
 
         FootnoteButton().Click([this](auto const&, auto const&)
@@ -297,17 +313,17 @@ namespace winrt::ElMd::implementation
 
         CutMenuItem().Click([this](auto const&, auto const&)
         {
-            CutSelectionToClipboard();
+            documentController.CutSelection();
         });
 
         CopyMenuItem().Click([this](auto const&, auto const&)
         {
-            CopySelectionToClipboard();
+            documentController.CopySelection();
         });
 
         PasteMenuItem().Click([this](auto const&, auto const&)
         {
-            PasteClipboardAsync();
+            documentController.PasteClipboard();
         });
 
         SelectAllMenuItem().Click([this](auto const&, auto const&)
@@ -357,95 +373,6 @@ namespace winrt::ElMd::implementation
         args.Handled(true);
     }
 
-    winrt::fire_and_forget MainWindow::OpenLinkAsync(std::string href)
-    {
-        auto lifetime = get_strong();
-        while (!href.empty() && static_cast<unsigned char>(href.front()) <= 0x20) href.erase(href.begin());
-        while (!href.empty() && static_cast<unsigned char>(href.back()) <= 0x20) href.pop_back();
-        if (href.empty()) co_return;
-        if (href.front() == '#')
-        {
-            if (auto item = editorSession.Core().renderModel.outline.find_item_by_slug(href.substr(1)))
-            {
-                editorSession.SetSelection(item->source_range.start.v, item->source_range.start.v);
-                textInputController.NotifySelectionChanged();
-                editorRenderer.ScrollToSourceOffset(item->source_range.start.v);
-                RenderEditorSurface();
-            }
-            co_return;
-        }
-        auto lower = href;
-        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
-        try
-        {
-            if (lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:"))
-            {
-                co_await winrt::Windows::System::Launcher::LaunchUriAsync(winrt::Windows::Foundation::Uri(winrt::to_hstring(href)));
-                co_return;
-            }
-            auto colon = lower.find(':');
-            auto boundary = lower.find_first_of("/?#");
-            if (colon != std::string::npos && (boundary == std::string::npos || colon < boundary)) co_return;
-            auto path = std::filesystem::path(winrt::to_hstring(href).c_str());
-            if (path.is_relative()) path = std::filesystem::path(editorSession.Core().baseDirectory) / path;
-            auto file = co_await winrt::Windows::Storage::StorageFile::GetFileFromPathAsync(path.lexically_normal().wstring());
-            co_await winrt::Windows::System::Launcher::LaunchFileAsync(file);
-        }
-        catch (winrt::hresult_error const& error)
-        {
-            SetStatus(L"Open link failed: " + error.message());
-        }
-    }
-
-    void MainWindow::CopySelectionToClipboard()
-    {
-        if (!editorSession.HasSelection())
-        {
-            return;
-        }
-
-        auto package = winrt::Windows::ApplicationModel::DataTransfer::DataPackage();
-        package.SetText(winrt::to_hstring(editorSession.SelectedTextUtf8()));
-        winrt::Windows::ApplicationModel::DataTransfer::Clipboard::SetContent(package);
-        SetStatus(L"Copied selection");
-    }
-
-    void MainWindow::CutSelectionToClipboard()
-    {
-        if (!editorSession.HasSelection())
-        {
-            return;
-        }
-
-        CopySelectionToClipboard();
-        elmd::Command command;
-        command.kind = elmd::CommandKind::DeleteSelection;
-        ExecuteEditorCommand(command);
-    }
-
-    winrt::fire_and_forget MainWindow::PasteClipboardAsync()
-    {
-        auto lifetime = get_strong();
-        try
-        {
-            auto content = winrt::Windows::ApplicationModel::DataTransfer::Clipboard::GetContent();
-            if (!content.Contains(winrt::Windows::ApplicationModel::DataTransfer::StandardDataFormats::Text()))
-            {
-                co_return;
-            }
-
-            auto text = co_await content.GetTextAsync();
-            if (!text.empty())
-            {
-                ExecuteEditorCommand(elmd::Command::InsertText(elmd::utf8_to_cps(winrt::to_string(text))));
-            }
-        }
-        catch (winrt::hresult_error const& error)
-        {
-            SetStatus(L"Paste failed: " + error.message());
-        }
-    }
-
     void MainWindow::SetStatus(winrt::hstring const& text)
     {
         lastCommand = text;
@@ -459,136 +386,6 @@ namespace winrt::ElMd::implementation
         auto windowNative = get_strong().as<IWindowNative>();
         winrt::check_hresult(windowNative->get_WindowHandle(&hwnd));
         return hwnd;
-    }
-
-    winrt::fire_and_forget MainWindow::InsertImageAsync()
-    {
-        auto lifetime = get_strong();
-        try
-        {
-            auto picker = winrt::Windows::Storage::Pickers::FileOpenPicker();
-            picker.FileTypeFilter().Append(L".png");
-            picker.FileTypeFilter().Append(L".jpg");
-            picker.FileTypeFilter().Append(L".jpeg");
-            picker.FileTypeFilter().Append(L".gif");
-            picker.FileTypeFilter().Append(L".webp");
-            picker.FileTypeFilter().Append(L".bmp");
-            auto initializeWithWindow = picker.as<IInitializeWithWindow>();
-            winrt::check_hresult(initializeWithWindow->Initialize(WindowHandle()));
-            auto file = co_await picker.PickSingleFileAsync();
-            if (!file) co_return;
-            std::filesystem::path path(file.Path().c_str());
-            if (editorSession.HasFile())
-            {
-                std::error_code error;
-                auto base = std::filesystem::path(editorSession.Path().c_str()).parent_path();
-                auto relative = std::filesystem::relative(path, base, error);
-                if (!error && !relative.empty()) path = std::move(relative);
-            }
-            auto generic = path.generic_wstring();
-            elmd::Command command;
-            command.kind = elmd::CommandKind::InsertImage;
-            command.path = elmd::utf8_to_cps(winrt::to_string(winrt::hstring(generic)));
-            ExecuteEditorCommand(command);
-        }
-        catch (winrt::hresult_error const& error)
-        {
-            SetStatus(L"Image insert failed: " + error.message());
-        }
-    }
-
-    winrt::fire_and_forget MainWindow::OpenDocumentAsync()
-    {
-        auto lifetime = get_strong();
-
-        try
-        {
-            auto picker = winrt::Windows::Storage::Pickers::FileOpenPicker();
-            picker.FileTypeFilter().Append(L".md");
-            picker.FileTypeFilter().Append(L".markdown");
-            picker.FileTypeFilter().Append(L".txt");
-
-            auto initializeWithWindow = picker.as<IInitializeWithWindow>();
-            winrt::check_hresult(initializeWithWindow->Initialize(WindowHandle()));
-
-            auto file = co_await picker.PickSingleFileAsync();
-            if (!file)
-            {
-                SetStatus(L"Open cancelled");
-                co_return;
-            }
-
-            auto text = co_await winrt::Windows::Storage::FileIO::ReadTextAsync(file);
-            SetStatus(L"Opening " + file.Name() + L"…");
-            winrt::apartment_context uiContext;
-            co_await winrt::resume_background();
-            winrt::ElMd::EditorSession loaded;
-            loaded.Open(file, text);
-            co_await uiContext;
-            editorSession = std::move(loaded);
-            Title(L"el-md - " + editorSession.DisplayName());
-            UpdateOutlinePanel();
-            UpdateDiagnosticsPanel();
-            SetStatus(editorSession.Path() + L" | " + winrt::to_hstring(editorSession.Text().size()) + L" chars | rev " + winrt::to_hstring(editorSession.Revision()));
-        }
-        catch (winrt::hresult_error const& error)
-        {
-            SetStatus(L"Open failed: " + error.message());
-        }
-    }
-
-    winrt::fire_and_forget MainWindow::SaveDocumentAsync()
-    {
-        auto lifetime = get_strong();
-
-        try
-        {
-            if (!editorSession.HasFile())
-            {
-                SaveDocumentAsAsync();
-                co_return;
-            }
-
-            co_await winrt::Windows::Storage::FileIO::WriteTextAsync(editorSession.File(), editorSession.Text());
-            SetStatus(L"Saved " + editorSession.Path() + L" | " + winrt::to_hstring(editorSession.Text().size()) + L" chars | rev " + winrt::to_hstring(editorSession.Revision()));
-        }
-        catch (winrt::hresult_error const& error)
-        {
-            SetStatus(L"Save failed: " + error.message());
-        }
-    }
-
-    winrt::fire_and_forget MainWindow::SaveDocumentAsAsync()
-    {
-        auto lifetime = get_strong();
-
-        try
-        {
-            auto picker = winrt::Windows::Storage::Pickers::FileSavePicker();
-            picker.DefaultFileExtension(L".md");
-            picker.SuggestedFileName(L"Untitled.md");
-            picker.FileTypeChoices().Insert(L"Markdown", winrt::single_threaded_vector<winrt::hstring>({ L".md" }));
-            picker.FileTypeChoices().Insert(L"Text", winrt::single_threaded_vector<winrt::hstring>({ L".txt" }));
-
-            auto initializeWithWindow = picker.as<IInitializeWithWindow>();
-            winrt::check_hresult(initializeWithWindow->Initialize(WindowHandle()));
-
-            auto file = co_await picker.PickSaveFileAsync();
-            if (!file)
-            {
-                SetStatus(L"Save cancelled");
-                co_return;
-            }
-
-            co_await winrt::Windows::Storage::FileIO::WriteTextAsync(file, editorSession.Text());
-            editorSession.SaveAs(file);
-            Title(L"el-md - " + editorSession.DisplayName());
-            SetStatus(L"Saved " + editorSession.Path() + L" | " + winrt::to_hstring(editorSession.Text().size()) + L" chars | rev " + winrt::to_hstring(editorSession.Revision()));
-        }
-        catch (winrt::hresult_error const& error)
-        {
-            SetStatus(L"Save failed: " + error.message());
-        }
     }
 
     void MainWindow::InitializeEditorSurface()
