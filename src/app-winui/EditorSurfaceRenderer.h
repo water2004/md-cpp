@@ -4,6 +4,7 @@
 #include "MermaidRenderer.h"
 #include "SvgNormalizer.h"
 #include "TreeSitterHighlighter.h"
+#include "EditorStyleSheet.h"
 
 namespace winrt::ElMd
 {
@@ -186,41 +187,8 @@ namespace winrt::ElMd
         std::optional<std::size_t> LineIndexFor(std::size_t sourceOffset, bool upstream) const;
         std::optional<D2D1_RECT_F> CaretRectOnLine(VisualLine const& line, std::size_t sourceOffset, bool upstream) const;
 
-        struct FontStyle
-        {
-            std::wstring family;
-            float size = 0.0f;
-            float lineHeight = 0.0f;
-            DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_NORMAL;
-            DWRITE_FONT_STYLE style = DWRITE_FONT_STYLE_NORMAL;
-        };
-
-        struct EditorStyleSheet
-        {
-            FontStyle body;
-            FontStyle heading1;
-            FontStyle heading2;
-            FontStyle heading3;
-            FontStyle code;
-            D2D1_COLOR_F canvasColor{};
-            D2D1_COLOR_F textColor{};
-            D2D1_COLOR_F mutedColor{};
-            D2D1_COLOR_F accentColor{};
-            D2D1_COLOR_F codeTextColor{};
-            D2D1_COLOR_F panelColor{};
-            D2D1_COLOR_F nestedQuoteColor{};
-            D2D1_COLOR_F selectionColor{};
-            D2D1_COLOR_F caretColor{};
-            std::array<D2D1_COLOR_F, 11> syntaxColors{};
-            float documentWidth = 900.0f;
-            float horizontalPadding = 48.0f;
-            float verticalPadding = 40.0f;
-            float blockGap = 6.0f;
-        };
-
         void RebuildTextFormats();
         void ResetBrushes();
-        static EditorStyleSheet CreateStyleSheet(Theme value);
 
         ::Microsoft::WRL::ComPtr<ID3D11Device> d3dDevice;
         ::Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3dContext;
@@ -254,7 +222,7 @@ namespace winrt::ElMd
         std::shared_ptr<InvalidationState> invalidationState = std::make_shared<InvalidationState>();
         std::atomic_bool mathInvalidationQueued = false;
         Theme theme = Theme::Dark;
-        EditorStyleSheet styleSheet = CreateStyleSheet(Theme::Dark);
+        EditorStyleSheet styleSheet = CreateEditorStyleSheet(true);
         std::vector<VisualBlock> visualBlocks;
         std::vector<VisualLine> visualLines;
         std::vector<VisualTable> visualTables;

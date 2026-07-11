@@ -111,6 +111,7 @@
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="EditorSession.h" />
+    <ClInclude Include="EditorStyleSheet.h" />
     <ClInclude Include="EditorSurfaceRenderer.h" />
     <ClInclude Include="MathJaxRenderer.h" />
     <ClInclude Include="MermaidRenderer.h" />
@@ -225,6 +226,7 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="EditorSession.cpp" />
+    <ClCompile Include="EditorStyleSheet.cpp" />
     <ClCompile Include="EditorSurfaceRenderer.cpp" />
     <ClCompile Include="MathJaxRenderer.cpp" />
     <ClCompile Include="MermaidRenderer.cpp" />
