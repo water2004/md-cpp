@@ -4,6 +4,7 @@
 #include "EditorSurfaceRenderer.h"
 #include "EditorScrollController.h"
 #include "EditorTextInputController.h"
+#include "EditorPointerController.h"
 #include "MainWindow.g.h"
 
 namespace winrt::ElMd::implementation
@@ -29,15 +30,7 @@ namespace winrt::ElMd::implementation
         bool InsertEditorNewline();
         bool HandleEditorCharacter(char32_t character);
         bool HandleEditorKey(winrt::Windows::System::VirtualKey key);
-        void HandlePointerPressed(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
-        void HandlePointerMoved(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
-        void HandlePointerReleased(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
         void HandlePointerWheel(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
-        void HandleEditorDoubleTapped(winrt::Microsoft::UI::Xaml::Input::DoubleTappedRoutedEventArgs const& args);
-        bool SelectWordAt(std::size_t offset);
-        bool TryToggleTaskCheckboxAt(std::size_t offset);
-        std::optional<std::string> LinkAtSourceOffset(std::size_t offset) const;
-        std::optional<std::string> TooltipAtSourceOffset(std::size_t offset) const;
         winrt::fire_and_forget OpenLinkAsync(std::string href);
         void CopySelectionToClipboard();
         void CutSelectionToClipboard();
@@ -54,11 +47,7 @@ namespace winrt::ElMd::implementation
         winrt::ElMd::EditorSurfaceRenderer editorRenderer;
         winrt::ElMd::EditorScrollController scrollController;
         winrt::ElMd::EditorTextInputController textInputController;
-        bool pointerSelecting = false;
-        std::optional<std::string> hoverTooltip;
-        std::size_t pointerAnchor = 0;
-        std::optional<winrt::ElMd::EditorSurfaceRenderer::TableAction> tableDrag;
-        std::optional<std::size_t> tableDropIndex;
+        winrt::ElMd::EditorPointerController pointerController;
         float caretGoalX = -1.0f;
         bool MoveCaretVerticalStep(bool down, bool extend);
         std::vector<std::size_t> outlineOffsets;

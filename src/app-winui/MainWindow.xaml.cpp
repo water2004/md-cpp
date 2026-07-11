@@ -14,9 +14,19 @@ namespace winrt::ElMd::implementation
         InitializeComponent();
         RegisterCommandHandlers();
         InitializeTextInput();
+        pointerController.Attach(
+            editorSession,
+            editorRenderer,
+            textInputController,
+            EditorSurface(),
+            [this](elmd::Command const& command) { return ExecuteEditorCommand(command); },
+            [this] { RenderEditorSurface(); },
+            [this](std::string href) { OpenLinkAsync(std::move(href)); },
+            [this] { caretGoalX = -1.0f; });
 
         Closed([this](auto const&, auto const&)
         {
+            pointerController.Detach();
             textInputController.Detach();
             scrollController.Detach();
         });
@@ -68,28 +78,22 @@ namespace winrt::ElMd::implementation
 
         EditorSurface().PointerPressed([this](auto const&, Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
         {
-            HandlePointerPressed(args);
+            pointerController.PointerPressed(args);
         });
 
         EditorSurface().PointerMoved([this](auto const&, Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
         {
-            HandlePointerMoved(args);
+            pointerController.PointerMoved(args);
         });
 
         EditorSurface().PointerReleased([this](auto const&, Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
         {
-            HandlePointerReleased(args);
+            pointerController.PointerReleased(args);
         });
 
         EditorSurface().PointerExited([this](auto const&, auto const&)
         {
-            hoverTooltip.reset();
-            Microsoft::UI::Xaml::Controls::ToolTipService::SetToolTip(EditorSurface(), nullptr);
-            if (!tableDrag)
-            {
-                editorRenderer.ClearPointer();
-                RenderEditorSurface();
-            }
+            pointerController.PointerExited();
         });
 
         EditorSurface().PointerWheelChanged([this](auto const&, Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
@@ -109,7 +113,7 @@ namespace winrt::ElMd::implementation
 
         EditorSurface().DoubleTapped([this](auto const&, Microsoft::UI::Xaml::Input::DoubleTappedRoutedEventArgs const& args)
         {
-            HandleEditorDoubleTapped(args);
+            pointerController.DoubleTapped(args);
         });
 
         OutlineList().SelectionChanged([this](auto const&, Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const& args)
@@ -578,310 +582,11 @@ namespace winrt::ElMd::implementation
         return true;
     }
 
-    void MainWindow::HandlePointerPressed(Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
-    {
-        EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Pointer);
-        caretGoalX = -1.0f;
-        auto point = args.GetCurrentPoint(EditorSurface()).Position();
-        editorRenderer.UpdatePointer(static_cast<float>(point.X), static_cast<float>(point.Y));
-        if (auto action = editorRenderer.TableActionAt(static_cast<float>(point.X), static_cast<float>(point.Y)))
-        {
-            if (action->kind == winrt::ElMd::EditorSurfaceRenderer::TableActionKind::DragRow || action->kind == winrt::ElMd::EditorSurfaceRenderer::TableActionKind::DragColumn)
-            {
-                tableDrag = action;
-                auto rows = action->kind == winrt::ElMd::EditorSurfaceRenderer::TableActionKind::DragRow;
-                tableDropIndex = editorRenderer.TableDropIndexAt(static_cast<float>(point.X), static_cast<float>(point.Y), rows);
-                editorRenderer.SetTableDrag(tableDrag, tableDropIndex);
-                EditorSurface().CapturePointer(args.Pointer());
-                RenderEditorSurface();
-                args.Handled(true);
-                return;
-            }
-
-            editorSession.SetSelection(action->sourceOffset, action->sourceOffset);
-            textInputController.NotifySelectionChanged();
-            elmd::Command command;
-            command.table_index = action->index;
-            switch (action->kind)
-            {
-                case winrt::ElMd::EditorSurfaceRenderer::TableActionKind::InsertRow:
-                    command.kind = elmd::CommandKind::InsertTableRowAt;
-                    break;
-                case winrt::ElMd::EditorSurfaceRenderer::TableActionKind::InsertColumn:
-                    command.kind = elmd::CommandKind::InsertTableColumnAt;
-                    break;
-                case winrt::ElMd::EditorSurfaceRenderer::TableActionKind::DeleteRow:
-                    command.kind = elmd::CommandKind::DeleteTableRow;
-                    break;
-                case winrt::ElMd::EditorSurfaceRenderer::TableActionKind::DeleteColumn:
-                    command.kind = elmd::CommandKind::DeleteTableColumn;
-                    break;
-                default:
-                    return;
-            }
-            ExecuteEditorCommand(command);
-            args.Handled(true);
-            return;
-        }
-        bool hitUpstream = false;
-        auto hit = editorRenderer.HitTest(static_cast<float>(point.X), static_cast<float>(point.Y), &hitUpstream);
-        if (!hit)
-        {
-            return;
-        }
-
-        if ((args.KeyModifiers() & winrt::Windows::System::VirtualKeyModifiers::Control) == winrt::Windows::System::VirtualKeyModifiers::Control)
-        {
-            if (auto link = LinkAtSourceOffset(*hit))
-            {
-                OpenLinkAsync(std::move(*link));
-                args.Handled(true);
-                return;
-            }
-        }
-
-        if (TryToggleTaskCheckboxAt(*hit))
-        {
-            args.Handled(true);
-            return;
-        }
-
-        pointerSelecting = true;
-        pointerAnchor = *hit;
-        editorSession.SetSelection(pointerAnchor, pointerAnchor, hitUpstream ? elmd::TextAffinity::Upstream : elmd::TextAffinity::Downstream);
-        textInputController.NotifySelectionChanged();
-        EditorSurface().CapturePointer(args.Pointer());
-        RenderEditorSurface();
-        args.Handled(true);
-    }
-
-    void MainWindow::HandlePointerMoved(Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
-    {
-        auto point = args.GetCurrentPoint(EditorSurface()).Position();
-        editorRenderer.UpdatePointer(static_cast<float>(point.X), static_cast<float>(point.Y));
-        if (!pointerSelecting && !tableDrag)
-        {
-            auto hit = editorRenderer.HitTest(static_cast<float>(point.X), static_cast<float>(point.Y));
-            auto tooltip = hit ? TooltipAtSourceOffset(*hit) : std::nullopt;
-            if (tooltip != hoverTooltip)
-            {
-                hoverTooltip = tooltip;
-                Microsoft::UI::Xaml::Controls::ToolTipService::SetToolTip(
-                    EditorSurface(),
-                    tooltip ? winrt::box_value(winrt::to_hstring(*tooltip)) : nullptr);
-            }
-        }
-        if (tableDrag)
-        {
-            auto rows = tableDrag->kind == winrt::ElMd::EditorSurfaceRenderer::TableActionKind::DragRow;
-            tableDropIndex = editorRenderer.TableDropIndexAt(static_cast<float>(point.X), static_cast<float>(point.Y), rows);
-            editorRenderer.SetTableDrag(tableDrag, tableDropIndex);
-            RenderEditorSurface();
-            args.Handled(true);
-            return;
-        }
-        if (!pointerSelecting)
-        {
-            RenderEditorSurface();
-            return;
-        }
-        bool hitUpstream = false;
-        auto hit = editorRenderer.HitTest(static_cast<float>(point.X), static_cast<float>(point.Y), &hitUpstream);
-        if (!hit)
-        {
-            return;
-        }
-
-        editorSession.SetSelection(pointerAnchor, *hit, hitUpstream ? elmd::TextAffinity::Upstream : elmd::TextAffinity::Downstream);
-        textInputController.NotifySelectionChanged();
-        RenderEditorSurface();
-        args.Handled(true);
-    }
-
-    void MainWindow::HandlePointerReleased(Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
-    {
-        if (tableDrag)
-        {
-            auto action = *tableDrag;
-            auto dropIndex = tableDropIndex;
-            tableDrag.reset();
-            tableDropIndex.reset();
-            editorRenderer.SetTableDrag(std::nullopt, std::nullopt);
-            EditorSurface().ReleasePointerCapture(args.Pointer());
-            if (dropIndex)
-            {
-                editorSession.SetSelection(action.sourceOffset, action.sourceOffset);
-                textInputController.NotifySelectionChanged();
-                elmd::Command command;
-                command.kind = action.kind == winrt::ElMd::EditorSurfaceRenderer::TableActionKind::DragRow
-                    ? elmd::CommandKind::MoveTableRowTo
-                    : elmd::CommandKind::MoveTableColumnTo;
-                command.table_index = *dropIndex;
-                ExecuteEditorCommand(command);
-            }
-            else
-            {
-                RenderEditorSurface();
-            }
-            args.Handled(true);
-            return;
-        }
-        if (pointerSelecting)
-        {
-            pointerSelecting = false;
-            EditorSurface().ReleasePointerCapture(args.Pointer());
-            args.Handled(true);
-        }
-    }
-
     void MainWindow::HandlePointerWheel(Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
     {
         auto delta = args.GetCurrentPoint(EditorSurface()).Properties().MouseWheelDelta();
         scrollController.QueueScrollBy(static_cast<float>(-delta));
         args.Handled(true);
-    }
-
-    void MainWindow::HandleEditorDoubleTapped(Microsoft::UI::Xaml::Input::DoubleTappedRoutedEventArgs const& args)
-    {
-        EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Pointer);
-        auto point = args.GetPosition(EditorSurface());
-        auto hit = editorRenderer.HitTest(static_cast<float>(point.X), static_cast<float>(point.Y));
-        if (hit && SelectWordAt(*hit))
-        {
-            RenderEditorSurface();
-            args.Handled(true);
-        }
-    }
-
-    bool MainWindow::SelectWordAt(std::size_t offset)
-    {
-        auto text = editorSession.Core().editor.text_cps();
-        if (text.empty())
-        {
-            return false;
-        }
-
-        auto isWordChar = [](char32_t ch)
-        {
-            return (ch >= U'a' && ch <= U'z') || (ch >= U'A' && ch <= U'Z') || (ch >= U'0' && ch <= U'9') || ch == U'_' || ch > 0x7f;
-        };
-
-        if (offset >= text.size())
-        {
-            offset = text.size() - 1;
-        }
-        if (!isWordChar(text[offset]) && offset > 0 && isWordChar(text[offset - 1]))
-        {
-            --offset;
-        }
-        if (!isWordChar(text[offset]))
-        {
-            return false;
-        }
-
-        auto start = offset;
-        while (start > 0 && isWordChar(text[start - 1]))
-        {
-            --start;
-        }
-
-        auto end = offset + 1;
-        while (end < text.size() && isWordChar(text[end]))
-        {
-            ++end;
-        }
-
-        editorSession.SetSelection(start, end);
-        textInputController.NotifySelectionChanged();
-        return true;
-    }
-
-    bool MainWindow::TryToggleTaskCheckboxAt(std::size_t offset)
-    {
-        auto text = editorSession.Core().editor.text_cps();
-        auto lineStart = (std::min)(offset, text.size());
-        while (lineStart > 0 && text[lineStart - 1] != U'\n')
-        {
-            --lineStart;
-        }
-
-        auto pos = lineStart;
-        while (pos < text.size() && (text[pos] == U' ' || text[pos] == U'\t'))
-        {
-            ++pos;
-        }
-
-        if (pos + 5 >= text.size() || (text[pos] != U'-' && text[pos] != U'*' && text[pos] != U'+') || text[pos + 1] != U' ' || text[pos + 2] != U'[' || text[pos + 4] != U']' || text[pos + 5] != U' ')
-        {
-            return false;
-        }
-        if (offset < pos || offset > pos + 5)
-        {
-            return false;
-        }
-
-        editorSession.SetSelection(offset, offset);
-        textInputController.NotifySelectionChanged();
-        elmd::Command command;
-        command.kind = elmd::CommandKind::ToggleTaskCheckbox;
-        return ExecuteEditorCommand(command);
-    }
-
-    std::optional<std::string> MainWindow::LinkAtSourceOffset(std::size_t offset) const
-    {
-        auto scanItems = [&](auto& self, auto const& items) -> std::optional<std::string>
-        {
-            for (auto const& item : items)
-            {
-                if (item.kind == elmd::InlineRenderItem::Kind::Link && item.source_range.start.v <= offset && offset <= item.source_range.end.v) return item.href;
-                if (!item.children.empty()) if (auto nested = self(self, item.children)) return nested;
-            }
-            return std::nullopt;
-        };
-        auto scanBlock = [&](auto& self, auto const& block) -> std::optional<std::string>
-        {
-            if (block.kind == elmd::RenderBlockKind::Image && block.link && block.source_range.start.v <= offset && offset <= block.source_range.end.v) return *block.link;
-            if (auto link = scanItems(scanItems, block.inline_items)) return link;
-            if (block.callout_title) if (auto link = scanItems(scanItems, *block.callout_title)) return link;
-            for (auto const& cell : block.table_cells) if (auto link = scanItems(scanItems, cell)) return link;
-            for (auto const& child : block.child_blocks) if (auto link = self(self, child)) return link;
-            return std::nullopt;
-        };
-        for (auto const& block : editorSession.Core().renderModel.blocks) if (auto link = scanBlock(scanBlock, block)) return link;
-        return std::nullopt;
-    }
-
-    std::optional<std::string> MainWindow::TooltipAtSourceOffset(std::size_t offset) const
-    {
-        auto scanItems = [&](auto& self, auto const& items) -> std::optional<std::string>
-        {
-            for (auto const& item : items)
-            {
-                if (item.source_range.start.v <= offset && offset <= item.source_range.end.v)
-                {
-                    if (item.title && !item.title->empty()) return *item.title;
-                    if (item.kind == elmd::InlineRenderItem::Kind::Link && !item.href.empty()) return item.href;
-                    if (item.kind == elmd::InlineRenderItem::Kind::Image && !item.alt.empty()) return item.alt;
-                }
-                if (!item.children.empty()) if (auto nested = self(self, item.children)) return nested;
-            }
-            return std::nullopt;
-        };
-        auto scanBlock = [&](auto& self, auto const& block) -> std::optional<std::string>
-        {
-            if (block.kind == elmd::RenderBlockKind::Image && block.source_range.start.v <= offset && offset <= block.source_range.end.v)
-            {
-                if (block.title && !block.title->empty()) return *block.title;
-                if (!block.alt.empty()) return block.alt;
-            }
-            if (auto tooltip = scanItems(scanItems, block.inline_items)) return tooltip;
-            if (block.callout_title) if (auto tooltip = scanItems(scanItems, *block.callout_title)) return tooltip;
-            for (auto const& cell : block.table_cells) if (auto tooltip = scanItems(scanItems, cell)) return tooltip;
-            for (auto const& child : block.child_blocks) if (auto tooltip = self(self, child)) return tooltip;
-            return std::nullopt;
-        };
-        for (auto const& block : editorSession.Core().renderModel.blocks) if (auto tooltip = scanBlock(scanBlock, block)) return tooltip;
-        return std::nullopt;
     }
 
     winrt::fire_and_forget MainWindow::OpenLinkAsync(std::string href)
