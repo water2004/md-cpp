@@ -48,6 +48,25 @@ ELMD_TEST(test_editor_document_enter_keeps_ast_authoritative_and_projects_markdo
     ELMD_CHECK_EQ(editor.document().blocks.size(), 2u);
 }
 
+ELMD_TEST(test_editor_newline_command_uses_document_transaction_for_top_level_paragraph) {
+    Editor editor("alphaomega");
+    const auto original_id = editor.document().blocks.front().id;
+    editor.set_caret(CharOffset(5));
+    Command newline;
+    newline.kind = CommandKind::InsertNewline;
+
+    auto compatibility = editor.execute_command(newline);
+    ELMD_CHECK(compatibility.has_value());
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alpha\n\nomega"));
+    ELMD_CHECK_EQ(editor.document().blocks.front().id, original_id);
+    ELMD_CHECK(editor.has_document_undo());
+
+    auto undone = editor.undo();
+    ELMD_CHECK(undone.has_value());
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alphaomega"));
+    ELMD_CHECK_EQ(editor.document().blocks.front().id, original_id);
+}
+
 ELMD_TEST(test_editor_insert_text) {
     Editor e;
     e.execute_command(Command::InsertText(U"hello"));

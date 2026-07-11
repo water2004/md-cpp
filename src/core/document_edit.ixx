@@ -183,6 +183,37 @@ inline std::pair<InlineVec, InlineVec> split_inlines(const InlineVec& nodes, std
     return {std::move(left), std::move(right)};
 }
 
+inline bool insert_text_in_inlines(InlineVec& nodes, std::size_t offset, std::u32string_view text, NodeAllocator& allocator) {
+    std::size_t consumed = 0;
+    for (std::size_t index = 0; index < nodes.size(); ++index) {
+        auto& node = nodes[index];
+        const auto length = inline_length(node);
+        if (offset > consumed + length) {
+            consumed += length;
+            continue;
+        }
+        const auto local = offset >= consumed ? offset - consumed : 0;
+        const bool container = node.kind == InlineKind::Emphasis || node.kind == InlineKind::Strong
+            || node.kind == InlineKind::Strike || node.kind == InlineKind::Span || node.kind == InlineKind::Link;
+        if (container) {
+            if (node.children.empty()) node.children.push_back(InlineNode::text_node(allocator.allocate(), std::u32string(text)));
+            else insert_text_in_inlines(node.children, local, text, allocator);
+            return true;
+        }
+        if (node.kind == InlineKind::Text || node.kind == InlineKind::InlineCode
+            || node.kind == InlineKind::InlineMath || node.kind == InlineKind::UnsupportedMarkup) {
+            node.text.insert((std::min)(local, node.text.size()), text);
+            return true;
+        }
+        InlineNode inserted = InlineNode::text_node(allocator.allocate(), std::u32string(text));
+        const auto insertion_index = local == 0 ? index : index + 1;
+        nodes.insert(nodes.begin() + static_cast<std::ptrdiff_t>(insertion_index), std::move(inserted));
+        return true;
+    }
+    nodes.push_back(InlineNode::text_node(allocator.allocate(), std::u32string(text)));
+    return true;
+}
+
 inline bool block_is_empty_paragraph(const BlockNode& block) {
     return block.kind == BlockKind::Paragraph && block_inline_text_content(block.children).empty();
 }
@@ -205,6 +236,18 @@ inline bool contains_block(const BlockVec& blocks, NodeId id) {
 }
 
 inline bool split_paragraph_in_blocks(BlockVec& blocks, NodeId id, std::size_t offset, NodeAllocator& allocator, DocumentPosition& after);
+
+inline bool insert_text_in_blocks(BlockVec& blocks, NodeId id, std::size_t offset, std::u32string_view text, NodeAllocator& allocator) {
+    for (auto& block : blocks) {
+        if (block.id == id && block.kind == BlockKind::Paragraph) {
+            return insert_text_in_inlines(block.children, offset, text, allocator);
+        }
+        if (insert_text_in_blocks(block.quote_children, id, offset, text, allocator)) return true;
+        for (auto& item : block.list_items) if (insert_text_in_blocks(item.children, id, offset, text, allocator)) return true;
+        for (auto& item : block.task_items) if (insert_text_in_blocks(item.children, id, offset, text, allocator)) return true;
+    }
+    return false;
+}
 
 inline bool split_direct_paragraph(BlockVec& blocks, std::size_t index, std::size_t offset, NodeAllocator& allocator, DocumentPosition& after) {
     auto& paragraph = blocks[index];
@@ -466,6 +509,28 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
     transaction.selection_before = selection;
     transaction.selection_after = DocumentSelection::caret(target);
     transaction.reason = DocumentTransactionReason::Structure;
+    return transaction;
+}
+
+inline std::optional<DocumentTransaction> document_insert_text(
+    const EditorDocument& document,
+    const DocumentSelection& selection,
+    std::u32string_view text) {
+    if (!selection.is_caret() || text.empty()) return std::nullopt;
+    EditorDocument after = document;
+    document_edit_detail::NodeAllocator allocator(after);
+    if (!document_edit_detail::insert_text_in_blocks(
+            after.blocks, selection.active.node_id, selection.active.offset, text, allocator)) return std::nullopt;
+    normalize_document(after);
+    ++after.revision;
+    auto target = selection.active;
+    target.offset += text.size();
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(after);
+    transaction.selection_before = selection;
+    transaction.selection_after = DocumentSelection::caret(target);
+    transaction.reason = DocumentTransactionReason::InsertText;
     return transaction;
 }
 

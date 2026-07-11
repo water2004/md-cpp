@@ -191,3 +191,22 @@ ELMD_TEST(test_enter_empty_only_task_item_exits_task_list) {
     ELMD_CHECK_EQ(transaction->after.blocks[0].kind, BlockKind::Paragraph);
     ELMD_CHECK(validate_document(transaction->after).empty());
 }
+
+ELMD_TEST(test_insert_text_preserves_inline_container_identity) {
+    BlockNode block;
+    block.id = NodeId(1);
+    block.kind = BlockKind::Paragraph;
+    InlineNode strong;
+    strong.id = NodeId(2);
+    strong.kind = InlineKind::Strong;
+    strong.children.push_back(InlineNode::text_node(NodeId(3), U"alphabeta"));
+    block.children.push_back(strong);
+
+    auto transaction = document_insert_text(document_with({block}), caret(1, 5), U"-");
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(transaction->after.blocks[0].children[0].id, NodeId(2));
+    ELMD_CHECK_EQ(transaction->after.blocks[0].children[0].children[0].id, NodeId(3));
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("**alpha-beta**"));
+    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 6u);
+}

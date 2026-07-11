@@ -37,15 +37,21 @@ public:
     std::u32string text_cps() const { return std::u32string(buffer_.text_cps()); }
     Selection selection() const { return selection_; }
     std::uint64_t revision() const { return buffer_.revision(); }
-    void set_selection(Selection s) { selection_ = s; }
+    void set_selection(Selection s) {
+        selection_ = s;
+        auto anchor = document_position_from_source_offset(document_, s.anchor);
+        auto active = document_position_from_source_offset(document_, s.active);
+        if (anchor && active) document_selection_ = DocumentSelection{*anchor, *active};
+        else document_selection_.reset();
+    }
     void set_theme(Theme t) { theme_ = t; }
     Theme theme() const { return theme_; }
     void set_scale_factor(float s) { scale_factor_ = s; }
     float scale_factor() const { return scale_factor_; }
     MarkdownDialect const& dialect() const { return dialect_; }
     void set_dialect(MarkdownDialect dialect) { dialect_ = std::move(dialect); rebuild_document_full_(); }
-    bool has_undo() const { return undo_.has_undo(); }
-    bool has_redo() const { return undo_.has_redo(); }
+    bool has_undo() const { return document_history_.has_undo() || undo_.has_undo(); }
+    bool has_redo() const { return document_history_.has_redo() || undo_.has_redo(); }
     bool has_document_undo() const { return document_history_.has_undo(); }
     bool has_document_redo() const { return document_history_.has_redo(); }
     std::optional<DocumentSelection> document_selection() const { return document_selection_; }
@@ -54,11 +60,14 @@ public:
     std::optional<DocumentTransaction> execute_document_enter(DocumentSelection selection) {
         auto transaction = document_enter(document_, selection);
         if (!transaction) return std::nullopt;
-        document_history_.push(*transaction);
-        document_ = transaction->after;
-        document_selection_ = transaction->selection_after;
-        refresh_projection_from_document_();
-        synchronize_legacy_selection_();
+        apply_document_transaction_(*transaction);
+        return transaction;
+    }
+
+    std::optional<DocumentTransaction> execute_document_insert_text(DocumentSelection selection, std::u32string_view text) {
+        auto transaction = document_insert_text(document_, selection, text);
+        if (!transaction) return std::nullopt;
+        apply_document_transaction_(*transaction);
         return transaction;
     }
 
@@ -84,6 +93,22 @@ public:
 
     // Apply a Command. Returns the transaction if it produced a change.
     std::optional<Transaction> execute_command(const Command& cmd) {
+        if (cmd.kind == CommandKind::InsertNewline && selection_.is_caret()) {
+            auto position = current_document_caret_();
+            if (position && is_top_level_paragraph_(position->node_id)) {
+                const auto revision_before = buffer_.revision();
+                const auto selection_before = selection_;
+                const auto text_before = std::u32string(buffer_.text_cps());
+                if (execute_document_enter(DocumentSelection::caret(*position))) {
+                    Transaction compatibility(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
+                    compatibility.with_edit_original(
+                        CharRange(CharOffset(0), CharOffset(text_before.size())),
+                        std::u32string(buffer_.text_cps()),
+                        text_before);
+                    return compatibility;
+                }
+            }
+        }
         document_history_.clear();
         document_selection_.reset();
         std::u32string text(buffer_.text_cps());
@@ -113,6 +138,18 @@ public:
     }
 
     std::optional<Transaction> undo() {
+        if (document_history_.has_undo()) {
+            const auto revision_before = buffer_.revision();
+            const auto selection_before = selection_;
+            const auto text_before = std::u32string(buffer_.text_cps());
+            if (!undo_document()) return std::nullopt;
+            Transaction compatibility(revision_before, selection_before, selection_, TransactionReason::Undo);
+            compatibility.with_edit_original(
+                CharRange(CharOffset(0), CharOffset(text_before.size())),
+                std::u32string(buffer_.text_cps()),
+                text_before);
+            return compatibility;
+        }
         auto txn = undo_.undo();
         if (!txn) return std::nullopt;
         auto old_text = buffer_.text_utf8();
@@ -127,6 +164,18 @@ public:
         return txn;
     }
     std::optional<Transaction> redo() {
+        if (document_history_.has_redo()) {
+            const auto revision_before = buffer_.revision();
+            const auto selection_before = selection_;
+            const auto text_before = std::u32string(buffer_.text_cps());
+            if (!redo_document()) return std::nullopt;
+            Transaction compatibility(revision_before, selection_before, selection_, TransactionReason::Redo);
+            compatibility.with_edit_original(
+                CharRange(CharOffset(0), CharOffset(text_before.size())),
+                std::u32string(buffer_.text_cps()),
+                text_before);
+            return compatibility;
+        }
         auto txn = undo_.redo();
         if (!txn) return std::nullopt;
         if (!txn->edits.empty()) {
@@ -188,7 +237,7 @@ public:
     }
 
     // Convenience: mutate caret position (for hit-testing from the UI layer).
-    void set_caret(CharOffset p) { selection_ = Selection::caret(p); }
+    void set_caret(CharOffset p) { set_selection(Selection::caret(p)); }
 
 private:
     TextBuffer buffer_;
@@ -237,6 +286,25 @@ private:
             selection_.active = *active;
             selection_.affinity = document_selection_->active.affinity;
         }
+    }
+
+    bool is_top_level_paragraph_(NodeId id) const {
+        return std::ranges::any_of(document_.blocks, [id](const BlockNode& block) {
+            return block.id == id && block.kind == BlockKind::Paragraph;
+        });
+    }
+
+    std::optional<DocumentPosition> current_document_caret_() const {
+        if (document_selection_ && document_selection_->is_caret()) return document_selection_->active;
+        return document_position_from_source_offset(document_, selection_.active);
+    }
+
+    void apply_document_transaction_(const DocumentTransaction& transaction) {
+        document_history_.push(transaction);
+        document_ = transaction.after;
+        document_selection_ = transaction.selection_after;
+        refresh_projection_from_document_();
+        synchronize_legacy_selection_();
     }
 
     void refresh_document_after_delta_(const std::string& old_text, const MarkdownDocument& old_document, const DocumentSymbolIndex& old_symbols, const TextDelta& delta) {
