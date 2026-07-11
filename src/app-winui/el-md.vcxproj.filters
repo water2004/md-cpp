@@ -89,6 +89,9 @@
     <ClCompile Include="EditorInlineImageRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="EditorQuoteBlockRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="EditorScrollController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -170,6 +173,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EditorInlineImageRenderer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EditorQuoteBlockRenderer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EditorScrollController.h">

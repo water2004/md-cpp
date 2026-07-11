@@ -9,6 +9,7 @@ import elmd.core.utf;
 
 #include "EditorContentPreparation.h"
 #include "EditorInlineImageRenderer.h"
+#include "EditorQuoteBlockRenderer.h"
 #include "EditorSvgPainter.h"
 #include "EditorTextLayoutEngine.h"
 
@@ -61,6 +62,11 @@ namespace winrt::ElMd
 
     void EditorSurfaceRenderer::Invalidate()
     {
+        if (rendering)
+        {
+            deferredInvalidate = true;
+            return;
+        }
         std::function<void()> callback;
         {
             std::scoped_lock lock(invalidationState->mutex);
@@ -423,192 +429,31 @@ namespace winrt::ElMd
             }
             if (block.kind == elmd::RenderBlockKind::Quote)
             {
-                struct QuoteBox
-                {
-                    D2D1_RECT_F rect{};
-                    std::size_t depth = 0;
-                    float borderWidth = 3.0f;
-                };
-                struct QuoteFragment
-                {
-                    DisplayInlineText display;
-                    ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
-                    D2D1_POINT_2F origin{};
-                    D2D1_RECT_F rect{};
-                    float textWidth = 0.0f;
-                    std::size_t depth = 0;
-                    std::size_t sourceStart = 0;
-                    std::size_t sourceEnd = 0;
-                    bool code = false;
-                    std::vector<EditorInlineImageRenderer::ImageDraw> images;
-                };
-                std::vector<QuoteBox> quoteBoxes;
-                std::vector<QuoteFragment> quoteFragments;
-                auto depthInset = block.block_style.padding_left + 6.0f;
-                auto cursorY = y + block.block_style.padding_top;
-                for (std::size_t childIndex = 0; childIndex < block.child_blocks.size(); ++childIndex)
-                {
-                    auto const& child = block.child_blocks[childIndex];
-                    if (childIndex > 0) cursorY += 8.0f;
-                    auto contentLeft = documentLeft + block.block_style.padding_left + static_cast<float>(child.quote_depth) * depthInset;
-                    auto contentRight = documentRight - block.block_style.padding_right;
-                    DisplayInlineText display;
-                    auto code = child.kind == elmd::RenderBlockKind::Code;
-                    if (child.kind == elmd::RenderBlockKind::Blank)
-                    {
-                        AppendGeneratedText(display, U"\u200B", child.content_range.start.v, elmd::InlineStyle::plain());
-                        display.displayToSource.push_back(child.content_range.end.v);
-                    }
-                    else if (code)
-                    {
-                        display = child.code_indented ? BuildIndentedCodeBlockText(child, sourceText) : BuildCodeBlockText(child, caret, sourceText);
-                    }
-                    else if (!child.inline_items.empty())
-                    {
-                        display = BuildDisplayInlineText(child.inline_items, caret, child.content_range.end.v, sourceText, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, contentRight - contentLeft, svgSupported, requestEmbedded, child.source_range);
-                    }
-                    else
-                    {
-                        AppendSourceText(display, sourceText, child.content_range.start.v, child.content_range.end.v, elmd::InlineStyle::plain(), false);
-                        display.displayToSource.push_back(child.content_range.end.v);
-                    }
-                    if (display.text.empty())
-                    {
-                        AppendGeneratedText(display, U"\u200B", child.content_range.start.v, elmd::InlineStyle::plain());
-                        display.displayToSource.push_back(child.content_range.end.v);
-                    }
-                    auto format = code ? resources.codeFormat.Get() : resources.textFormat.Get();
-                    auto horizontalPadding = code ? 12.0f : 0.0f;
-                    auto verticalPadding = code ? 8.0f : 0.0f;
-                    auto textWidth = (std::max)(1.0f, contentRight - contentLeft - horizontalPadding * 2.0f);
-                    auto layout = textLayoutEngine.Create(ToWide(display.text), format, textWidth);
-                    textLayoutEngine.ApplyStyles(layout.Get(), display.ranges);
-                    ApplyMathInlineObjects(layout.Get(), display.mathOverlays);
-                    auto images = inlineImageRenderer.Resolve(layout.Get(), display.imageOverlays, textWidth);
-                    auto fallbackHeight = code ? styleSheet.code.lineHeight : styleSheet.body.lineHeight;
-                    auto fragmentHeight = textLayoutEngine.MeasureHeight(layout.Get(), fallbackHeight) + verticalPadding * 2.0f;
-                    QuoteFragment fragment;
-                    fragment.origin = D2D1::Point2F(contentLeft + horizontalPadding, cursorY + verticalPadding);
-                    fragment.rect = D2D1::RectF(contentLeft, cursorY, contentRight, cursorY + fragmentHeight);
-                    fragment.textWidth = textWidth;
-                    fragment.depth = child.quote_depth;
-                    fragment.sourceStart = child.content_range.start.v;
-                    fragment.sourceEnd = child.content_range.end.v;
-                    fragment.code = code;
-                    fragment.images = std::move(images);
-                    fragment.display = std::move(display);
-                    fragment.layout = std::move(layout);
-                    quoteFragments.push_back(std::move(fragment));
-                    cursorY += fragmentHeight;
-                }
-                if (quoteFragments.empty()) cursorY += styleSheet.body.lineHeight;
-                auto quoteBottom = cursorY + block.block_style.padding_bottom;
-                auto borderWidth = block.block_style.border_left ? block.block_style.border_left->width : 3.0f;
-                quoteBoxes.push_back(QuoteBox{D2D1::RectF(documentLeft, y, documentRight, quoteBottom), 0, borderWidth});
-                std::size_t maxDepth = 0;
-                for (auto const& fragment : quoteFragments) maxDepth = (std::max)(maxDepth, fragment.depth);
-                for (std::size_t level = 1; level <= maxDepth; ++level)
-                {
-                    std::size_t index = 0;
-                    while (index < quoteFragments.size())
-                    {
-                        while (index < quoteFragments.size() && quoteFragments[index].depth < level) ++index;
-                        if (index >= quoteFragments.size()) break;
-                        auto first = index;
-                        while (index < quoteFragments.size() && quoteFragments[index].depth >= level) ++index;
-                        auto left = documentLeft + static_cast<float>(level) * depthInset;
-                        quoteBoxes.push_back(QuoteBox{D2D1::RectF(left, quoteFragments[first].rect.top - 4.0f, documentRight, quoteFragments[index - 1].rect.bottom + 4.0f), level, borderWidth});
-                    }
-                }
-                for (auto const& box : quoteBoxes)
-                {
-                    resources.d2dContext->FillRectangle(box.rect, box.depth == 0 ? resources.panelBrush.Get() : resources.nestedQuoteBrush.Get());
-                    auto lineX = box.rect.left + box.borderWidth * 0.5f;
-                    resources.d2dContext->DrawLine(D2D1::Point2F(lineX, box.rect.top + 4.0f), D2D1::Point2F(lineX, box.rect.bottom - 4.0f), resources.mutedBrush.Get(), box.borderWidth);
-                }
-                for (auto& fragment : quoteFragments)
-                {
-                    auto sourceStart = fragment.sourceStart;
-                    auto sourceEnd = fragment.sourceEnd;
-                    if (fragment.code) resources.d2dContext->FillRectangle(fragment.rect, resources.canvasBrush.Get());
-                    if (fragment.layout)
-                    {
-                        for (auto const& range : fragment.display.ranges)
-                        {
-                            if (!range.style.code || range.length == 0) continue;
-                            UINT32 actualCount = 0;
-                            auto hr = fragment.layout->HitTestTextRange(range.start, range.length, fragment.origin.x, fragment.origin.y, nullptr, 0, &actualCount);
-                            if (hr != E_NOT_SUFFICIENT_BUFFER || actualCount == 0) continue;
-                            std::vector<DWRITE_HIT_TEST_METRICS> metrics(actualCount);
-                            if (FAILED(fragment.layout->HitTestTextRange(range.start, range.length, fragment.origin.x, fragment.origin.y, metrics.data(), actualCount, &actualCount))) continue;
-                            for (UINT32 metricIndex = 0; metricIndex < actualCount; ++metricIndex)
-                            {
-                                auto const& metric = metrics[metricIndex];
-                                resources.d2dContext->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(metric.left - 3.0f, metric.top + 2.0f, metric.left + metric.width + 3.0f, metric.top + metric.height - 1.0f), 4.0f, 4.0f), resources.panelBrush.Get());
-                            }
-                        }
-                        if (!selection.is_empty() && selection.end.v > sourceStart && selection.start.v < sourceEnd)
-                        {
-                            auto displayStart = DisplayPositionForSource(fragment.display.displayToSource, (std::max)(selection.start.v, sourceStart));
-                            auto displayEnd = DisplayPositionForSource(fragment.display.displayToSource, (std::min)(selection.end.v, sourceEnd));
-                            UINT32 actualCount = 0;
-                            auto hr = fragment.layout->HitTestTextRange(static_cast<UINT32>(displayStart), static_cast<UINT32>(displayEnd - displayStart), fragment.origin.x, fragment.origin.y, nullptr, 0, &actualCount);
-                            if (hr == E_NOT_SUFFICIENT_BUFFER && actualCount > 0)
-                            {
-                                std::vector<DWRITE_HIT_TEST_METRICS> metrics(actualCount);
-                                if (SUCCEEDED(fragment.layout->HitTestTextRange(static_cast<UINT32>(displayStart), static_cast<UINT32>(displayEnd - displayStart), fragment.origin.x, fragment.origin.y, metrics.data(), actualCount, &actualCount)))
-                                {
-                                    for (UINT32 metricIndex = 0; metricIndex < actualCount; ++metricIndex)
-                                    {
-                                        auto const& metric = metrics[metricIndex];
-                                        resources.d2dContext->FillRectangle(D2D1::RectF(metric.left, metric.top, metric.left + metric.width, metric.top + metric.height), resources.selectionBrush.Get());
-                                    }
-                                }
-                            }
-                        }
-                        resources.d2dContext->DrawTextLayout(fragment.origin, fragment.layout.Get(), fragment.code ? resources.codeBrush.Get() : resources.textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
-                        inlineImageRenderer.Draw(fragment.layout.Get(), fragment.origin, fragment.images);
-                        for (auto const& overlay : fragment.display.mathOverlays)
-                        {
-                            float pointX = 0.0f;
-                            float pointY = 0.0f;
-                            DWRITE_HIT_TEST_METRICS metrics{};
-                            if (FAILED(fragment.layout->HitTestTextPosition(overlay.displayStart, FALSE, &pointX, &pointY, &metrics))) continue;
-                            auto mathX = fragment.origin.x + pointX + overlay.leadingSpace;
-                            auto mathY = fragment.origin.y + metrics.top;
-                            if (!drawMathSvg(overlay.fragment, D2D1::Point2F(mathX, mathY), styleSheet.textColor)) drawMathFallback(overlay.sourceStart, overlay.sourceEnd, D2D1::Point2F(mathX, mathY));
-                            interactionMap.mathHits.push_back(VisualMathHit{D2D1::RectF(mathX, mathY, mathX + overlay.fragment.width, mathY + overlay.fragment.height), overlay.sourceStart, overlay.sourceEnd, overlay.progressStart, overlay.progressEnd});
-                        }
-                    }
-                    VisualBlock visualBlock;
-                    visualBlock.rect = fragment.rect;
-                    visualBlock.textOrigin = fragment.origin;
-                    visualBlock.textWidth = fragment.textWidth;
-                    visualBlock.sourceStart = sourceStart;
-                    visualBlock.sourceEnd = sourceEnd;
-                    visualBlock.documentY = fragment.rect.top + scrollOffset;
-                    visualBlock.text = std::move(fragment.display.text);
-                    visualBlock.displayToSource = std::move(fragment.display.displayToSource);
-                    visualBlock.layout = std::move(fragment.layout);
-                    interactionMap.blocks.push_back(std::move(visualBlock));
-                    interactionMap.AddBlockLines(interactionMap.blocks.size() - 1);
-                }
-                if (quoteFragments.empty())
-                {
-                    VisualBlock placeholder;
-                    placeholder.rect = quoteBoxes.front().rect;
-                    placeholder.textOrigin = D2D1::Point2F(documentLeft + block.block_style.padding_left, y + block.block_style.padding_top);
-                    placeholder.textWidth = documentRight - placeholder.textOrigin.x;
-                    placeholder.sourceStart = block.source_range.start.v;
-                    placeholder.sourceEnd = block.source_range.end.v;
-                    placeholder.documentY = y + scrollOffset;
-                    interactionMap.blocks.push_back(std::move(placeholder));
-                }
-                y = quoteBottom;
+                y = EditorQuoteBlockRenderer::Render(
+                    block,
+                    sourceText,
+                    caret,
+                    selection.start.v,
+                    selection.end.v,
+                    selection.is_empty(),
+                    documentLeft,
+                    documentRight,
+                    y,
+                    scrollOffset,
+                    svgSupported,
+                    requestEmbedded,
+                    resources,
+                    styleSheet,
+                    interactionMap,
+                    textLayoutEngine,
+                    inlineImageRenderer,
+                    mathJax,
+                    svgNormalizer,
+                    drawMathSvg,
+                    drawMathFallback);
                 cacheMeasuredHeight(cacheKey, y - blockStartY);
                 continue;
-            }
-            IDWriteTextFormat* format = resources.textFormat.Get();
+            }            IDWriteTextFormat* format = resources.textFormat.Get();
             ID2D1Brush* brush = resources.textBrush.Get();
             float height = 48.0f;
             float inset = 0.0f;
@@ -1495,7 +1340,15 @@ namespace winrt::ElMd
         }
 
         rendering = true;
-        struct ResetFlag { bool& value; ~ResetFlag() { value = false; } } resetFlag{ rendering };
+        struct ResetFlag
+        {
+            EditorSurfaceRenderer& owner;
+            ~ResetFlag()
+            {
+                owner.rendering = false;
+                if (owner.deferredInvalidate.exchange(false)) owner.Invalidate();
+            }
+        } resetFlag{ *this };
 
         resources.EnsureFrameResources(styleSheet);
 

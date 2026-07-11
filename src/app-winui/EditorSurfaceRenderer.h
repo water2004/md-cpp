@@ -97,5 +97,6 @@ namespace winrt::ElMd
         float totalDocumentHeight = 0.0f;
         bool resizing = false;
         bool rendering = false;
+        std::atomic_bool deferredInvalidate = false;
     };
 }

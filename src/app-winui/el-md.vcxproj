@@ -121,6 +121,7 @@
     <ClInclude Include="EditorTextLayoutEngine.h" />
     <ClInclude Include="EditorTableInteraction.h" />
     <ClInclude Include="EditorInlineImageRenderer.h" />
+    <ClInclude Include="EditorQuoteBlockRenderer.h" />
     <ClInclude Include="EditorScrollController.h" />
     <ClInclude Include="EditorTextInputController.h" />
     <ClInclude Include="EditorPointerController.h" />
@@ -251,6 +252,7 @@
     <ClCompile Include="EditorTextLayoutEngine.cpp" />
     <ClCompile Include="EditorTableInteraction.cpp" />
     <ClCompile Include="EditorInlineImageRenderer.cpp" />
+    <ClCompile Include="EditorQuoteBlockRenderer.cpp" />
     <ClCompile Include="EditorScrollController.cpp" />
     <ClCompile Include="EditorTextInputController.cpp" />
     <ClCompile Include="EditorPointerController.cpp" />
