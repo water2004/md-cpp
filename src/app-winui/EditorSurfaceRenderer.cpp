@@ -13,6 +13,7 @@ namespace winrt::ElMd
 {
     EditorSurfaceRenderer::~EditorSurfaceRenderer()
     {
+        renderCache.Detach();
         mathJax.SetCompletionCallback({});
         svgNormalizer.SetCompletionCallback({});
         mermaid.SetCompletionCallback({});
@@ -43,12 +44,8 @@ namespace winrt::ElMd
         theme = value;
         styleSheet = CreateEditorStyleSheet(value == Theme::Dark);
         blockHeightCache.clear();
-        textLayoutCache.clear();
-        textLayoutCacheOrder.clear();
-        textLayoutCacheBytes = 0;
-        svgDocumentCache.clear();
-        svgDocumentCacheOrder.clear();
-        svgDocumentCacheBytes = 0;
+        renderCache.ClearTextLayouts();
+        renderCache.ClearSvgDocuments();
         resources.RebuildTextFormats(styleSheet);
         resources.ResetBrushes();
     }
@@ -74,7 +71,7 @@ namespace winrt::ElMd
         if (resources.Ready()) return;
         resources.Initialize(panel, styleSheet);
         auto dispatcher = panel.DispatcherQueue();
-        renderDispatcher = dispatcher;
+        renderCache.Attach(dispatcher, [this] { Invalidate(); });
         auto completion = [this, dispatcher]
         {
             if (mathInvalidationQueued.exchange(true)) return;
@@ -102,198 +99,15 @@ namespace winrt::ElMd
         if (result.widthChanged)
         {
             blockHeightCache.clear();
-            textLayoutCache.clear();
-            textLayoutCacheOrder.clear();
-            textLayoutCacheBytes = 0;
+            renderCache.ClearTextLayouts();
         }
         auto maxScroll = MaximumScrollOffset();
         scrollOffset = (std::min)(scrollOffset, maxScroll);
         scrollTarget = (std::min)(scrollTarget, maxScroll);
     }
-    void EditorSurfaceRenderer::QueueRemoteImage(std::string source)
-    {
-        auto state = remoteImages;
-        {
-            std::scoped_lock lock(state->mutex);
-            if (state->data.contains(source) || state->pending.contains(source) || state->failed.contains(source)) return;
-            state->pending.insert(source);
-        }
-        try
-        {
-            auto dispatcher = renderDispatcher;
-            auto invalidation = invalidationState;
-            auto operation = winrt::Windows::Web::Http::HttpClient{}.GetBufferAsync(winrt::Windows::Foundation::Uri(winrt::to_hstring(source)));
-            operation.Completed([state, dispatcher, invalidation, source = std::move(source)](auto const& async, winrt::Windows::Foundation::AsyncStatus status)
-            {
-                std::vector<std::uint8_t> bytes;
-                if (status == winrt::Windows::Foundation::AsyncStatus::Completed)
-                {
-                    try
-                    {
-                        auto buffer = async.GetResults();
-                        if (buffer.Length() <= 16 * 1024 * 1024)
-                        {
-                            bytes.resize(buffer.Length());
-                            auto reader = winrt::Windows::Storage::Streams::DataReader::FromBuffer(buffer);
-                            reader.ReadBytes(winrt::array_view<std::uint8_t>(bytes));
-                        }
-                    }
-                    catch (...) {}
-                }
-                {
-                    std::scoped_lock lock(state->mutex);
-                    state->pending.erase(source);
-                    if (bytes.empty())
-                    {
-                        state->failed.insert(source);
-                    }
-                    else
-                    {
-                        while (!state->order.empty() && (state->data.size() >= 16 || state->bytes + bytes.size() > 32 * 1024 * 1024))
-                        {
-                            auto oldest = std::move(state->order.front());
-                            state->order.pop_front();
-                            auto found = state->data.find(oldest);
-                            if (found == state->data.end()) continue;
-                            state->bytes -= found->second.size();
-                            state->data.erase(found);
-                        }
-                        if (bytes.size() <= 32 * 1024 * 1024)
-                        {
-                            state->bytes += bytes.size();
-                            state->order.push_back(source);
-                            state->data.emplace(source, std::move(bytes));
-                        }
-                    }
-                    ++state->generation;
-                }
-                if (dispatcher)
-                {
-                    dispatcher.TryEnqueue([invalidation]
-                    {
-                        std::function<void()> callback;
-                        {
-                            std::scoped_lock lock(invalidation->mutex);
-                            if (invalidation->active) callback = invalidation->callback;
-                        }
-                        if (callback) callback();
-                    });
-                }
-            });
-        }
-        catch (...)
-        {
-            std::scoped_lock lock(state->mutex);
-            state->pending.erase(source);
-            state->failed.insert(std::move(source));
-            ++state->generation;
-        }
-    }
-
-    std::optional<EditorSurfaceRenderer::CachedRasterImage> EditorSurfaceRenderer::LoadRasterImage(std::wstring const& baseDirectory, std::string_view source)
-    {
-        if (!resources.wicFactory || !resources.d2dContext || source.empty()) return std::nullopt;
-        std::wstring key;
-        std::vector<std::uint8_t> encoded;
-        auto remote = source.starts_with("https://") || source.starts_with("http://");
-        auto data = source.starts_with("data:image/");
-        std::filesystem::path path;
-        if (remote)
-        {
-            key = L"url:" + std::wstring(winrt::to_hstring(std::string(source)));
-            if (auto found = rasterImageCache.find(key); found != rasterImageCache.end()) return found->second;
-            if (rasterImageFailed.contains(key)) return std::nullopt;
-            {
-                std::scoped_lock lock(remoteImages->mutex);
-                auto found = remoteImages->data.find(std::string(source));
-                if (found != remoteImages->data.end()) encoded = found->second;
-            }
-            if (encoded.empty())
-            {
-                QueueRemoteImage(std::string(source));
-                return std::nullopt;
-            }
-        }
-        else if (data)
-        {
-            auto comma = source.find(',');
-            if (comma == std::string_view::npos || source.substr(0, comma).find(";base64") == std::string_view::npos) return std::nullopt;
-            key = L"data:" + std::to_wstring(source.size()) + L":" + std::to_wstring(std::hash<std::string_view>{}(source));
-            if (auto found = rasterImageCache.find(key); found != rasterImageCache.end()) return found->second;
-            if (rasterImageFailed.contains(key)) return std::nullopt;
-            auto decoded = DecodeBase64(source.substr(comma + 1));
-            if (!decoded || decoded->empty()) return std::nullopt;
-            encoded = std::move(*decoded);
-        }
-        else
-        {
-            auto sourceText = winrt::to_hstring(std::string(source));
-            path = std::filesystem::path(sourceText.c_str());
-            if (path.has_root_directory() && !path.has_root_name() && !baseDirectory.empty()) path = std::filesystem::path(baseDirectory) / path.relative_path();
-            if (path.is_relative())
-            {
-                if (baseDirectory.empty()) return std::nullopt;
-                path = std::filesystem::path(baseDirectory) / path;
-            }
-            std::error_code error;
-            auto absolute = std::filesystem::weakly_canonical(path, error);
-            if (error) absolute = path.lexically_normal();
-            key = absolute.wstring();
-            path = std::move(absolute);
-        }
-        if (auto found = rasterImageCache.find(key); found != rasterImageCache.end()) return found->second;
-        if (rasterImageFailed.contains(key)) return std::nullopt;
-        auto fail = [&]() -> std::optional<CachedRasterImage>
-        {
-            rasterImageFailed.insert(key);
-            return std::nullopt;
-        };
-
-        ::Microsoft::WRL::ComPtr<IWICBitmapDecoder> decoder;
-        ::Microsoft::WRL::ComPtr<IWICStream> stream;
-        if (!encoded.empty())
-        {
-            if (encoded.size() > (std::numeric_limits<DWORD>::max)()) return fail();
-            if (FAILED(resources.wicFactory->CreateStream(stream.GetAddressOf())) || FAILED(stream->InitializeFromMemory(encoded.data(), static_cast<DWORD>(encoded.size())))) return fail();
-            if (FAILED(resources.wicFactory->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad, decoder.GetAddressOf()))) return fail();
-        }
-        else if (FAILED(resources.wicFactory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad, decoder.GetAddressOf()))) return fail();
-        ::Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> frame;
-        if (FAILED(decoder->GetFrame(0, frame.GetAddressOf()))) return fail();
-        UINT width = 0;
-        UINT height = 0;
-        if (FAILED(frame->GetSize(&width, &height)) || width == 0 || height == 0) return fail();
-        auto pixels = static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height);
-        if (pixels > 16ull * 1024ull * 1024ull) return fail();
-        ::Microsoft::WRL::ComPtr<IWICFormatConverter> converter;
-        if (FAILED(resources.wicFactory->CreateFormatConverter(converter.GetAddressOf()))) return fail();
-        if (FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeMedianCut))) return fail();
-        CachedRasterImage image;
-        if (FAILED(resources.d2dContext->CreateBitmapFromWicBitmap(converter.Get(), nullptr, image.bitmap.GetAddressOf())) || !image.bitmap) return fail();
-        image.width = static_cast<float>(width);
-        image.height = static_cast<float>(height);
-        image.bytes = static_cast<std::size_t>(pixels * 4);
-        while (!rasterImageCacheOrder.empty() && (rasterImageCache.size() >= 32 || rasterImageCacheBytes + image.bytes > 64 * 1024 * 1024))
-        {
-            auto oldest = std::move(rasterImageCacheOrder.front());
-            rasterImageCacheOrder.pop_front();
-            auto found = rasterImageCache.find(oldest);
-            if (found == rasterImageCache.end()) continue;
-            rasterImageCacheBytes -= found->second.bytes;
-            rasterImageCache.erase(found);
-        }
-        if (image.bytes <= 64 * 1024 * 1024)
-        {
-            rasterImageCacheBytes += image.bytes;
-            rasterImageCacheOrder.push_back(key);
-            rasterImageCache.emplace(key, image);
-        }
-        return image;
-    }
-
     void EditorSurfaceRenderer::DrawDocument(detail::EditorSessionCore const& sessionCore)
     {
-        auto remoteGeneration = remoteImages->generation.load();
+        auto remoteGeneration = renderCache.RemoteImageGeneration();
         if (remoteGeneration != observedRemoteImageGeneration)
         {
             observedRemoteImageGeneration = remoteGeneration;
@@ -324,54 +138,8 @@ namespace winrt::ElMd
                 return true;
             }
 
-            ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> document;
-            if (auto found = svgDocumentCache.find(renderId); found != svgDocumentCache.end())
-            {
-                document = found->second.document;
-                if (auto order = std::find(svgDocumentCacheOrder.begin(), svgDocumentCacheOrder.end(), renderId); order != svgDocumentCacheOrder.end())
-                {
-                    svgDocumentCacheOrder.erase(order);
-                    svgDocumentCacheOrder.push_back(renderId);
-                }
-            }
-            else
-            {
-                auto allocation = GlobalAlloc(GMEM_MOVEABLE, source.size());
-                if (!allocation) return false;
-                auto bytes = static_cast<char*>(GlobalLock(allocation));
-                if (!bytes)
-                {
-                    GlobalFree(allocation);
-                    return false;
-                }
-                std::memcpy(bytes, source.data(), source.size());
-                GlobalUnlock(allocation);
-                ::Microsoft::WRL::ComPtr<IStream> stream;
-                if (FAILED(CreateStreamOnHGlobal(allocation, TRUE, stream.GetAddressOf())) || !stream)
-                {
-                    GlobalFree(allocation);
-                    return false;
-                }
-                if (FAILED(svgContext->CreateSvgDocument(stream.Get(), D2D1::SizeF(width, height), document.GetAddressOf())) || !document) return false;
-                constexpr std::size_t budget = 24 * 1024 * 1024;
-                constexpr std::size_t limit = 96;
-                auto resourceCost = (std::max)(std::size_t{16 * 1024}, source.size() * 8);
-                while (!svgDocumentCacheOrder.empty() && (svgDocumentCacheBytes + resourceCost > budget || svgDocumentCache.size() >= limit))
-                {
-                    auto oldest = std::move(svgDocumentCacheOrder.front());
-                    svgDocumentCacheOrder.pop_front();
-                    auto oldestDocument = svgDocumentCache.find(oldest);
-                    if (oldestDocument == svgDocumentCache.end()) continue;
-                    svgDocumentCacheBytes -= oldestDocument->second.bytes;
-                    svgDocumentCache.erase(oldestDocument);
-                }
-                if (resourceCost <= budget)
-                {
-                    svgDocumentCacheBytes += resourceCost;
-                    svgDocumentCacheOrder.push_back(renderId);
-                    svgDocumentCache.emplace(renderId, CachedSvgDocument{ document, resourceCost });
-                }
-            }
+            auto document = renderCache.FindOrCreateSvgDocument(svgContext.Get(), renderId, source, width, height);
+            if (!document) return false;
             document->SetViewportSize(D2D1::SizeF(width, height));
             D2D1_MATRIX_3X2_F transform{};
             svgContext->GetTransform(&transform);
@@ -482,7 +250,7 @@ namespace winrt::ElMd
         struct InlineImageDraw
         {
             std::uint32_t displayStart = 0;
-            std::optional<CachedRasterImage> image;
+            std::optional<EditorRenderCache::RasterImage> image;
             std::wstring alt;
             float width = 0.0f;
             float height = 0.0f;
@@ -498,7 +266,7 @@ namespace winrt::ElMd
             {
                 InlineImageDraw draw;
                 draw.displayStart = overlay.displayStart;
-                draw.image = LoadRasterImage(sessionCore.baseDirectory, overlay.source);
+                draw.image = renderCache.LoadRasterImage(resources, sessionCore.baseDirectory, overlay.source);
                 draw.alt = winrt::to_hstring(overlay.alt.empty() ? std::string("image") : overlay.alt).c_str();
                 if (draw.image)
                 {
@@ -1163,7 +931,7 @@ namespace winrt::ElMd
             bool showRawMath = false;
             std::optional<MermaidSvg> blockMermaid;
             bool showRawMermaid = false;
-            std::optional<CachedRasterImage> blockImage;
+            std::optional<EditorRenderCache::RasterImage> blockImage;
             bool showRawImage = false;
             bool thematicBreak = false;
 
@@ -1406,7 +1174,7 @@ namespace winrt::ElMd
                     break;
                 case elmd::RenderBlockKind::Image:
                 {
-                    blockImage = LoadRasterImage(sessionCore.baseDirectory, block.src);
+                    blockImage = renderCache.LoadRasterImage(resources, sessionCore.baseDirectory, block.src);
                     showRawImage = block.source_range.start.v <= caret && caret <= block.source_range.end.v;
                     DisplayInlineText display;
                     if (showRawImage || !blockImage)
@@ -1515,15 +1283,7 @@ namespace winrt::ElMd
             ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
             if (cacheableLayout)
             {
-                if (auto found = textLayoutCache.find(layoutKey); found != textLayoutCache.end())
-                {
-                    layout = found->second.layout;
-                    if (auto order = std::find(textLayoutCacheOrder.begin(), textLayoutCacheOrder.end(), layoutKey); order != textLayoutCacheOrder.end())
-                    {
-                        textLayoutCacheOrder.erase(order);
-                        textLayoutCacheOrder.push_back(layoutKey);
-                    }
-                }
+                layout = renderCache.FindTextLayout(layoutKey);
             }
             if (!layout)
             {
@@ -1532,24 +1292,8 @@ namespace winrt::ElMd
                 ApplyMathInlineObjects(layout.Get(), inlineMathOverlays);
                 if (cacheableLayout && layout)
                 {
-                    constexpr std::size_t budget = 16 * 1024 * 1024;
-                    constexpr std::size_t limit = 512;
                     auto bytes = (std::max)(std::size_t{4096}, text.size() * 12);
-                    while (!textLayoutCacheOrder.empty() && (textLayoutCacheBytes + bytes > budget || textLayoutCache.size() >= limit))
-                    {
-                        auto oldest = textLayoutCacheOrder.front();
-                        textLayoutCacheOrder.pop_front();
-                        auto found = textLayoutCache.find(oldest);
-                        if (found == textLayoutCache.end()) continue;
-                        textLayoutCacheBytes -= found->second.bytes;
-                        textLayoutCache.erase(found);
-                    }
-                    if (bytes <= budget)
-                    {
-                        textLayoutCacheBytes += bytes;
-                        textLayoutCacheOrder.push_back(layoutKey);
-                        textLayoutCache.emplace(layoutKey, CachedTextLayout{layout, bytes});
-                    }
+                    renderCache.StoreTextLayout(layoutKey, layout, bytes);
                 }
             }
             auto inlineImageDraws = resolveInlineImages(layout.Get(), inlineImageOverlays, textWidth);

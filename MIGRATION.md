@@ -40,7 +40,7 @@ script 执行 / iframe / 把 `<img>` 当图片 / 把 `<table>` 当表格 /
 | editor-layout | `src/core/layout_plan.ixx` + `src/app-winui/EditorInteractionMap.*` | ✅ 全块预分配、DirectWrite 测量/命中测试、视口虚拟化、高度缓存 |
 | storage | `src/core/storage.ixx` | ✅ 新增（file_io+assets） |
 | export | `src/core/exporter.ixx` | ✅ 新增（markdown+html+plain_text） |
-| platform-windows | `src/platform/*.ixx` + `src/app-winui/{EditorRenderResources,EditorStyleSheet}.*` | ✅ D3D/DXGI/Direct2D/DirectWrite/WIC/TSF/clipboard/theme 已接入，core 仍保持纯 C++ |
+| platform-windows | `src/platform/*.ixx` + `src/app-winui/{EditorRenderResources,EditorRenderCache,EditorStyleSheet}.*` | ✅ D3D/DXGI/Direct2D/DirectWrite/WIC/TSF/clipboard/theme 已接入，GPU/文字/图片/SVG 缓存按预算淘汰并具备独立生命周期，core 仍保持纯 C++ |
 | app-winui | `src/app-winui/*.cpp + *.xaml` | ✅ WinUI 3 壳、原生编辑面、独立滚动、TSF/IME、键盘、指针、异步文档 I/O 与侧边栏导航控制器生命周期、MathJax、Mermaid、Tree-sitter |
 
 ### 缺失/待补的 core 模块

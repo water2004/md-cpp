@@ -115,6 +115,7 @@
     <ClInclude Include="EditorInteractionMap.h" />
     <ClInclude Include="EditorContentPreparation.h" />
     <ClInclude Include="EditorRenderResources.h" />
+    <ClInclude Include="EditorRenderCache.h" />
     <ClInclude Include="EditorScrollController.h" />
     <ClInclude Include="EditorTextInputController.h" />
     <ClInclude Include="EditorPointerController.h" />
@@ -239,6 +240,7 @@
     <ClCompile Include="EditorInteractionMap.cpp" />
     <ClCompile Include="EditorContentPreparation.cpp" />
     <ClCompile Include="EditorRenderResources.cpp" />
+    <ClCompile Include="EditorRenderCache.cpp" />
     <ClCompile Include="EditorScrollController.cpp" />
     <ClCompile Include="EditorTextInputController.cpp" />
     <ClCompile Include="EditorPointerController.cpp" />

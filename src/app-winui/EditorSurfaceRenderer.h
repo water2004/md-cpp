@@ -6,6 +6,7 @@
 #include "TreeSitterHighlighter.h"
 #include "EditorStyleSheet.h"
 #include "EditorInteractionMap.h"
+#include "EditorRenderCache.h"
 #include "EditorRenderResources.h"
 
 namespace winrt::ElMd
@@ -72,28 +73,6 @@ namespace winrt::ElMd
     private:
         void DrawDocument(detail::EditorSessionCore const& sessionCore);
 
-        struct CachedRasterImage
-        {
-            ::Microsoft::WRL::ComPtr<ID2D1Bitmap1> bitmap;
-            float width = 0.0f;
-            float height = 0.0f;
-            std::size_t bytes = 0;
-        };
-
-        struct CachedSvgDocument
-        {
-            ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> document;
-            std::size_t bytes = 0;
-        };
-
-        struct CachedTextLayout
-        {
-            ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
-            std::size_t bytes = 0;
-        };
-
-        std::optional<CachedRasterImage> LoadRasterImage(std::wstring const& baseDirectory, std::string_view source);
-        void QueueRemoteImage(std::string source);
         void Invalidate();
 
         struct InvalidationState
@@ -103,17 +82,6 @@ namespace winrt::ElMd
             bool active = true;
         };
 
-        struct RemoteImageState
-        {
-            std::mutex mutex;
-            std::unordered_map<std::string, std::vector<std::uint8_t>> data;
-            std::unordered_set<std::string> pending;
-            std::unordered_set<std::string> failed;
-            std::deque<std::string> order;
-            std::size_t bytes = 0;
-            std::atomic_uint64_t generation = 0;
-        };
-
         using VisualBlock = EditorVisualBlock;
         using VisualLine = EditorVisualLine;
         using VisualTableCell = EditorVisualTableCell;
@@ -121,6 +89,7 @@ namespace winrt::ElMd
         using VisualMathHit = EditorVisualMathHit;
 
         EditorRenderResources resources;
+        EditorRenderCache renderCache;
         MathJaxRenderer mathJax;
         MermaidRenderer mermaid;
         SvgNormalizer svgNormalizer;
@@ -131,19 +100,7 @@ namespace winrt::ElMd
         EditorStyleSheet styleSheet = CreateEditorStyleSheet(true);
         EditorInteractionMap interactionMap;
         std::unordered_map<std::uint64_t, float> blockHeightCache;
-        std::unordered_map<std::uint64_t, CachedTextLayout> textLayoutCache;
-        std::deque<std::uint64_t> textLayoutCacheOrder;
-        std::size_t textLayoutCacheBytes = 0;
-        std::unordered_map<std::wstring, CachedRasterImage> rasterImageCache;
-        std::unordered_set<std::wstring> rasterImageFailed;
-        std::deque<std::wstring> rasterImageCacheOrder;
-        std::size_t rasterImageCacheBytes = 0;
-        std::shared_ptr<RemoteImageState> remoteImages = std::make_shared<RemoteImageState>();
         std::uint64_t observedRemoteImageGeneration = 0;
-        winrt::Microsoft::UI::Dispatching::DispatcherQueue renderDispatcher{ nullptr };
-        std::unordered_map<std::uint64_t, CachedSvgDocument> svgDocumentCache;
-        std::deque<std::uint64_t> svgDocumentCacheOrder;
-        std::size_t svgDocumentCacheBytes = 0;
         std::optional<D2D1_POINT_2F> pointerPosition;
         std::optional<TableAction> draggedTableAction;
         std::optional<std::size_t> tableDropIndex;

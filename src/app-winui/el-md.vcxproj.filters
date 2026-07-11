@@ -71,6 +71,9 @@
     <ClCompile Include="EditorRenderResources.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="EditorRenderCache.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="EditorScrollController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -134,6 +137,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EditorRenderResources.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EditorRenderCache.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EditorScrollController.h">
