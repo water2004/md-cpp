@@ -150,52 +150,6 @@ namespace winrt::ElMd
             resources.d2dContext->DrawTextW(fallback.c_str(), static_cast<UINT32>(fallback.size()), resources.codeFormat.Get(), D2D1::RectF(origin.x, origin.y, documentRight, origin.y + styleSheet.code.lineHeight * 3.0f), resources.textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
         };
 
-        auto addVisualLinesForBlock = [&](std::size_t blockIndex)
-        {
-            auto const& block = interactionMap.blocks[blockIndex];
-            if (!block.layout || block.displayToSource.empty())
-            {
-                return;
-            }
-
-            UINT32 lineCount = 0;
-            auto hr = block.layout->GetLineMetrics(nullptr, 0, &lineCount);
-            if (hr != E_NOT_SUFFICIENT_BUFFER || lineCount == 0)
-            {
-                return;
-            }
-
-            std::vector<DWRITE_LINE_METRICS> metrics(lineCount);
-            if (FAILED(block.layout->GetLineMetrics(metrics.data(), lineCount, &lineCount)))
-            {
-                return;
-            }
-
-            UINT32 textPosition = 0;
-            float lineTop = block.textOrigin.y;
-            UINT32 prevNewlineLength = 0;
-            for (UINT32 lineIndex = 0; lineIndex < lineCount; ++lineIndex)
-            {
-                auto const& line = metrics[lineIndex];
-                auto lineEndPosition = textPosition + line.length;
-                auto visibleEndPosition = lineEndPosition >= line.newlineLength ? lineEndPosition - line.newlineLength : lineEndPosition;
-                auto startIndex = (std::min)(static_cast<std::size_t>(textPosition), block.displayToSource.size() - 1);
-                auto endIndex = (std::min)(static_cast<std::size_t>(visibleEndPosition), block.displayToSource.size() - 1);
-                VisualLine visualLine;
-                visualLine.blockIndex = blockIndex;
-                visualLine.sourceStart = block.displayToSource[startIndex];
-                visualLine.sourceEnd = block.displayToSource[endIndex];
-                visualLine.displayStart = textPosition;
-                visualLine.displayEnd = visibleEndPosition;
-                visualLine.wrapContinuation = lineIndex > 0 && prevNewlineLength == 0;
-                visualLine.rect = D2D1::RectF(block.textOrigin.x, lineTop, block.textOrigin.x + block.textWidth, lineTop + line.height);
-                interactionMap.lines.push_back(visualLine);
-                textPosition = lineEndPosition;
-                lineTop += line.height;
-                prevNewlineLength = line.newlineLength;
-            }
-        };
-
         auto blockContentWidth = documentRight - documentLeft;
 
         std::vector<elmd::BlockLayoutInput> layoutInputs;
@@ -452,58 +406,7 @@ namespace winrt::ElMd
                                 });
                             }
                         }
-                        bool addedVisualLine = false;
-                        if (cell.layout && !cell.displayToSource.empty())
-                        {
-                            UINT32 lineCount = 0;
-                            auto hr = cell.layout->GetLineMetrics(nullptr, 0, &lineCount);
-                            if (hr == E_NOT_SUFFICIENT_BUFFER && lineCount > 0)
-                            {
-                                std::vector<DWRITE_LINE_METRICS> metrics(lineCount);
-                                if (SUCCEEDED(cell.layout->GetLineMetrics(metrics.data(), lineCount, &lineCount)))
-                                {
-                                    UINT32 textPosition = 0;
-                                    UINT32 previousNewlineLength = 0;
-                                    float lineTop = cell.textOrigin.y;
-                                    for (UINT32 lineIndex = 0; lineIndex < lineCount; ++lineIndex)
-                                    {
-                                        auto const& metric = metrics[lineIndex];
-                                        auto lineEndPosition = textPosition + metric.length;
-                                        auto visibleEndPosition = lineEndPosition >= metric.newlineLength ? lineEndPosition - metric.newlineLength : lineEndPosition;
-                                        auto startIndex = (std::min)(static_cast<std::size_t>(textPosition), cell.displayToSource.size() - 1);
-                                        auto endIndex = (std::min)(static_cast<std::size_t>(visibleEndPosition), cell.displayToSource.size() - 1);
-                                        VisualLine line;
-                                        line.blockIndex = visualBlockIndex;
-                                        line.tableIndex = tableIndex;
-                                        line.cellIndex = cellIndex;
-                                        line.sourceStart = cell.displayToSource[startIndex];
-                                        line.sourceEnd = cell.displayToSource[endIndex];
-                                        line.displayStart = textPosition;
-                                        line.displayEnd = visibleEndPosition;
-                                        line.wrapContinuation = lineIndex > 0 && previousNewlineLength == 0;
-                                        line.rect = D2D1::RectF(cell.rect.left, lineTop, cell.rect.right, lineTop + metric.height);
-                                        interactionMap.lines.push_back(std::move(line));
-                                        addedVisualLine = true;
-                                        textPosition = lineEndPosition;
-                                        lineTop += metric.height;
-                                        previousNewlineLength = metric.newlineLength;
-                                    }
-                                }
-                            }
-                        }
-                        if (!addedVisualLine)
-                        {
-                            VisualLine line;
-                            line.blockIndex = visualBlockIndex;
-                            line.tableIndex = tableIndex;
-                            line.cellIndex = cellIndex;
-                            line.sourceStart = cell.sourceStart;
-                            line.sourceEnd = cell.sourceEnd;
-                            line.displayStart = 0;
-                            line.displayEnd = static_cast<std::uint32_t>(cell.text.size());
-                            line.rect = cell.rect;
-                            interactionMap.lines.push_back(std::move(line));
-                        }
+                        interactionMap.AddTableCellLines(visualBlockIndex, tableIndex, cellIndex);
                     }
                     for (auto boundary : visualTable.columnBoundaries)
                     {
@@ -688,7 +591,7 @@ namespace winrt::ElMd
                     visualBlock.displayToSource = std::move(fragment.display.displayToSource);
                     visualBlock.layout = std::move(fragment.layout);
                     interactionMap.blocks.push_back(std::move(visualBlock));
-                    addVisualLinesForBlock(interactionMap.blocks.size() - 1);
+                    interactionMap.AddBlockLines(interactionMap.blocks.size() - 1);
                 }
                 if (quoteFragments.empty())
                 {
@@ -1433,7 +1336,7 @@ namespace winrt::ElMd
                 }
                 else
                 {
-                    addVisualLinesForBlock(interactionMap.blocks.size() - 1);
+                    interactionMap.AddBlockLines(interactionMap.blocks.size() - 1);
                 }
             }
             y += height;

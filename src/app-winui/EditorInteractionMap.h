@@ -75,6 +75,8 @@ namespace winrt::ElMd
     struct EditorInteractionMap
     {
         void Clear(std::size_t blockCapacity);
+        void AddBlockLines(std::size_t blockIndex);
+        void AddTableCellLines(std::size_t blockIndex, std::size_t tableIndex, std::size_t cellIndex);
         std::optional<std::size_t> HitTest(float x, float y, bool* outUpstream = nullptr) const;
         std::optional<D2D1_RECT_F> CaretBounds(std::size_t sourceOffset, bool upstream, float bodyLineHeight) const;
         std::optional<EditorCaretMove> MoveCaretVertically(std::size_t sourceOffset, bool upstream, bool down, float& goalX, float bodyLineHeight) const;

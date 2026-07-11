@@ -23,6 +23,95 @@ namespace winrt::ElMd
         blocks.reserve(blockCapacity);
     }
 
+    void EditorInteractionMap::AddBlockLines(std::size_t blockIndex)
+    {
+        if (blockIndex >= blocks.size()) return;
+        auto const& block = blocks[blockIndex];
+        if (!block.layout || block.displayToSource.empty()) return;
+        UINT32 lineCount = 0;
+        auto result = block.layout->GetLineMetrics(nullptr, 0, &lineCount);
+        if (result != E_NOT_SUFFICIENT_BUFFER || lineCount == 0) return;
+        std::vector<DWRITE_LINE_METRICS> metrics(lineCount);
+        if (FAILED(block.layout->GetLineMetrics(metrics.data(), lineCount, &lineCount))) return;
+        UINT32 textPosition = 0;
+        UINT32 previousNewlineLength = 0;
+        float lineTop = block.textOrigin.y;
+        for (UINT32 lineIndex = 0; lineIndex < lineCount; ++lineIndex)
+        {
+            auto const& metric = metrics[lineIndex];
+            auto lineEndPosition = textPosition + metric.length;
+            auto visibleEndPosition = lineEndPosition >= metric.newlineLength ? lineEndPosition - metric.newlineLength : lineEndPosition;
+            auto startIndex = (std::min)(static_cast<std::size_t>(textPosition), block.displayToSource.size() - 1);
+            auto endIndex = (std::min)(static_cast<std::size_t>(visibleEndPosition), block.displayToSource.size() - 1);
+            EditorVisualLine line;
+            line.blockIndex = blockIndex;
+            line.sourceStart = block.displayToSource[startIndex];
+            line.sourceEnd = block.displayToSource[endIndex];
+            line.displayStart = textPosition;
+            line.displayEnd = visibleEndPosition;
+            line.wrapContinuation = lineIndex > 0 && previousNewlineLength == 0;
+            line.rect = D2D1::RectF(block.textOrigin.x, lineTop, block.textOrigin.x + block.textWidth, lineTop + metric.height);
+            lines.push_back(std::move(line));
+            textPosition = lineEndPosition;
+            lineTop += metric.height;
+            previousNewlineLength = metric.newlineLength;
+        }
+    }
+
+    void EditorInteractionMap::AddTableCellLines(std::size_t blockIndex, std::size_t tableIndex, std::size_t cellIndex)
+    {
+        if (blockIndex >= blocks.size() || tableIndex >= tables.size() || cellIndex >= tables[tableIndex].cells.size()) return;
+        auto const& cell = tables[tableIndex].cells[cellIndex];
+        auto initialCount = lines.size();
+        if (cell.layout && !cell.displayToSource.empty())
+        {
+            UINT32 lineCount = 0;
+            auto result = cell.layout->GetLineMetrics(nullptr, 0, &lineCount);
+            if (result == E_NOT_SUFFICIENT_BUFFER && lineCount > 0)
+            {
+                std::vector<DWRITE_LINE_METRICS> metrics(lineCount);
+                if (SUCCEEDED(cell.layout->GetLineMetrics(metrics.data(), lineCount, &lineCount)))
+                {
+                    UINT32 textPosition = 0;
+                    UINT32 previousNewlineLength = 0;
+                    float lineTop = cell.textOrigin.y;
+                    for (UINT32 lineIndex = 0; lineIndex < lineCount; ++lineIndex)
+                    {
+                        auto const& metric = metrics[lineIndex];
+                        auto lineEndPosition = textPosition + metric.length;
+                        auto visibleEndPosition = lineEndPosition >= metric.newlineLength ? lineEndPosition - metric.newlineLength : lineEndPosition;
+                        auto startIndex = (std::min)(static_cast<std::size_t>(textPosition), cell.displayToSource.size() - 1);
+                        auto endIndex = (std::min)(static_cast<std::size_t>(visibleEndPosition), cell.displayToSource.size() - 1);
+                        EditorVisualLine line;
+                        line.blockIndex = blockIndex;
+                        line.tableIndex = tableIndex;
+                        line.cellIndex = cellIndex;
+                        line.sourceStart = cell.displayToSource[startIndex];
+                        line.sourceEnd = cell.displayToSource[endIndex];
+                        line.displayStart = textPosition;
+                        line.displayEnd = visibleEndPosition;
+                        line.wrapContinuation = lineIndex > 0 && previousNewlineLength == 0;
+                        line.rect = D2D1::RectF(cell.rect.left, lineTop, cell.rect.right, lineTop + metric.height);
+                        lines.push_back(std::move(line));
+                        textPosition = lineEndPosition;
+                        lineTop += metric.height;
+                        previousNewlineLength = metric.newlineLength;
+                    }
+                }
+            }
+        }
+        if (lines.size() != initialCount) return;
+        EditorVisualLine line;
+        line.blockIndex = blockIndex;
+        line.tableIndex = tableIndex;
+        line.cellIndex = cellIndex;
+        line.sourceStart = cell.sourceStart;
+        line.sourceEnd = cell.sourceEnd;
+        line.displayEnd = static_cast<std::uint32_t>(cell.text.size());
+        line.rect = cell.rect;
+        lines.push_back(std::move(line));
+    }
+
     std::optional<std::size_t> EditorInteractionMap::LineIndexFor(std::size_t sourceOffset, bool upstream) const
     {
         if (lines.empty()) return std::nullopt;

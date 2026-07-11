@@ -37,7 +37,7 @@ script 执行 / iframe / 把 `<img>` 当图片 / 把 `<table>` 当表格 /
 | editor-outline | `src/core/{outline,slug}.ixx` | ✅ 已迁移 |
 | math/diagram-render | `src/core/math_renderer.ixx` + `src/app-winui/{MathJaxRenderer,MermaidRenderer,SvgNormalizer}.*` | ✅ MathJax 4/QuickJS + mermaid-rs-renderer + usvg path-only 标准化 |
 | editor-render | `src/core/{render_model,render_builder}.ixx` + `src/app-winui/{EditorContentPreparation,EditorTextLayoutEngine,EditorInlineImageRenderer,EditorSvgPainter,EditorTableInteraction}.*` | ✅ 语义模型、平台内联内容准备、DirectWrite 布局、内联图片、SVG 绘制与表格交互镀铬层分离 |
-| editor-layout | `src/core/layout_plan.ixx` + `src/app-winui/{EditorInteractionMap,EditorBlockLayoutCache}.*` | ✅ 全块预分配、DirectWrite 测量/命中测试、视口虚拟化，平台实测高度缓存与核心布局计划分离 |
+| editor-layout | `src/core/layout_plan.ixx` + `src/app-winui/{EditorInteractionMap,EditorBlockLayoutCache}.*` | ✅ 全块预分配、DirectWrite 测量/命中测试、视口虚拟化，普通块与表格单元格共用视觉行到源码映射，平台实测高度缓存与核心布局计划分离 |
 | storage | `src/core/storage.ixx` | ✅ 新增（file_io+assets） |
 | export | `src/core/exporter.ixx` | ✅ 新增（markdown+html+plain_text） |
 | platform-windows | `src/platform/*.ixx` + `src/app-winui/{EditorRenderResources,EditorRenderCache,EditorStyleSheet}.*` | ✅ D3D/DXGI/Direct2D/DirectWrite/WIC/TSF/clipboard/theme 已接入，GPU/文字/图片/SVG 缓存按预算淘汰并具备独立生命周期，core 仍保持纯 C++ |
