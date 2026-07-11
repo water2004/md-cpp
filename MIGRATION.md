@@ -14,9 +14,9 @@
 
 ## 2. 编辑区约束
 
-WebView2 / 浏览器引擎 / DOM / CSS 布局不得作为编辑区或参与文本布局；唯一例外是两个
-隔离、排队、只输出 SVG 的嵌入内容转换器：单 QuickJS worker 运行 MathJax 4，单隐藏
-WebView2 运行 Mermaid。两路 SVG 进入同一个后台 usvg 标准化队列，把文字、marker 和
+WebView2 / 浏览器引擎 / DOM / CSS 布局不得作为编辑区或参与文本布局。嵌入内容转换器
+隔离、排队、只输出 SVG：单 QuickJS worker 运行 MathJax 4，单原生 Rust worker 运行
+`mermaid-rs-renderer`。两路 SVG 进入 usvg 标准化管线，把文字、marker 和
 不兼容节点规范为 path-only SVG，再交回 WinUI 3 的 `ID2D1SvgDocument` 原生矢量绘制；
 转换器不接收键鼠输入，也不保存 Markdown 状态。
 
@@ -35,7 +35,7 @@ script 执行 / iframe / 把 `<img>` 当图片 / 把 `<table>` 当表格 /
 | markdown-parse | `src/core/parser.ixx` | ✅ CommonMark/GFM、连续列表/任务列表、表格、数学、脚注、callout、TOC、frontmatter |
 | editor-core | `src/core/{editor,command,transaction,undo,selection,input,scheduler,caret}.ixx` | ✅ 已迁移（命令 nullopt 项与 Rust 保持一致，editor 层处理） |
 | editor-outline | `src/core/{outline,slug}.ixx` | ✅ 已迁移 |
-| math-render | `src/core/math_renderer.ixx` + `src/app-winui/{MathJaxRenderer,SvgNormalizer}.*` | ✅ fallback + MathJax 4/NewCM 动态字体 + usvg path-only 标准化 |
+| math/diagram-render | `src/core/math_renderer.ixx` + `src/app-winui/{MathJaxRenderer,MermaidRenderer,SvgNormalizer}.*` | ✅ MathJax 4/QuickJS + mermaid-rs-renderer + usvg path-only 标准化 |
 | editor-render | `src/core/{render_model,render_builder}.ixx` | ✅ 已迁移 |
 | editor-layout | core layout + `src/app-winui/EditorSurfaceRenderer.*` | ✅ DirectWrite 测量/命中测试、视口虚拟化、高度缓存、原生嵌入块绘制 |
 | storage | `src/core/storage.ixx` | ✅ 新增（file_io+assets） |
@@ -137,7 +137,7 @@ core 侧只接收规范定义的 `TextInputEvent`，不碰 Windows API。
 打开文件后在后台线程构建文档；编辑走增量 parser。ParseOutput/RenderModel/LayoutTree
 均带 revision，旧 revision 结果丢弃。原生 renderer 只为 viewport 及预取区建立
 DirectWrite layout，离屏块复用高度缓存；Tree-sitter 只高亮可见代码块。MathJax 与
-Mermaid 各自单队列去重生成 SVG，再进入共享的单 usvg 队列；队列、字符串缓存和
+Mermaid 各自单队列去重生成 SVG，后者在同一个 Rust 调用内直接经 usvg 标准化；队列、字符串缓存和
 Direct2D SVG 文档缓存都有硬预算，只有屏幕内 SVG 才创建原生文档。
 
 ## 13. 禁止实现的类型/模块

@@ -27,7 +27,6 @@ namespace winrt::ElMd
         void Render(detail::EditorSessionCore const& sessionCore);
         void SetTheme(Theme value);
         void SetInvalidateCallback(std::function<void()> callback);
-        void InitializeMermaid(winrt::Microsoft::UI::Xaml::Controls::WebView2 const& webView);
 
         struct CaretMove
         {

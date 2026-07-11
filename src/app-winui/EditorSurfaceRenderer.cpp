@@ -822,23 +822,6 @@ namespace winrt::ElMd
         if (callback) callback();
     }
 
-    void EditorSurfaceRenderer::InitializeMermaid(winrt::Microsoft::UI::Xaml::Controls::WebView2 const& webView)
-    {
-        auto dispatcher = webView.DispatcherQueue();
-        mermaid.Initialize(webView, [this, dispatcher]
-        {
-            if (mathInvalidationQueued.exchange(true)) return;
-            if (!dispatcher.TryEnqueue([this]
-            {
-                mathInvalidationQueued = false;
-                Invalidate();
-            }))
-            {
-                mathInvalidationQueued = false;
-            }
-        });
-    }
-
     void EditorSurfaceRenderer::Initialize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel)
     {
         if (swapChain)
@@ -938,7 +921,8 @@ namespace winrt::ElMd
             }
         };
         mathJax.SetCompletionCallback(completion);
-        svgNormalizer.SetCompletionCallback(std::move(completion));
+        svgNormalizer.SetCompletionCallback(completion);
+        mermaid.SetCompletionCallback(std::move(completion));
     }
 
     void EditorSurfaceRenderer::Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height)

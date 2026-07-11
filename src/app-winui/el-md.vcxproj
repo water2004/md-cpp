@@ -267,15 +267,6 @@
     <None Include="Assets\mathjax\LICENSE-MathJax.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Assets\mermaid\mermaid.min.js">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="Assets\mermaid\renderer.html">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="Assets\mermaid\LICENSE-Mermaid.txt">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
     <None Include="third_party\usvg-normalizer\Cargo.toml" />
     <None Include="third_party\usvg-normalizer\Cargo.lock" />
     <None Include="third_party\usvg-normalizer\src\lib.rs" />

@@ -3,42 +3,92 @@
 
 namespace
 {
-    std::wstring AssetFolder()
+    std::wstring ModuleDirectory()
     {
         std::wstring path(32768, L'\0');
         auto length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
         path.resize(length);
         auto separator = path.find_last_of(L"\\/");
-        if (separator == std::wstring::npos) return L"Assets\\mermaid";
-        return path.substr(0, separator + 1) + L"Assets\\mermaid";
+        return separator == std::wstring::npos ? std::wstring{} : path.substr(0, separator + 1);
     }
 
-    std::string Base64(std::string_view input)
+    class Runtime
     {
-        constexpr std::string_view alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        std::string output;
-        output.reserve((input.size() + 2) / 3 * 4);
-        std::uint32_t value = 0;
-        int bits = -6;
-        for (unsigned char byte : input)
+    public:
+        Runtime()
         {
-            value = (value << 8) | byte;
-            bits += 8;
-            while (bits >= 0)
+            module = LoadLibraryExW((ModuleDirectory() + L"elmd_svg_normalizer.dll").c_str(), nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+            if (!module)
             {
-                output.push_back(alphabet[(value >> bits) & 0x3f]);
-                bits -= 6;
+                error = "Native Mermaid library could not be loaded";
+                return;
             }
+            create = reinterpret_cast<Create>(GetProcAddress(module, "elmd_svg_normalizer_create"));
+            destroy = reinterpret_cast<Destroy>(GetProcAddress(module, "elmd_svg_normalizer_destroy"));
+            render = reinterpret_cast<Render>(GetProcAddress(module, "elmd_mermaid_render"));
+            freeBuffer = reinterpret_cast<FreeBuffer>(GetProcAddress(module, "elmd_svg_buffer_destroy"));
+            if (!create || !destroy || !render || !freeBuffer)
+            {
+                error = "Native Mermaid library has an incompatible ABI";
+                return;
+            }
+            context = create();
+            if (!context) error = "Native Mermaid renderer could not initialize";
         }
-        if (bits > -6) output.push_back(alphabet[((value << 8) >> (bits + 8)) & 0x3f]);
-        while (output.size() % 4) output.push_back('=');
-        return output;
-    }
+
+        ~Runtime()
+        {
+            if (context && destroy) destroy(context);
+            if (module) FreeLibrary(module);
+        }
+
+        winrt::ElMd::MermaidSvg Process(std::string const& source, bool dark, std::uint64_t id)
+        {
+            winrt::ElMd::MermaidSvg result;
+            result.renderId = id;
+            if (!error.empty())
+            {
+                result.error = error;
+                return result;
+            }
+            std::uint8_t* output = nullptr;
+            std::size_t outputLength = 0;
+            auto status = render(
+                context,
+                reinterpret_cast<std::uint8_t const*>(source.data()),
+                source.size(),
+                dark,
+                &output,
+                &outputLength,
+                &result.width,
+                &result.height);
+            std::string value;
+            if (output && outputLength > 0) value.assign(reinterpret_cast<char const*>(output), outputLength);
+            if (output) freeBuffer(output, outputLength);
+            if (status == 0) result.svg = std::move(value);
+            else result.error = value.empty() ? "Native Mermaid rendering failed" : std::move(value);
+            return result;
+        }
+
+    private:
+        using Create = void* (*)();
+        using Destroy = void (*)(void*);
+        using Render = std::int32_t (*)(void*, std::uint8_t const*, std::size_t, bool, std::uint8_t**, std::size_t*, float*, float*);
+        using FreeBuffer = void (*)(std::uint8_t*, std::size_t);
+
+        HMODULE module = nullptr;
+        void* context = nullptr;
+        Create create = nullptr;
+        Destroy destroy = nullptr;
+        Render render = nullptr;
+        FreeBuffer freeBuffer = nullptr;
+        std::string error;
+    };
 }
 
 namespace winrt::ElMd
 {
-    struct MermaidRenderer::State : std::enable_shared_from_this<State>
+    struct MermaidRenderer::State
     {
         struct Request
         {
@@ -49,111 +99,44 @@ namespace winrt::ElMd
             std::uint64_t generation = 0;
         };
 
-        winrt::Microsoft::UI::Xaml::Controls::WebView2 webView{ nullptr };
-        winrt::Microsoft::Web::WebView2::Core::CoreWebView2 core{ nullptr };
-        winrt::event_token messageToken{};
-        bool hasMessageHandler = false;
-        bool initializing = false;
-        bool ready = false;
-        std::deque<Request> pending;
-        std::optional<Request> current;
-        std::unordered_set<std::string> queued;
-        std::unordered_map<std::string, MermaidSvg> cache;
-        std::deque<std::string> cacheOrder;
-        std::size_t cacheBytes = 0;
-        std::uint64_t nextId = 1;
-        std::uint64_t generation = 0;
-        std::function<void()> completion;
+        State() : worker([this] { Run(); }) {}
 
         ~State()
         {
-            if (core && hasMessageHandler) core.WebMessageReceived(messageToken);
-        }
-
-        void EnsureInitialized()
-        {
-            if (ready || initializing || !webView) return;
-            initializing = true;
-            InitializeAsync();
-        }
-
-        winrt::fire_and_forget InitializeAsync()
-        {
-            auto lifetime = shared_from_this();
-            try
             {
-                co_await webView.EnsureCoreWebView2Async();
-                core = webView.CoreWebView2();
-                auto settings = core.Settings();
-                settings.IsScriptEnabled(true);
-                settings.IsWebMessageEnabled(true);
-                settings.AreDevToolsEnabled(false);
-                settings.AreDefaultContextMenusEnabled(false);
-                settings.AreHostObjectsAllowed(false);
-                settings.IsZoomControlEnabled(false);
-                core.SetVirtualHostNameToFolderMapping(
-                    L"elmd.local",
-                    AssetFolder(),
-                    winrt::Microsoft::Web::WebView2::Core::CoreWebView2HostResourceAccessKind::DenyCors);
-                std::weak_ptr<State> weak = lifetime;
-                messageToken = core.WebMessageReceived([weak](auto const&, auto const& args)
+                std::scoped_lock lock(mutex);
+                stopping = true;
+                completion = {};
+            }
+            wake.notify_one();
+            if (worker.joinable()) worker.join();
+        }
+
+        void Run()
+        {
+            Runtime runtime;
+            for (;;)
+            {
+                Request request;
                 {
-                    if (auto self = weak.lock()) self->OnMessage(args);
-                });
-                hasMessageHandler = true;
-                webView.Source(winrt::Windows::Foundation::Uri(L"https://elmd.local/renderer.html"));
-            }
-            catch (...)
-            {
-                initializing = false;
-                FailCurrent("WebView2 could not be initialized");
-            }
-        }
-
-        void OnMessage(winrt::Microsoft::Web::WebView2::Core::CoreWebView2WebMessageReceivedEventArgs const& args)
-        {
-            winrt::Windows::Data::Json::JsonObject message;
-            if (!winrt::Windows::Data::Json::JsonObject::TryParse(args.WebMessageAsJson(), message)) return;
-            if (message.HasKey(L"ready"))
-            {
-                ready = true;
-                initializing = false;
-                StartNext();
-                return;
-            }
-            if (!current || !message.HasKey(L"id")) return;
-            auto id = static_cast<std::uint64_t>(message.GetNamedNumber(L"id", 0));
-            if (id != current->id) return;
-            MermaidSvg result;
-            result.svg = winrt::to_string(message.GetNamedString(L"svg", L""));
-            result.error = winrt::to_string(message.GetNamedString(L"error", L""));
-            result.width = static_cast<float>(message.GetNamedNumber(L"width", 0));
-            result.height = static_cast<float>(message.GetNamedNumber(L"height", 0));
-            if (!result && result.error.empty()) result.error = "Mermaid returned an invalid SVG";
-            Complete(std::move(result));
-        }
-
-        void StartNext()
-        {
-            if (!ready || current || pending.empty()) return;
-            current = std::move(pending.front());
-            pending.pop_front();
-            current->id = nextId++;
-            auto script = L"void window.elmdRender(" + std::to_wstring(current->id) + L",\""
-                + winrt::to_hstring(Base64(current->source)) + L"\"," + (current->dark ? L"true" : L"false") + L");";
-            InvokeAsync(std::move(script));
-        }
-
-        winrt::fire_and_forget InvokeAsync(winrt::hstring script)
-        {
-            auto lifetime = shared_from_this();
-            try
-            {
-                co_await webView.ExecuteScriptAsync(script);
-            }
-            catch (...)
-            {
-                FailCurrent("Mermaid script execution failed");
+                    std::unique_lock lock(mutex);
+                    wake.wait(lock, [this] { return stopping || !pending.empty(); });
+                    if (stopping) return;
+                    request = std::move(pending.front());
+                    pending.pop_front();
+                }
+                auto result = runtime.Process(request.source, request.dark, request.id);
+                std::function<void()> callback;
+                {
+                    std::scoped_lock lock(mutex);
+                    queued.erase(request.key);
+                    if (request.generation == generation)
+                    {
+                        Store(request.key, std::move(result));
+                        if (!stopping) callback = completion;
+                    }
+                }
+                if (callback) callback();
             }
         }
 
@@ -162,84 +145,74 @@ namespace winrt::ElMd
             return sizeof(result) + result.svg.size() + result.error.size();
         }
 
-        void Store(Request const& request, MermaidSvg result)
+        void Store(std::string const& key, MermaidSvg result)
         {
             constexpr std::size_t budget = 16 * 1024 * 1024;
-            auto bytes = ResultBytes(result);
-            while (!cacheOrder.empty() && (cacheBytes + bytes > budget || cache.size() >= 64))
+            constexpr std::size_t limit = 64;
+            auto bytes = key.size() + ResultBytes(result);
+            while (!cacheOrder.empty() && (cacheBytes + bytes > budget || cache.size() >= limit))
             {
                 auto oldest = std::move(cacheOrder.front());
                 cacheOrder.pop_front();
                 auto found = cache.find(oldest);
                 if (found == cache.end()) continue;
-                cacheBytes -= ResultBytes(found->second);
+                cacheBytes -= oldest.size() + ResultBytes(found->second);
                 cache.erase(found);
             }
             if (bytes <= budget)
             {
                 cacheBytes += bytes;
-                cacheOrder.push_back(request.key);
-                cache.emplace(request.key, std::move(result));
+                cacheOrder.push_back(key);
+                cache.emplace(key, std::move(result));
             }
         }
 
-        void Complete(MermaidSvg result)
-        {
-            if (!current) return;
-            auto request = std::move(*current);
-            current.reset();
-            queued.erase(request.key);
-            if (request.generation == generation)
-            {
-                Store(request, std::move(result));
-                if (completion) completion();
-            }
-            StartNext();
-        }
-
-        void FailCurrent(std::string error)
-        {
-            if (!current)
-            {
-                if (completion) completion();
-                return;
-            }
-            MermaidSvg result;
-            result.error = std::move(error);
-            Complete(std::move(result));
-        }
+        std::mutex mutex;
+        std::condition_variable wake;
+        bool stopping = false;
+        std::thread worker;
+        std::deque<Request> pending;
+        std::unordered_set<std::string> queued;
+        std::unordered_map<std::string, MermaidSvg> cache;
+        std::deque<std::string> cacheOrder;
+        std::size_t cacheBytes = 0;
+        std::uint64_t nextId = 1;
+        std::uint64_t generation = 0;
+        std::function<void()> completion;
     };
 
-    MermaidRenderer::MermaidRenderer() : state(std::make_shared<State>()) {}
+    MermaidRenderer::MermaidRenderer() : state(std::make_unique<State>()) {}
     MermaidRenderer::~MermaidRenderer() = default;
-
-    void MermaidRenderer::Initialize(winrt::Microsoft::UI::Xaml::Controls::WebView2 const& webView, std::function<void()> completion)
-    {
-        state->webView = webView;
-        state->completion = std::move(completion);
-    }
 
     void MermaidRenderer::SetCompletionCallback(std::function<void()> completion)
     {
+        std::scoped_lock lock(state->mutex);
         state->completion = std::move(completion);
     }
 
     std::optional<MermaidSvg> MermaidRenderer::GetOrQueue(std::string_view source, bool dark, bool allowQueue)
     {
+        if (source.empty()) return std::nullopt;
         auto key = std::string(source) + '\x1f' + (dark ? "1" : "0");
+        std::scoped_lock lock(state->mutex);
         if (auto found = state->cache.find(key); found != state->cache.end()) return found->second;
         if (!allowQueue) return std::nullopt;
         if (state->queued.insert(key).second)
         {
-            state->pending.push_back(State::Request{ key, std::string(source), dark, 0, state->generation });
+            while (state->pending.size() >= 128)
+            {
+                state->queued.erase(state->pending.front().key);
+                state->pending.pop_front();
+            }
+            state->pending.push_back(State::Request{ key, std::string(source), dark, state->nextId++, state->generation });
+            state->wake.notify_one();
         }
-        state->EnsureInitialized();
-        state->StartNext();
         return std::nullopt;
     }
 
     void MermaidRenderer::Clear()
     {
+        std::scoped_lock lock(state->mutex);
         ++state->generation;
         state->pending.clear();
         state->queued.clear();

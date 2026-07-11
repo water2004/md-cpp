@@ -1302,7 +1302,6 @@ namespace winrt::ElMd::implementation
     {
         UpdateTheme();
         editorRenderer.SetInvalidateCallback([this] { RenderEditorSurface(); });
-        editorRenderer.InitializeMermaid(MermaidWebView());
         editorRenderer.Initialize(EditorSurface());
         RenderEditorSurface();
         EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Programmatic);

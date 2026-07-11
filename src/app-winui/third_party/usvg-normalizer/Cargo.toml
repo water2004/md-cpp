@@ -1,13 +1,15 @@
 [package]
-name = "elmd-svg-normalizer"
+name = "elmd-native-svg"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
 
 [lib]
+name = "elmd_svg_normalizer"
 crate-type = ["cdylib"]
 
 [dependencies]
+mermaid-rs-renderer = { version = "=0.3.1", default-features = false }
 usvg = { version = "=0.47.0", default-features = true }
 
 [profile.release]
