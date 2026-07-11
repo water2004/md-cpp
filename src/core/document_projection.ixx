@@ -116,6 +116,67 @@ inline const BlockNode* find_paragraph(const BlockVec& blocks, NodeId id) {
     return nullptr;
 }
 
+inline std::size_t logical_offset_from_source(
+    const EditorDocument& document,
+    const InlineVec& nodes,
+    CharOffset source_offset,
+    CharOffset fallback_start) {
+    std::size_t consumed = 0;
+    auto cursor = fallback_start.v;
+    for (const auto& node : nodes) {
+        const auto length = inline_text_content(node).size();
+        const auto* range = document.source_map.find_node_by_id(node.id);
+        const auto source_start = range ? range->source_range.start.v : cursor;
+        const auto source_end = range ? range->source_range.end.v : source_start + length;
+        if (source_offset.v < source_start) return consumed;
+        if (source_offset.v > source_end) {
+            consumed += length;
+            cursor = source_end;
+            continue;
+        }
+        const bool container = node.kind == InlineKind::Emphasis || node.kind == InlineKind::Strong
+            || node.kind == InlineKind::Strike || node.kind == InlineKind::Span || node.kind == InlineKind::Link;
+        if (container) {
+            const auto content_start = range ? range->content_range.start : CharOffset(source_start);
+            return consumed + logical_offset_from_source(document, node.children, source_offset, content_start);
+        }
+        const auto content_start = range ? range->content_range.start.v : source_start;
+        if (source_offset.v <= content_start) return consumed;
+        return consumed + (std::min)(source_offset.v - content_start, length);
+    }
+    return consumed;
+}
+
+inline std::optional<CharOffset> source_offset_from_logical(
+    const EditorDocument& document,
+    const InlineVec& nodes,
+    std::size_t logical_offset,
+    CharOffset fallback_start) {
+    std::size_t consumed = 0;
+    auto cursor = fallback_start.v;
+    for (const auto& node : nodes) {
+        const auto length = inline_text_content(node).size();
+        if (logical_offset > consumed + length) {
+            consumed += length;
+            if (const auto* range = document.source_map.find_node_by_id(node.id)) cursor = range->source_range.end.v;
+            else cursor += length;
+            continue;
+        }
+        const auto* range = document.source_map.find_node_by_id(node.id);
+        const auto local = logical_offset >= consumed ? logical_offset - consumed : 0;
+        const bool container = node.kind == InlineKind::Emphasis || node.kind == InlineKind::Strong
+            || node.kind == InlineKind::Strike || node.kind == InlineKind::Span || node.kind == InlineKind::Link;
+        if (container) {
+            const auto content_start = range ? range->content_range.start : CharOffset(cursor);
+            if (auto nested = source_offset_from_logical(document, node.children, local, content_start)) return nested;
+            return range ? range->content_range.end : CharOffset(cursor);
+        }
+        const auto content_start = range ? range->content_range.start.v : cursor;
+        return CharOffset(content_start + (std::min)(local, length));
+    }
+    return std::nullopt;
+}
+
 inline std::optional<DocumentPosition> position_in_blocks(
     const EditorDocument& document,
     const BlockVec& blocks,
@@ -124,9 +185,7 @@ inline std::optional<DocumentPosition> position_in_blocks(
         if (block.kind == BlockKind::Paragraph) {
             const auto* range = document.source_map.find_node_by_id(block.id);
             if (range && source_offset.v >= range->content_range.start.v && source_offset.v <= range->content_range.end.v) {
-                const auto offset = (std::min)(
-                    source_offset.v - range->content_range.start.v,
-                    block_inline_text_content(block.children).size());
+                const auto offset = logical_offset_from_source(document, block.children, source_offset, range->content_range.start);
                 return DocumentPosition{block.id, offset, TextAffinity::Downstream};
             }
         }
@@ -176,7 +235,10 @@ inline std::optional<CharOffset> source_offset_from_document_position(
     const auto* range = document.source_map.find_node_by_id(position.node_id);
     if (!paragraph || !range) return std::nullopt;
     const auto logical_length = block_inline_text_content(paragraph->children).size();
-    return CharOffset(range->content_range.start.v + (std::min)(position.offset, logical_length));
+    if (paragraph->children.empty()) return range->content_range.start;
+    if (auto source = document_projection_detail::source_offset_from_logical(
+            document, paragraph->children, (std::min)(position.offset, logical_length), range->content_range.start)) return source;
+    return range->content_range.end;
 }
 
 }

@@ -12,6 +12,7 @@ import elmd.core.table_edit;
 import elmd.core.render_builder;
 import elmd.core.render_model;
 import elmd.core.document_position;
+import elmd.core.document_projection;
 
 using namespace elmd;
 
@@ -118,6 +119,19 @@ ELMD_TEST(test_editor_document_range_delete_restores_ast_and_selection_on_undo) 
         ELMD_CHECK_EQ(editor.document_selection()->anchor.node_id, first_id);
         ELMD_CHECK_EQ(editor.document_selection()->active.node_id, last_id);
     }
+}
+
+ELMD_TEST(test_document_position_projection_skips_inline_markers) {
+    Editor editor("before **alpha** after");
+    const auto block_id = editor.document().blocks.front().id;
+    auto inside = document_position_from_source_offset(editor.document(), CharOffset(11));
+    ELMD_CHECK(inside.has_value());
+    if (!inside) return;
+    ELMD_CHECK_EQ(inside->node_id, block_id);
+    ELMD_CHECK_EQ(inside->offset, 9u);
+    auto source = source_offset_from_document_position(editor.document(), *inside);
+    ELMD_CHECK(source.has_value());
+    if (source) ELMD_CHECK_EQ(source->v, 11u);
 }
 
 ELMD_TEST(test_editor_insert_text) {
