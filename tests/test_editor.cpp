@@ -67,6 +67,20 @@ ELMD_TEST(test_editor_newline_command_uses_document_transaction_for_top_level_pa
     ELMD_CHECK_EQ(editor.document().blocks.front().id, original_id);
 }
 
+ELMD_TEST(test_editor_document_delete_projects_and_restores_node_selection) {
+    Editor editor("alphabeta");
+    const auto block_id = editor.document().blocks.front().id;
+    auto transaction = editor.execute_document_delete_backward(DocumentSelection::caret(
+        DocumentPosition{block_id, 5, TextAffinity::Downstream}));
+    ELMD_CHECK(transaction.has_value());
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alphbeta"));
+    ELMD_CHECK_EQ(editor.document().blocks.front().id, block_id);
+    ELMD_CHECK(editor.undo_document());
+    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alphabeta"));
+    ELMD_CHECK(editor.document_selection().has_value());
+    if (editor.document_selection()) ELMD_CHECK_EQ(editor.document_selection()->active.offset, 5u);
+}
+
 ELMD_TEST(test_editor_insert_text) {
     Editor e;
     e.execute_command(Command::InsertText(U"hello"));

@@ -71,6 +71,20 @@ public:
         return transaction;
     }
 
+    std::optional<DocumentTransaction> execute_document_delete_backward(DocumentSelection selection) {
+        auto transaction = document_delete_backward(document_, selection);
+        if (!transaction) return std::nullopt;
+        apply_document_transaction_(*transaction);
+        return transaction;
+    }
+
+    std::optional<DocumentTransaction> execute_document_delete_forward(DocumentSelection selection) {
+        auto transaction = document_delete_forward(document_, selection);
+        if (!transaction) return std::nullopt;
+        apply_document_transaction_(*transaction);
+        return transaction;
+    }
+
     bool undo_document() {
         auto state = document_history_.undo();
         if (!state) return false;

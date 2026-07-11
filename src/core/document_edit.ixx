@@ -214,6 +214,44 @@ inline bool insert_text_in_inlines(InlineVec& nodes, std::size_t offset, std::u3
     return true;
 }
 
+inline void erase_inline_range(InlineVec& nodes, std::size_t start, std::size_t count) {
+    if (count == 0) return;
+    std::size_t consumed = 0;
+    for (std::size_t index = 0; index < nodes.size() && count > 0;) {
+        auto& node = nodes[index];
+        const auto length = inline_length(node);
+        if (start >= consumed + length) {
+            consumed += length;
+            ++index;
+            continue;
+        }
+        const auto local_start = start > consumed ? start - consumed : 0;
+        const auto removable = (std::min)(count, length - local_start);
+        const bool container = node.kind == InlineKind::Emphasis || node.kind == InlineKind::Strong
+            || node.kind == InlineKind::Strike || node.kind == InlineKind::Span || node.kind == InlineKind::Link;
+        if (container) {
+            erase_inline_range(node.children, local_start, removable);
+            if (node.children.empty()) {
+                nodes.erase(nodes.begin() + static_cast<std::ptrdiff_t>(index));
+            } else {
+                consumed += inline_length(node);
+                ++index;
+            }
+        } else if (node.kind == InlineKind::Text || node.kind == InlineKind::InlineCode
+            || node.kind == InlineKind::InlineMath || node.kind == InlineKind::UnsupportedMarkup) {
+            node.text.erase(local_start, removable);
+            if (node.text.empty()) nodes.erase(nodes.begin() + static_cast<std::ptrdiff_t>(index));
+            else {
+                consumed += node.text.size();
+                ++index;
+            }
+        } else {
+            nodes.erase(nodes.begin() + static_cast<std::ptrdiff_t>(index));
+        }
+        count -= removable;
+    }
+}
+
 inline bool block_is_empty_paragraph(const BlockNode& block) {
     return block.kind == BlockKind::Paragraph && block_inline_text_content(block.children).empty();
 }
@@ -247,6 +285,58 @@ inline bool insert_text_in_blocks(BlockVec& blocks, NodeId id, std::size_t offse
         for (auto& item : block.task_items) if (insert_text_in_blocks(item.children, id, offset, text, allocator)) return true;
     }
     return false;
+}
+
+inline bool erase_text_in_blocks(BlockVec& blocks, NodeId id, std::size_t start, std::size_t count) {
+    for (auto& block : blocks) {
+        if (block.id == id && block.kind == BlockKind::Paragraph) {
+            erase_inline_range(block.children, start, count);
+            return true;
+        }
+        if (erase_text_in_blocks(block.quote_children, id, start, count)) return true;
+        for (auto& item : block.list_items) if (erase_text_in_blocks(item.children, id, start, count)) return true;
+        for (auto& item : block.task_items) if (erase_text_in_blocks(item.children, id, start, count)) return true;
+    }
+    return false;
+}
+
+inline std::optional<std::size_t> paragraph_length_in_blocks(const BlockVec& blocks, NodeId id) {
+    for (const auto& block : blocks) {
+        if (block.id == id && block.kind == BlockKind::Paragraph) return block_inline_text_content(block.children).size();
+        if (auto length = paragraph_length_in_blocks(block.quote_children, id)) return length;
+        for (const auto& item : block.list_items) if (auto length = paragraph_length_in_blocks(item.children, id)) return length;
+        for (const auto& item : block.task_items) if (auto length = paragraph_length_in_blocks(item.children, id)) return length;
+    }
+    return std::nullopt;
+}
+
+inline std::optional<DocumentPosition> merge_top_level_paragraph_backward(BlockVec& blocks, NodeId id) {
+    for (std::size_t index = 1; index < blocks.size(); ++index) {
+        if (blocks[index].id != id || blocks[index].kind != BlockKind::Paragraph || blocks[index - 1].kind != BlockKind::Paragraph) continue;
+        const auto previous_length = block_inline_text_content(blocks[index - 1].children).size();
+        blocks[index - 1].children.insert(
+            blocks[index - 1].children.end(),
+            std::make_move_iterator(blocks[index].children.begin()),
+            std::make_move_iterator(blocks[index].children.end()));
+        const auto target_id = blocks[index - 1].id;
+        blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index));
+        return DocumentPosition{target_id, previous_length, TextAffinity::Downstream};
+    }
+    return std::nullopt;
+}
+
+inline std::optional<DocumentPosition> merge_top_level_paragraph_forward(BlockVec& blocks, NodeId id) {
+    for (std::size_t index = 0; index + 1 < blocks.size(); ++index) {
+        if (blocks[index].id != id || blocks[index].kind != BlockKind::Paragraph || blocks[index + 1].kind != BlockKind::Paragraph) continue;
+        const auto offset = block_inline_text_content(blocks[index].children).size();
+        blocks[index].children.insert(
+            blocks[index].children.end(),
+            std::make_move_iterator(blocks[index + 1].children.begin()),
+            std::make_move_iterator(blocks[index + 1].children.end()));
+        blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index + 1));
+        return DocumentPosition{id, offset, TextAffinity::Downstream};
+    }
+    return std::nullopt;
 }
 
 inline bool split_direct_paragraph(BlockVec& blocks, std::size_t index, std::size_t offset, NodeAllocator& allocator, DocumentPosition& after) {
@@ -531,6 +621,59 @@ inline std::optional<DocumentTransaction> document_insert_text(
     transaction.selection_before = selection;
     transaction.selection_after = DocumentSelection::caret(target);
     transaction.reason = DocumentTransactionReason::InsertText;
+    return transaction;
+}
+
+inline std::optional<DocumentTransaction> document_delete_backward(
+    const EditorDocument& document,
+    const DocumentSelection& selection) {
+    if (!selection.is_caret()) return std::nullopt;
+    EditorDocument after = document;
+    auto target = selection.active;
+    bool changed = false;
+    if (target.offset > 0) {
+        changed = document_edit_detail::erase_text_in_blocks(after.blocks, target.node_id, target.offset - 1, 1);
+        if (changed) --target.offset;
+    } else if (auto merged = document_edit_detail::merge_top_level_paragraph_backward(after.blocks, target.node_id)) {
+        target = *merged;
+        changed = true;
+    }
+    if (!changed) return std::nullopt;
+    normalize_document(after);
+    ++after.revision;
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(after);
+    transaction.selection_before = selection;
+    transaction.selection_after = DocumentSelection::caret(target);
+    transaction.reason = DocumentTransactionReason::Delete;
+    return transaction;
+}
+
+inline std::optional<DocumentTransaction> document_delete_forward(
+    const EditorDocument& document,
+    const DocumentSelection& selection) {
+    if (!selection.is_caret()) return std::nullopt;
+    EditorDocument after = document;
+    auto target = selection.active;
+    const auto length = document_edit_detail::paragraph_length_in_blocks(after.blocks, target.node_id);
+    if (!length) return std::nullopt;
+    bool changed = false;
+    if (target.offset < *length) {
+        changed = document_edit_detail::erase_text_in_blocks(after.blocks, target.node_id, target.offset, 1);
+    } else if (auto merged = document_edit_detail::merge_top_level_paragraph_forward(after.blocks, target.node_id)) {
+        target = *merged;
+        changed = true;
+    }
+    if (!changed) return std::nullopt;
+    normalize_document(after);
+    ++after.revision;
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(after);
+    transaction.selection_before = selection;
+    transaction.selection_after = DocumentSelection::caret(target);
+    transaction.reason = DocumentTransactionReason::Delete;
     return transaction;
 }
 

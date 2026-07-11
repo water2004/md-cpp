@@ -210,3 +210,55 @@ ELMD_TEST(test_insert_text_preserves_inline_container_identity) {
     ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("**alpha-beta**"));
     ELMD_CHECK_EQ(transaction->selection_after.active.offset, 6u);
 }
+
+ELMD_TEST(test_delete_backward_preserves_inline_container_identity) {
+    BlockNode block;
+    block.id = NodeId(1);
+    block.kind = BlockKind::Paragraph;
+    InlineNode emphasis;
+    emphasis.id = NodeId(2);
+    emphasis.kind = InlineKind::Emphasis;
+    emphasis.children.push_back(InlineNode::text_node(NodeId(3), U"alpha"));
+    block.children.push_back(emphasis);
+
+    auto transaction = document_delete_backward(document_with({block}), caret(1, 5));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(transaction->after.blocks[0].children[0].id, NodeId(2));
+    ELMD_CHECK_EQ(transaction->after.blocks[0].children[0].children[0].id, NodeId(3));
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("*alph*"));
+    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 4u);
+}
+
+ELMD_TEST(test_delete_forward_preserves_inline_container_identity) {
+    auto document = document_with({paragraph(1, 2, U"alpha")});
+    auto transaction = document_delete_forward(document, caret(1, 1));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(transaction->after.blocks[0].children[0].id, NodeId(2));
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("apha"));
+    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 1u);
+}
+
+ELMD_TEST(test_backspace_at_top_level_paragraph_start_merges_ast_siblings) {
+    auto document = document_with({paragraph(1, 2, U"alpha"), paragraph(3, 4, U"beta")});
+    auto transaction = document_delete_backward(document, caret(3, 0));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
+    ELMD_CHECK_EQ(transaction->after.blocks[0].id, NodeId(1));
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("alphabeta"));
+    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, NodeId(1));
+    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 5u);
+}
+
+ELMD_TEST(test_delete_at_top_level_paragraph_end_merges_ast_siblings) {
+    auto document = document_with({paragraph(1, 2, U"alpha"), paragraph(3, 4, U"beta")});
+    auto transaction = document_delete_forward(document, caret(1, 5));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
+    ELMD_CHECK_EQ(transaction->after.blocks[0].id, NodeId(1));
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("alphabeta"));
+    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 5u);
+}
