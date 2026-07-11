@@ -470,3 +470,90 @@ ELMD_TEST(test_delete_selection_across_top_level_paragraphs_merges_tree_range) {
     ELMD_CHECK_EQ(transaction->selection_after.active.node_id, NodeId(1));
     ELMD_CHECK_EQ(transaction->selection_after.active.offset, 2u);
 }
+
+ELMD_TEST(test_indent_list_item_moves_whole_item_under_previous_sibling) {
+    auto parsed = parse_text(1, "- a\n- b");
+    const auto second_paragraph = parsed.document.blocks[0].list_items[1].children[0].id;
+    auto transaction = document_indent_list_item(parsed.document, caret(second_paragraph.v, 1));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    const auto& list = transaction->after.blocks[0];
+    ELMD_CHECK_EQ(list.list_items.size(), 1u);
+    ELMD_CHECK_EQ(list.list_items[0].children.size(), 2u);
+    ELMD_CHECK(list.list_items[0].children[1].kind == BlockKind::List);
+    ELMD_CHECK_EQ(list.list_items[0].children[1].list_items.size(), 1u);
+    ELMD_CHECK_EQ(list.list_items[0].children[1].list_items[0].children[0].id, second_paragraph);
+    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, second_paragraph);
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("- a\n  - b"));
+    ELMD_CHECK(validate_document(transaction->after).empty());
+}
+
+ELMD_TEST(test_outdent_list_item_restores_outer_sibling_and_selection) {
+    auto parsed = parse_text(1, "- a\n  - b");
+    const auto nested_paragraph = parsed.document.blocks[0].list_items[0].children[1].list_items[0].children[0].id;
+    auto transaction = document_outdent_list_item(parsed.document, caret(nested_paragraph.v, 1));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    const auto& list = transaction->after.blocks[0];
+    ELMD_CHECK_EQ(list.list_items.size(), 2u);
+    ELMD_CHECK_EQ(list.list_items[1].children[0].id, nested_paragraph);
+    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, nested_paragraph);
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("- a\n- b"));
+    ELMD_CHECK(validate_document(transaction->after).empty());
+}
+
+ELMD_TEST(test_outdent_list_item_keeps_following_nested_siblings_under_lifted_item) {
+    auto parsed = parse_text(1, "- a\n  - b\n  - c\n- d");
+    const auto nested_paragraph = parsed.document.blocks[0].list_items[0].children[1].list_items[0].children[0].id;
+    auto transaction = document_outdent_list_item(parsed.document, caret(nested_paragraph.v, 0));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    const auto& list = transaction->after.blocks[0];
+    ELMD_CHECK_EQ(list.list_items.size(), 3u);
+    ELMD_CHECK_EQ(list.list_items[1].children.size(), 2u);
+    ELMD_CHECK(list.list_items[1].children[1].kind == BlockKind::List);
+    ELMD_CHECK_EQ(block_inline_text_content(list.list_items[1].children[1].list_items[0].children[0].children), std::u32string(U"c"));
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("- a\n- b\n  - c\n- d"));
+    ELMD_CHECK(validate_document(transaction->after).empty());
+}
+
+ELMD_TEST(test_indent_first_list_item_is_noop) {
+    auto parsed = parse_text(1, "- a\n- b");
+    const auto first_paragraph = parsed.document.blocks[0].list_items[0].children[0].id;
+    ELMD_CHECK(!document_indent_list_item(parsed.document, caret(first_paragraph.v, 0)).has_value());
+}
+
+ELMD_TEST(test_outdent_replacement_promotes_content_before_first_nested_list) {
+    auto parsed = parse_text(1, "- - A\n  - B");
+    auto& nested = parsed.document.blocks[0].list_items[0].children[0];
+    const auto paragraph_id = nested.list_items[1].children[0].id;
+    auto transaction = document_outdent_list_item(parsed.document, caret(paragraph_id.v, 1));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    const auto& outer_item = transaction->after.blocks[0].list_items[0];
+    ELMD_CHECK_EQ(outer_item.children.size(), 2u);
+    ELMD_CHECK_EQ(outer_item.children[0].id, paragraph_id);
+    ELMD_CHECK(outer_item.children[1].kind == BlockKind::List);
+    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, paragraph_id);
+    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 1u);
+    ELMD_CHECK(validate_document(transaction->after).empty());
+}
+
+ELMD_TEST(test_task_list_indent_and_outdent_preserve_checked_item) {
+    auto parsed = parse_text(1, "- [ ] a\n- [x] b");
+    const auto paragraph_id = parsed.document.blocks[0].task_items[1].children[0].id;
+    auto indented = document_indent_list_item(parsed.document, caret(paragraph_id.v, 1));
+    ELMD_CHECK(indented.has_value());
+    if (!indented) return;
+    const auto& nested = indented->after.blocks[0].task_items[0].children[1];
+    ELMD_CHECK(nested.kind == BlockKind::TaskList);
+    ELMD_CHECK_EQ(nested.task_items.size(), 1u);
+    ELMD_CHECK(nested.task_items[0].checked);
+    auto outdented = document_outdent_list_item(indented->after, caret(paragraph_id.v, 1));
+    ELMD_CHECK(outdented.has_value());
+    if (!outdented) return;
+    ELMD_CHECK_EQ(outdented->after.blocks[0].task_items.size(), 2u);
+    ELMD_CHECK(outdented->after.blocks[0].task_items[1].checked);
+    ELMD_CHECK_EQ(outdented->selection_after.active.node_id, paragraph_id);
+    ELMD_CHECK(validate_document(outdented->after).empty());
+}

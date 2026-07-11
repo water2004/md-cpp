@@ -211,8 +211,18 @@ namespace winrt::ElMd
                 break;
             }
             case winrt::Windows::System::VirtualKey::Tab:
-                command.kind = shift ? elmd::CommandKind::MoveTableCellPrevious : elmd::CommandKind::MoveTableCellNext;
-                if (!executeCommand_(command)) executeCommand_(elmd::Command::InsertText(U"\t"));
+                if (shift)
+                {
+                    command.kind = elmd::CommandKind::OutdentListItem;
+                    if (executeCommand_(command)) return true;
+                    command.kind = elmd::CommandKind::MoveTableCellPrevious;
+                    executeCommand_(command);
+                    return true;
+                }
+                command.kind = elmd::CommandKind::IndentListItem;
+                if (executeCommand_(command)) return true;
+                command.kind = elmd::CommandKind::MoveTableCellNext;
+                if (!executeCommand_(command)) executeCommand_(elmd::Command::InsertText(U"    "));
                 return true;
             default:
                 return false;

@@ -15,6 +15,7 @@ enum class CommandKind {
     ToggleStrong, ToggleEmphasis, ToggleStrikethrough, ToggleInlineCode,
     SetHeading, ClearHeading,
     ToggleUnorderedList, ToggleOrderedList, ToggleTaskList, ToggleTaskCheckbox, ToggleBlockQuote,
+    IndentListItem, OutdentListItem,
     InsertCodeBlock, InsertMathInline, InsertMathBlock,
     InsertTable, InsertImage, InsertLink, InsertFootnote, InsertToc,
     MoveTableCellNext, MoveTableCellPrevious,

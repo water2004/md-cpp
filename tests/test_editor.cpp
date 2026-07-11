@@ -103,6 +103,28 @@ ELMD_TEST(test_editor_backspace_command_moves_list_item_tree_and_undo_restores_i
     ELMD_CHECK_EQ(editor.document().blocks[0].list_items.size(), 1u);
 }
 
+ELMD_TEST(test_editor_list_indent_commands_use_document_history) {
+    Editor editor("- a\n- b");
+    const auto second_id = editor.document().blocks[0].list_items[1].children[0].id;
+    editor.set_document_selection(DocumentSelection::caret(
+        DocumentPosition{second_id, 1, TextAffinity::Downstream}));
+    Command indent;
+    indent.kind = CommandKind::IndentListItem;
+    ELMD_CHECK(editor.execute_command(indent).has_value());
+    ELMD_CHECK_EQ(editor.markdown_utf8(), std::string("- a\n  - b"));
+    ELMD_CHECK_EQ(editor.document().blocks[0].list_items.size(), 1u);
+    ELMD_CHECK(editor.undo_document());
+    ELMD_CHECK_EQ(editor.markdown_utf8(), std::string("- a\n- b"));
+    ELMD_CHECK(editor.redo_document());
+    Command outdent;
+    outdent.kind = CommandKind::OutdentListItem;
+    ELMD_CHECK(editor.execute_command(outdent).has_value());
+    ELMD_CHECK_EQ(editor.markdown_utf8(), std::string("- a\n- b"));
+    ELMD_CHECK(editor.document_selection().has_value());
+    ELMD_CHECK_EQ(editor.document_selection()->active.node_id, second_id);
+    ELMD_CHECK_EQ(editor.document_selection()->active.offset, 1u);
+}
+
 ELMD_TEST(test_editor_enter_at_paragraph_end_projects_empty_node_caret_anchor) {
     Editor editor("alpha");
     const auto first_id = editor.document().blocks.front().id;

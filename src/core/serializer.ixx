@@ -83,7 +83,20 @@ inline std::vector<std::u32string> lines(std::u32string_view value) {
     return result;
 }
 
+inline std::u32string serialize_block(const BlockNode& block);
 inline std::u32string serialize_blocks(const BlockVec& blocks);
+
+inline std::u32string serialize_list_item_blocks(const BlockVec& blocks) {
+    std::u32string result;
+    for (std::size_t index = 0; index < blocks.size(); ++index) {
+        if (index > 0) {
+            const auto nested = blocks[index].kind == BlockKind::List || blocks[index].kind == BlockKind::TaskList;
+            result += nested ? U"\n" : U"\n\n";
+        }
+        result += serialize_block(blocks[index]);
+    }
+    return result;
+}
 
 inline std::u32string indent_continuation(std::u32string_view value, std::size_t width) {
     auto source_lines = lines(value);
@@ -113,7 +126,7 @@ inline std::u32string serialize_list(const BlockNode& block) {
             else marker = U"- ";
             children = &item.children;
         }
-        auto body = serialize_blocks(*children);
+        auto body = serialize_list_item_blocks(*children);
         result += marker + indent_continuation(body, marker.size());
         if (index + 1 < count) result += U"\n";
     }

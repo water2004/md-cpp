@@ -273,6 +273,199 @@ inline bool contains_block(const BlockVec& blocks, NodeId id) {
     return false;
 }
 
+inline bool indent_list_item_in_blocks(BlockVec& blocks, NodeId id, NodeAllocator& allocator);
+inline bool outdent_list_item_in_blocks(BlockVec& blocks, NodeId id, NodeAllocator& allocator);
+
+inline BlockNode empty_nested_list(NodeAllocator& allocator, const BlockNode& source) {
+    BlockNode nested;
+    nested.id = allocator.allocate();
+    nested.kind = source.kind;
+    nested.list_ordered = source.list_ordered;
+    nested.list_start = source.list_start;
+    nested.list_delimiter = source.list_delimiter;
+    return nested;
+}
+
+inline bool indent_in_list(BlockNode& list, NodeId id, NodeAllocator& allocator) {
+    for (auto& item : list.list_items) {
+        if (indent_list_item_in_blocks(item.children, id, allocator)) return true;
+    }
+    for (std::size_t index = 1; index < list.list_items.size(); ++index) {
+        if (!contains_block(list.list_items[index].children, id)) continue;
+        auto moved = std::move(list.list_items[index]);
+        list.list_items.erase(list.list_items.begin() + static_cast<std::ptrdiff_t>(index));
+        auto& previous = list.list_items[index - 1];
+        if (!previous.children.empty()
+            && previous.children.back().kind == BlockKind::List
+            && previous.children.back().list_ordered == list.list_ordered
+            && previous.children.back().list_delimiter == list.list_delimiter) {
+            previous.children.back().list_items.push_back(std::move(moved));
+        } else {
+            auto nested = empty_nested_list(allocator, list);
+            nested.list_items.push_back(std::move(moved));
+            previous.children.push_back(std::move(nested));
+        }
+        return true;
+    }
+    return false;
+}
+
+inline bool indent_in_task_list(BlockNode& list, NodeId id, NodeAllocator& allocator) {
+    for (auto& item : list.task_items) {
+        if (indent_list_item_in_blocks(item.children, id, allocator)) return true;
+    }
+    for (std::size_t index = 1; index < list.task_items.size(); ++index) {
+        if (!contains_block(list.task_items[index].children, id)) continue;
+        auto moved = std::move(list.task_items[index]);
+        list.task_items.erase(list.task_items.begin() + static_cast<std::ptrdiff_t>(index));
+        auto& previous = list.task_items[index - 1];
+        if (!previous.children.empty() && previous.children.back().kind == BlockKind::TaskList) {
+            previous.children.back().task_items.push_back(std::move(moved));
+        } else {
+            auto nested = empty_nested_list(allocator, list);
+            nested.task_items.push_back(std::move(moved));
+            previous.children.push_back(std::move(nested));
+        }
+        return true;
+    }
+    return false;
+}
+
+inline bool indent_list_item_in_blocks(BlockVec& blocks, NodeId id, NodeAllocator& allocator) {
+    for (auto& block : blocks) {
+        if (block.kind == BlockKind::BlockQuote || block.kind == BlockKind::Callout || block.kind == BlockKind::FootnoteDefinition) {
+            if (indent_list_item_in_blocks(block.quote_children, id, allocator)) return true;
+        }
+        if (block.kind == BlockKind::List && indent_in_list(block, id, allocator)) return true;
+        if (block.kind == BlockKind::TaskList && indent_in_task_list(block, id, allocator)) return true;
+    }
+    return false;
+}
+
+inline bool outdent_from_list(BlockNode& outer, NodeId id, NodeAllocator& allocator);
+inline bool outdent_from_task_list(BlockNode& outer, NodeId id, NodeAllocator& allocator);
+
+inline bool outdent_nested_list(
+    BlockNode& outer,
+    std::size_t parent_index,
+    std::size_t child_index,
+    std::size_t target_index,
+    NodeAllocator& allocator) {
+    auto& parent = outer.list_items[parent_index];
+    auto& nested = parent.children[child_index];
+    if (child_index == 0) {
+        auto promoted = std::move(nested.list_items[target_index].children);
+        nested.list_items.erase(nested.list_items.begin() + static_cast<std::ptrdiff_t>(target_index));
+        if (nested.list_items.empty()) parent.children.erase(parent.children.begin() + static_cast<std::ptrdiff_t>(child_index));
+        parent.children.insert(
+            parent.children.begin() + static_cast<std::ptrdiff_t>(child_index),
+            std::make_move_iterator(promoted.begin()),
+            std::make_move_iterator(promoted.end()));
+        return true;
+    }
+
+    auto lifted = std::move(nested.list_items[target_index]);
+    if (target_index + 1 < nested.list_items.size()) {
+        auto trailing = empty_nested_list(allocator, nested);
+        trailing.list_items.assign(
+            std::make_move_iterator(nested.list_items.begin() + static_cast<std::ptrdiff_t>(target_index + 1)),
+            std::make_move_iterator(nested.list_items.end()));
+        lifted.children.push_back(std::move(trailing));
+    }
+    nested.list_items.erase(
+        nested.list_items.begin() + static_cast<std::ptrdiff_t>(target_index),
+        nested.list_items.end());
+    if (nested.list_items.empty()) parent.children.erase(parent.children.begin() + static_cast<std::ptrdiff_t>(child_index));
+    outer.list_items.insert(outer.list_items.begin() + static_cast<std::ptrdiff_t>(parent_index + 1), std::move(lifted));
+    return true;
+}
+
+inline bool outdent_nested_task_list(
+    BlockNode& outer,
+    std::size_t parent_index,
+    std::size_t child_index,
+    std::size_t target_index,
+    NodeAllocator& allocator) {
+    auto& parent = outer.task_items[parent_index];
+    auto& nested = parent.children[child_index];
+    if (child_index == 0) {
+        auto promoted = std::move(nested.task_items[target_index].children);
+        nested.task_items.erase(nested.task_items.begin() + static_cast<std::ptrdiff_t>(target_index));
+        if (nested.task_items.empty()) parent.children.erase(parent.children.begin() + static_cast<std::ptrdiff_t>(child_index));
+        parent.children.insert(
+            parent.children.begin() + static_cast<std::ptrdiff_t>(child_index),
+            std::make_move_iterator(promoted.begin()),
+            std::make_move_iterator(promoted.end()));
+        return true;
+    }
+
+    auto lifted = std::move(nested.task_items[target_index]);
+    if (target_index + 1 < nested.task_items.size()) {
+        auto trailing = empty_nested_list(allocator, nested);
+        trailing.task_items.assign(
+            std::make_move_iterator(nested.task_items.begin() + static_cast<std::ptrdiff_t>(target_index + 1)),
+            std::make_move_iterator(nested.task_items.end()));
+        lifted.children.push_back(std::move(trailing));
+    }
+    nested.task_items.erase(
+        nested.task_items.begin() + static_cast<std::ptrdiff_t>(target_index),
+        nested.task_items.end());
+    if (nested.task_items.empty()) parent.children.erase(parent.children.begin() + static_cast<std::ptrdiff_t>(child_index));
+    outer.task_items.insert(outer.task_items.begin() + static_cast<std::ptrdiff_t>(parent_index + 1), std::move(lifted));
+    return true;
+}
+
+inline bool outdent_from_list(BlockNode& outer, NodeId id, NodeAllocator& allocator) {
+    for (std::size_t parent_index = 0; parent_index < outer.list_items.size(); ++parent_index) {
+        auto& children = outer.list_items[parent_index].children;
+        for (std::size_t child_index = 0; child_index < children.size(); ++child_index) {
+            auto& child = children[child_index];
+            if (child.kind == BlockKind::List) {
+                if (outdent_from_list(child, id, allocator)) return true;
+                for (std::size_t target_index = 0; target_index < child.list_items.size(); ++target_index) {
+                    if (contains_block(child.list_items[target_index].children, id)) {
+                        return outdent_nested_list(outer, parent_index, child_index, target_index, allocator);
+                    }
+                }
+            } else if (child.kind == BlockKind::BlockQuote || child.kind == BlockKind::Callout || child.kind == BlockKind::FootnoteDefinition) {
+                if (outdent_list_item_in_blocks(child.quote_children, id, allocator)) return true;
+            }
+        }
+    }
+    return false;
+}
+
+inline bool outdent_from_task_list(BlockNode& outer, NodeId id, NodeAllocator& allocator) {
+    for (std::size_t parent_index = 0; parent_index < outer.task_items.size(); ++parent_index) {
+        auto& children = outer.task_items[parent_index].children;
+        for (std::size_t child_index = 0; child_index < children.size(); ++child_index) {
+            auto& child = children[child_index];
+            if (child.kind == BlockKind::TaskList) {
+                if (outdent_from_task_list(child, id, allocator)) return true;
+                for (std::size_t target_index = 0; target_index < child.task_items.size(); ++target_index) {
+                    if (contains_block(child.task_items[target_index].children, id)) {
+                        return outdent_nested_task_list(outer, parent_index, child_index, target_index, allocator);
+                    }
+                }
+            } else if (child.kind == BlockKind::BlockQuote || child.kind == BlockKind::Callout || child.kind == BlockKind::FootnoteDefinition) {
+                if (outdent_list_item_in_blocks(child.quote_children, id, allocator)) return true;
+            }
+        }
+    }
+    return false;
+}
+
+inline bool outdent_list_item_in_blocks(BlockVec& blocks, NodeId id, NodeAllocator& allocator) {
+    for (auto& block : blocks) {
+        if (block.kind == BlockKind::BlockQuote || block.kind == BlockKind::Callout || block.kind == BlockKind::FootnoteDefinition) {
+            if (outdent_list_item_in_blocks(block.quote_children, id, allocator)) return true;
+        }
+        if (block.kind == BlockKind::List && outdent_from_list(block, id, allocator)) return true;
+        if (block.kind == BlockKind::TaskList && outdent_from_task_list(block, id, allocator)) return true;
+    }
+    return false;
+}
+
 inline bool backspace_in_code_blocks(
     BlockVec& blocks,
     NodeId id,
@@ -910,6 +1103,42 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
     transaction.after = std::move(after);
     transaction.selection_before = selection;
     transaction.selection_after = DocumentSelection::caret(target);
+    transaction.reason = DocumentTransactionReason::Structure;
+    return transaction;
+}
+
+inline std::optional<DocumentTransaction> document_indent_list_item(
+    const EditorDocument& document,
+    const DocumentSelection& selection) {
+    if (!selection.is_caret()) return std::nullopt;
+    EditorDocument after = document;
+    document_edit_detail::NodeAllocator allocator(after);
+    if (!document_edit_detail::indent_list_item_in_blocks(after.blocks, selection.active.node_id, allocator)) return std::nullopt;
+    normalize_document(after);
+    ++after.revision;
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(after);
+    transaction.selection_before = selection;
+    transaction.selection_after = selection;
+    transaction.reason = DocumentTransactionReason::Structure;
+    return transaction;
+}
+
+inline std::optional<DocumentTransaction> document_outdent_list_item(
+    const EditorDocument& document,
+    const DocumentSelection& selection) {
+    if (!selection.is_caret()) return std::nullopt;
+    EditorDocument after = document;
+    document_edit_detail::NodeAllocator allocator(after);
+    if (!document_edit_detail::outdent_list_item_in_blocks(after.blocks, selection.active.node_id, allocator)) return std::nullopt;
+    normalize_document(after);
+    ++after.revision;
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(after);
+    transaction.selection_before = selection;
+    transaction.selection_after = selection;
     transaction.reason = DocumentTransactionReason::Structure;
     return transaction;
 }

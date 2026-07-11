@@ -95,6 +95,20 @@ public:
         return transaction;
     }
 
+    std::optional<DocumentTransaction> execute_document_indent_list_item(DocumentSelection selection) {
+        auto transaction = document_indent_list_item(document_, selection);
+        if (!transaction) return std::nullopt;
+        apply_document_transaction_(*transaction);
+        return transaction;
+    }
+
+    std::optional<DocumentTransaction> execute_document_outdent_list_item(DocumentSelection selection) {
+        auto transaction = document_outdent_list_item(document_, selection);
+        if (!transaction) return std::nullopt;
+        apply_document_transaction_(*transaction);
+        return transaction;
+    }
+
     bool undo_document() {
         auto state = document_history_.undo();
         if (!state) return false;
@@ -117,6 +131,17 @@ public:
 
     // Apply a Command. Returns the transaction if it produced a change.
     std::optional<Transaction> execute_command(const Command& cmd) {
+        if ((cmd.kind == CommandKind::IndentListItem || cmd.kind == CommandKind::OutdentListItem) && selection_.is_caret()) {
+            auto position = current_document_caret_();
+            if (!position) return std::nullopt;
+            const auto revision_before = buffer_.revision();
+            const auto selection_before = selection_;
+            const auto changed = cmd.kind == CommandKind::IndentListItem
+                ? execute_document_indent_list_item(DocumentSelection::caret(*position)).has_value()
+                : execute_document_outdent_list_item(DocumentSelection::caret(*position)).has_value();
+            if (!changed) return std::nullopt;
+            return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
+        }
         if (cmd.kind == CommandKind::InsertNewline && selection_.is_caret()) {
             auto position = current_document_caret_();
             if (position) {

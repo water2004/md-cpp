@@ -769,6 +769,7 @@ inline std::optional<Transaction> semantic_transaction(const Command& cmd,
         case CommandKind::Undo: case CommandKind::Redo:
         case CommandKind::Cut: case CommandKind::Copy: case CommandKind::Paste:
         case CommandKind::SelectAll: case CommandKind::ExtensionCmd:
+        case CommandKind::IndentListItem: case CommandKind::OutdentListItem:
             return std::nullopt;
     }
     return std::nullopt;
