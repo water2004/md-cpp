@@ -15,6 +15,9 @@ namespace winrt::ElMd::implementation
         void InitializeTextInput();
         void ResizeEditorSurface(double width, double height);
         void RenderEditorSurface();
+        void UpdateEditorScrollBar();
+        void StartScrollAnimation();
+        void SetSidebarExpanded(bool expanded);
         void UpdateTheme();
         winrt::ElMd::EditorSurfaceRenderer::Theme CurrentRendererTheme();
         void UpdateOutlinePanel();
@@ -57,6 +60,9 @@ namespace winrt::ElMd::implementation
         std::size_t pendingCharacterStart = 0;
         std::u32string pendingCharacterText;
         bool pointerSelecting = false;
+        bool scrollBarUpdating = false;
+        winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer scrollAnimationTimer{ nullptr };
+        std::chrono::steady_clock::time_point lastScrollFrame{};
         std::size_t pointerAnchor = 0;
         std::optional<winrt::ElMd::EditorSurfaceRenderer::TableAction> tableDrag;
         std::optional<std::size_t> tableDropIndex;

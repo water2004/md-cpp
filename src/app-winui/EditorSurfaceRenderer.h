@@ -61,6 +61,12 @@ namespace winrt::ElMd
         std::optional<std::size_t> TableDropIndexAt(float x, float y, bool rows) const;
         void SetTableDrag(std::optional<TableAction> action, std::optional<std::size_t> dropIndex);
         void ScrollBy(float delta);
+        void QueueScrollBy(float delta);
+        bool AdvanceScrollAnimation(float elapsedSeconds);
+        void SetScrollOffset(float value);
+        float ScrollOffset() const;
+        float MaximumScrollOffset() const;
+        float ViewportHeight() const;
         bool ScrollToSourceOffset(std::size_t sourceOffset);
 
     private:
@@ -236,6 +242,7 @@ namespace winrt::ElMd
         std::optional<TableAction> draggedTableAction;
         std::optional<std::size_t> tableDropIndex;
         float scrollOffset = 0.0f;
+        float scrollTarget = 0.0f;
         float totalDocumentHeight = 0.0f;
         uint32_t surfaceWidth = 0;
         uint32_t surfaceHeight = 0;
@@ -243,5 +250,7 @@ namespace winrt::ElMd
         float surfaceHeightDip = 1.0f;
         float surfaceScaleX = 1.0f;
         float surfaceScaleY = 1.0f;
+        bool resizing = false;
+        bool rendering = false;
     };
 }

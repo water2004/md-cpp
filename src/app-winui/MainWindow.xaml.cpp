@@ -15,6 +15,36 @@ namespace winrt::ElMd::implementation
         RegisterCommandHandlers();
         InitializeTextInput();
 
+        scrollAnimationTimer = DispatcherQueue().CreateTimer();
+        scrollAnimationTimer.Interval(std::chrono::milliseconds(16));
+        scrollAnimationTimer.IsRepeating(true);
+        scrollAnimationTimer.Tick([this](auto const&, auto const&)
+        {
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = lastScrollFrame.time_since_epoch().count() == 0
+                ? 1.0f / 60.0f
+                : std::chrono::duration<float>(now - lastScrollFrame).count();
+            lastScrollFrame = now;
+            if (!editorRenderer.AdvanceScrollAnimation((std::min)(elapsed, 0.05f)))
+            {
+                scrollAnimationTimer.Stop();
+            }
+            RenderEditorSurface();
+        });
+
+        EditorScrollBar().ValueChanged([this](auto const&, Microsoft::UI::Xaml::Controls::Primitives::RangeBaseValueChangedEventArgs const& args)
+        {
+            if (scrollBarUpdating) return;
+            editorRenderer.SetScrollOffset(static_cast<float>(args.NewValue()));
+            RenderEditorSurface();
+        });
+
+        SidebarButton().Click([this](auto const&, auto const&)
+        {
+            auto checked = SidebarButton().IsChecked();
+            SetSidebarExpanded(checked && checked.Value());
+        });
+
         EditorSurface().Loaded([this](auto const&, auto const&)
         {
             InitializeEditorSurface();
@@ -877,8 +907,8 @@ namespace winrt::ElMd::implementation
     void MainWindow::HandlePointerWheel(Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
     {
         auto delta = args.GetCurrentPoint(EditorSurface()).Properties().MouseWheelDelta();
-        editorRenderer.ScrollBy(static_cast<float>(-delta));
-        RenderEditorSurface();
+        editorRenderer.QueueScrollBy(static_cast<float>(-delta));
+        StartScrollAnimation();
         args.Handled(true);
     }
 
@@ -1174,13 +1204,55 @@ namespace winrt::ElMd::implementation
 
     void MainWindow::ResizeEditorSurface(double width, double height)
     {
-        editorRenderer.Resize(EditorSurface(), width, height);
-        RenderEditorSurface();
+        try
+        {
+            editorRenderer.Resize(EditorSurface(), width, height);
+            RenderEditorSurface();
+        }
+        catch (winrt::hresult_error const& error)
+        {
+            SetStatus(L"Resize failed: " + error.message());
+        }
     }
 
     void MainWindow::RenderEditorSurface()
     {
-        editorRenderer.Render(editorSession.Core());
+        try
+        {
+            editorRenderer.Render(editorSession.Core());
+            UpdateEditorScrollBar();
+        }
+        catch (winrt::hresult_error const& error)
+        {
+            SetStatus(L"Render failed: " + error.message());
+        }
+    }
+
+    void MainWindow::UpdateEditorScrollBar()
+    {
+        scrollBarUpdating = true;
+        auto maximum = static_cast<double>(editorRenderer.MaximumScrollOffset());
+        auto viewport = static_cast<double>(editorRenderer.ViewportHeight());
+        EditorScrollBar().Maximum(maximum);
+        EditorScrollBar().ViewportSize(viewport);
+        EditorScrollBar().LargeChange((std::max)(48.0, viewport * 0.9));
+        EditorScrollBar().Value(static_cast<double>((std::min)(editorRenderer.ScrollOffset(), static_cast<float>(maximum))));
+        EditorScrollBar().Visibility(maximum > 0.5
+            ? Microsoft::UI::Xaml::Visibility::Visible
+            : Microsoft::UI::Xaml::Visibility::Collapsed);
+        scrollBarUpdating = false;
+    }
+
+    void MainWindow::StartScrollAnimation()
+    {
+        lastScrollFrame = std::chrono::steady_clock::now();
+        if (!scrollAnimationTimer.IsRunning()) scrollAnimationTimer.Start();
+    }
+
+    void MainWindow::SetSidebarExpanded(bool expanded)
+    {
+        SidebarPanel().Visibility(expanded ? Microsoft::UI::Xaml::Visibility::Visible : Microsoft::UI::Xaml::Visibility::Collapsed);
+        SidebarColumn().Width(Microsoft::UI::Xaml::GridLengthHelper::FromPixels(expanded ? 280.0 : 0.0));
     }
 
     winrt::ElMd::EditorSurfaceRenderer::Theme MainWindow::CurrentRendererTheme()

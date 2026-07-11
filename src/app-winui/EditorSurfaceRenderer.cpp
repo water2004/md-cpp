@@ -349,7 +349,7 @@ namespace winrt::ElMd
         }
     }
 
-    void AppendSourceText(DisplayInlineText& display, std::u32string const& sourceText, std::size_t start, std::size_t end, elmd::InlineStyle style, bool marker)
+    void AppendSourceText(DisplayInlineText& display, std::u32string_view sourceText, std::size_t start, std::size_t end, elmd::InlineStyle style, bool marker)
     {
         start = (std::min)(start, sourceText.size());
         end = (std::min)((std::max)(end, start), sourceText.size());
@@ -415,7 +415,7 @@ namespace winrt::ElMd
         std::vector<elmd::InlineRenderItem> const& items,
         std::size_t caret,
         std::size_t sourceEnd,
-        std::u32string const& sourceText,
+        std::u32string_view sourceText,
         MathJaxRenderer& mathJax,
         SvgNormalizer& svgNormalizer,
         D2D1_COLOR_F svgColor,
@@ -502,7 +502,7 @@ namespace winrt::ElMd
         return display;
     }
 
-    DisplayInlineText BuildCodeBlockText(elmd::RenderBlock const& block, std::size_t caret, std::u32string const& sourceText)
+    DisplayInlineText BuildCodeBlockText(elmd::RenderBlock const& block, std::size_t caret, std::u32string_view sourceText)
     {
         DisplayInlineText display;
         auto showFence = block.source_range.start.v <= caret && caret <= block.source_range.end.v;
@@ -524,7 +524,7 @@ namespace winrt::ElMd
         return display;
     }
 
-    DisplayInlineText BuildIndentedCodeBlockText(elmd::RenderBlock const& block, std::u32string const& sourceText)
+    DisplayInlineText BuildIndentedCodeBlockText(elmd::RenderBlock const& block, std::u32string_view sourceText)
     {
         DisplayInlineText display;
         for (std::size_t index = 0; index < block.code_marker_ranges.size(); ++index)
@@ -636,6 +636,16 @@ namespace winrt::ElMd
 
     void EditorSurfaceRenderer::ResetTargets()
     {
+        if (d2dContext)
+        {
+            d2dContext->SetTarget(nullptr);
+            d2dContext->Flush();
+        }
+        if (d3dContext)
+        {
+            d3dContext->OMSetRenderTargets(0, nullptr, nullptr);
+            d3dContext->Flush();
+        }
         renderTargetView = nullptr;
         d2dTarget = nullptr;
         ResetBrushes();
@@ -827,10 +837,13 @@ namespace winrt::ElMd
 
     void EditorSurfaceRenderer::Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height)
     {
-        if (!swapChain)
+        if (!swapChain || resizing || !std::isfinite(width) || !std::isfinite(height) || width <= 0.0 || height <= 0.0)
         {
             return;
         }
+
+        resizing = true;
+        struct ResetFlag { bool& value; ~ResetFlag() { value = false; } } resetFlag{ resizing };
 
         auto newScaleX = CompositionScaleX(panel);
         auto newScaleY = CompositionScaleY(panel);
@@ -845,7 +858,8 @@ namespace winrt::ElMd
 
         if (newWidthDip != surfaceWidthDip) blockHeightCache.clear();
         ResetTargets();
-        winrt::check_hresult(swapChain->ResizeBuffers(0, newWidth, newHeight, DXGI_FORMAT_UNKNOWN, 0));
+        auto resized = swapChain->ResizeBuffers(0, newWidth, newHeight, DXGI_FORMAT_UNKNOWN, 0);
+        if (FAILED(resized)) return;
         surfaceWidth = newWidth;
         surfaceHeight = newHeight;
         surfaceWidthDip = newWidthDip;
@@ -853,6 +867,9 @@ namespace winrt::ElMd
         surfaceScaleX = newScaleX;
         surfaceScaleY = newScaleY;
         ApplySwapChainTransform();
+        auto maxScroll = MaximumScrollOffset();
+        scrollOffset = (std::min)(scrollOffset, maxScroll);
+        scrollTarget = (std::min)(scrollTarget, maxScroll);
     }
 
     std::optional<EditorSurfaceRenderer::CachedRasterImage> EditorSurfaceRenderer::LoadRasterImage(std::wstring const& baseDirectory, std::string_view source)
@@ -914,13 +931,14 @@ namespace winrt::ElMd
         visualMathHits.clear();
         visualBlocks.reserve(sessionCore.renderModel.blocks.size());
         if (blockHeightCache.size() > 32768) blockHeightCache.clear();
-        auto documentLeft = styleSheet.horizontalPadding;
+        auto responsivePadding = (std::min)(styleSheet.horizontalPadding, (std::max)(12.0f, surfaceWidthDip * 0.06f));
+        auto documentLeft = responsivePadding;
         auto documentTop = styleSheet.verticalPadding;
-        auto documentRight = (std::min)(surfaceWidthDip - styleSheet.horizontalPadding, documentLeft + styleSheet.documentWidth);
+        auto documentRight = (std::max)(documentLeft + 1.0f, (std::min)(surfaceWidthDip - responsivePadding - 14.0f, documentLeft + styleSheet.documentWidth));
         auto y = documentTop - scrollOffset;
         auto selection = sessionCore.editor.selection().normalized_range();
         auto caret = sessionCore.editor.selection().active.v;
-        auto sourceText = sessionCore.editor.text_cps();
+        auto sourceText = sessionCore.editor.buffer().text_cps();
         std::unordered_set<std::uint64_t> mathFallbacks;
         ::Microsoft::WRL::ComPtr<ID2D1DeviceContext5> svgContext;
         auto svgSupported = SUCCEEDED(d2dContext.As(&svgContext)) && svgContext;
@@ -2407,6 +2425,9 @@ namespace winrt::ElMd
         }
 
         totalDocumentHeight = y + scrollOffset + styleSheet.verticalPadding;
+        auto maxScroll = MaximumScrollOffset();
+        scrollOffset = (std::min)(scrollOffset, maxScroll);
+        scrollTarget = (std::min)(scrollTarget, maxScroll);
 
         if (sessionCore.editor.selection().is_caret())
         {
@@ -2420,8 +2441,46 @@ namespace winrt::ElMd
 
     void EditorSurfaceRenderer::ScrollBy(float delta)
     {
-        auto maxScroll = (std::max)(0.0f, totalDocumentHeight - surfaceHeightDip);
-        scrollOffset = (std::min)(maxScroll, (std::max)(0.0f, scrollOffset + delta));
+        SetScrollOffset(scrollOffset + delta);
+    }
+
+    void EditorSurfaceRenderer::QueueScrollBy(float delta)
+    {
+        scrollTarget = (std::min)(MaximumScrollOffset(), (std::max)(0.0f, scrollTarget + delta));
+    }
+
+    bool EditorSurfaceRenderer::AdvanceScrollAnimation(float elapsedSeconds)
+    {
+        auto distance = scrollTarget - scrollOffset;
+        if (std::fabs(distance) < 0.25f)
+        {
+            scrollOffset = scrollTarget;
+            return false;
+        }
+        auto blend = 1.0f - std::exp(-18.0f * (std::max)(0.0f, elapsedSeconds));
+        scrollOffset += distance * blend;
+        return true;
+    }
+
+    void EditorSurfaceRenderer::SetScrollOffset(float value)
+    {
+        scrollOffset = (std::min)(MaximumScrollOffset(), (std::max)(0.0f, value));
+        scrollTarget = scrollOffset;
+    }
+
+    float EditorSurfaceRenderer::ScrollOffset() const
+    {
+        return scrollOffset;
+    }
+
+    float EditorSurfaceRenderer::MaximumScrollOffset() const
+    {
+        return (std::max)(0.0f, totalDocumentHeight - surfaceHeightDip);
+    }
+
+    float EditorSurfaceRenderer::ViewportHeight() const
+    {
+        return surfaceHeightDip;
     }
 
     void EditorSurfaceRenderer::UpdatePointer(float x, float y)
@@ -2554,6 +2613,7 @@ namespace winrt::ElMd
             {
                 scrollOffset = (std::min)(maxScroll, scrollOffset + caretBounds->bottom - (surfaceHeightDip - margin));
             }
+            scrollTarget = scrollOffset;
             return scrollOffset != previous;
         }
 
@@ -2563,6 +2623,7 @@ namespace winrt::ElMd
             {
                 auto maxScroll = (std::max)(0.0f, totalDocumentHeight - surfaceHeightDip);
                 scrollOffset = (std::min)(maxScroll, (std::max)(0.0f, block.documentY - styleSheet.verticalPadding));
+                scrollTarget = scrollOffset;
                 return scrollOffset != previous;
             }
         }
@@ -2942,10 +3003,13 @@ namespace winrt::ElMd
 
     void EditorSurfaceRenderer::Render(detail::EditorSessionCore const& sessionCore)
     {
-        if (!swapChain || !d3dDevice || !d3dContext)
+        if (!swapChain || !d3dDevice || !d3dContext || resizing || rendering)
         {
             return;
         }
+
+        rendering = true;
+        struct ResetFlag { bool& value; ~ResetFlag() { value = false; } } resetFlag{ rendering };
 
         if (!renderTargetView)
         {
@@ -2991,8 +3055,15 @@ namespace winrt::ElMd
         d2dContext->BeginDraw();
         d2dContext->Clear(styleSheet.canvasColor);
         DrawDocument(sessionCore);
-        winrt::check_hresult(d2dContext->EndDraw());
+        auto ended = d2dContext->EndDraw();
+        if (ended == D2DERR_RECREATE_TARGET)
+        {
+            ResetTargets();
+            return;
+        }
+        if (FAILED(ended)) return;
 
-        winrt::check_hresult(swapChain->Present(1, 0));
+        auto presented = swapChain->Present(1, 0);
+        if (presented == DXGI_ERROR_DEVICE_REMOVED || presented == DXGI_ERROR_DEVICE_RESET) ResetTargets();
     }
 }
