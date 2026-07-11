@@ -10,16 +10,18 @@ import elmd.core.diagnostics;
 
 export namespace elmd {
 
-struct MarkdownDocument {
+struct EditorDocument {
     std::uint64_t revision = 1;
     std::vector<BlockNode> blocks;
     SourceMap source_map;
     DocumentMetadata metadata;
     std::vector<Diagnostic> diagnostics;
 
-    static MarkdownDocument empty(std::uint64_t rev) {
-        MarkdownDocument d; d.revision = rev; return d;
+    static EditorDocument empty(std::uint64_t rev) {
+        EditorDocument d; d.revision = rev; return d;
     }
 };
+
+using MarkdownDocument = EditorDocument;
 
 } // namespace elmd

@@ -1,0 +1,105 @@
+# MarkText 编辑交互参考
+
+## 目标
+
+MarkText/Muya 仅作为编辑语义和架构参考，不复制其 Electron、DOM 或 JavaScript 实现。
+
+本项目必须保持原生 C++23、WinUI 3、DirectWrite 和 Direct2D 架构。
+
+## 核心原则
+
+`EditorDocument` 及其 Markdown AST 是文档解析完成后唯一可信的编辑状态。
+
+```text
+Markdown -> Parser -> EditorDocument
+EditorDocument -> 编辑命令 -> EditorDocument
+EditorDocument -> Renderer -> 界面
+EditorDocument -> Serializer -> Markdown
+```
+
+Markdown 文本、SourceMap、RenderModel、LayoutTree 和屏幕坐标均为派生数据。
+
+常规编辑交互不得依赖扫描 Markdown 行前缀、统计缩进或临时拼接 Markdown 字符串。Markdown 语法识别属于 Parser，Markdown 文本生成属于 Serializer，键盘交互属于 AST 结构变换。
+
+## 参考范围
+
+克隆最新版 `marktext/marktext` 到本地未跟踪目录，并记录参考 commit。重点研究 Muya 中以下行为：
+
+当前参考 commit：`43bd8b77795fb27b1a9512737c000f7362031ea0`（2026-07-06）。
+
+* Enter、Backspace 和 Delete；
+* 段落拆分与合并；
+* 列表项创建、退出、缩进和反缩进；
+* 引用拆分、退出和嵌套；
+* 空段落及空容器处理；
+* 跨块选区删除；
+* Selection 映射；
+* Transaction、Undo 和 Redo；
+* Markdown 解析与序列化边界。
+
+理解其背后的结构不变量，不要逐行翻译代码。
+
+## 实现要求
+
+编辑位置应基于稳定 `NodeId` 和节点内偏移。
+
+编辑命令应表达为节点的拆分、合并、插入、删除、移动、提升和包裹等结构操作。
+
+操作完成后必须：
+
+* 规范化文档树；
+* 验证 AST 不变量；
+* 修复并恢复 Selection；
+* 更新派生渲染和布局状态。
+
+旧的源码驱动编辑逻辑可以在迁移期间暂时保留，但不得继续扩展；对应 AST 编辑路径完成并测试后应删除旧实现。
+
+## 优先级
+
+优先完成：
+
+1. Enter；
+2. Backspace 和 Delete；
+3. Tab 和 Shift+Tab；
+4. 嵌套列表与嵌套引用；
+5. 空列表项和空引用退出；
+6. 跨容器范围删除；
+7. Undo/Redo 和 Selection 恢复。
+
+## 测试要求
+
+每项交互同时验证：
+
+* AST 结构；
+* Selection 位置；
+* 文档不变量；
+* 序列化 Markdown；
+* Undo/Redo；
+* parse–serialize–parse 的语义一致性。
+
+必须覆盖列表和引用中唯一、首个、中间、末尾以及多层嵌套情况。
+
+## 工作方式
+
+每次修改前：
+
+1. 找到 MarkText/Muya 中对应交互；
+2. 总结其结构语义和不变量；
+3. 检查本项目当前实现；
+4. 编写适合本项目架构的实现；
+5. 增加结构化回归测试。
+
+不要为了通过单个示例继续增加源码字符串特殊分支。
+
+## 已确认的 Muya 结构语义
+
+Muya 将段落、列表、列表项和引用表示为可直接插入、移除、拆分及移动的树节点。Selection 绑定内容节点与节点内偏移；Enter 先按容器关系选择结构操作，再恢复到目标内容节点，而不是先生成 Markdown 前缀。
+
+已确认的 Enter 不变量：
+
+* 普通段落保留光标前内容，并把光标后内容放入新的相邻段落；
+* 非空列表项拆分为相邻列表项；
+* 空列表项按其在列表中的位置退出或拆分列表；
+* 空引用段落按其在引用中的位置退出或拆分引用；
+* 操作后容器不得留下没有内容子节点的列表项；
+* Selection 恢复到新目标节点的节点内偏移，而不是重新猜测序列化字符位置。

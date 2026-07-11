@@ -15,6 +15,7 @@ cmake-build*/
 CMakeSettings.json
 .cache/
 .tools/
+.reference/
 tools/mathjax-bundle/node_modules/
 tools/mathjax-bundle/quickjs-smoke.exe
 tools/mathjax-bundle/quickjs-smoke.obj

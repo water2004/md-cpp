@@ -1,0 +1,399 @@
+export module elmd.core.document_edit;
+import std;
+import elmd.core.ast;
+import elmd.core.document;
+import elmd.core.document_position;
+
+export namespace elmd {
+
+enum class DocumentTransactionReason {
+    InsertText,
+    Delete,
+    Paste,
+    Format,
+    Structure,
+};
+
+struct DocumentTransaction {
+    EditorDocument before;
+    EditorDocument after;
+    DocumentSelection selection_before;
+    DocumentSelection selection_after;
+    DocumentTransactionReason reason = DocumentTransactionReason::Structure;
+};
+
+struct DocumentInvariantError {
+    NodeId node_id{};
+    std::string message;
+};
+
+class DocumentHistory {
+public:
+    explicit DocumentHistory(std::size_t capacity = 1000) : capacity_(capacity) {}
+
+    void push(DocumentTransaction transaction) {
+        undo_.push_back(std::move(transaction));
+        redo_.clear();
+        if (undo_.size() > capacity_) undo_.erase(undo_.begin());
+    }
+
+    std::optional<std::pair<EditorDocument, DocumentSelection>> undo() {
+        if (undo_.empty()) return std::nullopt;
+        auto transaction = std::move(undo_.back());
+        undo_.pop_back();
+        auto result = std::pair{transaction.before, transaction.selection_before};
+        redo_.push_back(std::move(transaction));
+        return result;
+    }
+
+    std::optional<std::pair<EditorDocument, DocumentSelection>> redo() {
+        if (redo_.empty()) return std::nullopt;
+        auto transaction = std::move(redo_.back());
+        redo_.pop_back();
+        auto result = std::pair{transaction.after, transaction.selection_after};
+        undo_.push_back(std::move(transaction));
+        return result;
+    }
+
+private:
+    std::size_t capacity_;
+    std::vector<DocumentTransaction> undo_;
+    std::vector<DocumentTransaction> redo_;
+};
+
+namespace document_edit_detail {
+
+inline void collect_max_id_inline(const InlineNode& node, std::uint64_t& value) {
+    value = (std::max)(value, node.id.v);
+    for (const auto& child : node.children) collect_max_id_inline(child, value);
+}
+
+inline void collect_max_id_block(const BlockNode& block, std::uint64_t& value) {
+    value = (std::max)(value, block.id.v);
+    for (const auto& child : block.children) collect_max_id_inline(child, value);
+    for (const auto& child : block.quote_children) collect_max_id_block(child, value);
+    for (const auto& item : block.list_items) {
+        value = (std::max)(value, item.id.v);
+        for (const auto& child : item.children) collect_max_id_block(child, value);
+    }
+    for (const auto& item : block.task_items) {
+        value = (std::max)(value, item.id.v);
+        for (const auto& child : item.children) collect_max_id_block(child, value);
+    }
+    for (const auto& cell : block.table_header) {
+        value = (std::max)(value, cell.id.v);
+        for (const auto& child : cell.children) collect_max_id_inline(child, value);
+    }
+    for (const auto& row : block.table_rows) {
+        value = (std::max)(value, row.id.v);
+        for (const auto& cell : row.cells) {
+            value = (std::max)(value, cell.id.v);
+            for (const auto& child : cell.children) collect_max_id_inline(child, value);
+        }
+    }
+}
+
+struct NodeAllocator {
+    std::uint64_t next = 1;
+
+    explicit NodeAllocator(const EditorDocument& document) {
+        std::uint64_t maximum = 0;
+        for (const auto& block : document.blocks) collect_max_id_block(block, maximum);
+        next = maximum + 1;
+    }
+
+    NodeId allocate() { return NodeId(next++); }
+};
+
+inline std::size_t inline_length(const InlineNode& node) {
+    return inline_text_content(node).size();
+}
+
+inline std::pair<InlineVec, InlineVec> split_inlines(const InlineVec& nodes, std::size_t offset, NodeAllocator& allocator);
+
+inline std::pair<std::optional<InlineNode>, std::optional<InlineNode>> split_inline(
+    const InlineNode& node,
+    std::size_t offset,
+    NodeAllocator& allocator) {
+    const auto length = inline_length(node);
+    if (offset == 0) return {std::nullopt, node};
+    if (offset >= length) return {node, std::nullopt};
+
+    const bool container = node.kind == InlineKind::Emphasis || node.kind == InlineKind::Strong
+        || node.kind == InlineKind::Strike || node.kind == InlineKind::Span || node.kind == InlineKind::Link;
+    if (container) {
+        auto [left_children, right_children] = split_inlines(node.children, offset, allocator);
+        std::optional<InlineNode> left;
+        std::optional<InlineNode> right;
+        if (!left_children.empty()) {
+            left = node;
+            left->children = std::move(left_children);
+        }
+        if (!right_children.empty()) {
+            right = node;
+            right->id = allocator.allocate();
+            right->children = std::move(right_children);
+        }
+        return {std::move(left), std::move(right)};
+    }
+
+    if (node.kind == InlineKind::Text || node.kind == InlineKind::InlineCode
+        || node.kind == InlineKind::InlineMath || node.kind == InlineKind::UnsupportedMarkup) {
+        InlineNode left = node;
+        InlineNode right = node;
+        left.text = node.text.substr(0, offset);
+        right.id = allocator.allocate();
+        right.text = node.text.substr(offset);
+        return {std::move(left), std::move(right)};
+    }
+
+    return offset * 2 < length
+        ? std::pair<std::optional<InlineNode>, std::optional<InlineNode>>{std::nullopt, node}
+        : std::pair<std::optional<InlineNode>, std::optional<InlineNode>>{node, std::nullopt};
+}
+
+inline std::pair<InlineVec, InlineVec> split_inlines(const InlineVec& nodes, std::size_t offset, NodeAllocator& allocator) {
+    InlineVec left;
+    InlineVec right;
+    std::size_t consumed = 0;
+    bool split = false;
+    for (const auto& node : nodes) {
+        const auto length = inline_length(node);
+        if (split) {
+            right.push_back(node);
+        } else if (offset >= consumed + length) {
+            left.push_back(node);
+            consumed += length;
+        } else {
+            auto [left_node, right_node] = split_inline(node, offset - consumed, allocator);
+            if (left_node) left.push_back(std::move(*left_node));
+            if (right_node) right.push_back(std::move(*right_node));
+            split = true;
+        }
+    }
+    if (!split && offset == consumed) split = true;
+    return {std::move(left), std::move(right)};
+}
+
+inline bool block_is_empty_paragraph(const BlockNode& block) {
+    return block.kind == BlockKind::Paragraph && block_inline_text_content(block.children).empty();
+}
+
+inline BlockNode empty_paragraph(NodeAllocator& allocator) {
+    BlockNode paragraph;
+    paragraph.id = allocator.allocate();
+    paragraph.kind = BlockKind::Paragraph;
+    return paragraph;
+}
+
+inline bool contains_block(const BlockVec& blocks, NodeId id) {
+    for (const auto& block : blocks) {
+        if (block.id == id) return true;
+        if (contains_block(block.quote_children, id)) return true;
+        for (const auto& item : block.list_items) if (contains_block(item.children, id)) return true;
+        for (const auto& item : block.task_items) if (contains_block(item.children, id)) return true;
+    }
+    return false;
+}
+
+inline bool split_paragraph_in_blocks(BlockVec& blocks, NodeId id, std::size_t offset, NodeAllocator& allocator, DocumentPosition& after);
+
+inline bool split_direct_paragraph(BlockVec& blocks, std::size_t index, std::size_t offset, NodeAllocator& allocator, DocumentPosition& after) {
+    auto& paragraph = blocks[index];
+    auto [left, right] = split_inlines(paragraph.children, offset, allocator);
+    paragraph.children = std::move(left);
+    BlockNode next;
+    next.id = allocator.allocate();
+    next.kind = BlockKind::Paragraph;
+    next.children = std::move(right);
+    after = DocumentPosition{next.id, 0, TextAffinity::Downstream};
+    blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(index + 1), std::move(next));
+    return true;
+}
+
+inline bool enter_quote(BlockVec& owner, std::size_t quote_index, NodeId id, std::size_t offset, NodeAllocator& allocator, DocumentPosition& after) {
+    auto& quote = owner[quote_index];
+    for (std::size_t child_index = 0; child_index < quote.quote_children.size(); ++child_index) {
+        auto& child = quote.quote_children[child_index];
+        if (child.id != id) continue;
+        if (!block_is_empty_paragraph(child)) return split_direct_paragraph(quote.quote_children, child_index, offset, allocator, after);
+
+        BlockNode paragraph = std::move(child);
+        after = DocumentPosition{paragraph.id, 0, TextAffinity::Downstream};
+        if (quote.quote_children.size() == 1) {
+            owner[quote_index] = std::move(paragraph);
+        } else if (child_index == 0) {
+            quote.quote_children.erase(quote.quote_children.begin());
+            owner.insert(owner.begin() + static_cast<std::ptrdiff_t>(quote_index), std::move(paragraph));
+        } else if (child_index + 1 == quote.quote_children.size()) {
+            quote.quote_children.pop_back();
+            owner.insert(owner.begin() + static_cast<std::ptrdiff_t>(quote_index + 1), std::move(paragraph));
+        } else {
+            BlockNode trailing = quote;
+            trailing.id = allocator.allocate();
+            trailing.quote_children.assign(
+                std::make_move_iterator(quote.quote_children.begin() + static_cast<std::ptrdiff_t>(child_index + 1)),
+                std::make_move_iterator(quote.quote_children.end()));
+            quote.quote_children.erase(quote.quote_children.begin() + static_cast<std::ptrdiff_t>(child_index), quote.quote_children.end());
+            owner.insert(owner.begin() + static_cast<std::ptrdiff_t>(quote_index + 1), std::move(paragraph));
+            owner.insert(owner.begin() + static_cast<std::ptrdiff_t>(quote_index + 2), std::move(trailing));
+        }
+        return true;
+    }
+    return split_paragraph_in_blocks(quote.quote_children, id, offset, allocator, after);
+}
+
+inline bool enter_list(BlockVec& owner, std::size_t list_index, NodeId id, std::size_t offset, NodeAllocator& allocator, DocumentPosition& after) {
+    auto& list = owner[list_index];
+    for (std::size_t item_index = 0; item_index < list.list_items.size(); ++item_index) {
+        auto& item = list.list_items[item_index];
+        for (std::size_t child_index = 0; child_index < item.children.size(); ++child_index) {
+            auto& child = item.children[child_index];
+            if (child.id != id) continue;
+            const bool empty = block_is_empty_paragraph(child);
+            if (empty && item.children.size() == 1) {
+                BlockNode paragraph = std::move(child);
+                after = DocumentPosition{paragraph.id, 0, TextAffinity::Downstream};
+                if (list.list_items.size() == 1) {
+                    owner[list_index] = std::move(paragraph);
+                } else if (item_index == 0) {
+                    list.list_items.erase(list.list_items.begin());
+                    owner.insert(owner.begin() + static_cast<std::ptrdiff_t>(list_index), std::move(paragraph));
+                } else if (item_index + 1 == list.list_items.size()) {
+                    list.list_items.pop_back();
+                    owner.insert(owner.begin() + static_cast<std::ptrdiff_t>(list_index + 1), std::move(paragraph));
+                } else {
+                    BlockNode trailing = list;
+                    trailing.id = allocator.allocate();
+                    trailing.list_items.assign(
+                        std::make_move_iterator(list.list_items.begin() + static_cast<std::ptrdiff_t>(item_index + 1)),
+                        std::make_move_iterator(list.list_items.end()));
+                    list.list_items.erase(list.list_items.begin() + static_cast<std::ptrdiff_t>(item_index), list.list_items.end());
+                    owner.insert(owner.begin() + static_cast<std::ptrdiff_t>(list_index + 1), std::move(paragraph));
+                    owner.insert(owner.begin() + static_cast<std::ptrdiff_t>(list_index + 2), std::move(trailing));
+                }
+                return true;
+            }
+
+            ListItem next;
+            next.id = allocator.allocate();
+            next.marker = item.marker;
+            if (empty) {
+                const auto move_from = child_index == 0 ? 1 : child_index;
+                next.children.assign(
+                    std::make_move_iterator(item.children.begin() + static_cast<std::ptrdiff_t>(move_from)),
+                    std::make_move_iterator(item.children.end()));
+                item.children.erase(item.children.begin() + static_cast<std::ptrdiff_t>(move_from), item.children.end());
+                if (next.children.empty()) next.children.push_back(empty_paragraph(allocator));
+            } else {
+                auto [left, right] = split_inlines(child.children, offset, allocator);
+                child.children = std::move(left);
+                BlockNode paragraph;
+                paragraph.id = allocator.allocate();
+                paragraph.kind = BlockKind::Paragraph;
+                paragraph.children = std::move(right);
+                next.children.push_back(std::move(paragraph));
+                next.children.insert(next.children.end(),
+                    std::make_move_iterator(item.children.begin() + static_cast<std::ptrdiff_t>(child_index + 1)),
+                    std::make_move_iterator(item.children.end()));
+                item.children.erase(item.children.begin() + static_cast<std::ptrdiff_t>(child_index + 1), item.children.end());
+            }
+            after = DocumentPosition{next.children.front().id, 0, TextAffinity::Downstream};
+            list.list_items.insert(list.list_items.begin() + static_cast<std::ptrdiff_t>(item_index + 1), std::move(next));
+            return true;
+        }
+        if (split_paragraph_in_blocks(item.children, id, offset, allocator, after)) return true;
+    }
+    return false;
+}
+
+inline bool split_paragraph_in_blocks(BlockVec& blocks, NodeId id, std::size_t offset, NodeAllocator& allocator, DocumentPosition& after) {
+    for (std::size_t index = 0; index < blocks.size(); ++index) {
+        auto& block = blocks[index];
+        if (block.id == id && block.kind == BlockKind::Paragraph) return split_direct_paragraph(blocks, index, offset, allocator, after);
+        if (block.kind == BlockKind::BlockQuote || block.kind == BlockKind::Callout || block.kind == BlockKind::FootnoteDefinition) {
+            if (enter_quote(blocks, index, id, offset, allocator, after)) return true;
+        } else if (block.kind == BlockKind::List) {
+            if (enter_list(blocks, index, id, offset, allocator, after)) return true;
+        } else {
+            for (auto& item : block.task_items) if (split_paragraph_in_blocks(item.children, id, offset, allocator, after)) return true;
+        }
+    }
+    return false;
+}
+
+inline void normalize_blocks(BlockVec& blocks, NodeAllocator& allocator) {
+    for (auto& block : blocks) {
+        if (block.kind == BlockKind::BlockQuote || block.kind == BlockKind::Callout || block.kind == BlockKind::FootnoteDefinition) {
+            normalize_blocks(block.quote_children, allocator);
+            if (block.quote_children.empty()) block.quote_children.push_back(empty_paragraph(allocator));
+        }
+        for (auto& item : block.list_items) {
+            normalize_blocks(item.children, allocator);
+            if (item.children.empty()) item.children.push_back(empty_paragraph(allocator));
+        }
+        for (auto& item : block.task_items) {
+            normalize_blocks(item.children, allocator);
+            if (item.children.empty()) item.children.push_back(empty_paragraph(allocator));
+        }
+    }
+    if (blocks.empty()) blocks.push_back(empty_paragraph(allocator));
+}
+
+inline void validate_inline(const InlineNode& node, std::unordered_set<std::uint64_t>& ids, std::vector<DocumentInvariantError>& errors) {
+    if (node.id.v == 0 || !ids.insert(node.id.v).second) errors.push_back({node.id, "inline node id is zero or duplicated"});
+    for (const auto& child : node.children) validate_inline(child, ids, errors);
+}
+
+inline void validate_blocks(const BlockVec& blocks, std::unordered_set<std::uint64_t>& ids, std::vector<DocumentInvariantError>& errors) {
+    for (const auto& block : blocks) {
+        if (block.id.v == 0 || !ids.insert(block.id.v).second) errors.push_back({block.id, "block node id is zero or duplicated"});
+        for (const auto& child : block.children) validate_inline(child, ids, errors);
+        validate_blocks(block.quote_children, ids, errors);
+        for (const auto& item : block.list_items) {
+            if (item.id.v == 0 || !ids.insert(item.id.v).second) errors.push_back({item.id, "list item id is zero or duplicated"});
+            if (item.children.empty()) errors.push_back({item.id, "list item has no content blocks"});
+            validate_blocks(item.children, ids, errors);
+        }
+        for (const auto& item : block.task_items) {
+            if (item.id.v == 0 || !ids.insert(item.id.v).second) errors.push_back({item.id, "task item id is zero or duplicated"});
+            if (item.children.empty()) errors.push_back({item.id, "task item has no content blocks"});
+            validate_blocks(item.children, ids, errors);
+        }
+    }
+}
+
+}
+
+inline void normalize_document(EditorDocument& document) {
+    document_edit_detail::NodeAllocator allocator(document);
+    document_edit_detail::normalize_blocks(document.blocks, allocator);
+}
+
+inline std::vector<DocumentInvariantError> validate_document(const EditorDocument& document) {
+    std::vector<DocumentInvariantError> errors;
+    std::unordered_set<std::uint64_t> ids;
+    if (document.blocks.empty()) errors.push_back({NodeId{}, "document has no blocks"});
+    document_edit_detail::validate_blocks(document.blocks, ids, errors);
+    return errors;
+}
+
+inline std::optional<DocumentTransaction> document_enter(const EditorDocument& document, const DocumentSelection& selection) {
+    if (!selection.is_caret()) return std::nullopt;
+    EditorDocument after = document;
+    document_edit_detail::NodeAllocator allocator(after);
+    DocumentPosition target;
+    if (!document_edit_detail::split_paragraph_in_blocks(
+            after.blocks, selection.active.node_id, selection.active.offset, allocator, target)) return std::nullopt;
+    normalize_document(after);
+    ++after.revision;
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(after);
+    transaction.selection_before = selection;
+    transaction.selection_after = DocumentSelection::caret(target);
+    transaction.reason = DocumentTransactionReason::Structure;
+    return transaction;
+}
+
+}
