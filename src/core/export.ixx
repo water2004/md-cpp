@@ -98,6 +98,11 @@ inline std::string inline_to_html(const InlineNode& n, ExportRawHtmlPolicy pol) 
             for (const auto& c : n.children) s += inline_to_html(c, pol);
             return "<del>" + s + "</del>";
         }
+        case K::Span: {
+            std::string s;
+            for (const auto& c : n.children) s += inline_to_html(c, pol);
+            return s;
+        }
         case K::InlineCode:
             return "<code>" + escape_raw_html(cps_to_utf8(n.text)) + "</code>";
         case K::Link: {
@@ -162,6 +167,10 @@ inline std::string block_to_html(const BlockNode& b, ExportRawHtmlPolicy pol) {
         case BK::List: {
             std::string items;
             for (const auto& it : b.list_items) items += "<li>" + blocks_to_html(it.children, pol) + "</li>\n";
+            if (b.list_ordered) {
+                auto start = b.list_start == 1 ? std::string{} : " start=\"" + std::to_string(b.list_start) + "\"";
+                return "<ol" + start + ">\n" + items + "</ol>\n";
+            }
             return "<ul>\n" + items + "</ul>\n";
         }
         case BK::TaskList: {
@@ -194,6 +203,7 @@ inline std::string block_to_html(const BlockNode& b, ExportRawHtmlPolicy pol) {
             return html;
         }
         case BK::ThematicBreak: return "<hr>\n";
+        case BK::LinkDefinition: return {};
         case BK::Frontmatter:
             return pol == ExportRawHtmlPolicy::Drop ? std::string{} : escape_raw_html(b.raw);
         case BK::UnsupportedMarkup:
@@ -211,8 +221,12 @@ inline std::string block_to_html(const BlockNode& b, ExportRawHtmlPolicy pol) {
             s += "</section>\n";
             return s;
         }
-        case BK::ImageBlock:
-            return "<img src=\"" + escape_text(b.src) + "\" alt=\"" + escape_text(b.image_alt) + "\" />\n";
+        case BK::ImageBlock: {
+            auto title = b.image_title ? " title=\"" + escape_text(*b.image_title) + "\"" : std::string{};
+            auto image = "<img src=\"" + escape_text(b.src) + "\" alt=\"" + escape_text(b.image_alt) + "\"" + title + " />";
+            if (b.image_link) image = "<a href=\"" + escape_text(*b.image_link) + "\">" + image + "</a>";
+            return image + "\n";
+        }
         case BK::Extension:
             return "<div class=\"extension\">" + escape_text(b.ext_name) + "</div>\n";
     }

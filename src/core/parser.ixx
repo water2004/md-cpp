@@ -64,6 +64,23 @@ namespace detail {
 
 class Parser {
 public:
+    struct LinkDefinition {
+        std::string label;
+        std::string href;
+        std::optional<std::string> title;
+        std::size_t source_start = 0;
+        std::size_t source_end = 0;
+    };
+
+    struct HtmlTag {
+        std::string name;
+        std::unordered_map<std::string, std::string> attributes;
+        std::size_t start = 0;
+        std::size_t end = 0;
+        bool closing = false;
+        bool self_closing = false;
+    };
+
     const ParseInput* input;
     std::u32string cps;          // text as codepoints (this is the index space)
     std::size_t pos = 0;
@@ -76,9 +93,176 @@ public:
     std::vector<MathSymbol> math_blocks;
     std::vector<CodeBlockSymbol> code_blocks;
     std::vector<NodeSourceRange> source_ranges;
+    std::unordered_map<std::string, LinkDefinition> link_definitions;
+    std::unordered_map<std::size_t, LinkDefinition> link_definitions_by_start;
 
     explicit Parser(const ParseInput* in) : input(in) {
         cps = utf8_to_cps(in->text);
+        scan_link_definitions();
+    }
+
+    static std::string normalize_link_label(std::u32string_view label) {
+        std::u32string normalized;
+        bool pending_space = false;
+        for (auto ch : label) {
+            if (ch == U' ' || ch == U'\t' || ch == U'\n' || ch == U'\r') {
+                if (!normalized.empty()) pending_space = true;
+                continue;
+            }
+            if (pending_space) normalized.push_back(U' ');
+            pending_space = false;
+            if (ch >= U'A' && ch <= U'Z') ch = ch - U'A' + U'a';
+            normalized.push_back(ch);
+        }
+        return cps_to_utf8(normalized);
+    }
+
+    std::optional<LinkDefinition> link_definition_at(std::size_t start) const {
+        std::size_t line_end = start;
+        while (line_end < cps.size() && cps[line_end] != U'\n') ++line_end;
+        std::size_t cursor = start;
+        std::size_t spaces = 0;
+        while (cursor < line_end && cps[cursor] == U' ' && spaces < 4) { ++cursor; ++spaces; }
+        if (spaces > 3 || cursor >= line_end || cps[cursor] != U'[') return std::nullopt;
+        auto label_start = ++cursor;
+        while (cursor < line_end && cps[cursor] != U']') ++cursor;
+        if (cursor == label_start || cursor >= line_end || cursor + 1 >= line_end || cps[cursor + 1] != U':') return std::nullopt;
+        auto label_end = cursor;
+        cursor += 2;
+        if (cursor >= line_end || (cps[cursor] != U' ' && cps[cursor] != U'\t')) return std::nullopt;
+        while (cursor < line_end && (cps[cursor] == U' ' || cps[cursor] == U'\t')) ++cursor;
+        std::u32string href;
+        if (cursor < line_end && cps[cursor] == U'<') {
+            ++cursor;
+            while (cursor < line_end && cps[cursor] != U'>') href.push_back(cps[cursor++]);
+            if (cursor >= line_end || cps[cursor] != U'>') return std::nullopt;
+            ++cursor;
+        } else {
+            while (cursor < line_end && cps[cursor] != U' ' && cps[cursor] != U'\t') href.push_back(cps[cursor++]);
+        }
+        if (href.empty()) return std::nullopt;
+        while (cursor < line_end && (cps[cursor] == U' ' || cps[cursor] == U'\t')) ++cursor;
+        std::optional<std::string> title;
+        if (cursor < line_end) {
+            auto opening = cps[cursor];
+            auto closing = opening == U'(' ? U')' : opening;
+            if (opening != U'"' && opening != U'\'' && opening != U'(') return std::nullopt;
+            ++cursor;
+            std::u32string value;
+            while (cursor < line_end && cps[cursor] != closing) value.push_back(cps[cursor++]);
+            if (cursor >= line_end || cps[cursor] != closing) return std::nullopt;
+            ++cursor;
+            while (cursor < line_end && (cps[cursor] == U' ' || cps[cursor] == U'\t')) ++cursor;
+            if (cursor != line_end) return std::nullopt;
+            title = cps_to_utf8(value);
+        }
+        LinkDefinition definition;
+        definition.label = normalize_link_label(std::u32string_view(cps).substr(label_start, label_end - label_start));
+        definition.href = cps_to_utf8(href);
+        definition.title = std::move(title);
+        definition.source_start = start;
+        definition.source_end = line_end < cps.size() ? line_end + 1 : line_end;
+        return definition;
+    }
+
+    void scan_link_definitions() {
+        std::size_t line_start = 0;
+        while (line_start < cps.size()) {
+            if (auto definition = link_definition_at(line_start)) {
+                link_definitions.try_emplace(definition->label, *definition);
+                link_definitions_by_start.emplace(line_start, *definition);
+            }
+            while (line_start < cps.size() && cps[line_start] != U'\n') ++line_start;
+            if (line_start < cps.size()) ++line_start;
+        }
+    }
+
+    std::optional<HtmlTag> html_tag_at(std::size_t at, std::size_t limit) const {
+        if (at >= limit || cps[at] != U'<') return std::nullopt;
+        HtmlTag tag;
+        tag.start = at;
+        auto cursor = at + 1;
+        if (cursor < limit && cps[cursor] == U'/') { tag.closing = true; ++cursor; }
+        auto name_start = cursor;
+        while (cursor < limit && (is_alnum_(cps[cursor]) || cps[cursor] == U'-')) ++cursor;
+        if (cursor == name_start) return std::nullopt;
+        tag.name = cps_to_utf8(std::u32string_view(cps).substr(name_start, cursor - name_start));
+        std::transform(tag.name.begin(), tag.name.end(), tag.name.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+        while (cursor < limit) {
+            while (cursor < limit && (cps[cursor] == U' ' || cps[cursor] == U'\t')) ++cursor;
+            if (cursor >= limit || cps[cursor] == U'\n') return std::nullopt;
+            if (cps[cursor] == U'>') { tag.end = cursor + 1; return tag; }
+            if (cps[cursor] == U'/' && cursor + 1 < limit && cps[cursor + 1] == U'>') {
+                tag.self_closing = true;
+                tag.end = cursor + 2;
+                return tag;
+            }
+            auto attribute_start = cursor;
+            while (cursor < limit && (is_alnum_(cps[cursor]) || cps[cursor] == U'-' || cps[cursor] == U'_')) ++cursor;
+            if (cursor == attribute_start) return std::nullopt;
+            auto attribute = cps_to_utf8(std::u32string_view(cps).substr(attribute_start, cursor - attribute_start));
+            std::transform(attribute.begin(), attribute.end(), attribute.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+            while (cursor < limit && (cps[cursor] == U' ' || cps[cursor] == U'\t')) ++cursor;
+            std::string value;
+            if (cursor < limit && cps[cursor] == U'=') {
+                ++cursor;
+                while (cursor < limit && (cps[cursor] == U' ' || cps[cursor] == U'\t')) ++cursor;
+                if (cursor >= limit) return std::nullopt;
+                if (cps[cursor] == U'"' || cps[cursor] == U'\'') {
+                    auto quote = cps[cursor++];
+                    auto value_start = cursor;
+                    while (cursor < limit && cps[cursor] != quote && cps[cursor] != U'\n') ++cursor;
+                    if (cursor >= limit || cps[cursor] != quote) return std::nullopt;
+                    value = cps_to_utf8(std::u32string_view(cps).substr(value_start, cursor - value_start));
+                    ++cursor;
+                } else {
+                    auto value_start = cursor;
+                    while (cursor < limit && cps[cursor] != U' ' && cps[cursor] != U'\t' && cps[cursor] != U'>') ++cursor;
+                    value = cps_to_utf8(std::u32string_view(cps).substr(value_start, cursor - value_start));
+                }
+            }
+            if (!attribute.starts_with("on") && attribute != "style") tag.attributes[attribute] = std::move(value);
+        }
+        return std::nullopt;
+    }
+
+    std::optional<std::pair<std::size_t, std::size_t>> html_closing_tag(std::string_view name, std::size_t from, std::size_t limit) const {
+        for (auto cursor = from; cursor < limit; ++cursor) {
+            if (cps[cursor] != U'<') continue;
+            auto tag = html_tag_at(cursor, limit);
+            if (tag && tag->closing && tag->name == name) return std::pair{cursor, tag->end};
+        }
+        return std::nullopt;
+    }
+
+    static bool safe_link_target(std::string_view value, bool image) {
+        auto lower = std::string(value);
+        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+        if (lower.starts_with("javascript:") || lower.starts_with("vbscript:")) return false;
+        if (lower.starts_with("data:")) return image && lower.starts_with("data:image/");
+        return true;
+    }
+
+    std::optional<std::pair<std::u32string, std::size_t>> html_entity_at(std::size_t at, std::size_t limit) const {
+        if (at >= limit || cps[at] != U'&') return std::nullopt;
+        auto end = at + 1;
+        while (end < limit && end - at <= 12 && cps[end] != U';' && cps[end] != U'\n') ++end;
+        if (end >= limit || cps[end] != U';') return std::nullopt;
+        auto entity = cps_to_utf8(std::u32string_view(cps).substr(at + 1, end - at - 1));
+        if (entity == "amp") return std::pair{std::u32string(1, U'&'), end + 1};
+        if (entity == "lt") return std::pair{std::u32string(1, U'<'), end + 1};
+        if (entity == "gt") return std::pair{std::u32string(1, U'>'), end + 1};
+        if (entity == "quot") return std::pair{std::u32string(1, U'"'), end + 1};
+        if (entity == "apos" || entity == "#39") return std::pair{std::u32string(1, U'\''), end + 1};
+        if (entity == "nbsp") return std::pair{std::u32string(1, U' '), end + 1};
+        if (entity.starts_with("#")) {
+            try {
+                auto hex = entity.size() > 2 && (entity[1] == 'x' || entity[1] == 'X');
+                auto value = std::stoul(entity.substr(hex ? 2 : 1), nullptr, hex ? 16 : 10);
+                if (value <= 0x10ffff && !(0xd800 <= value && value <= 0xdfff)) return std::pair{std::u32string(1, static_cast<char32_t>(value)), end + 1};
+            } catch (...) {}
+        }
+        return std::nullopt;
     }
 
     NodeId next_node_id() { return NodeId(node_counter++); }
@@ -199,6 +383,7 @@ public:
         bool ls = peek_line_start();
         if (ls) {
             if (auto b = try_parse_frontmatter())        return b;
+            if (auto b = try_parse_link_definition())    return b;
             if (peek1() == '#') {
                 if (auto b = parse_heading()) return b;
             }
@@ -208,6 +393,7 @@ public:
             if (auto b = try_parse_indented_code_block()) return b;
             if (auto b = try_parse_code_block())         return b;
             if (auto b = try_parse_math_block())         return b;
+            if (auto b = try_parse_image_block())        return b;
             if (auto b = try_parse_table())              return b;
             if (auto b = try_parse_thematic_break())     return b;
             if (auto b = try_parse_list_or_task())       return b;
@@ -364,12 +550,41 @@ public:
                 result.content_end = pos;
                 continue;
             }
+            if (peek1() == U'\\' && peek2() == U'(') {
+                if (auto n = try_parse_inline_paren_math(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
+            }
+            if (peek1() == U'\\' && (!stop_at || pos + 1 < *stop_at)) {
+                static constexpr std::u32string_view escapable = U"\\`*_{}[]()#+-.!|";
+                if (escapable.find(peek2()) != std::u32string_view::npos) {
+                    flush();
+                    auto start = pos;
+                    auto value = peek2();
+                    advance_n(2);
+                    NodeId id = next_node_id();
+                    NodeSourceRange range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(start + 1), cur()));
+                    range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(start + 1)));
+                    source_ranges.push_back(std::move(range));
+                    result.inlines.push_back(InlineNode::text_node(id, std::u32string(1, value)));
+                    result.content_end = pos;
+                    continue;
+                }
+            }
+            if (peek1() == U'&') {
+                auto limit = stop_at.value_or(cps.size());
+                if (auto entity = html_entity_at(pos, limit)) {
+                    flush();
+                    auto start = pos;
+                    pos = entity->second;
+                    NodeId id = next_node_id();
+                    push_range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(pos)));
+                    result.inlines.push_back(InlineNode::text_node(id, std::move(entity->first)));
+                    result.content_end = pos;
+                    continue;
+                }
+            }
             // inline constructs — exact order
             if (peek1() == '$') {
                 if (auto n = try_parse_inline_math(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
-            }
-            if (peek1() == '\\' && peek2() == '(') {
-                if (auto n = try_parse_inline_paren_math(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
             }
             if (peek1() == '*' && peek2() == '*') {
                 if (!delimiter_exists_before_newline(pos + 2, {'*','*'}, stop_at)) {
@@ -485,6 +700,7 @@ public:
                 if (auto n = try_parse_link_or_image(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
             }
             if (peek1() == '<') {
+                if (auto n = try_parse_autolink(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
                 if (auto n = try_parse_raw_html_inline(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
             }
             buf.push_back(peek1()); advance(); result.content_end = pos;
@@ -656,36 +872,91 @@ public:
         std::size_t limit = stop_at.value_or(cps.size());
         bool is_image = (peek1() == '!');
         if (is_image) advance();
-        if (pos >= limit || peek1() != '[') return std::nullopt;
+        if (pos >= limit || peek1() != '[') { pos = start; return std::nullopt; }
         advance();
-        std::u32string text;
-        while (!eof() && pos < limit && peek1() != ']') { text.push_back(peek1()); advance(); }
-        if (pos >= limit || peek1() != ']') { pos = start; return std::nullopt; }
-        advance();
-        if (pos >= limit || peek1() != '(') { pos = start; return std::nullopt; }
-        advance();
-        std::u32string href;
-        std::optional<std::string> title;
-        while (!eof() && pos < limit && peek1() != ')' && peek1() != '\n') {
-            if (peek1() == ' ') {
-                advance();
-                if (peek1() == '"' || peek1() == '\'') {
-                    char32_t q = peek1(); advance();
-                    std::u32string t;
-                    while (!eof() && pos < limit && peek1() != q) { t.push_back(peek1()); advance(); }
-                    if (pos < limit && peek1() == q) advance();
-                    title = cps_to_utf8(t);
-                }
-                break;
-            }
-            href.push_back(peek1()); advance();
+        auto text_start = pos;
+        std::size_t depth = 1;
+        while (!eof() && pos < limit && depth > 0 && peek1() != U'\n') {
+            if (peek1() == U'\\' && pos + 1 < limit) { advance_n(2); continue; }
+            if (peek1() == U'[') ++depth;
+            else if (peek1() == U']') --depth;
+            if (depth > 0) advance();
         }
-        if (pos < limit && peek1() == ')') advance();
-        else { pos = start; return std::nullopt; }
+        if (depth != 0 || pos >= limit || peek1() != ']') { pos = start; return std::nullopt; }
+        auto text_end = pos;
+        advance();
+        std::string href_s;
+        std::optional<std::string> title;
+        if (pos < limit && peek1() == U'(') {
+            advance();
+            while (pos < limit && (peek1() == U' ' || peek1() == U'\t')) advance();
+            std::u32string href;
+            if (pos < limit && peek1() == U'<') {
+                advance();
+                while (pos < limit && peek1() != U'>' && peek1() != U'\n') href.push_back(peek1()), advance();
+                if (pos >= limit || peek1() != U'>') { pos = start; return std::nullopt; }
+                advance();
+            } else {
+                std::size_t parentheses = 0;
+                while (pos < limit && peek1() != U'\n') {
+                    if (peek1() == U'\\' && pos + 1 < limit) { href.push_back(peek2()); advance_n(2); continue; }
+                    if (peek1() == U'(') { ++parentheses; href.push_back(peek1()); advance(); continue; }
+                    if (peek1() == U')') {
+                        if (parentheses == 0) break;
+                        --parentheses; href.push_back(peek1()); advance(); continue;
+                    }
+                    if ((peek1() == U' ' || peek1() == U'\t') && parentheses == 0) break;
+                    href.push_back(peek1()); advance();
+                }
+            }
+            while (pos < limit && (peek1() == U' ' || peek1() == U'\t')) advance();
+            if (pos < limit && (peek1() == U'"' || peek1() == U'\'' || peek1() == U'(')) {
+                auto opening = peek1();
+                auto closing = opening == U'(' ? U')' : opening;
+                advance();
+                std::u32string value;
+                while (pos < limit && peek1() != closing && peek1() != U'\n') value.push_back(peek1()), advance();
+                if (pos >= limit || peek1() != closing) { pos = start; return std::nullopt; }
+                advance();
+                while (pos < limit && (peek1() == U' ' || peek1() == U'\t')) advance();
+                title = cps_to_utf8(value);
+            }
+            if (pos >= limit || peek1() != U')') { pos = start; return std::nullopt; }
+            advance();
+            href_s = cps_to_utf8(href);
+        } else {
+            auto after_text = pos;
+            while (pos < limit && (peek1() == U' ' || peek1() == U'\t')) advance();
+            if (pos >= limit || peek1() != U'[') { pos = start; return std::nullopt; }
+            advance();
+            auto label_start = pos;
+            while (pos < limit && peek1() != U']' && peek1() != U'\n') advance();
+            if (pos >= limit || peek1() != U']') { pos = start; return std::nullopt; }
+            auto label_end = pos;
+            advance();
+            auto label = label_end == label_start
+                ? normalize_link_label(std::u32string_view(cps).substr(text_start, text_end - text_start))
+                : normalize_link_label(std::u32string_view(cps).substr(label_start, label_end - label_start));
+            auto found = link_definitions.find(label);
+            if (found == link_definitions.end()) { pos = start; return std::nullopt; }
+            href_s = found->second.href;
+            title = found->second.title;
+            (void)after_text;
+        }
+        auto source_end = pos;
+        auto raw_text = std::u32string(std::u32string_view(cps).substr(text_start, text_end - text_start));
+        InlineVec children;
+        if (!is_image) {
+            pos = text_start;
+            children = parse_inline_sequence(text_end).inlines;
+            pos = source_end;
+        }
         NodeId id = next_node_id();
-        std::string href_s = cps_to_utf8(href);
-        std::string text_s = cps_to_utf8(text);
-        push_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(start + (is_image ? 2 : 1)), cur()));
+        std::string text_s = cps_to_utf8(raw_text);
+        NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(text_start), CharOffset(text_end)));
+        range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(text_start)));
+        range.marker_ranges.push_back(CharRange(CharOffset(text_end), CharOffset(source_end)));
+        source_ranges.push_back(std::move(range));
         if (is_image) {
             images.push_back({id, href_s, text_s});
             InlineNode n; n.id = id; n.kind = InlineKind::Image; n.href = href_s; n.alt = text_s; n.title = title;
@@ -693,9 +964,96 @@ public:
         } else {
             links.push_back({id, href_s, text_s});
             InlineNode n; n.id = id; n.kind = InlineKind::Link; n.href = href_s; n.title = title;
-            n.children.push_back(InlineNode::text_node(next_node_id(), std::move(text)));
+            n.children = std::move(children);
             return n;
         }
+    }
+
+    std::optional<BlockNode> try_parse_link_definition() {
+        auto found = link_definitions_by_start.find(pos);
+        if (found == link_definitions_by_start.end()) return std::nullopt;
+        auto start = pos;
+        pos = found->second.source_end;
+        NodeId id = next_node_id();
+        push_range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(pos)));
+        BlockNode block;
+        block.id = id;
+        block.kind = BlockKind::LinkDefinition;
+        block.raw = cps_to_utf8(std::u32string_view(cps).substr(start, pos - start));
+        return block;
+    }
+
+    std::optional<InlineNode> try_parse_autolink(std::optional<std::size_t> stop_at = std::nullopt) {
+        auto start = pos;
+        auto limit = stop_at.value_or(cps.size());
+        if (pos >= limit || peek1() != U'<') return std::nullopt;
+        advance();
+        auto content_start = pos;
+        std::u32string value;
+        while (pos < limit && peek1() != U'>' && peek1() != U'\n' && peek1() != U' ' && peek1() != U'\t') value.push_back(peek1()), advance();
+        if (pos >= limit || peek1() != U'>' || value.empty()) { pos = start; return std::nullopt; }
+        auto text = cps_to_utf8(value);
+        auto lower = text;
+        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+        bool url = lower.starts_with("http://") || lower.starts_with("https://");
+        auto at = text.find('@');
+        bool email = at != std::string::npos && at > 0 && at + 1 < text.size() && text.find('@', at + 1) == std::string::npos;
+        if (!url && !email) { pos = start; return std::nullopt; }
+        advance();
+        NodeId id = next_node_id();
+        NodeId text_id = next_node_id();
+        NodeSourceRange range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(content_start), CharOffset(cur().v - 1)));
+        range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(content_start)));
+        range.marker_ranges.push_back(CharRange(CharOffset(cur().v - 1), cur()));
+        source_ranges.push_back(std::move(range));
+        push_range(text_id, CharRange(CharOffset(content_start), CharOffset(cur().v - 1)), CharRange(CharOffset(content_start), CharOffset(cur().v - 1)));
+        InlineNode node;
+        node.id = id;
+        node.kind = InlineKind::Link;
+        node.href = email ? "mailto:" + text : text;
+        node.children.push_back(InlineNode::text_node(text_id, std::move(value)));
+        links.push_back({id, node.href, text});
+        return node;
+    }
+
+    std::optional<BlockNode> try_parse_image_block() {
+        auto start = pos;
+        auto range_count = source_ranges.size();
+        auto link_count = links.size();
+        auto image_count = images.size();
+        auto counter = node_counter;
+        auto rollback = [&] {
+            pos = start;
+            source_ranges.resize(range_count);
+            links.resize(link_count);
+            images.resize(image_count);
+            node_counter = counter;
+        };
+        auto line_end = pos;
+        while (line_end < cps.size() && cps[line_end] != U'\n') ++line_end;
+        std::optional<InlineNode> parsed;
+        if (peek1() == U'!' || peek1() == U'[') parsed = try_parse_link_or_image(line_end);
+        else if (peek1() == U'<') parsed = try_parse_raw_html_inline(line_end);
+        if (!parsed || pos != line_end) { rollback(); return std::nullopt; }
+        InlineNode const* image = nullptr;
+        std::optional<std::string> link;
+        if (parsed->kind == InlineKind::Image) {
+            image = &*parsed;
+        } else if (parsed->kind == InlineKind::Link && parsed->children.size() == 1 && parsed->children.front().kind == InlineKind::Image) {
+            image = &parsed->children.front();
+            link = parsed->href;
+        }
+        if (!image) { rollback(); return std::nullopt; }
+        if (peek1() == U'\n') advance();
+        BlockNode block;
+        block.id = parsed->id;
+        block.kind = BlockKind::ImageBlock;
+        block.src = image->href;
+        block.image_alt = image->alt;
+        block.image_title = image->title;
+        block.image_link = std::move(link);
+        if (!source_ranges.empty() && source_ranges.back().node_id == block.id) source_ranges.back().source_range.end = CharOffset(pos);
+        return block;
     }
 
     // ---- footnote ref ----
@@ -743,69 +1101,230 @@ public:
         return n;
     }
 
-    // ---- raw html inline → UnsupportedMarkup ----
     std::optional<InlineNode> try_parse_raw_html_inline(std::optional<std::size_t> stop_at = std::nullopt) {
-        std::size_t save = pos;
         auto limit = stop_at.value_or(cps.size());
-        std::u32string tag; tag.push_back('<'); advance();
-        if (peek1() == '/') { tag.push_back('/'); advance(); }
-        while (!eof() && pos < limit && is_alnum_(peek1())) { tag.push_back(peek1()); advance(); }
-        while (!eof() && pos < limit && peek1() != '>' && peek1() != '\n') { tag.push_back(peek1()); advance(); }
-        if (pos >= limit || peek1() != '>') { pos = save; return std::nullopt; }
-        tag.push_back('>'); advance();
+        auto tag = html_tag_at(pos, limit);
+        if (!tag || tag->closing) return std::nullopt;
+        auto start = pos;
+        auto opening = std::u32string(std::u32string_view(cps).substr(start, tag->end - start));
+        static const std::unordered_set<std::string> blocked{ "script", "style", "iframe", "object", "embed" };
+        if (blocked.contains(tag->name)) {
+            auto end = tag->end;
+            if (auto closing = html_closing_tag(tag->name, tag->end, limit)) end = closing->second;
+            pos = end;
+            NodeId id = next_node_id();
+            push_range(id, CharRange(CharOffset(start), CharOffset(end)), CharRange(CharOffset(start), CharOffset(end)));
+            diagnostics.push_back(make_diagnostic(DiagnosticSeverity::Warning, "Unsafe HTML element is shown as text", CharRange(CharOffset(start), CharOffset(end)), DIAG_RAW_HTML_DISABLED));
+            InlineNode node;
+            node.id = id;
+            node.kind = InlineKind::UnsupportedMarkup;
+            node.text = std::u32string(std::u32string_view(cps).substr(start, end - start));
+            node.unsup_reason = UnsupportedMarkupReason::RawHtmlDisabled;
+            return node;
+        }
+        if (tag->name == "br") {
+            pos = tag->end;
+            NodeId id = next_node_id();
+            NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(pos), CharOffset(pos)));
+            range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(pos)));
+            source_ranges.push_back(std::move(range));
+            InlineNode node;
+            node.id = id;
+            node.kind = InlineKind::HardBreak;
+            node.opening_marker = std::move(opening);
+            return node;
+        }
+        if (tag->name == "img") {
+            pos = tag->end;
+            auto src = tag->attributes.contains("src") ? tag->attributes.at("src") : std::string{};
+            if (!safe_link_target(src, true)) src.clear();
+            NodeId id = next_node_id();
+            push_range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(pos)));
+            InlineNode node;
+            node.id = id;
+            node.kind = InlineKind::Image;
+            node.href = src;
+            if (tag->attributes.contains("alt")) node.alt = tag->attributes.at("alt");
+            if (tag->attributes.contains("title")) node.title = tag->attributes.at("title");
+            images.push_back({id, node.href, node.alt});
+            return node;
+        }
+        auto closing = html_closing_tag(tag->name, tag->end, limit);
+        if (!closing) return std::nullopt;
+        auto content_start = tag->end;
+        auto content_end = closing->first;
+        auto end = closing->second;
+        InlineNode node;
+        if (tag->name == "code") {
+            node.kind = InlineKind::InlineCode;
+            node.text = std::u32string(std::u32string_view(cps).substr(content_start, content_end - content_start));
+        } else {
+            pos = content_start;
+            node.children = parse_inline_sequence(content_end).inlines;
+            if (tag->name == "strong" || tag->name == "b") node.kind = InlineKind::Strong;
+            else if (tag->name == "em" || tag->name == "i" || tag->name == "cite") node.kind = InlineKind::Emphasis;
+            else if (tag->name == "del" || tag->name == "s") node.kind = InlineKind::Strike;
+            else if (tag->name == "a") node.kind = InlineKind::Link;
+            else node.kind = InlineKind::Span;
+        }
+        pos = end;
         NodeId id = next_node_id();
-        push_range(id, CharRange(CharOffset(save), cur()), CharRange(CharOffset(save), cur()));
-        diagnostics.push_back(make_diagnostic(DiagnosticSeverity::Hint,
-            "Raw HTML is disabled, shown as text",
-            CharRange(CharOffset(save), cur()), DIAG_RAW_HTML_DISABLED));
-        InlineNode n; n.id = id; n.kind = InlineKind::UnsupportedMarkup; n.text = tag; n.unsup_reason = UnsupportedMarkupReason::RawHtmlDisabled;
-        return n;
+        node.id = id;
+        node.opening_marker = std::move(opening);
+        node.closing_marker = std::u32string(std::u32string_view(cps).substr(content_end, end - content_end));
+        if (node.kind == InlineKind::Link) {
+            auto href = tag->attributes.contains("href") ? tag->attributes.at("href") : std::string{};
+            if (!safe_link_target(href, false)) href.clear();
+            node.href = href;
+            if (tag->attributes.contains("title")) node.title = tag->attributes.at("title");
+            links.push_back({id, node.href, cps_to_utf8(std::u32string_view(cps).substr(content_start, content_end - content_start))});
+        }
+        NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(end)), CharRange(CharOffset(content_start), CharOffset(content_end)));
+        range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(content_start)));
+        range.marker_ranges.push_back(CharRange(CharOffset(content_end), CharOffset(end)));
+        source_ranges.push_back(std::move(range));
+        return node;
     }
 
-    // ---- raw html block → UnsupportedMarkup ----
     std::optional<BlockNode> try_parse_raw_html_block() {
-        std::size_t save = pos;
-        std::u32string tag_content;
-        while (!eof() && peek1() != '\n' && peek1() != '>') { tag_content.push_back(peek1()); advance(); }
-        if (peek1() != '>') { pos = save; return std::nullopt; }
-        advance();
-        std::u32string full_open = tag_content; full_open.push_back('>');
-        auto lower = to_lower_(full_open);
-        bool is_comment = starts_with_(lower, U"<!--");
-        std::u32string raw = full_open;
-        if (!is_comment) {
-            std::u32string tag_name;
-            for (char32_t c : full_open) {
-                if (c == '<') continue;
-                if (c == ' ' || c == '\t' || c == '\n' || c == '>') break;
-                if (c == '/') break;
-                tag_name.push_back(c);
-            }
-            if (tag_name.empty()) { pos = save; return std::nullopt; }
-            std::u32string close_tag = U"</"; close_tag += tag_name; close_tag.push_back('>');
-            while (!eof()) {
-                if (peek1() == '\n') {
-                    raw.push_back('\n'); advance();
-                    if (peek1() == '<') {
-                        std::size_t maybe_close = pos;
-                        std::u32string close_test;
-                        while (!eof() && peek1() != '\n' && peek1() != '>') { close_test.push_back(peek1()); advance(); }
-                        if (peek1() == '>') { close_test.push_back('>'); advance(); }
-                        if (to_lower_(close_test) == to_lower_(close_tag)) { raw += close_test; break; }
-                        else pos = maybe_close;
+        auto start = pos;
+        auto tag = html_tag_at(start, cps.size());
+        if (!tag || tag->closing) return std::nullopt;
+        static const std::unordered_set<std::string> block_tags{ "div", "table", "pre", "p", "script", "style", "iframe", "object", "embed" };
+        if (!block_tags.contains(tag->name)) return std::nullopt;
+        auto closing = html_closing_tag(tag->name, tag->end, cps.size());
+        if (!closing) return std::nullopt;
+        auto content_start = tag->end;
+        auto content_end = closing->first;
+        auto source_end = closing->second;
+        if (source_end < cps.size() && cps[source_end] == U'\n') ++source_end;
+        auto raw = std::u32string(std::u32string_view(cps).substr(start, source_end - start));
+        static const std::unordered_set<std::string> blocked{ "script", "style", "iframe", "object", "embed" };
+        if (blocked.contains(tag->name)) {
+            pos = source_end;
+            NodeId id = next_node_id();
+            push_range(id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(start), CharOffset(source_end)));
+            diagnostics.push_back(make_diagnostic(DiagnosticSeverity::Warning, "Unsafe HTML block is shown as text", CharRange(CharOffset(start), CharOffset(source_end)), DIAG_RAW_HTML_DISABLED));
+            BlockNode block;
+            block.id = id;
+            block.kind = BlockKind::UnsupportedMarkup;
+            block.raw = cps_to_utf8(raw);
+            block.unsup_reason = UnsupportedMarkupReason::RawHtmlDisabled;
+            return block;
+        }
+        auto decode_text = [&](std::size_t begin, std::size_t end) {
+            std::u32string text;
+            for (auto cursor = begin; cursor < end;) {
+                if (cps[cursor] == U'<') {
+                    auto nested = html_tag_at(cursor, end);
+                    if (nested) {
+                        if (nested->name == "br" || (nested->closing && (nested->name == "p" || nested->name == "div" || nested->name == "tr"))) text.push_back(U'\n');
+                        cursor = nested->end;
+                        continue;
                     }
-                } else {
-                    raw.push_back(peek1()); advance();
+                }
+                if (cps[cursor] == U'&') {
+                    auto semicolon = cursor + 1;
+                    while (semicolon < end && semicolon - cursor <= 10 && cps[semicolon] != U';') ++semicolon;
+                    if (semicolon < end && cps[semicolon] == U';') {
+                        auto entity = cps_to_utf8(std::u32string_view(cps).substr(cursor + 1, semicolon - cursor - 1));
+                        if (entity == "amp") text.push_back(U'&');
+                        else if (entity == "lt") text.push_back(U'<');
+                        else if (entity == "gt") text.push_back(U'>');
+                        else if (entity == "quot") text.push_back(U'"');
+                        else if (entity == "apos" || entity == "#39") text.push_back(U'\'');
+                        else if (entity == "nbsp") text.push_back(U' ');
+                        else { text.append(std::u32string_view(cps).substr(cursor, semicolon - cursor + 1)); }
+                        cursor = semicolon + 1;
+                        continue;
+                    }
+                }
+                text.push_back(cps[cursor++]);
+            }
+            while (!text.empty() && (text.front() == U'\n' || text.front() == U'\r')) text.erase(text.begin());
+            while (!text.empty() && (text.back() == U'\n' || text.back() == U'\r')) text.pop_back();
+            return text;
+        };
+        if (tag->name == "pre") {
+            auto code_start = content_start;
+            auto code_end = content_end;
+            if (auto code_tag = html_tag_at(code_start, content_end); code_tag && !code_tag->closing && code_tag->name == "code") {
+                if (auto code_closing = html_closing_tag("code", code_tag->end, content_end)) {
+                    code_start = code_tag->end;
+                    code_end = code_closing->first;
                 }
             }
+            pos = source_end;
+            NodeId id = next_node_id();
+            NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(code_start), CharOffset(code_end)));
+            range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(code_start)));
+            range.marker_ranges.push_back(CharRange(CharOffset(code_end), CharOffset(source_end)));
+            source_ranges.push_back(std::move(range));
+            BlockNode block;
+            block.id = id;
+            block.kind = BlockKind::CodeBlock;
+            block.code_text = decode_text(code_start, code_end);
+            return block;
         }
+        if (tag->name == "table") {
+            BlockNode block;
+            block.kind = BlockKind::Table;
+            std::vector<TableRow> rows;
+            auto cursor = content_start;
+            while (cursor < content_end) {
+                auto row_tag = html_tag_at(cursor, content_end);
+                if (!row_tag || row_tag->closing || row_tag->name != "tr") { ++cursor; continue; }
+                auto row_closing = html_closing_tag("tr", row_tag->end, content_end);
+                if (!row_closing) break;
+                TableRow row;
+                row.id = next_node_id();
+                auto cell_cursor = row_tag->end;
+                while (cell_cursor < row_closing->first) {
+                    auto cell_tag = html_tag_at(cell_cursor, row_closing->first);
+                    if (!cell_tag || cell_tag->closing || (cell_tag->name != "td" && cell_tag->name != "th")) { ++cell_cursor; continue; }
+                    auto cell_closing = html_closing_tag(cell_tag->name, cell_tag->end, row_closing->first);
+                    if (!cell_closing) break;
+                    TableCell cell;
+                    cell.id = next_node_id();
+                    auto text_id = next_node_id();
+                    cell.children.push_back(InlineNode::text_node(text_id, decode_text(cell_tag->end, cell_closing->first)));
+                    push_range(text_id, CharRange(CharOffset(cell_tag->end), CharOffset(cell_closing->first)), CharRange(CharOffset(cell_tag->end), CharOffset(cell_closing->first)));
+                    push_range(cell.id, CharRange(CharOffset(cell_tag->start), CharOffset(cell_closing->second)), CharRange(CharOffset(cell_tag->end), CharOffset(cell_closing->first)));
+                    row.cells.push_back(std::move(cell));
+                    cell_cursor = cell_closing->second;
+                }
+                push_range(row.id, CharRange(CharOffset(row_tag->start), CharOffset(row_closing->second)), CharRange(CharOffset(row_tag->end), CharOffset(row_closing->first)));
+                if (!row.cells.empty()) rows.push_back(std::move(row));
+                cursor = row_closing->second;
+            }
+            if (rows.empty()) return std::nullopt;
+            block.id = next_node_id();
+            block.table_header.reserve(rows.front().cells.size());
+            for (auto& cell : rows.front().cells) block.table_header.push_back(std::move(cell));
+            for (std::size_t index = 1; index < rows.size(); ++index) block.table_rows.push_back(std::move(rows[index]));
+            block.table_aligns.resize(block.table_header.size(), TableAlignment::None);
+            NodeSourceRange range(block.id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(content_start), CharOffset(content_end)));
+            range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(content_start)));
+            range.marker_ranges.push_back(CharRange(CharOffset(content_end), CharOffset(source_end)));
+            source_ranges.push_back(std::move(range));
+            pos = source_end;
+            return block;
+        }
+        pos = source_end;
         NodeId id = next_node_id();
-        push_range(id, CharRange(CharOffset(save), cur()), CharRange(CharOffset(save), cur()));
-        diagnostics.push_back(make_diagnostic(DiagnosticSeverity::Hint,
-            "Raw HTML is disabled, shown as unsupported markup",
-            CharRange(CharOffset(save), cur()), DIAG_RAW_HTML_DISABLED));
-        BlockNode b; b.id = id; b.kind = BlockKind::UnsupportedMarkup; b.raw = cps_to_utf8(raw); b.unsup_reason = UnsupportedMarkupReason::RawHtmlDisabled;
-        return b;
+        auto text_id = next_node_id();
+        NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(content_start), CharOffset(content_end)));
+        range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(content_start)));
+        range.marker_ranges.push_back(CharRange(CharOffset(content_end), CharOffset(source_end)));
+        source_ranges.push_back(std::move(range));
+        push_range(text_id, CharRange(CharOffset(content_start), CharOffset(content_end)), CharRange(CharOffset(content_start), CharOffset(content_end)));
+        BlockNode block;
+        block.id = id;
+        block.kind = BlockKind::Paragraph;
+        block.children.push_back(InlineNode::text_node(text_id, decode_text(content_start, content_end)));
+        block.opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
+        block.closing_marker = std::u32string(std::u32string_view(cps).substr(content_end, source_end - content_end));
+        return block;
     }
 
     // ---- footnote definition ----
@@ -1140,6 +1659,7 @@ public:
             std::uint64_t number = 1;
             char32_t delimiter = U'.';
             std::size_t start = 0;
+            std::size_t indent = 0;
             std::size_t content_start = 0;
             std::size_t content_end = 0;
             std::size_t source_end = 0;
@@ -1150,6 +1670,8 @@ public:
             Marker marker;
             marker.start = at;
             std::size_t cursor = at;
+            while (cursor < cps.size() && cps[cursor] == U' ' && marker.indent < 4) { ++cursor; ++marker.indent; }
+            if (marker.indent > 3 || cursor >= cps.size()) return std::nullopt;
             if (cps[cursor] == U'-' || cps[cursor] == U'*' || cps[cursor] == U'+') {
                 ++cursor;
             } else if (is_ascii_digit_(cps[cursor])) {
@@ -1164,8 +1686,8 @@ public:
             } else {
                 return std::nullopt;
             }
-            if (cursor >= cps.size() || cps[cursor] != U' ') return std::nullopt;
-            ++cursor;
+            if (cursor >= cps.size() || (cps[cursor] != U' ' && cps[cursor] != U'\t')) return std::nullopt;
+            while (cursor < cps.size() && (cps[cursor] == U' ' || cps[cursor] == U'\t')) ++cursor;
             if (!marker.ordered && cursor + 2 < cps.size() && cps[cursor] == U'[' && (cps[cursor + 1] == U' ' || cps[cursor + 1] == U'x' || cps[cursor + 1] == U'X') && cps[cursor + 2] == U']') {
                 marker.task = true;
                 marker.checked = cps[cursor + 1] == U'x' || cps[cursor + 1] == U'X';
@@ -1194,22 +1716,80 @@ public:
         result.list_delimiter = first->delimiter;
 
         while (auto marker = inspect(pos)) {
-            if (marker->task != first->task || marker->ordered != first->ordered) break;
+            if (marker->indent != first->indent || marker->task != first->task || marker->ordered != first->ordered) break;
             NodeId item_id = next_node_id();
-            BlockNode paragraph;
-            pos = marker->content_start;
-            if (auto parsed = parse_paragraph(marker->content_end)) {
-                paragraph = std::move(*parsed);
-            } else {
-                paragraph.id = next_node_id();
-                paragraph.kind = BlockKind::Paragraph;
-                push_range(paragraph.id,
-                           CharRange(CharOffset(marker->content_start), CharOffset(marker->content_end)),
-                           CharRange(CharOffset(marker->content_start), CharOffset(marker->content_end)));
+            auto item_end = marker->source_end;
+            bool previous_blank = false;
+            while (item_end < cps.size()) {
+                auto line_start = item_end;
+                auto line_end = line_start;
+                while (line_end < cps.size() && cps[line_end] != U'\n') ++line_end;
+                bool blank = true;
+                std::size_t indentation = 0;
+                for (auto cursor = line_start; cursor < line_end; ++cursor) {
+                    if (cps[cursor] == U' ' && blank) ++indentation;
+                    else if (cps[cursor] != U' ' && cps[cursor] != U'\t') blank = false;
+                }
+                auto next_marker = inspect(line_start);
+                if (next_marker && next_marker->indent == first->indent) break;
+                if (!blank && indentation <= first->indent && previous_blank) break;
+                previous_blank = blank;
+                item_end = line_end < cps.size() ? line_end + 1 : line_end;
             }
-            BlockVec children;
-            children.push_back(std::move(paragraph));
-            push_range(item_id, CharRange(CharOffset(marker->start), CharOffset(marker->source_end)), CharRange(CharOffset(marker->content_start), CharOffset(marker->content_end)));
+
+            std::u32string inner;
+            std::vector<std::size_t> offset_map;
+            std::size_t inner_end_source = marker->content_start;
+            auto append_range = [&](std::size_t begin, std::size_t end) {
+                for (auto cursor = begin; cursor < end; ++cursor) {
+                    offset_map.push_back(cursor);
+                    inner.push_back(cps[cursor]);
+                }
+                inner_end_source = end;
+            };
+            append_range(marker->content_start, marker->content_end);
+            auto line_start = marker->source_end;
+            auto content_indent = marker->content_start - marker->start;
+            while (line_start < item_end) {
+                auto line_end = line_start;
+                while (line_end < item_end && cps[line_end] != U'\n') ++line_end;
+                offset_map.push_back(line_start > 0 ? line_start - 1 : line_start);
+                inner.push_back(U'\n');
+                inner_end_source = line_start;
+                auto content = line_start;
+                std::size_t removed = 0;
+                while (content < line_end && removed < content_indent && (cps[content] == U' ' || cps[content] == U'\t')) { ++content; ++removed; }
+                append_range(content, line_end);
+                line_start = line_end < item_end ? line_end + 1 : line_end;
+            }
+            offset_map.push_back(inner_end_source);
+            ParseInput nested_input(input->revision, cps_to_utf8(inner), input->dialect);
+            Parser nested(&nested_input);
+            nested.node_counter = node_counter;
+            auto children = nested.parse_blocks(nullptr);
+            node_counter = nested.node_counter;
+            auto remap = [&](CharOffset value) {
+                return CharOffset(offset_map[(std::min)(value.v, offset_map.size() - 1)]);
+            };
+            for (auto& range : nested.source_ranges) {
+                range.source_range = CharRange(remap(range.source_range.start), remap(range.source_range.end));
+                range.content_range = CharRange(remap(range.content_range.start), remap(range.content_range.end));
+                for (auto& prefix : range.marker_ranges) prefix = CharRange(remap(prefix.start), remap(prefix.end));
+                source_ranges.push_back(std::move(range));
+            }
+            for (auto& diagnostic : nested.diagnostics) {
+                if (diagnostic.source_range) diagnostic.source_range = CharRange(remap(diagnostic.source_range->start), remap(diagnostic.source_range->end));
+                diagnostics.push_back(std::move(diagnostic));
+            }
+            headings.insert(headings.end(), std::make_move_iterator(nested.headings.begin()), std::make_move_iterator(nested.headings.end()));
+            footnotes.insert(footnotes.end(), std::make_move_iterator(nested.footnotes.begin()), std::make_move_iterator(nested.footnotes.end()));
+            links.insert(links.end(), std::make_move_iterator(nested.links.begin()), std::make_move_iterator(nested.links.end()));
+            images.insert(images.end(), std::make_move_iterator(nested.images.begin()), std::make_move_iterator(nested.images.end()));
+            math_blocks.insert(math_blocks.end(), std::make_move_iterator(nested.math_blocks.begin()), std::make_move_iterator(nested.math_blocks.end()));
+            code_blocks.insert(code_blocks.end(), std::make_move_iterator(nested.code_blocks.begin()), std::make_move_iterator(nested.code_blocks.end()));
+            NodeSourceRange item_range(item_id, CharRange(CharOffset(marker->start), CharOffset(item_end)), CharRange(CharOffset(marker->content_start), CharOffset(inner_end_source)));
+            item_range.marker_ranges.push_back(CharRange(CharOffset(marker->start), CharOffset(marker->content_start)));
+            source_ranges.push_back(std::move(item_range));
             if (marker->task) {
                 TaskListItem item;
                 item.id = item_id;
@@ -1224,8 +1804,8 @@ public:
                 item.children = std::move(children);
                 result.list_items.push_back(std::move(item));
             }
-            last_content = marker->content_end;
-            pos = marker->source_end;
+            last_content = item_end;
+            pos = item_end;
             if (pos >= cps.size()) break;
         }
         push_range(list_id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(first_content), CharOffset(last_content)));

@@ -175,6 +175,8 @@ struct RenderBlock {
     // Image block (block-level)
     std::string src;
     std::string alt;
+    std::optional<std::string> title;
+    std::optional<std::string> link;
 };
 
 struct RenderDiagnostic {

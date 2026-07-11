@@ -28,12 +28,12 @@ struct TableRow     { NodeId id{}; std::vector<TableCell> cells; };
 enum class BlockKind {
     Paragraph, Heading, BlockQuote, List, TaskList, CodeBlock, MathBlock,
     Table, ImageBlock, Callout, FootnoteDefinition, Toc, Frontmatter,
-    ThematicBreak, UnsupportedMarkup, Extension,
+    ThematicBreak, LinkDefinition, UnsupportedMarkup, Extension,
 };
 
 enum class InlineKind {
     Text, Emphasis, Strong, Strike, InlineCode, InlineMath, Link, Image,
-    FootnoteRef, WikiLink, SoftBreak, HardBreak, UnsupportedMarkup, Extension,
+    Span, FootnoteRef, WikiLink, SoftBreak, HardBreak, UnsupportedMarkup, Extension,
 };
 
 struct InlineNode {
@@ -46,6 +46,8 @@ struct InlineNode {
     std::string alt;            // Image
     std::optional<std::string> title; // Link / Image
     InlineVec children;         // Emphasis / Strong / Strike / Link
+    std::u32string opening_marker;
+    std::u32string closing_marker;
     std::string label;          // FootnoteRef
     std::string target;         // WikiLink
     std::optional<std::string> alias; // WikiLink
@@ -85,6 +87,9 @@ struct BlockNode {
     std::string src;        // ImageBlock
     std::string image_alt;
     std::optional<std::string> image_title;
+    std::optional<std::string> image_link;
+    std::u32string opening_marker;
+    std::u32string closing_marker;
     std::string callout_kind;           // Callout
     std::optional<InlineVec> callout_title; // Callout
     std::string footnote_label;        // FootnoteDefinition
@@ -109,7 +114,7 @@ inline std::u32string inline_text_content(const InlineNode& n) {
     switch (n.kind) {
         case K::Text: case K::InlineCode: case K::InlineMath: case K::UnsupportedMarkup:
             return n.text;
-        case K::Emphasis: case K::Strong: case K::Strike: join_children(n.children); return out;
+        case K::Emphasis: case K::Strong: case K::Strike: case K::Span: join_children(n.children); return out;
         case K::Link: join_children(n.children); return out;
         case K::Image:
             return elmd::utf8_to_cps(n.alt);

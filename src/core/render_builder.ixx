@@ -43,6 +43,7 @@ inline RenderBlock render_block_base(BlockKind k, NodeId id, TextRange<CharOffse
             case BlockKind::FootnoteDefinition: return RenderBlockKind::Footnote;
             case BlockKind::Frontmatter:return RenderBlockKind::Frontmatter;
             case BlockKind::ThematicBreak: return RenderBlockKind::ThematicBreak;
+            case BlockKind::LinkDefinition: return RenderBlockKind::Blank;
             case BlockKind::UnsupportedMarkup: return RenderBlockKind::Unsupported;
             case BlockKind::Extension: return RenderBlockKind::Extension;
         }
@@ -93,30 +94,46 @@ struct Builder {
                 return;
             }
             case K::Strong: {
-                push_marker(out, cursor, U"**");
+                auto opening = node.opening_marker.empty() ? U"**" : node.opening_marker;
+                auto closing = node.closing_marker.empty() ? U"**" : node.closing_marker;
+                push_marker(out, cursor, opening);
                 std::size_t inner = content_start_for(node.id);
                 InlineStyle cs = style; cs.bold = true;
                 auto child_items = build_inlines(node.children, inner, cs);
                 for (auto& it : child_items) { cursor += it.source_range.len(); out.push_back(std::move(it)); }
-                push_marker(out, cursor, U"**");
+                push_marker(out, cursor, closing);
                 return;
             }
             case K::Emphasis: {
-                push_marker(out, cursor, U"*");
+                auto opening = node.opening_marker.empty() ? U"*" : node.opening_marker;
+                auto closing = node.closing_marker.empty() ? U"*" : node.closing_marker;
+                push_marker(out, cursor, opening);
                 std::size_t inner = content_start_for(node.id);
                 InlineStyle cs = style; cs.italic = true;
                 auto child_items = build_inlines(node.children, inner, cs);
                 for (auto& it : child_items) { cursor += it.source_range.len(); out.push_back(std::move(it)); }
-                push_marker(out, cursor, U"*");
+                push_marker(out, cursor, closing);
                 return;
             }
             case K::Strike: {
-                push_marker(out, cursor, U"~~");
+                auto opening = node.opening_marker.empty() ? U"~~" : node.opening_marker;
+                auto closing = node.closing_marker.empty() ? U"~~" : node.closing_marker;
+                push_marker(out, cursor, opening);
                 std::size_t inner = content_start_for(node.id);
                 InlineStyle cs = style; cs.strikethrough = true;
                 auto child_items = build_inlines(node.children, inner, cs);
                 for (auto& it : child_items) { cursor += it.source_range.len(); out.push_back(std::move(it)); }
-                push_marker(out, cursor, U"~~");
+                push_marker(out, cursor, closing);
+                return;
+            }
+            case K::Span: {
+                auto opening = node.opening_marker;
+                auto closing = node.closing_marker;
+                if (!opening.empty()) push_marker(out, cursor, opening);
+                std::size_t inner = content_start_for(node.id);
+                auto child_items = build_inlines(node.children, inner, style);
+                for (auto& it : child_items) { cursor += it.source_range.len(); out.push_back(std::move(it)); }
+                if (!closing.empty()) push_marker(out, cursor, closing);
                 return;
             }
             case K::InlineCode: {
@@ -279,7 +296,14 @@ struct Builder {
             case BK::Paragraph: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::paragraph());
                 InlineStyle s = InlineStyle::plain();
-                rb.inline_items = build_inlines(b.children, base_range().start.v, s);
+                auto cursor = base_range().start.v;
+                if (!b.opening_marker.empty()) push_marker(rb.inline_items, cursor, b.opening_marker);
+                auto items = build_inlines(b.children, content_range().start.v, s);
+                for (auto& item : items) rb.inline_items.push_back(std::move(item));
+                if (!b.closing_marker.empty()) {
+                    cursor = content_range().end.v;
+                    push_marker(rb.inline_items, cursor, b.closing_marker);
+                }
                 return with_content_range(std::move(rb));
             }
             case BK::Heading: {
@@ -426,7 +450,7 @@ struct Builder {
             }
             case BK::ImageBlock: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::image());
-                rb.alt = b.image_alt; rb.src = b.src;
+                rb.alt = b.image_alt; rb.src = b.src; rb.title = b.image_title; rb.link = b.image_link;
                 return with_content_range(std::move(rb));
             }
             case BK::Callout: {
@@ -457,6 +481,10 @@ struct Builder {
             }
             case BK::ThematicBreak: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::thematic_break());
+                return with_content_range(std::move(rb));
+            }
+            case BK::LinkDefinition: {
+                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::paragraph());
                 return with_content_range(std::move(rb));
             }
             case BK::UnsupportedMarkup: {

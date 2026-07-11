@@ -216,7 +216,7 @@ ELMD_TEST(test_parse_inline_math) {
 ELMD_TEST(test_structural_inline_at_paragraph_end_updates_content_range) {
     std::vector<std::string> sources{
         "$x$", "\\(x\\)", "**x**", "*x*", "__x__", "_x_", "~~x~~", "`x`",
-        "[x](u)", "![x](p)", "[^x]", "[[x]]",
+        "[x](u)", "a![x](p)", "[^x]", "[[x]]",
     };
     for (auto const& source : sources) {
         auto out = parse_text(1, source);
@@ -379,8 +379,12 @@ ELMD_TEST(test_parse_link) {
 
 ELMD_TEST(test_parse_image) {
     auto out = parse_text(1, "![alt](image.png)\n");
-    auto* p = first_of(out.document.blocks, BlockKind::Paragraph);
-    ELMD_CHECK(p && inlines_have_kind(p->children, InlineKind::Image));
+    auto* image = first_of(out.document.blocks, BlockKind::ImageBlock);
+    ELMD_CHECK(image != nullptr);
+    if (image) {
+        ELMD_CHECK_EQ(image->src, std::string("image.png"));
+        ELMD_CHECK_EQ(image->image_alt, std::string("alt"));
+    }
 }
 
 ELMD_TEST(test_parse_task_list) {
@@ -472,29 +476,33 @@ ELMD_TEST(test_parse_frontmatter_yaml) {
     ELMD_CHECK(out.document.metadata.title && *out.document.metadata.title == "Hello");
 }
 
-ELMD_TEST(test_raw_html_is_unsupported) {
+ELMD_TEST(test_safe_block_html_is_rendered_as_text_content) {
     auto out = parse_text(1, "<div>\nhello\n</div>\n");
-    ELMD_CHECK(blocks_has_kind(out.document.blocks, BlockKind::UnsupportedMarkup));
-    // No HTML node types exist — fallthrough would fail to have other kinds.
+    auto* paragraph = first_of(out.document.blocks, BlockKind::Paragraph);
+    ELMD_CHECK(paragraph != nullptr);
+    if (paragraph) ELMD_CHECK_EQ(cps_to_utf8(block_inline_text_content(paragraph->children)), std::string("hello"));
 }
 
-ELMD_TEST(test_inline_html_is_unsupported) {
+ELMD_TEST(test_safe_inline_html_is_structural) {
     auto out = parse_text(1, "hello <span>world</span>\n");
     auto* p = first_of(out.document.blocks, BlockKind::Paragraph);
-    ELMD_CHECK(p && inlines_have_kind(p->children, InlineKind::UnsupportedMarkup));
+    ELMD_CHECK(p && inlines_have_kind(p->children, InlineKind::Span));
 }
 
-ELMD_TEST(test_html_img_not_image) {
-    auto out = parse_text(1, "<img src=\"a.png\">\n");
-    auto* p = first_of(out.document.blocks, BlockKind::UnsupportedMarkup);
-    (void)p;
-    ELMD_CHECK(!blocks_has_kind(out.document.blocks, BlockKind::ImageBlock));
+ELMD_TEST(test_html_img_is_an_image_block) {
+    auto out = parse_text(1, "<img src=\"a.png\" alt=\"A\">\n");
+    auto* image = first_of(out.document.blocks, BlockKind::ImageBlock);
+    ELMD_CHECK(image != nullptr);
+    if (image) {
+        ELMD_CHECK_EQ(image->src, std::string("a.png"));
+        ELMD_CHECK_EQ(image->image_alt, std::string("A"));
+    }
 }
 
 ELMD_TEST(test_markdown_image_supported) {
     auto out = parse_text(1, "![alt](a.png)\n");
-    auto* p = first_of(out.document.blocks, BlockKind::Paragraph);
-    ELMD_CHECK(p && inlines_have_kind(p->children, InlineKind::Image));
+    auto* image = first_of(out.document.blocks, BlockKind::ImageBlock);
+    ELMD_CHECK(image != nullptr);
 }
 
 ELMD_TEST(test_indented_code_block_strips_one_indent_level) {
@@ -584,9 +592,9 @@ ELMD_TEST(test_blockquote_preserves_heading_and_list_children) {
     }
 }
 
-ELMD_TEST(test_html_table_not_parsed) {
+ELMD_TEST(test_safe_html_table_parsed) {
     auto out = parse_text(1, "<table>\n<tr><td>A</td></tr>\n</table>\n");
-    ELMD_CHECK(!blocks_has_kind(out.document.blocks, BlockKind::Table));
+    ELMD_CHECK(blocks_has_kind(out.document.blocks, BlockKind::Table));
 }
 
 ELMD_TEST(test_gfm_table_parsed) {
@@ -624,7 +632,7 @@ ELMD_TEST(test_gfm_table_escaped_pipe_stays_in_its_cell) {
     ELMD_CHECK(table != nullptr);
     if (table) {
         ELMD_CHECK_EQ(table->table_header.size(), 2u);
-        ELMD_CHECK_EQ(cps_to_utf8(block_inline_text_content(table->table_header[0].children)), std::string("A\\|B"));
+        ELMD_CHECK_EQ(cps_to_utf8(block_inline_text_content(table->table_header[0].children)), std::string("A|B"));
     }
 }
 

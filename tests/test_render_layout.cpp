@@ -419,11 +419,13 @@ ELMD_TEST(renders_soft_break_as_space) {
     ELMD_CHECK(text == U"Hello World");
 }
 
-ELMD_TEST(raw_html_becomes_unsupported) {
+ELMD_TEST(safe_block_html_becomes_rendered_content) {
     auto m = build_model("<div>\nhello\n</div>\n");
     bool found = false;
     for (const auto& b : m.blocks) {
-        if (b.kind == RenderBlockKind::Unsupported) { found = true; if (b.raw.find("div") != std::string::npos || b.raw.find('<') != std::string::npos) {} }
+        if (b.kind == RenderBlockKind::Text) {
+            for (auto const& item : b.inline_items) if (item.text.find(U"hello") != std::u32string::npos) found = true;
+        }
     }
     ELMD_CHECK(found);
 }
