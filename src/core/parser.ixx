@@ -84,7 +84,7 @@ public:
     const ParseInput* input;
     std::u32string cps;          // text as codepoints (this is the index space)
     std::size_t pos = 0;
-    std::uint64_t node_counter = 0;
+    std::uint64_t node_counter = 1;
     std::vector<Diagnostic> diagnostics;
     std::vector<HeadingSymbol> headings;
     std::vector<FootnoteSymbol> footnotes;

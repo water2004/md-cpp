@@ -119,7 +119,7 @@ public:
     std::optional<Transaction> execute_command(const Command& cmd) {
         if (cmd.kind == CommandKind::InsertNewline && selection_.is_caret()) {
             auto position = current_document_caret_();
-            if (position && is_top_level_paragraph_(position->node_id)) {
+            if (position) {
                 const auto revision_before = buffer_.revision();
                 const auto selection_before = selection_;
                 const auto text_before = std::u32string(buffer_.text_cps());
@@ -310,12 +310,6 @@ private:
             selection_.active = *active;
             selection_.affinity = document_selection_->active.affinity;
         }
-    }
-
-    bool is_top_level_paragraph_(NodeId id) const {
-        return std::ranges::any_of(document_.blocks, [id](const BlockNode& block) {
-            return block.id == id && block.kind == BlockKind::Paragraph;
-        });
     }
 
     std::optional<DocumentPosition> current_document_caret_() const {

@@ -13,6 +13,7 @@ import elmd.core.render_builder;
 import elmd.core.render_model;
 import elmd.core.document_position;
 import elmd.core.document_projection;
+import elmd.core.document_edit;
 
 using namespace elmd;
 
@@ -704,7 +705,13 @@ ELMD_TEST(test_enter_continues_unordered_list) {
     Command c; c.kind = CommandKind::InsertNewline;
     e.execute_command(c);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- alpha\n- "));
-    ELMD_CHECK_EQ(e.selection().head().v, 10u);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
+    ELMD_CHECK_EQ(e.document().blocks[0].list_items.size(), 2u);
+    ELMD_CHECK(e.document_selection().has_value());
+    if (e.document_selection()) {
+        ELMD_CHECK_EQ(e.document_selection()->active.node_id, e.document().blocks[0].list_items[1].children[0].id);
+        ELMD_CHECK_EQ(e.document_selection()->active.offset, 0u);
+    }
 }
 
 ELMD_TEST(test_enter_continues_ordered_list) {
@@ -713,7 +720,11 @@ ELMD_TEST(test_enter_continues_ordered_list) {
     Command c; c.kind = CommandKind::InsertNewline;
     e.execute_command(c);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("9. alpha\n10. "));
-    ELMD_CHECK_EQ(e.selection().head().v, 13u);
+    ELMD_CHECK(e.document().blocks[0].list_ordered);
+    ELMD_CHECK_EQ(e.document().blocks[0].list_items.size(), 2u);
+    ELMD_CHECK(e.document().blocks[0].list_items[1].marker.empty());
+    ELMD_CHECK(e.document_selection().has_value());
+    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.node_id, e.document().blocks[0].list_items[1].children[0].id);
 }
 
 ELMD_TEST(test_enter_continues_task_list_unchecked) {
@@ -722,7 +733,11 @@ ELMD_TEST(test_enter_continues_task_list_unchecked) {
     Command c; c.kind = CommandKind::InsertNewline;
     e.execute_command(c);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- [x] alpha\n- [ ] "));
-    ELMD_CHECK_EQ(e.selection().head().v, 18u);
+    ELMD_CHECK_EQ(e.document().blocks[0].task_items.size(), 2u);
+    ELMD_CHECK(e.document().blocks[0].task_items[0].checked);
+    ELMD_CHECK(!e.document().blocks[0].task_items[1].checked);
+    ELMD_CHECK(e.document_selection().has_value());
+    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.node_id, e.document().blocks[0].task_items[1].children[0].id);
 }
 
 ELMD_TEST(test_enter_exits_list_one_level_before_exiting_blockquote) {
@@ -730,14 +745,19 @@ ELMD_TEST(test_enter_exits_list_one_level_before_exiting_blockquote) {
     e.set_caret(CharOffset(9));
     Command newline; newline.kind = CommandKind::InsertNewline;
     e.execute_command(newline);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> * alpha  \n> * "));
+    ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
+    ELMD_CHECK_EQ(e.document().blocks[0].kind, BlockKind::BlockQuote);
+    ELMD_CHECK_EQ(e.document().blocks[0].quote_children[0].list_items.size(), 2u);
     e.execute_command(newline);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> * alpha\n> "));
-    ELMD_CHECK_EQ(e.selection().head().v, 12u);
-    ELMD_CHECK(e.selection().affinity == TextAffinity::Downstream);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
+    ELMD_CHECK_EQ(e.document().blocks[0].quote_children.size(), 2u);
+    ELMD_CHECK_EQ(e.document().blocks[0].quote_children[0].kind, BlockKind::List);
+    ELMD_CHECK_EQ(e.document().blocks[0].quote_children[1].kind, BlockKind::Paragraph);
     e.execute_command(newline);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> * alpha\n"));
-    ELMD_CHECK_EQ(e.selection().head().v, 10u);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
+    ELMD_CHECK_EQ(e.document().blocks[0].kind, BlockKind::BlockQuote);
+    ELMD_CHECK_EQ(e.document().blocks[1].kind, BlockKind::Paragraph);
+    ELMD_CHECK(validate_document(e.document()).empty());
 }
 
 ELMD_TEST(test_empty_list_item_reuses_following_empty_quote_line) {
@@ -755,13 +775,13 @@ ELMD_TEST(test_empty_list_item_reuses_following_empty_quote_line) {
     e.set_caret(CharOffset(profits_end));
     Command newline; newline.kind = CommandKind::InsertNewline;
     e.execute_command(newline);
-    auto continued = source;
-    continued.insert(profits_end, "  \n> * ");
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), continued);
+    ELMD_CHECK(validate_document(e.document()).empty());
+    ELMD_CHECK(e.document_selection().has_value());
+    auto empty_item_id = e.document_selection() ? e.document_selection()->active.node_id : NodeId{};
     e.execute_command(newline);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), source);
-    ELMD_CHECK_EQ(e.selection().head().v, profits_end + 3u);
-    ELMD_CHECK(e.selection().affinity == TextAffinity::Downstream);
+    ELMD_CHECK(validate_document(e.document()).empty());
+    ELMD_CHECK(e.document_selection().has_value());
+    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.node_id, empty_item_id);
 }
 
 ELMD_TEST(test_enter_continues_blockquote) {
@@ -769,8 +789,12 @@ ELMD_TEST(test_enter_continues_blockquote) {
     e.set_caret(CharOffset(7));
     Command c; c.kind = CommandKind::InsertNewline;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha  \n> "));
-    ELMD_CHECK_EQ(e.selection().head().v, 12u);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
+    ELMD_CHECK_EQ(e.document().blocks[0].kind, BlockKind::BlockQuote);
+    ELMD_CHECK_EQ(e.document().blocks[0].quote_children.size(), 2u);
+    ELMD_CHECK_EQ(block_inline_text_content(e.document().blocks[0].quote_children[0].children), std::u32string(U"alpha"));
+    ELMD_CHECK(e.document_selection().has_value());
+    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.node_id, e.document().blocks[0].quote_children[1].id);
 }
 
 ELMD_TEST(test_second_enter_exits_empty_blockquote_line) {
@@ -779,8 +803,11 @@ ELMD_TEST(test_second_enter_exits_empty_blockquote_line) {
     Command c; c.kind = CommandKind::InsertNewline;
     e.execute_command(c);
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha\n"));
-    ELMD_CHECK_EQ(e.selection().head().v, 8u);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
+    ELMD_CHECK_EQ(e.document().blocks[0].kind, BlockKind::BlockQuote);
+    ELMD_CHECK_EQ(e.document().blocks[1].kind, BlockKind::Paragraph);
+    ELMD_CHECK(e.document_selection().has_value());
+    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.node_id, e.document().blocks[1].id);
 }
 
 ELMD_TEST(test_second_enter_removes_the_empty_quote_line_before_a_following_block) {
@@ -788,11 +815,14 @@ ELMD_TEST(test_second_enter_removes_the_empty_quote_line_before_a_following_bloc
     e.set_caret(CharOffset(7));
     Command newline; newline.kind = CommandKind::InsertNewline;
     e.execute_command(newline);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha  \n> \n\nafter"));
+    ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
+    ELMD_CHECK_EQ(e.document().blocks[0].quote_children.size(), 2u);
     e.execute_command(newline);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha\n\nafter"));
-    ELMD_CHECK_EQ(e.selection().head().v, 8u);
-    ELMD_CHECK(e.selection().affinity == TextAffinity::Downstream);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 3u);
+    ELMD_CHECK_EQ(e.document().blocks[0].kind, BlockKind::BlockQuote);
+    ELMD_CHECK_EQ(e.document().blocks[1].kind, BlockKind::Paragraph);
+    ELMD_CHECK_EQ(e.document().blocks[2].kind, BlockKind::Paragraph);
+    ELMD_CHECK_EQ(block_inline_text_content(e.document().blocks[2].children), std::u32string(U"after"));
 }
 
 ELMD_TEST(test_enter_exits_nested_blockquotes_one_level_at_a_time) {
@@ -800,16 +830,17 @@ ELMD_TEST(test_enter_exits_nested_blockquotes_one_level_at_a_time) {
     e.set_caret(CharOffset(9));
     Command newline; newline.kind = CommandKind::InsertNewline;
     e.execute_command(newline);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > alpha  \n> > "));
-    ELMD_CHECK_EQ(e.selection().head().v, 16u);
+    ELMD_CHECK_EQ(e.document().blocks[0].quote_children[0].quote_children.size(), 2u);
     e.execute_command(newline);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > alpha\n> "));
-    ELMD_CHECK_EQ(e.selection().head().v, 12u);
-    ELMD_CHECK(e.selection().affinity == TextAffinity::Downstream);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
+    ELMD_CHECK_EQ(e.document().blocks[0].quote_children.size(), 2u);
+    ELMD_CHECK_EQ(e.document().blocks[0].quote_children[0].kind, BlockKind::BlockQuote);
+    ELMD_CHECK_EQ(e.document().blocks[0].quote_children[1].kind, BlockKind::Paragraph);
     e.execute_command(newline);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > alpha\n"));
-    ELMD_CHECK_EQ(e.selection().head().v, 10u);
-    ELMD_CHECK(e.selection().affinity == TextAffinity::Downstream);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
+    ELMD_CHECK_EQ(e.document().blocks[0].kind, BlockKind::BlockQuote);
+    ELMD_CHECK_EQ(e.document().blocks[1].kind, BlockKind::Paragraph);
+    ELMD_CHECK(validate_document(e.document()).empty());
 }
 
 ELMD_TEST(test_backspace_exits_nested_blockquotes_one_level_at_a_time) {
@@ -898,19 +929,18 @@ ELMD_TEST(test_blockquote_newline_with_following_block_keeps_an_editable_quote_l
     e.set_caret(CharOffset(7));
     Command newline; newline.kind = CommandKind::InsertNewline;
     e.execute_command(newline);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha  \n> \n\nafter"));
-    ELMD_CHECK_EQ(e.selection().head().v, 12u);
-    ELMD_CHECK(e.selection().affinity == TextAffinity::Downstream);
-    e.execute_command(Command::InsertText(U"11111"));
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha  \n> 11111\n\nafter"));
-    ELMD_CHECK_EQ(e.selection().head().v, 17u);
-    auto quote_edit = markdown_newline_edit(e.text_cps(), e.selection().normalized_range());
-    ELMD_CHECK(quote_edit.has_value());
-    if (quote_edit) ELMD_CHECK_EQ(quote_edit->text, std::u32string(U"\n> "));
-    e.execute_command(newline);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha  \n> 11111  \n> \n\nafter"));
-    ELMD_CHECK_EQ(e.selection().head().v, 22u);
-    ELMD_CHECK(e.selection().affinity == TextAffinity::Downstream);
+    ELMD_CHECK(e.document_selection().has_value());
+    if (!e.document_selection()) return;
+    auto insertion = e.execute_document_insert_text(*e.document_selection(), U"11111");
+    ELMD_CHECK(insertion.has_value());
+    ELMD_CHECK_EQ(e.document().blocks[0].quote_children.size(), 2u);
+    ELMD_CHECK_EQ(block_inline_text_content(e.document().blocks[0].quote_children[1].children), std::u32string(U"11111"));
+    auto split = e.execute_document_enter(*e.document_selection());
+    ELMD_CHECK(split.has_value());
+    ELMD_CHECK_EQ(e.document().blocks[0].quote_children.size(), 3u);
+    ELMD_CHECK_EQ(block_inline_text_content(e.document().blocks[0].quote_children[1].children), std::u32string(U"11111"));
+    ELMD_CHECK(block_inline_text_content(e.document().blocks[0].quote_children[2].children).empty());
+    ELMD_CHECK(validate_document(e.document()).empty());
 }
 
 ELMD_TEST(test_backspace_removes_an_empty_blockquote_prefix_atomically) {

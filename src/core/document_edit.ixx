@@ -425,7 +425,7 @@ inline bool enter_list(BlockVec& owner, std::size_t list_index, NodeId id, std::
 
             ListItem next;
             next.id = allocator.allocate();
-            next.marker = item.marker;
+            next.marker = list.list_ordered ? std::u32string{} : item.marker;
             if (empty) {
                 const auto move_from = child_index == 0 ? 1 : child_index;
                 next.children.assign(
