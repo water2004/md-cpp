@@ -3,6 +3,7 @@
 #include "EditorSession.h"
 #include "EditorSurfaceRenderer.h"
 #include "EditorScrollController.h"
+#include "EditorTextInputController.h"
 #include "MainWindow.g.h"
 
 namespace winrt::ElMd::implementation
@@ -21,9 +22,6 @@ namespace winrt::ElMd::implementation
         winrt::ElMd::EditorSurfaceRenderer::Theme CurrentRendererTheme();
         void UpdateOutlinePanel();
         void UpdateDiagnosticsPanel();
-        void NotifyTextInputChanged(std::size_t oldLength);
-        void NotifyTextInputSelectionChanged();
-        winrt::Windows::UI::Text::Core::CoreTextRange CurrentTextInputSelection() const;
         void HandleOutlineSelection(winrt::Windows::Foundation::IInspectable const& selectedItem);
         void HandleDiagnosticsSelection(winrt::Windows::Foundation::IInspectable const& selectedItem);
         void RegisterCommandHandlers();
@@ -55,13 +53,7 @@ namespace winrt::ElMd::implementation
         winrt::ElMd::EditorSession editorSession;
         winrt::ElMd::EditorSurfaceRenderer editorRenderer;
         winrt::ElMd::EditorScrollController scrollController;
-        winrt::Windows::UI::Text::Core::CoreTextEditContext textEditContext{ nullptr };
-        std::size_t textInputKnownLength = 0;
-        bool textInputFocused = false;
-        bool textInputUpdating = false;
-        bool pendingCharacterTextUpdate = false;
-        std::size_t pendingCharacterStart = 0;
-        std::u32string pendingCharacterText;
+        winrt::ElMd::EditorTextInputController textInputController;
         bool pointerSelecting = false;
         std::optional<std::string> hoverTooltip;
         std::size_t pointerAnchor = 0;

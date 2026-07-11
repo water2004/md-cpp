@@ -15,7 +15,11 @@ namespace winrt::ElMd::implementation
         RegisterCommandHandlers();
         InitializeTextInput();
 
-        Closed([this](auto const&, auto const&) { scrollController.Detach(); });
+        Closed([this](auto const&, auto const&)
+        {
+            textInputController.Detach();
+            scrollController.Detach();
+        });
 
         SidebarButton().Click([this](auto const&, auto const&)
         {
@@ -95,21 +99,12 @@ namespace winrt::ElMd::implementation
 
         EditorSurface().GotFocus([this](auto const&, auto const&)
         {
-            if (textEditContext)
-            {
-                textInputFocused = true;
-                textEditContext.NotifyFocusEnter();
-                textEditContext.NotifySelectionChanged(CurrentTextInputSelection());
-            }
+            textInputController.FocusEnter();
         });
 
         EditorSurface().LostFocus([this](auto const&, auto const&)
         {
-            if (textEditContext)
-            {
-                textInputFocused = false;
-                textEditContext.NotifyFocusLeave();
-            }
+            textInputController.FocusLeave();
         });
 
         EditorSurface().DoubleTapped([this](auto const&, Microsoft::UI::Xaml::Input::DoubleTappedRoutedEventArgs const& args)
@@ -311,149 +306,14 @@ namespace winrt::ElMd::implementation
 
     void MainWindow::InitializeTextInput()
     {
-        auto manager = winrt::Windows::UI::Text::Core::CoreTextServicesManager::GetForCurrentView();
-        textEditContext = manager.CreateEditContext();
-        textEditContext.InputScope(winrt::Windows::UI::Text::Core::CoreTextInputScope::Text);
-        textEditContext.InputPaneDisplayPolicy(winrt::Windows::UI::Text::Core::CoreTextInputPaneDisplayPolicy::Automatic);
-        textInputKnownLength = editorSession.Core().editor.text_cps().size();
+        textInputController.Attach(
+            editorSession,
+            editorRenderer,
+            EditorSurface(),
+            [this](elmd::Command const& command) { return ExecuteEditorCommand(command); },
+            [this] { RenderEditorSurface(); },
+            [this] { return WindowHandle(); });
 
-        textEditContext.TextRequested([this](auto const&, winrt::Windows::UI::Text::Core::CoreTextTextRequestedEventArgs const& args)
-        {
-            auto request = args.Request();
-            auto range = request.Range();
-            auto text = editorSession.Text();
-            auto textLength = static_cast<int32_t>(text.size());
-            auto start = (std::max)(0, (std::min)(range.StartCaretPosition, textLength));
-            auto end = (std::max)(start, (std::min)(range.EndCaretPosition, textLength));
-            request.Text(winrt::hstring(text.c_str() + start, static_cast<uint32_t>(end - start)));
-        });
-
-        textEditContext.SelectionRequested([this](auto const&, winrt::Windows::UI::Text::Core::CoreTextSelectionRequestedEventArgs const& args)
-        {
-            args.Request().Selection(CurrentTextInputSelection());
-        });
-
-        textEditContext.LayoutRequested([this](auto const&, winrt::Windows::UI::Text::Core::CoreTextLayoutRequestedEventArgs const& args)
-        {
-            try
-            {
-                auto request = args.Request();
-                auto selectionState = editorSession.Core().editor.selection();
-                auto caret = selectionState.active.v;
-                auto caretUpstream = selectionState.affinity == elmd::TextAffinity::Upstream;
-                auto caretBounds = editorRenderer.CaretBounds(caret, caretUpstream);
-                auto textRect = winrt::Windows::Foundation::Rect{ 0.0f, 0.0f, 1.0f, 24.0f };
-                auto controlRect = winrt::Windows::Foundation::Rect{ 0.0f, 0.0f, static_cast<float>(EditorSurface().ActualWidth()), static_cast<float>(EditorSurface().ActualHeight()) };
-                auto transform = EditorSurface().TransformToVisual(nullptr);
-                auto hwnd = WindowHandle();
-                POINT clientOrigin{};
-                ClientToScreen(hwnd, &clientOrigin);
-                auto dpi = static_cast<float>(GetDpiForWindow(hwnd));
-                auto scale = dpi > 0.0f ? dpi / 96.0f : 1.0f;
-                auto screenOrigin = winrt::Windows::Foundation::Point{ static_cast<float>(clientOrigin.x), static_cast<float>(clientOrigin.y) };
-                if (caretBounds)
-                {
-                    auto point = transform.TransformPoint(winrt::Windows::Foundation::Point{ caretBounds->left, caretBounds->top });
-                    textRect = winrt::Windows::Foundation::Rect{ screenOrigin.X + point.X * scale, screenOrigin.Y + point.Y * scale, (caretBounds->right - caretBounds->left) * scale, (caretBounds->bottom - caretBounds->top) * scale };
-                }
-                auto controlTopLeft = transform.TransformPoint(winrt::Windows::Foundation::Point{ 0.0f, 0.0f });
-                controlRect.X = screenOrigin.X + controlTopLeft.X * scale;
-                controlRect.Y = screenOrigin.Y + controlTopLeft.Y * scale;
-                controlRect.Width *= scale;
-                controlRect.Height *= scale;
-                auto bounds = request.LayoutBounds();
-                bounds.TextBounds(textRect);
-                bounds.ControlBounds(controlRect);
-            }
-            catch (winrt::hresult_error const& error)
-            {
-                (void)error;
-            }
-        });
-
-        textEditContext.SelectionUpdating([this](auto const&, winrt::Windows::UI::Text::Core::CoreTextSelectionUpdatingEventArgs const& args)
-        {
-            auto selection = args.Selection();
-            auto length = editorSession.Core().editor.text_cps().size();
-            auto start = static_cast<std::size_t>((std::max)(0, selection.StartCaretPosition));
-            auto end = static_cast<std::size_t>((std::max)(0, selection.EndCaretPosition));
-            editorSession.SetSelection((std::min)(start, length), (std::min)(end, length));
-            RenderEditorSurface();
-            args.Result(winrt::Windows::UI::Text::Core::CoreTextSelectionUpdatingResult::Succeeded);
-        });
-
-        textEditContext.TextUpdating([this](auto const&, winrt::Windows::UI::Text::Core::CoreTextTextUpdatingEventArgs const& args)
-        {
-            auto range = args.Range();
-            auto length = editorSession.Core().editor.text_cps().size();
-            auto start = static_cast<std::size_t>((std::max)(0, range.StartCaretPosition));
-            auto end = static_cast<std::size_t>((std::max)(0, range.EndCaretPosition));
-            auto incoming = elmd::utf8_to_cps(winrt::to_string(args.Text()));
-            auto isIncomingNewline = incoming == U"\r" || incoming == U"\n" || incoming == U"\r\n";
-            auto selection = editorSession.Core().editor.selection();
-            auto text = editorSession.Core().editor.text_cps();
-            if (isIncomingNewline
-                && start < text.size()
-                && text[start] == U'\n'
-                && selection.is_caret()
-                && selection.active.v == start + 1)
-            {
-                RenderEditorSurface();
-                textEditContext.NotifySelectionChanged(CurrentTextInputSelection());
-                textInputKnownLength = length;
-                args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Succeeded);
-                return;
-            }
-            if (pendingCharacterTextUpdate
-                && start <= text.size()
-                && start == pendingCharacterStart
-                && incoming == pendingCharacterText
-                && start + pendingCharacterText.size() <= text.size()
-                && selection.is_caret()
-                && selection.active.v == start + pendingCharacterText.size()
-                && std::equal(pendingCharacterText.begin(), pendingCharacterText.end(), text.begin() + start))
-            {
-                pendingCharacterTextUpdate = false;
-                auto newSelection = args.NewSelection();
-                auto newStart = static_cast<std::size_t>((std::max)(0, newSelection.StartCaretPosition));
-                auto newEnd = static_cast<std::size_t>((std::max)(0, newSelection.EndCaretPosition));
-                editorSession.SetSelection((std::min)(newStart, length), (std::min)(newEnd, length));
-                RenderEditorSurface();
-                textEditContext.NotifySelectionChanged(CurrentTextInputSelection());
-                textInputKnownLength = length;
-                args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Succeeded);
-                return;
-            }
-            pendingCharacterTextUpdate = false;
-            editorSession.SetSelection((std::min)(start, length), (std::min)(end, length));
-            auto command = isIncomingNewline ? elmd::Command{} : elmd::Command::InsertText(incoming);
-            if (isIncomingNewline)
-            {
-                command.kind = elmd::CommandKind::InsertNewline;
-            }
-            textInputUpdating = true;
-            if (ExecuteEditorCommand(command))
-            {
-                textInputUpdating = false;
-                auto newLength = editorSession.Core().editor.text_cps().size();
-                if (!isIncomingNewline)
-                {
-                    auto newSelection = args.NewSelection();
-                    auto newStart = static_cast<std::size_t>((std::max)(0, newSelection.StartCaretPosition));
-                    auto newEnd = static_cast<std::size_t>((std::max)(0, newSelection.EndCaretPosition));
-                    editorSession.SetSelection((std::min)(newStart, newLength), (std::min)(newEnd, newLength));
-                }
-                RenderEditorSurface();
-                textEditContext.NotifySelectionChanged(CurrentTextInputSelection());
-                textInputKnownLength = newLength;
-                args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Succeeded);
-            }
-            else
-            {
-                textInputUpdating = false;
-                args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Failed);
-            }
-        });
     }
 
     bool MainWindow::ExecuteEditorCommand(elmd::Command const& command)
@@ -472,13 +332,13 @@ namespace winrt::ElMd::implementation
         UpdateDiagnosticsPanel();
         RenderEditorSurface();
         if (editorRenderer.ScrollToSourceOffset(editorSession.Core().editor.selection().active.v)) RenderEditorSurface();
-        NotifyTextInputChanged(oldTextLength);
+        textInputController.NotifyTextChanged(oldTextLength);
         return true;
     }
 
     bool MainWindow::InsertEditorNewline()
     {
-        pendingCharacterTextUpdate = false;
+        textInputController.ClearPendingCharacterTextUpdate();
         elmd::Command command;
         auto keyState = [](winrt::Windows::System::VirtualKey virtualKey)
         {
@@ -493,36 +353,6 @@ namespace winrt::ElMd::implementation
             || isDown(winrt::Windows::System::VirtualKey::RightShift);
         command.kind = shift ? elmd::CommandKind::InsertSoftBreak : elmd::CommandKind::InsertNewline;
         return ExecuteEditorCommand(command);
-    }
-
-    winrt::Windows::UI::Text::Core::CoreTextRange MainWindow::CurrentTextInputSelection() const
-    {
-        auto selection = editorSession.Core().editor.selection();
-        return winrt::Windows::UI::Text::Core::CoreTextRange{ static_cast<int32_t>(selection.anchor.v), static_cast<int32_t>(selection.active.v) };
-    }
-
-    void MainWindow::NotifyTextInputChanged(std::size_t oldLength)
-    {
-        if (!textEditContext || textInputUpdating)
-        {
-            return;
-        }
-
-        auto newLength = editorSession.Core().editor.text_cps().size();
-        textEditContext.NotifyTextChanged(
-            winrt::Windows::UI::Text::Core::CoreTextRange{ 0, static_cast<int32_t>(oldLength) },
-            static_cast<int32_t>(newLength),
-            CurrentTextInputSelection());
-        textEditContext.NotifySelectionChanged(CurrentTextInputSelection());
-        textInputKnownLength = newLength;
-    }
-
-    void MainWindow::NotifyTextInputSelectionChanged()
-    {
-        if (textEditContext)
-        {
-            textEditContext.NotifySelectionChanged(CurrentTextInputSelection());
-        }
     }
 
     bool MainWindow::HandleEditorCharacter(char32_t character)
@@ -543,16 +373,14 @@ namespace winrt::ElMd::implementation
         {
             return false;
         }
-        pendingCharacterTextUpdate = true;
-        pendingCharacterStart = start;
-        pendingCharacterText = std::move(text);
+        textInputController.RecordCharacterTextUpdate(start, std::move(text));
         return true;
     }
 
     bool MainWindow::HandleEditorKey(winrt::Windows::System::VirtualKey key)
     {
         elmd::Command command;
-        pendingCharacterTextUpdate = false;
+        textInputController.ClearPendingCharacterTextUpdate();
         auto keyState = [](winrt::Windows::System::VirtualKey virtualKey)
         {
             return winrt::Microsoft::UI::Input::InputKeyboardSource::GetKeyStateForCurrentThread(virtualKey);
@@ -690,7 +518,7 @@ namespace winrt::ElMd::implementation
                 if (auto offset = editorRenderer.VisualLineStart(selection.active.v, upstream))
                 {
                     editorSession.SetSelection(shift ? selection.anchor.v : *offset, *offset, elmd::TextAffinity::Downstream);
-                    NotifyTextInputSelectionChanged();
+                    textInputController.NotifySelectionChanged();
                     RenderEditorSurface();
                     if (editorRenderer.ScrollToSourceOffset(*offset)) RenderEditorSurface();
                     return true;
@@ -707,7 +535,7 @@ namespace winrt::ElMd::implementation
                 if (auto offset = editorRenderer.VisualLineEnd(selection.active.v, upstream))
                 {
                     editorSession.SetSelection(shift ? selection.anchor.v : *offset, *offset, elmd::TextAffinity::Upstream);
-                    NotifyTextInputSelectionChanged();
+                    textInputController.NotifySelectionChanged();
                     RenderEditorSurface();
                     if (editorRenderer.ScrollToSourceOffset(*offset)) RenderEditorSurface();
                     return true;
@@ -744,7 +572,7 @@ namespace winrt::ElMd::implementation
 
         auto affinity = move->upstream ? elmd::TextAffinity::Upstream : elmd::TextAffinity::Downstream;
         editorSession.SetSelection(extend ? selection.anchor.v : move->offset, move->offset, affinity);
-        NotifyTextInputSelectionChanged();
+        textInputController.NotifySelectionChanged();
         RenderEditorSurface();
         if (editorRenderer.ScrollToSourceOffset(move->offset)) RenderEditorSurface();
         return true;
@@ -771,7 +599,7 @@ namespace winrt::ElMd::implementation
             }
 
             editorSession.SetSelection(action->sourceOffset, action->sourceOffset);
-            NotifyTextInputSelectionChanged();
+            textInputController.NotifySelectionChanged();
             elmd::Command command;
             command.table_index = action->index;
             switch (action->kind)
@@ -821,7 +649,7 @@ namespace winrt::ElMd::implementation
         pointerSelecting = true;
         pointerAnchor = *hit;
         editorSession.SetSelection(pointerAnchor, pointerAnchor, hitUpstream ? elmd::TextAffinity::Upstream : elmd::TextAffinity::Downstream);
-        NotifyTextInputSelectionChanged();
+        textInputController.NotifySelectionChanged();
         EditorSurface().CapturePointer(args.Pointer());
         RenderEditorSurface();
         args.Handled(true);
@@ -865,7 +693,7 @@ namespace winrt::ElMd::implementation
         }
 
         editorSession.SetSelection(pointerAnchor, *hit, hitUpstream ? elmd::TextAffinity::Upstream : elmd::TextAffinity::Downstream);
-        NotifyTextInputSelectionChanged();
+        textInputController.NotifySelectionChanged();
         RenderEditorSurface();
         args.Handled(true);
     }
@@ -883,7 +711,7 @@ namespace winrt::ElMd::implementation
             if (dropIndex)
             {
                 editorSession.SetSelection(action.sourceOffset, action.sourceOffset);
-                NotifyTextInputSelectionChanged();
+                textInputController.NotifySelectionChanged();
                 elmd::Command command;
                 command.kind = action.kind == winrt::ElMd::EditorSurfaceRenderer::TableActionKind::DragRow
                     ? elmd::CommandKind::MoveTableRowTo
@@ -964,7 +792,7 @@ namespace winrt::ElMd::implementation
         }
 
         editorSession.SetSelection(start, end);
-        NotifyTextInputSelectionChanged();
+        textInputController.NotifySelectionChanged();
         return true;
     }
 
@@ -993,7 +821,7 @@ namespace winrt::ElMd::implementation
         }
 
         editorSession.SetSelection(offset, offset);
-        NotifyTextInputSelectionChanged();
+        textInputController.NotifySelectionChanged();
         elmd::Command command;
         command.kind = elmd::CommandKind::ToggleTaskCheckbox;
         return ExecuteEditorCommand(command);
@@ -1067,7 +895,7 @@ namespace winrt::ElMd::implementation
             if (auto item = editorSession.Core().renderModel.outline.find_item_by_slug(href.substr(1)))
             {
                 editorSession.SetSelection(item->source_range.start.v, item->source_range.start.v);
-                NotifyTextInputSelectionChanged();
+                textInputController.NotifySelectionChanged();
                 editorRenderer.ScrollToSourceOffset(item->source_range.start.v);
                 RenderEditorSurface();
             }
@@ -1416,7 +1244,7 @@ namespace winrt::ElMd::implementation
             if (winrt::unbox_value<winrt::hstring>(OutlineList().Items().GetAt(index)) == selectedText)
             {
                 editorSession.SetSelection(outlineOffsets[index], outlineOffsets[index]);
-                NotifyTextInputSelectionChanged();
+                textInputController.NotifySelectionChanged();
                 editorRenderer.ScrollToSourceOffset(outlineOffsets[index]);
                 RenderEditorSurface();
                 return;
@@ -1437,7 +1265,7 @@ namespace winrt::ElMd::implementation
             if (winrt::unbox_value<winrt::hstring>(DiagnosticsList().Items().GetAt(index)) == selectedText)
             {
                 editorSession.SetSelection(diagnosticOffsets[index], diagnosticOffsets[index]);
-                NotifyTextInputSelectionChanged();
+                textInputController.NotifySelectionChanged();
                 editorRenderer.ScrollToSourceOffset(diagnosticOffsets[index]);
                 RenderEditorSurface();
                 return;

@@ -74,6 +74,9 @@
     <ClCompile Include="EditorScrollController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="EditorTextInputController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="EditorSurfaceRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -122,6 +125,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EditorScrollController.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EditorTextInputController.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EditorSurfaceRenderer.h">
