@@ -20,11 +20,8 @@ namespace winrt::ElMd
     {
         static float Render(
             elmd::RenderBlock const& block,
-            std::u32string_view sourceText,
-            std::size_t caret,
-            std::size_t selectionStart,
-            std::size_t selectionEnd,
-            bool selectionEmpty,
+            elmd::TextPosition caret,
+            elmd::TextSelection selection,
             float documentLeft,
             float documentRight,
             float top,

@@ -2,6 +2,7 @@
 
 import elmd.core.render_model;
 import elmd.core.types;
+import elmd.core.utf;
 
 #include "EditorContentPreparation.h"
 #include "EditorQuoteBlockRenderer.h"
@@ -25,8 +26,7 @@ namespace winrt::ElMd
             D2D1_RECT_F rect{};
             float textWidth = 0.0f;
             std::size_t depth = 0;
-            std::size_t sourceStart = 0;
-            std::size_t sourceEnd = 0;
+            elmd::TextSpan sourceSpan;
             bool code = false;
             std::vector<EditorInlineImageRenderer::ImageDraw> images;
         };
@@ -34,11 +34,8 @@ namespace winrt::ElMd
 
     float EditorQuoteBlockRenderer::Render(
         elmd::RenderBlock const& block,
-        std::u32string_view sourceText,
-        std::size_t caret,
-        std::size_t selectionStart,
-        std::size_t selectionEnd,
-        bool selectionEmpty,
+        elmd::TextPosition caret,
+        elmd::TextSelection selection,
         float documentLeft,
         float documentRight,
         float top,
@@ -69,26 +66,26 @@ namespace winrt::ElMd
             auto code = child.kind == elmd::RenderBlockKind::Code;
             if (child.kind == elmd::RenderBlockKind::Blank)
             {
-                AppendGeneratedText(display, U"\u200B", child.content_range.start.v, elmd::InlineStyle::plain());
-                display.displayToSource.push_back(child.content_range.end.v);
+                AppendGeneratedText(display, U"\u200B", {child.id, 0, elmd::TextAffinity::Downstream}, elmd::InlineStyle::plain());
+                display.displayToSource.push_back({child.id, 0, elmd::TextAffinity::Downstream});
             }
             else if (code)
             {
-                display = child.code_indented ? BuildIndentedCodeBlockText(child, sourceText) : BuildCodeBlockText(child, caret, sourceText);
+                display = child.code_indented ? BuildIndentedCodeBlockText(child) : BuildCodeBlockText(child, caret);
             }
             else if (!child.inline_items.empty())
             {
-                display = BuildDisplayInlineText(child.inline_items, caret, child.content_range.end.v, sourceText, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, contentRight - contentLeft, svgSupported, requestEmbedded, child.source_range);
+                display = BuildDisplayInlineText(child.inline_items, caret, {child.id, child.content_span.source_range.end, elmd::TextAffinity::Downstream}, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, contentRight - contentLeft, svgSupported, requestEmbedded, child.id);
             }
             else
             {
-                AppendSourceText(display, sourceText, child.content_range.start.v, child.content_range.end.v, elmd::InlineStyle::plain(), false);
-                display.displayToSource.push_back(child.content_range.end.v);
+                AppendGeneratedText(display, elmd::utf8_to_cps(child.raw), {child.id, 0, elmd::TextAffinity::Downstream}, elmd::InlineStyle::plain());
+                display.displayToSource.push_back({child.id, child.content_span.source_range.end, elmd::TextAffinity::Downstream});
             }
             if (display.text.empty())
             {
-                AppendGeneratedText(display, U"\u200B", child.content_range.start.v, elmd::InlineStyle::plain());
-                display.displayToSource.push_back(child.content_range.end.v);
+                AppendGeneratedText(display, U"\u200B", {child.id, 0, elmd::TextAffinity::Downstream}, elmd::InlineStyle::plain());
+                display.displayToSource.push_back({child.id, 0, elmd::TextAffinity::Downstream});
             }
             auto format = code ? resources.codeFormat.Get() : resources.textFormat.Get();
             auto horizontalPadding = code ? 12.0f : 0.0f;
@@ -105,8 +102,7 @@ namespace winrt::ElMd
             fragment.rect = D2D1::RectF(contentLeft, cursorY, contentRight, cursorY + fragmentHeight);
             fragment.textWidth = textWidth;
             fragment.depth = child.quote_depth;
-            fragment.sourceStart = child.content_range.start.v;
-            fragment.sourceEnd = child.content_range.end.v;
+            fragment.sourceSpan = child.content_span;
             fragment.code = code;
             fragment.images = std::move(images);
             fragment.display = std::move(display);
@@ -158,10 +154,13 @@ namespace winrt::ElMd
                         resources.d2dContext->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(metric.left - 3.0f, metric.top + 2.0f, metric.left + metric.width + 3.0f, metric.top + metric.height - 1.0f), 4.0f, 4.0f), resources.panelBrush.Get());
                     }
                 }
-                if (!selectionEmpty && selectionEnd > fragment.sourceStart && selectionStart < fragment.sourceEnd)
+                if (!selection.is_caret() && selection.anchor.container_id == fragment.sourceSpan.container_id
+                    && selection.active.container_id == fragment.sourceSpan.container_id)
                 {
-                    auto displayStart = DisplayPositionForSource(fragment.display.displayToSource, (std::max)(selectionStart, fragment.sourceStart));
-                    auto displayEnd = DisplayPositionForSource(fragment.display.displayToSource, (std::min)(selectionEnd, fragment.sourceEnd));
+                    auto selectionStart = (std::min)(selection.anchor.source_offset, selection.active.source_offset);
+                    auto selectionEnd = (std::max)(selection.anchor.source_offset, selection.active.source_offset);
+                    auto displayStart = DisplayPositionForSource(fragment.display.displayToSource, {fragment.sourceSpan.container_id, selectionStart, elmd::TextAffinity::Downstream});
+                    auto displayEnd = DisplayPositionForSource(fragment.display.displayToSource, {fragment.sourceSpan.container_id, selectionEnd, elmd::TextAffinity::Downstream});
                     UINT32 count = 0;
                     auto result = fragment.layout->HitTestTextRange(static_cast<UINT32>(displayStart), static_cast<UINT32>(displayEnd - displayStart), fragment.origin.x, fragment.origin.y, nullptr, 0, &count);
                     if (result == E_NOT_SUFFICIENT_BUFFER && count > 0)
@@ -187,16 +186,15 @@ namespace winrt::ElMd
                     if (FAILED(fragment.layout->HitTestTextPosition(overlay.displayStart, FALSE, &pointX, &pointY, &metrics))) continue;
                     auto mathX = fragment.origin.x + pointX + overlay.leadingSpace;
                     auto mathY = fragment.origin.y + metrics.top;
-                    if (!drawMath(overlay.fragment, D2D1::Point2F(mathX, mathY), styleSheet.textColor)) drawMathFallback(overlay.sourceStart, overlay.sourceEnd, D2D1::Point2F(mathX, mathY));
-                    interactionMap.mathHits.push_back(EditorVisualMathHit{D2D1::RectF(mathX, mathY, mathX + overlay.fragment.width, mathY + overlay.fragment.height), overlay.sourceStart, overlay.sourceEnd, overlay.progressStart, overlay.progressEnd});
+                    if (!drawMath(overlay.fragment, D2D1::Point2F(mathX, mathY), styleSheet.textColor)) drawMathFallback(overlay.sourceSpan, D2D1::Point2F(mathX, mathY));
+                    interactionMap.mathHits.push_back(EditorVisualMathHit{D2D1::RectF(mathX, mathY, mathX + overlay.fragment.width, mathY + overlay.fragment.height), overlay.sourceSpan, overlay.progressStart, overlay.progressEnd});
                 }
             }
             EditorVisualBlock visualBlock;
             visualBlock.rect = fragment.rect;
             visualBlock.textOrigin = fragment.origin;
             visualBlock.textWidth = fragment.textWidth;
-            visualBlock.sourceStart = fragment.sourceStart;
-            visualBlock.sourceEnd = fragment.sourceEnd;
+            visualBlock.sourceSpan = fragment.sourceSpan;
             visualBlock.documentY = fragment.rect.top + scrollOffset;
             visualBlock.text = std::move(fragment.display.text);
             visualBlock.displayToSource = std::move(fragment.display.displayToSource);
@@ -210,8 +208,7 @@ namespace winrt::ElMd
             placeholder.rect = boxes.front().rect;
             placeholder.textOrigin = D2D1::Point2F(documentLeft + block.block_style.padding_left, top + block.block_style.padding_top);
             placeholder.textWidth = documentRight - placeholder.textOrigin.x;
-            placeholder.sourceStart = block.source_range.start.v;
-            placeholder.sourceEnd = block.source_range.end.v;
+            placeholder.sourceSpan = block.source_span;
             placeholder.documentY = top + scrollOffset;
             interactionMap.blocks.push_back(std::move(placeholder));
         }

@@ -107,7 +107,10 @@ namespace winrt::ElMd
         if (!draggedAction || !dropIndex) return;
         for (auto const& table : interactionMap.tables)
         {
-            if (draggedAction->sourceOffset < table.sourceStart || draggedAction->sourceOffset > table.sourceEnd) continue;
+            auto belongs = std::any_of(table.sourceSpans.begin(), table.sourceSpans.end(), [&](auto const& span) {
+                return span.container_id == draggedAction->sourcePosition.container_id;
+            });
+            if (!belongs) continue;
             if (draggedAction->kind == EditorTableActionKind::DragRow && *dropIndex < table.rowBoundaries.size())
             {
                 auto boundary = table.rowBoundaries[*dropIndex];
@@ -129,12 +132,14 @@ namespace winrt::ElMd
             auto sourceForRow = [&](std::size_t row)
             {
                 auto index = (std::min)(row, table.rowCount - 1) * table.columnCount;
-                return index < table.cells.size() ? table.cells[index].sourceStart : table.sourceStart;
+                auto span = index < table.cells.size() ? table.cells[index].sourceSpan : table.sourceSpans.front();
+                return elmd::TextPosition{span.container_id, span.source_range.start, elmd::TextAffinity::Downstream};
             };
             auto sourceForColumn = [&](std::size_t column)
             {
                 auto index = (std::min)(column, table.columnCount - 1);
-                return index < table.cells.size() ? table.cells[index].sourceStart : table.sourceStart;
+                auto span = index < table.cells.size() ? table.cells[index].sourceSpan : table.sourceSpans.front();
+                return elmd::TextPosition{span.container_id, span.source_range.start, elmd::TextAffinity::Downstream};
             };
             for (std::size_t boundary = 0; boundary < table.rowBoundaries.size(); ++boundary)
             {
@@ -194,7 +199,9 @@ namespace winrt::ElMd
         for (auto const& table : interactionMap.tables)
         {
             if (!table.editable) continue;
-            if (draggedAction && (draggedAction->sourceOffset < table.sourceStart || draggedAction->sourceOffset > table.sourceEnd)) continue;
+            if (draggedAction && !std::any_of(table.sourceSpans.begin(), table.sourceSpans.end(), [&](auto const& span) {
+                return span.container_id == draggedAction->sourcePosition.container_id;
+            })) continue;
             if (rows)
             {
                 if (x < table.rect.left - 60.0f || x > table.rect.right + 20.0f) continue;

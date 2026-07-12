@@ -35,11 +35,11 @@ namespace winrt::ElMd
         using TableActionKind = EditorTableActionKind;
         using TableAction = EditorTableAction;
 
-        std::optional<std::size_t> HitTest(float x, float y, bool* outUpstream = nullptr) const;
-        std::optional<D2D1_RECT_F> CaretBounds(std::size_t sourceOffset, bool upstream = false) const;
-        std::optional<CaretMove> MoveCaretVertically(std::size_t sourceOffset, bool upstream, bool down, float& goalX) const;
-        std::optional<std::size_t> VisualLineStart(std::size_t sourceOffset, bool upstream) const;
-        std::optional<std::size_t> VisualLineEnd(std::size_t sourceOffset, bool upstream) const;
+        std::optional<elmd::TextPosition> HitTest(float x, float y, bool* outUpstream = nullptr) const;
+        std::optional<D2D1_RECT_F> CaretBounds(elmd::TextPosition position, bool upstream = false) const;
+        std::optional<CaretMove> MoveCaretVertically(elmd::TextPosition position, bool upstream, bool down, float& goalX) const;
+        std::optional<elmd::TextPosition> VisualLineStart(elmd::TextPosition position, bool upstream) const;
+        std::optional<elmd::TextPosition> VisualLineEnd(elmd::TextPosition position, bool upstream) const;
         void UpdatePointer(float x, float y);
         void ClearPointer();
         std::optional<TableAction> TableActionAt(float x, float y) const;
@@ -52,7 +52,7 @@ namespace winrt::ElMd
         float ScrollOffset() const;
         float MaximumScrollOffset() const;
         float ViewportHeight() const;
-        bool ScrollToSourceOffset(std::size_t sourceOffset);
+        bool ScrollToPosition(elmd::TextPosition position);
 
     private:
         void DrawDocument(detail::EditorRenderFrame const& frame);

@@ -1,5 +1,7 @@
 #pragma once
 
+import elmd.core.text_edit;
+
 namespace winrt::ElMd
 {
     struct EditorVisualBlock
@@ -7,11 +9,10 @@ namespace winrt::ElMd
         D2D1_RECT_F rect{};
         D2D1_POINT_2F textOrigin{};
         float textWidth = 0.0f;
-        std::size_t sourceStart = 0;
-        std::size_t sourceEnd = 0;
+        elmd::TextSpan sourceSpan;
         float documentY = 0.0f;
         std::u32string text;
-        std::vector<std::size_t> displayToSource;
+        std::vector<elmd::TextPosition> displayToSource;
         ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
         bool thematicBreak = false;
     };
@@ -21,8 +22,7 @@ namespace winrt::ElMd
         std::size_t blockIndex = 0;
         std::size_t tableIndex = (std::numeric_limits<std::size_t>::max)();
         std::size_t cellIndex = (std::numeric_limits<std::size_t>::max)();
-        std::size_t sourceStart = 0;
-        std::size_t sourceEnd = 0;
+        elmd::TextSpan sourceSpan;
         std::uint32_t displayStart = 0;
         std::uint32_t displayEnd = 0;
         bool wrapContinuation = false;
@@ -35,20 +35,18 @@ namespace winrt::ElMd
         D2D1_POINT_2F textOrigin{};
         float textWidth = 0.0f;
         float textHeight = 0.0f;
-        std::size_t sourceStart = 0;
-        std::size_t sourceEnd = 0;
+        elmd::TextSpan sourceSpan;
         std::size_t row = 0;
         std::size_t column = 0;
         std::u32string text;
-        std::vector<std::size_t> displayToSource;
+        std::vector<elmd::TextPosition> displayToSource;
         ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
     };
 
     struct EditorVisualTable
     {
         D2D1_RECT_F rect{};
-        std::size_t sourceStart = 0;
-        std::size_t sourceEnd = 0;
+        std::vector<elmd::TextSpan> sourceSpans;
         std::size_t rowCount = 0;
         std::size_t columnCount = 0;
         bool editable = true;
@@ -60,15 +58,14 @@ namespace winrt::ElMd
     struct EditorVisualMathHit
     {
         D2D1_RECT_F rect{};
-        std::size_t sourceStart = 0;
-        std::size_t sourceEnd = 0;
+        elmd::TextSpan sourceSpan;
         float progressStart = 0.0f;
         float progressEnd = 1.0f;
     };
 
     struct EditorCaretMove
     {
-        std::size_t offset = 0;
+        elmd::TextPosition position;
         bool upstream = false;
     };
 
@@ -77,11 +74,11 @@ namespace winrt::ElMd
         void Clear(std::size_t blockCapacity);
         void AddBlockLines(std::size_t blockIndex);
         void AddTableCellLines(std::size_t blockIndex, std::size_t tableIndex, std::size_t cellIndex);
-        std::optional<std::size_t> HitTest(float x, float y, bool* outUpstream = nullptr) const;
-        std::optional<D2D1_RECT_F> CaretBounds(std::size_t sourceOffset, bool upstream, float bodyLineHeight) const;
-        std::optional<EditorCaretMove> MoveCaretVertically(std::size_t sourceOffset, bool upstream, bool down, float& goalX, float bodyLineHeight) const;
-        std::optional<std::size_t> VisualLineStart(std::size_t sourceOffset, bool upstream) const;
-        std::optional<std::size_t> VisualLineEnd(std::size_t sourceOffset, bool upstream) const;
+        std::optional<elmd::TextPosition> HitTest(float x, float y, bool* outUpstream = nullptr) const;
+        std::optional<D2D1_RECT_F> CaretBounds(elmd::TextPosition position, bool upstream, float bodyLineHeight) const;
+        std::optional<EditorCaretMove> MoveCaretVertically(elmd::TextPosition position, bool upstream, bool down, float& goalX, float bodyLineHeight) const;
+        std::optional<elmd::TextPosition> VisualLineStart(elmd::TextPosition position, bool upstream) const;
+        std::optional<elmd::TextPosition> VisualLineEnd(elmd::TextPosition position, bool upstream) const;
 
         std::vector<EditorVisualBlock> blocks;
         std::vector<EditorVisualLine> lines;
@@ -89,7 +86,7 @@ namespace winrt::ElMd
         std::vector<EditorVisualMathHit> mathHits;
 
     private:
-        std::optional<std::size_t> LineIndexFor(std::size_t sourceOffset, bool upstream) const;
-        std::optional<D2D1_RECT_F> CaretRectOnLine(EditorVisualLine const& line, std::size_t sourceOffset, bool upstream, float bodyLineHeight) const;
+        std::optional<std::size_t> LineIndexFor(elmd::TextPosition position, bool upstream) const;
+        std::optional<D2D1_RECT_F> CaretRectOnLine(EditorVisualLine const& line, elmd::TextPosition position, bool upstream, float bodyLineHeight) const;
     };
 }

@@ -10,11 +10,8 @@ namespace winrt::ElMd
 {
     std::optional<float> EditorTableBlockRenderer::Render(
         elmd::RenderBlock const& block,
-        std::u32string_view sourceText,
-        std::size_t caret,
-        std::size_t selectionStart,
-        std::size_t selectionEnd,
-        bool selectionEmpty,
+        elmd::TextPosition caret,
+        elmd::TextSelection selection,
         float documentLeft,
         float documentRight,
         float top,
@@ -34,8 +31,7 @@ namespace winrt::ElMd
         auto modeledTable = block.row_count > 0 && block.column_count > 0 && !block.table_cells.empty();
         if (!modeledTable) return std::nullopt;
         EditorVisualTable table;
-        table.sourceStart = block.source_range.start.v;
-        table.sourceEnd = block.source_range.end.v;
+        table.sourceSpans = block.table_cell_spans;
         table.editable = true;
         table.columnCount = block.column_count;
         table.rowCount = block.row_count;
@@ -50,24 +46,22 @@ namespace winrt::ElMd
         {
             for (std::size_t column = 0; column < table.columnCount; ++column)
             {
-                auto sourceStart = block.source_range.start.v;
-                auto sourceEnd = sourceStart;
+                auto sourceSpan = elmd::TextSpan{block.id, {0, 0}};
                 auto rangeIndex = row * table.columnCount + column;
-                if (rangeIndex < block.table_cell_ranges.size())
+                if (rangeIndex < block.table_cell_spans.size())
                 {
-                    sourceStart = block.table_cell_ranges[rangeIndex].start.v;
-                    sourceEnd = block.table_cell_ranges[rangeIndex].end.v;
+                    sourceSpan = block.table_cell_spans[rangeIndex];
                 }
                 DisplayInlineText display;
                 auto renderCellIndex = row * table.columnCount + column;
                 if (renderCellIndex < block.table_cells.size())
                 {
-                    display = BuildDisplayInlineText(block.table_cells[renderCellIndex], caret, sourceEnd, sourceText, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, (std::max)(1.0f, columnWidth - 20.0f), svgSupported, requestEmbedded);
+                    display = BuildDisplayInlineText(block.table_cells[renderCellIndex], caret, {sourceSpan.container_id, sourceSpan.source_range.end, elmd::TextAffinity::Downstream}, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, (std::max)(1.0f, columnWidth - 20.0f), svgSupported, requestEmbedded);
                 }
                 else
                 {
-                    AppendSourceText(display, sourceText, sourceStart, sourceEnd, elmd::InlineStyle::plain(), false);
-                    display.displayToSource.push_back(sourceEnd);
+                    AppendGeneratedText(display, U"\u200B", {sourceSpan.container_id, sourceSpan.source_range.start, elmd::TextAffinity::Downstream}, elmd::InlineStyle::plain());
+                    display.displayToSource.push_back({sourceSpan.container_id, sourceSpan.source_range.end, elmd::TextAffinity::Downstream});
                 }
                 auto wide = ToWide(display.text);
                 auto layout = textLayoutEngine.Create(wide, resources.textFormat.Get(), (std::max)(1.0f, columnWidth - 20.0f));
@@ -91,8 +85,7 @@ namespace winrt::ElMd
                 }
                 auto images = inlineImageRenderer.Resolve(layout.Get(), display.imageOverlays, (std::max)(1.0f, columnWidth - 20.0f));
                 EditorVisualTableCell cell;
-                cell.sourceStart = sourceStart;
-                cell.sourceEnd = sourceEnd;
+                cell.sourceSpan = sourceSpan;
                 cell.row = row;
                 cell.column = column;
                 cell.text = std::move(display.text);
@@ -122,8 +115,7 @@ namespace winrt::ElMd
         auto& visualTable = interactionMap.tables.back();
         EditorVisualBlock visualBlock;
         visualBlock.rect = visualTable.rect;
-        visualBlock.sourceStart = visualTable.sourceStart;
-        visualBlock.sourceEnd = visualTable.sourceEnd;
+        visualBlock.sourceSpan = visualTable.sourceSpans.empty() ? block.source_span : visualTable.sourceSpans.front();
         visualBlock.documentY = top + scrollOffset;
         auto visualBlockIndex = interactionMap.blocks.size();
         interactionMap.blocks.push_back(std::move(visualBlock));
@@ -132,7 +124,14 @@ namespace winrt::ElMd
         {
             auto& cell = visualTable.cells[cellIndex];
             auto& display = displays[cellIndex];
-            if (!selectionEmpty && selectionStart < cell.sourceEnd && cell.sourceStart < selectionEnd) resources.d2dContext->FillRectangle(cell.rect, resources.selectionBrush.Get());
+            if (!selection.is_caret() && selection.anchor.container_id == cell.sourceSpan.container_id
+                && selection.active.container_id == cell.sourceSpan.container_id)
+            {
+                auto start = (std::min)(selection.anchor.source_offset, selection.active.source_offset);
+                auto end = (std::max)(selection.anchor.source_offset, selection.active.source_offset);
+                if (start < cell.sourceSpan.source_range.end && cell.sourceSpan.source_range.start < end)
+                    resources.d2dContext->FillRectangle(cell.rect, resources.selectionBrush.Get());
+            }
             if (cell.layout)
             {
                 for (auto const& range : display.ranges)
@@ -159,13 +158,13 @@ namespace winrt::ElMd
                     if (FAILED(cell.layout->HitTestTextPosition(overlay.displayStart, FALSE, &pointX, &pointY, &metrics))) continue;
                     auto mathY = cell.textOrigin.y + metrics.top;
                     auto mathX = cell.textOrigin.x + pointX + overlay.leadingSpace;
-                    if (!drawMath(overlay.fragment, D2D1::Point2F(mathX, mathY), styleSheet.textColor)) drawMathFallback(overlay.sourceStart, overlay.sourceEnd, D2D1::Point2F(mathX, mathY));
+                    if (!drawMath(overlay.fragment, D2D1::Point2F(mathX, mathY), styleSheet.textColor)) drawMathFallback(overlay.sourceSpan, D2D1::Point2F(mathX, mathY));
                     if (overlay.strikethrough)
                     {
                         auto strikeY = mathY + overlay.fragment.height * 0.52f;
                         resources.d2dContext->DrawLine(D2D1::Point2F(cell.textOrigin.x + pointX, strikeY), D2D1::Point2F(mathX + overlay.fragment.width, strikeY), resources.textBrush.Get(), 1.5f);
                     }
-                    interactionMap.mathHits.push_back(EditorVisualMathHit{D2D1::RectF(mathX, mathY, mathX + overlay.fragment.width, mathY + overlay.fragment.height), overlay.sourceStart, overlay.sourceEnd, overlay.progressStart, overlay.progressEnd});
+                    interactionMap.mathHits.push_back(EditorVisualMathHit{D2D1::RectF(mathX, mathY, mathX + overlay.fragment.width, mathY + overlay.fragment.height), overlay.sourceSpan, overlay.progressStart, overlay.progressEnd});
                 }
             }
             interactionMap.AddTableCellLines(visualBlockIndex, tableIndex, cellIndex);

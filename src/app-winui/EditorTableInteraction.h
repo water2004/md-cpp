@@ -18,7 +18,7 @@ namespace winrt::ElMd
     struct EditorTableAction
     {
         EditorTableActionKind kind = EditorTableActionKind::InsertRow;
-        std::size_t sourceOffset = 0;
+        elmd::TextPosition sourcePosition;
         std::size_t index = 0;
     };
 

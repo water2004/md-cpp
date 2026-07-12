@@ -8,6 +8,16 @@ import elmd.core.utf;
 
 namespace winrt::ElMd
 {
+    namespace
+    {
+        std::size_t Utf16Length(std::u32string_view text)
+        {
+            std::size_t length = 0;
+            for (auto codepoint : text) length += codepoint > 0xffff ? 2 : 1;
+            return length;
+        }
+    }
+
     std::wstring ToWide(std::u32string_view text)
     {
         std::wstring wide;
@@ -226,18 +236,20 @@ namespace winrt::ElMd
         return normalized == "mermaid";
     }
 
-    bool CaretTouchesRange(std::size_t caret, elmd::CharRange const& range)
+    bool CaretTouchesSpan(elmd::TextPosition caret, elmd::TextSpan const& span)
     {
-        auto start = range.start.v;
-        auto end = range.end.v;
-        if (start <= caret && caret <= end)
+        if (caret.container_id != span.container_id) return false;
+        auto start = span.source_range.start;
+        auto end = span.source_range.end;
+        auto offset = caret.source_offset;
+        if (start <= offset && offset <= end)
         {
             return true;
         }
-        return (start > 0 && caret == start - 1) || (end < (std::numeric_limits<std::size_t>::max)() && caret == end + 1);
+        return (start > 0 && offset == start - 1) || (end < (std::numeric_limits<std::size_t>::max)() && offset == end + 1);
     }
 
-    std::vector<bool> RevealedStyleMarkers(std::vector<elmd::InlineRenderItem> const& items, std::size_t caret)
+    std::vector<bool> RevealedStyleMarkers(std::vector<elmd::InlineRenderItem> const& items, elmd::TextPosition caret)
     {
         std::vector<bool> visible(items.size(), true);
         std::vector<std::pair<std::u32string, std::size_t>> stack;
@@ -261,7 +273,7 @@ namespace winrt::ElMd
                 else
                 {
                     auto openIndex = found->second;
-                    auto reveal = items[openIndex].source_range.start.v <= caret && caret <= item.source_range.end.v;
+                    auto reveal = CaretTouchesSpan(caret, {item.source_span.container_id, {items[openIndex].source_span.source_range.start, item.source_span.source_range.end}});
                     visible[openIndex] = reveal;
                     visible[index] = reveal;
                     owners.erase(found);
@@ -281,7 +293,7 @@ namespace winrt::ElMd
             }
 
             auto openIndex = open->second;
-            auto reveal = items[openIndex].source_range.start.v <= caret && caret <= item.source_range.end.v;
+            auto reveal = CaretTouchesSpan(caret, {item.source_span.container_id, {items[openIndex].source_span.source_range.start, item.source_span.source_range.end}});
             visible[openIndex] = reveal;
             visible[index] = reveal;
             stack.erase(std::next(open).base());
@@ -295,14 +307,19 @@ namespace winrt::ElMd
         return visible;
     }
 
-    void AppendDisplayText(DisplayInlineText& display, std::u32string const& text, std::size_t sourceStart, elmd::InlineStyle style, bool marker)
+    void AppendDisplayText(DisplayInlineText& display, std::u32string const& text, elmd::TextSpan sourceSpan, elmd::InlineStyle style, bool marker)
     {
-        auto start = static_cast<UINT32>(display.text.size());
+        auto start = static_cast<UINT32>(Utf16Length(display.text));
         display.text += text;
-        auto length = static_cast<UINT32>(display.text.size()) - start;
+        auto length = static_cast<UINT32>(Utf16Length(text));
         for (std::size_t index = 0; index < text.size(); ++index)
         {
-            display.displayToSource.push_back(sourceStart + index);
+            auto position = elmd::TextPosition{
+                sourceSpan.container_id,
+                sourceSpan.source_range.start + (std::min)(index, sourceSpan.source_range.length()),
+                elmd::TextAffinity::Downstream};
+            display.displayToSource.push_back(position);
+            if (text[index] > 0xffff) display.displayToSource.push_back(position);
         }
         if (length > 0)
         {
@@ -315,18 +332,19 @@ namespace winrt::ElMd
         }
     }
 
-    void AppendGeneratedText(DisplayInlineText& display, std::u32string const& text, std::size_t sourceOffset, elmd::InlineStyle style)
+    void AppendGeneratedText(DisplayInlineText& display, std::u32string const& text, elmd::TextPosition sourcePosition, elmd::InlineStyle style)
     {
-        auto start = static_cast<UINT32>(display.text.size());
+        auto start = static_cast<UINT32>(Utf16Length(display.text));
         display.text += text;
-        display.displayToSource.insert(display.displayToSource.end(), text.size(), sourceOffset);
-        if (!text.empty()) display.ranges.push_back(InlineStyleRange{start, static_cast<UINT32>(text.size()), style, false, SyntaxHighlightKind::None});
+        auto length = Utf16Length(text);
+        display.displayToSource.insert(display.displayToSource.end(), length, sourcePosition);
+        if (!text.empty()) display.ranges.push_back(InlineStyleRange{start, static_cast<UINT32>(length), style, false, SyntaxHighlightKind::None});
     }
 
     void MergeDisplayText(DisplayInlineText& target, DisplayInlineText source)
     {
-        auto offset = static_cast<UINT32>(target.text.size());
-        auto characterCount = source.text.size();
+        auto offset = static_cast<UINT32>(Utf16Length(target.text));
+        auto characterCount = Utf16Length(source.text);
         target.text += source.text;
         if (source.displayToSource.size() > characterCount) source.displayToSource.resize(characterCount);
         target.displayToSource.insert(target.displayToSource.end(), source.displayToSource.begin(), source.displayToSource.end());
@@ -352,29 +370,30 @@ namespace winrt::ElMd
         }
     }
 
-    void AppendSourceText(DisplayInlineText& display, std::u32string_view sourceText, std::size_t start, std::size_t end, elmd::InlineStyle style, bool marker)
+    void AppendSourceText(DisplayInlineText& display, std::u32string_view sourceText, elmd::TextSpan sourceSpan, elmd::InlineStyle style, bool marker)
     {
-        start = (std::min)(start, sourceText.size());
-        end = (std::min)((std::max)(end, start), sourceText.size());
-        AppendDisplayText(display, std::u32string(sourceText.begin() + start, sourceText.begin() + end), start, style, marker);
+        auto length = (std::min)(sourceSpan.source_range.length(), sourceText.size());
+        AppendDisplayText(display, std::u32string(sourceText.substr(0, length)), sourceSpan, style, marker);
     }
 
-    void AppendMathPlaceholder(DisplayInlineText& display, std::size_t count, std::size_t sourceOffset)
+    void AppendMathPlaceholder(DisplayInlineText& display, std::size_t count, elmd::TextPosition sourcePosition)
     {
-        auto start = static_cast<UINT32>(display.text.size());
+        auto start = static_cast<UINT32>(Utf16Length(display.text));
         display.text.append(count, U'\u2007');
-        display.displayToSource.insert(display.displayToSource.end(), count, sourceOffset);
+        display.displayToSource.insert(display.displayToSource.end(), count, sourcePosition);
         if (count > 0)
         {
             display.ranges.push_back(InlineStyleRange{ start, static_cast<UINT32>(count), elmd::InlineStyle::plain(), false, SyntaxHighlightKind::None });
         }
     }
 
-    void AppendMathFragments(DisplayInlineText& display, MathJaxSvg const& math, std::size_t sourceStart, std::size_t sourceEnd, bool editing, elmd::InlineStyle style)
+    void AppendMathFragments(DisplayInlineText& display, MathJaxSvg const& math, elmd::TextSpan sourceSpan, bool editing, elmd::InlineStyle style)
     {
+        auto sourceStart = sourceSpan.source_range.start;
+        auto sourceEnd = sourceSpan.source_range.end;
         if (editing)
         {
-            AppendDisplayText(display, U"\u2003", sourceEnd, style, false);
+            AppendGeneratedText(display, U"\u2003", {sourceSpan.container_id, sourceEnd, elmd::TextAffinity::Downstream}, style);
         }
         float progress = 0.0f;
         for (std::size_t index = 0; index < math.fragments.size(); ++index)
@@ -386,16 +405,16 @@ namespace winrt::ElMd
                 : sourceStart + static_cast<std::size_t>(std::floor((progress / math.width) * static_cast<float>(length)));
             if (index > 0 && fragment.breakBefore)
             {
-                AppendDisplayText(display, U"\u200B", mappedOffset, style, false);
+                AppendGeneratedText(display, U"\u200B", {sourceSpan.container_id, mappedOffset, elmd::TextAffinity::Downstream}, style);
             }
-            auto start = static_cast<UINT32>(display.text.size());
+            auto start = static_cast<UINT32>(Utf16Length(display.text));
             display.text.push_back(U'\uFFFC');
-            display.displayToSource.push_back(mappedOffset);
+            display.displayToSource.push_back({sourceSpan.container_id, mappedOffset, elmd::TextAffinity::Downstream});
             display.ranges.push_back(InlineStyleRange{ start, 1, style, false, SyntaxHighlightKind::None });
             auto fragmentStart = math.width > 0.0f ? progress / math.width : 0.0f;
             progress += fragment.breakSpace + fragment.width;
             auto fragmentEnd = math.width > 0.0f ? progress / math.width : 1.0f;
-            display.mathOverlays.push_back(DisplayInlineText::MathOverlay{ start, fragment, fragment.breakSpace, sourceStart, sourceEnd, fragmentStart, fragmentEnd, style.strikethrough });
+            display.mathOverlays.push_back(DisplayInlineText::MathOverlay{ start, fragment, fragment.breakSpace, sourceSpan, fragmentStart, fragmentEnd, style.strikethrough });
         }
     }
 
@@ -424,9 +443,8 @@ namespace winrt::ElMd
 
     DisplayInlineText BuildDisplayInlineText(
         std::vector<elmd::InlineRenderItem> const& items,
-        std::size_t caret,
-        std::size_t sourceEnd,
-        std::u32string_view sourceText,
+        elmd::TextPosition caret,
+        elmd::TextPosition sourceEnd,
         MathJaxRenderer& mathJax,
         SvgNormalizer& svgNormalizer,
         D2D1_COLOR_F svgColor,
@@ -434,7 +452,7 @@ namespace winrt::ElMd
         float containerWidth,
         bool svgSupported,
         bool requestMath,
-        std::optional<elmd::CharRange> focusRange)
+        std::optional<elmd::NodeId> focusContainer)
     {
         DisplayInlineText display;
         auto markerVisibility = RevealedStyleMarkers(items, caret);
@@ -445,30 +463,30 @@ namespace winrt::ElMd
             {
                 continue;
             }
-            if (IsHeadingMarker(item) && (!focusRange || !(focusRange->start.v <= caret && caret <= focusRange->end.v)))
+            if (IsHeadingMarker(item) && (!focusContainer || caret.container_id != *focusContainer))
             {
                 continue;
             }
             if (item.kind == elmd::InlineRenderItem::Kind::Link)
             {
-                if (CaretTouchesRange(caret, item.source_range))
+                if (CaretTouchesSpan(caret, item.source_span))
                 {
-                    AppendSourceText(display, sourceText, item.source_range.start.v, item.source_range.end.v, item.style, false);
+                    AppendSourceText(display, item.source_text, item.source_span, item.style, false);
                 }
                 else
                 {
-                    MergeDisplayText(display, BuildDisplayInlineText(item.children, caret, item.source_range.end.v, sourceText, mathJax, svgNormalizer, svgColor, fontSize, containerWidth, svgSupported, requestMath, focusRange));
+                    MergeDisplayText(display, BuildDisplayInlineText(item.children, caret, {item.source_span.container_id, item.source_span.source_range.end, elmd::TextAffinity::Downstream}, mathJax, svgNormalizer, svgColor, fontSize, containerWidth, svgSupported, requestMath, focusContainer));
                 }
                 continue;
             }
             if (item.kind == elmd::InlineRenderItem::Kind::Image)
             {
-                if (CaretTouchesRange(caret, item.source_range)) AppendSourceText(display, sourceText, item.source_range.start.v, item.source_range.end.v, item.style, false);
+                if (CaretTouchesSpan(caret, item.source_span)) AppendSourceText(display, item.source_text, item.source_span, item.style, false);
                 else
                 {
-                    auto displayStart = static_cast<std::uint32_t>(display.text.size());
-                    AppendGeneratedText(display, U"\uFFFC", item.source_range.start.v, item.style);
-                    display.imageOverlays.push_back(DisplayInlineText::ImageOverlay{ displayStart, item.source_range.start.v, item.source_range.end.v, item.src, item.alt, item.image_width, item.image_height });
+                    auto displayStart = static_cast<std::uint32_t>(Utf16Length(display.text));
+                    AppendGeneratedText(display, U"\uFFFC", {item.source_span.container_id, item.source_span.source_range.start, elmd::TextAffinity::Downstream}, item.style);
+                    display.imageOverlays.push_back(DisplayInlineText::ImageOverlay{ displayStart, item.source_span, item.src, item.alt, item.image_width, item.image_height });
                 }
                 continue;
             }
@@ -476,49 +494,47 @@ namespace winrt::ElMd
             {
                 if (!svgSupported)
                 {
-                    AppendSourceText(display, sourceText, item.source_range.start.v, item.source_range.end.v, item.style, false);
+                    AppendSourceText(display, item.source_text, item.source_span, item.style, false);
                     continue;
                 }
                 auto rawMath = mathJax.GetOrQueue(elmd::cps_to_utf8(item.text), false, fontSize, containerWidth, requestMath);
                 auto math = rawMath ? NormalizeMathJaxSvg(*rawMath, svgNormalizer, svgColor, fontSize, requestMath) : std::nullopt;
-                auto editing = CaretTouchesRange(caret, item.source_range);
+                auto editing = CaretTouchesSpan(caret, item.source_span);
                 auto delimiterLength = item.math_delim == elmd::MathDelimiter::InlineParen ? std::size_t{2} : std::size_t{1};
-                auto contentStart = (std::min)(item.source_range.start.v + delimiterLength, item.source_range.end.v);
-                auto contentEnd = item.source_range.end.v >= delimiterLength
-                    ? (std::max)(contentStart, item.source_range.end.v - delimiterLength)
+                auto contentStart = (std::min)(item.source_span.source_range.start + delimiterLength, item.source_span.source_range.end);
+                auto contentEnd = item.source_span.source_range.end >= delimiterLength
+                    ? (std::max)(contentStart, item.source_span.source_range.end - delimiterLength)
                     : contentStart;
                 if (!math || !static_cast<bool>(*math))
                 {
-                    AppendSourceText(display, sourceText, item.source_range.start.v, item.source_range.end.v, item.style, false);
+                    AppendSourceText(display, item.source_text, item.source_span, item.style, false);
                     continue;
                 }
 
                 if (editing)
                 {
-                    auto displayStart = static_cast<std::uint32_t>(display.text.size());
-                    AppendSourceText(display, sourceText, item.source_range.start.v, item.source_range.end.v, item.style, false);
+                    auto displayStart = static_cast<std::uint32_t>(Utf16Length(display.text));
+                    AppendSourceText(display, item.source_text, item.source_span, item.style, false);
                     display.mathPreviews.push_back(DisplayInlineText::MathPreview{
                         *math,
                         displayStart,
-                        static_cast<std::uint32_t>(item.source_range.len()),
-                        item.source_range.start.v,
-                        item.source_range.end.v,
-                        contentStart,
-                        contentEnd,
+                        static_cast<std::uint32_t>(Utf16Length(item.source_text)),
+                        item.source_span,
+                        elmd::TextSpan{item.source_span.container_id, {contentStart, contentEnd}},
                         item.style.strikethrough,
                     });
                     continue;
                 }
-                AppendMathFragments(display, *math, contentStart, contentEnd, false, item.style);
+                AppendMathFragments(display, *math, {item.source_span.container_id, {contentStart, contentEnd}}, false, item.style);
                 continue;
             }
-            if (item.kind == elmd::InlineRenderItem::Kind::Marker && item.source_range.start == item.source_range.end && !item.display_text.empty())
+            if (item.kind == elmd::InlineRenderItem::Kind::Marker && item.source_span.source_range.start == item.source_span.source_range.end && !item.display_text.empty())
             {
-                AppendGeneratedText(display, item.display_text, item.source_range.start.v, item.style);
+                AppendGeneratedText(display, item.display_text, {item.source_span.container_id, item.source_span.source_range.start, elmd::TextAffinity::Downstream}, item.style);
             }
             else
             {
-                AppendDisplayText(display, InlineText(item), item.source_range.start.v, item.style, item.kind == elmd::InlineRenderItem::Kind::Marker);
+                AppendDisplayText(display, InlineText(item), item.source_span, item.style, item.kind == elmd::InlineRenderItem::Kind::Marker);
             }
         }
         if (!display.text.empty() && display.text.back() == U'\n') AppendGeneratedText(display, U"\u200B", sourceEnd, elmd::InlineStyle::plain());
@@ -526,46 +542,34 @@ namespace winrt::ElMd
         return display;
     }
 
-    DisplayInlineText BuildCodeBlockText(elmd::RenderBlock const& block, std::size_t caret, std::u32string_view sourceText)
+    DisplayInlineText BuildCodeBlockText(elmd::RenderBlock const& block, elmd::TextPosition caret)
     {
         DisplayInlineText display;
-        auto showFence = block.source_range.start.v <= caret && caret <= block.source_range.end.v;
+        auto showFence = caret.container_id == block.id;
         if (showFence)
         {
-            AppendSourceText(display, sourceText, block.source_range.start.v, block.content_range.start.v, elmd::InlineStyle::plain(), true);
+            AppendGeneratedText(display, block.opening_marker, {block.id, 0, elmd::TextAffinity::Downstream}, elmd::InlineStyle::plain());
         }
-        std::size_t contentVisibleEnd = block.content_range.end.v;
-        if (!showFence && contentVisibleEnd > block.content_range.start.v && contentVisibleEnd <= sourceText.size() && sourceText[contentVisibleEnd - 1] == U'\n') --contentVisibleEnd;
-        AppendSourceText(display, sourceText, block.content_range.start.v, contentVisibleEnd, elmd::InlineStyle::plain(), false);
-        std::size_t visibleEnd = contentVisibleEnd;
+        auto code = block.code_text;
+        if (!showFence && !code.empty() && code.back() == U'\n') code.pop_back();
+        AppendSourceText(display, code, {block.id, {0, code.size()}}, elmd::InlineStyle::plain(), false);
         if (showFence)
         {
-            visibleEnd = block.source_range.end.v;
-            if (visibleEnd > block.content_range.end.v && visibleEnd <= sourceText.size() && sourceText[visibleEnd - 1] == U'\n') --visibleEnd;
-            AppendSourceText(display, sourceText, block.content_range.end.v, visibleEnd, elmd::InlineStyle::plain(), true);
+            AppendGeneratedText(display, block.closing_marker, {block.id, block.code_text.size(), elmd::TextAffinity::Downstream}, elmd::InlineStyle::plain());
         }
-        display.displayToSource.push_back(visibleEnd);
+        display.displayToSource.push_back({block.id, block.code_text.size(), elmd::TextAffinity::Downstream});
         return display;
     }
 
-    DisplayInlineText BuildIndentedCodeBlockText(elmd::RenderBlock const& block, std::u32string_view sourceText)
+    DisplayInlineText BuildIndentedCodeBlockText(elmd::RenderBlock const& block)
     {
         DisplayInlineText display;
-        for (std::size_t index = 0; index < block.code_marker_ranges.size(); ++index)
-        {
-            auto const& marker = block.code_marker_ranges[index];
-            auto contentStart = (std::min)(marker.end.v, sourceText.size());
-            auto contentEnd = contentStart;
-            while (contentEnd < sourceText.size() && sourceText[contentEnd] != U'\n') ++contentEnd;
-            AppendSourceText(display, sourceText, contentStart, contentEnd, elmd::InlineStyle::plain(), false);
-            if (index + 1 < block.code_marker_ranges.size()) AppendDisplayText(display, U"\n", contentEnd, elmd::InlineStyle::plain(), false);
-            else if (contentStart == contentEnd) AppendDisplayText(display, U" ", contentStart, elmd::InlineStyle::plain(), false);
-        }
-        display.displayToSource.push_back(block.content_range.end.v);
+        AppendSourceText(display, block.code_text, block.source_span, elmd::InlineStyle::plain(), false);
+        display.displayToSource.push_back({block.id, block.code_text.size(), elmd::TextAffinity::Downstream});
         return display;
     }
 
-    std::size_t DisplayPositionForSource(std::vector<std::size_t> const& displayToSource, std::size_t sourceOffset)
+    std::size_t DisplayPositionForSource(std::vector<elmd::TextPosition> const& displayToSource, elmd::TextPosition sourcePosition)
     {
         if (displayToSource.empty())
         {
@@ -574,7 +578,8 @@ namespace winrt::ElMd
 
         for (std::size_t index = 0; index < displayToSource.size(); ++index)
         {
-            if (displayToSource[index] >= sourceOffset)
+            if (displayToSource[index].container_id == sourcePosition.container_id
+                && displayToSource[index].source_offset >= sourcePosition.source_offset)
             {
                 return index;
             }

@@ -44,7 +44,7 @@ namespace winrt::ElMd
                 return 48.0f;
             default:
             {
-                auto length = block.content_range.end.v > block.content_range.start.v ? block.content_range.end.v - block.content_range.start.v : std::size_t{1};
+                auto length = (std::max)(block.content_span.source_range.length(), std::size_t{1});
                 auto charactersPerLine = (std::max)(std::size_t{24}, static_cast<std::size_t>(contentWidth / (styleSheet.body.size * 0.56f)));
                 auto lines = (std::max)(std::size_t{1}, (length + charactersPerLine - 1) / charactersPerLine);
                 return static_cast<float>(lines) * styleSheet.body.lineHeight + 8.0f;

@@ -1,5 +1,8 @@
 #pragma once
 
+import elmd.core.ids;
+import elmd.core.text_edit;
+
 #include "MathJaxRenderer.h"
 #include "MermaidRenderer.h"
 #include "SvgNormalizer.h"
@@ -23,8 +26,7 @@ namespace winrt::ElMd
             std::uint32_t displayStart = 0;
             MathJaxSvgFragment fragment;
             float leadingSpace = 0.0f;
-            std::size_t sourceStart = 0;
-            std::size_t sourceEnd = 0;
+            elmd::TextSpan sourceSpan;
             float progressStart = 0.0f;
             float progressEnd = 1.0f;
             bool strikethrough = false;
@@ -35,18 +37,15 @@ namespace winrt::ElMd
             MathJaxSvg svg;
             std::uint32_t displayStart = 0;
             std::uint32_t displayLength = 0;
-            std::size_t sourceStart = 0;
-            std::size_t sourceEnd = 0;
-            std::size_t contentStart = 0;
-            std::size_t contentEnd = 0;
+            elmd::TextSpan sourceSpan;
+            elmd::TextSpan contentSpan;
             bool strikethrough = false;
         };
 
         struct ImageOverlay
         {
             std::uint32_t displayStart = 0;
-            std::size_t sourceStart = 0;
-            std::size_t sourceEnd = 0;
+            elmd::TextSpan sourceSpan;
             std::string source;
             std::string alt;
             std::optional<float> width;
@@ -54,7 +53,7 @@ namespace winrt::ElMd
         };
 
         std::u32string text;
-        std::vector<std::size_t> displayToSource;
+        std::vector<elmd::TextPosition> displayToSource;
         std::vector<InlineStyleRange> ranges;
         std::vector<MathOverlay> mathOverlays;
         std::vector<MathPreview> mathPreviews;
@@ -68,16 +67,15 @@ namespace winrt::ElMd
     std::u32string InlineText(std::vector<elmd::InlineRenderItem> const& items);
     bool IsMermaidLanguage(std::optional<std::string> const& language);
     void MergeDisplayText(DisplayInlineText& target, DisplayInlineText source);
-    void AppendSourceText(DisplayInlineText& display, std::u32string_view sourceText, std::size_t start, std::size_t end, elmd::InlineStyle style, bool marker);
-    void AppendGeneratedText(DisplayInlineText& display, std::u32string const& text, std::size_t sourceOffset, elmd::InlineStyle style);
-    void AppendMathPlaceholder(DisplayInlineText& display, std::size_t count, std::size_t sourceOffset);
+    void AppendSourceText(DisplayInlineText& display, std::u32string_view sourceText, elmd::TextSpan sourceSpan, elmd::InlineStyle style, bool marker);
+    void AppendGeneratedText(DisplayInlineText& display, std::u32string const& text, elmd::TextPosition sourcePosition, elmd::InlineStyle style);
+    void AppendMathPlaceholder(DisplayInlineText& display, std::size_t count, elmd::TextPosition sourcePosition);
     void ApplyInlinePlaceholder(IDWriteTextLayout* layout, UINT32 displayStart, float width, float height, float baseline);
     void ApplyMathInlineObjects(IDWriteTextLayout* layout, std::vector<DisplayInlineText::MathOverlay> const& overlays);
     DisplayInlineText BuildDisplayInlineText(
         std::vector<elmd::InlineRenderItem> const& items,
-        std::size_t caret,
-        std::size_t sourceEnd,
-        std::u32string_view sourceText,
+        elmd::TextPosition caret,
+        elmd::TextPosition sourceEnd,
         MathJaxRenderer& mathJax,
         SvgNormalizer& svgNormalizer,
         D2D1_COLOR_F svgColor,
@@ -85,8 +83,8 @@ namespace winrt::ElMd
         float containerWidth,
         bool svgSupported,
         bool requestMath,
-        std::optional<elmd::CharRange> focusRange = std::nullopt);
-    DisplayInlineText BuildCodeBlockText(elmd::RenderBlock const& block, std::size_t caret, std::u32string_view sourceText);
-    DisplayInlineText BuildIndentedCodeBlockText(elmd::RenderBlock const& block, std::u32string_view sourceText);
-    std::size_t DisplayPositionForSource(std::vector<std::size_t> const& displayToSource, std::size_t sourceOffset);
+        std::optional<elmd::NodeId> focusContainer = std::nullopt);
+    DisplayInlineText BuildCodeBlockText(elmd::RenderBlock const& block, elmd::TextPosition caret);
+    DisplayInlineText BuildIndentedCodeBlockText(elmd::RenderBlock const& block);
+    std::size_t DisplayPositionForSource(std::vector<elmd::TextPosition> const& displayToSource, elmd::TextPosition sourcePosition);
 }
