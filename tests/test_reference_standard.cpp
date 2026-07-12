@@ -1,10 +1,11 @@
 import std;
-#include "test_framework.h"
+import boost.ut;
 import elmd.core.parser;
 import elmd.core.ast;
 import elmd.core.utf;
 
 using namespace elmd;
+using namespace boost::ut;
 
 static bool reference_inline_kind(InlineVec const& nodes, InlineKind kind) {
     for (auto const& node : nodes) {
@@ -23,7 +24,10 @@ static bool reference_block_kind(BlockVec const& nodes, BlockKind kind) {
     return false;
 }
 
-ELMD_TEST(reference_standard_covers_basic_block_forms) {
+
+suite reference_standard_tests = [] {
+
+"reference_standard_covers_basic_block_forms"_test = [] {
     auto parsed = parse_text(1,
         "# ATX\n\n"
         "Setext\n=======\n\n"
@@ -32,19 +36,19 @@ ELMD_TEST(reference_standard_covers_basic_block_forms) {
         "    indented code\n\n"
         "1. ordered\n2. second\n   - nested\n\n"
         "***\n");
-    ELMD_CHECK(reference_block_kind(parsed.document.blocks, BlockKind::Heading));
-    ELMD_CHECK(reference_block_kind(parsed.document.blocks, BlockKind::BlockQuote));
-    ELMD_CHECK(reference_block_kind(parsed.document.blocks, BlockKind::List));
-    ELMD_CHECK(reference_block_kind(parsed.document.blocks, BlockKind::CodeBlock));
-    ELMD_CHECK(reference_block_kind(parsed.document.blocks, BlockKind::ThematicBreak));
+    expect(fatal(bool(reference_block_kind(parsed.document.blocks, BlockKind::Heading))));
+    expect(fatal(bool(reference_block_kind(parsed.document.blocks, BlockKind::BlockQuote))));
+    expect(fatal(bool(reference_block_kind(parsed.document.blocks, BlockKind::List))));
+    expect(fatal(bool(reference_block_kind(parsed.document.blocks, BlockKind::CodeBlock))));
+    expect(fatal(bool(reference_block_kind(parsed.document.blocks, BlockKind::ThematicBreak))));
     auto paragraph = std::find_if(parsed.document.blocks.begin(), parsed.document.blocks.end(), [](auto const& block) {
         return block.kind == BlockKind::Paragraph && reference_inline_kind(block.children, InlineKind::SoftBreak);
     });
-    ELMD_CHECK(paragraph != parsed.document.blocks.end());
-    if (paragraph != parsed.document.blocks.end()) ELMD_CHECK(reference_inline_kind(paragraph->children, InlineKind::HardBreak));
-}
+    expect(fatal(bool(paragraph != parsed.document.blocks.end())));
+    if (paragraph != parsed.document.blocks.end()) expect(fatal(bool(reference_inline_kind(paragraph->children, InlineKind::HardBreak))));
+};
 
-ELMD_TEST(reference_standard_covers_links_images_and_inline_forms) {
+"reference_standard_covers_links_images_and_inline_forms"_test = [] {
     auto parsed = parse_text(1,
         "**strong** __strong__ *emphasis* _emphasis_ `code` ``use `code` inside``\n\n"
         "[inline](https://example.com \"Title\") [reference][ref] <https://example.com> <me@example.com>\n\n"
@@ -54,17 +58,17 @@ ELMD_TEST(reference_standard_covers_links_images_and_inline_forms) {
         for (auto const& block : parsed.document.blocks) if (reference_inline_kind(block.children, kind)) return true;
         return false;
     };
-    ELMD_CHECK(has(InlineKind::Strong));
-    ELMD_CHECK(has(InlineKind::Emphasis));
-    ELMD_CHECK(has(InlineKind::InlineCode));
-    ELMD_CHECK(has(InlineKind::Link));
-    ELMD_CHECK(has(InlineKind::Image));
-    ELMD_CHECK(reference_block_kind(parsed.document.blocks, BlockKind::LinkDefinition));
-    ELMD_CHECK_EQ(parsed.symbols.images.size(), 1u);
-    ELMD_CHECK(parsed.symbols.links.size() >= 6u);
-}
+    expect(fatal(bool(has(InlineKind::Strong))));
+    expect(fatal(bool(has(InlineKind::Emphasis))));
+    expect(fatal(bool(has(InlineKind::InlineCode))));
+    expect(fatal(bool(has(InlineKind::Link))));
+    expect(fatal(bool(has(InlineKind::Image))));
+    expect(fatal(bool(reference_block_kind(parsed.document.blocks, BlockKind::LinkDefinition))));
+    expect(fatal(bool((parsed.symbols.images.size()) == (1u))));
+    expect(fatal(bool(parsed.symbols.links.size() >= 6u)));
+};
 
-ELMD_TEST(reference_standard_covers_safe_html_without_css_or_script) {
+"reference_standard_covers_safe_html_without_css_or_script"_test = [] {
     auto parsed = parse_text(1,
         "<span>**bold** <cite>citation</cite> <del>gone</del></span> "
         "<a href=\"https://example.com\" title=\"safe\">link</a> "
@@ -76,24 +80,24 @@ ELMD_TEST(reference_standard_covers_safe_html_without_css_or_script) {
     auto paragraph = std::find_if(parsed.document.blocks.begin(), parsed.document.blocks.end(), [](auto const& block) {
         return block.kind == BlockKind::Paragraph && reference_inline_kind(block.children, InlineKind::Span);
     });
-    ELMD_CHECK(paragraph != parsed.document.blocks.end());
+    expect(fatal(bool(paragraph != parsed.document.blocks.end())));
     if (paragraph != parsed.document.blocks.end()) {
-        ELMD_CHECK(reference_inline_kind(paragraph->children, InlineKind::Strong));
-        ELMD_CHECK(reference_inline_kind(paragraph->children, InlineKind::Emphasis));
-        ELMD_CHECK(reference_inline_kind(paragraph->children, InlineKind::Strike));
-        ELMD_CHECK(reference_inline_kind(paragraph->children, InlineKind::Link));
-        ELMD_CHECK(reference_inline_kind(paragraph->children, InlineKind::Image));
-        ELMD_CHECK(reference_inline_kind(paragraph->children, InlineKind::HardBreak));
+        expect(fatal(bool(reference_inline_kind(paragraph->children, InlineKind::Strong))));
+        expect(fatal(bool(reference_inline_kind(paragraph->children, InlineKind::Emphasis))));
+        expect(fatal(bool(reference_inline_kind(paragraph->children, InlineKind::Strike))));
+        expect(fatal(bool(reference_inline_kind(paragraph->children, InlineKind::Link))));
+        expect(fatal(bool(reference_inline_kind(paragraph->children, InlineKind::Image))));
+        expect(fatal(bool(reference_inline_kind(paragraph->children, InlineKind::HardBreak))));
     }
-    ELMD_CHECK(reference_block_kind(parsed.document.blocks, BlockKind::CodeBlock));
-    ELMD_CHECK(reference_block_kind(parsed.document.blocks, BlockKind::Table));
-    ELMD_CHECK(reference_block_kind(parsed.document.blocks, BlockKind::UnsupportedMarkup));
-    ELMD_CHECK(std::any_of(parsed.diagnostics.begin(), parsed.diagnostics.end(), [](auto const& diagnostic) {
+    expect(fatal(bool(reference_block_kind(parsed.document.blocks, BlockKind::CodeBlock))));
+    expect(fatal(bool(reference_block_kind(parsed.document.blocks, BlockKind::Table))));
+    expect(fatal(bool(reference_block_kind(parsed.document.blocks, BlockKind::UnsupportedMarkup))));
+    expect(fatal(bool(std::any_of(parsed.diagnostics.begin(), parsed.diagnostics.end(), [](auto const& diagnostic) {
         return diagnostic.code && *diagnostic.code == std::string(DIAG_RAW_HTML_DISABLED);
-    }));
-}
+    }))));
+};
 
-ELMD_TEST(reference_standard_covers_nested_list_elements) {
+"reference_standard_covers_nested_list_elements"_test = [] {
     auto parsed = parse_text(1,
         "1.  Open the file.\n"
         "\n"
@@ -110,15 +114,17 @@ ELMD_TEST(reference_standard_covers_nested_list_elements) {
         "    - nested item\n"
         "\n"
         "3.  Finish.\n");
-    ELMD_CHECK_EQ(parsed.document.blocks.size(), 1u);
+    expect(fatal(bool((parsed.document.blocks.size()) == (1u))));
     if (parsed.document.blocks.empty()) return;
     auto const& list = parsed.document.blocks.front();
-    ELMD_CHECK(list.kind == BlockKind::List);
-    ELMD_CHECK_EQ(list.list_items.size(), 3u);
+    expect(fatal(bool(list.kind == BlockKind::List)));
+    expect(fatal(bool((list.list_items.size()) == (3u))));
     if (list.list_items.size() < 2) return;
     auto const& children = list.list_items[1].children;
-    ELMD_CHECK(reference_block_kind(children, BlockKind::BlockQuote));
-    ELMD_CHECK(reference_block_kind(children, BlockKind::CodeBlock));
-    ELMD_CHECK(reference_block_kind(children, BlockKind::ImageBlock));
-    ELMD_CHECK(reference_block_kind(children, BlockKind::List));
-}
+    expect(fatal(bool(reference_block_kind(children, BlockKind::BlockQuote))));
+    expect(fatal(bool(reference_block_kind(children, BlockKind::CodeBlock))));
+    expect(fatal(bool(reference_block_kind(children, BlockKind::ImageBlock))));
+    expect(fatal(bool(reference_block_kind(children, BlockKind::List))));
+};
+
+}; // suite reference_standard_tests

@@ -1,5 +1,5 @@
-﻿import std;
-#include "test_framework.h"
+import std;
+import boost.ut;
 import elmd.core.parser;
 import elmd.core.render_builder;
 import elmd.core.render_model;
@@ -11,65 +11,69 @@ import elmd.core.selection_geometry;
 import elmd.core.selection;
 
 using namespace elmd;
+using namespace boost::ut;
 
 static RenderModel build_model(const std::string& src) {
     auto out = parse_text(1, src);
     return build_render_model(out.document, src, out.outline);
 }
 
-ELMD_TEST(test_empty_document_yields_editable_blank_model) {
+
+suite render_layout_tests = [] {
+
+"test_empty_document_yields_editable_blank_model"_test = [] {
     EditorDocument doc = EditorDocument::empty(1);
     Outline o = Outline::empty(1);
     auto m = build_render_model(doc, "", o);
-    ELMD_CHECK_EQ(m.blocks.size(), 1u);
-    ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Blank);
-    ELMD_CHECK_EQ(m.revision, 1ull);
-}
+    expect(fatal(bool((m.blocks.size()) == (1u))));
+    expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Blank)));
+    expect(fatal(bool((m.revision) == (1ull))));
+};
 
-ELMD_TEST(builds_heading_with_marker_and_text) {
+"builds_heading_with_marker_and_text"_test = [] {
     auto m = build_model("# Title");
-    ELMD_CHECK(!m.blocks.empty());
+    expect(fatal(bool(!m.blocks.empty())));
     for (const auto& it : m.blocks[0].inline_items)
-        ELMD_CHECK(it.source_range.end.v >= it.source_range.start.v);
+        expect(fatal(bool(it.source_range.end.v >= it.source_range.start.v)));
     bool has_text = false;
     for (const auto& it : m.blocks[0].inline_items) if (it.kind == InlineRenderItem::Kind::Text) has_text = true;
-    ELMD_CHECK(has_text);
-}
+    expect(fatal(bool(has_text)));
+};
 
-ELMD_TEST(builds_setext_heading_with_a_structural_trailing_marker) {
+"builds_setext_heading_with_a_structural_trailing_marker"_test = [] {
     auto m = build_model("Section\n-------\n");
-    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    expect(fatal(bool((m.blocks.size()) == (1u))));
     bool headingText = false;
     bool underline = false;
     if (!m.blocks.empty()) {
-        ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Text);
+        expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Text)));
         for (auto const& item : m.blocks[0].inline_items) {
             if (item.kind == InlineRenderItem::Kind::Text && item.style.heading_level && *item.style.heading_level == 2) headingText = true;
             if (item.kind == InlineRenderItem::Kind::Marker && item.marker_role == MarkerRole::Heading && item.text == U"\n-------") underline = true;
         }
     }
-    ELMD_CHECK(headingText);
-    ELMD_CHECK(underline);
-}
+    expect(fatal(bool(headingText)));
+    expect(fatal(bool(underline)));
+};
 
-ELMD_TEST(atx_heading_link_reaches_the_render_model_as_a_link) {
+"atx_heading_link_reaches_the_render_model_as_a_link"_test = [] {
     auto m = build_model("### [#](https://example.com)可做转义的字符\n");
-    ELMD_CHECK_EQ(m.blocks.size(), 1u);
-    if (!m.blocks.empty()) ELMD_CHECK(std::any_of(m.blocks[0].inline_items.begin(), m.blocks[0].inline_items.end(), [](auto const& item) {
+    expect(fatal(bool((m.blocks.size()) == (1u))));
+    if (!m.blocks.empty()) expect(fatal(bool(std::any_of(m.blocks[0].inline_items.begin(), m.blocks[0].inline_items.end(), [](auto const& item) {
             return item.kind == InlineRenderItem::Kind::Link && item.href == "https://example.com";
-        }));
-}
+        }))));
+};
 
-ELMD_TEST(builds_strong_with_open_and_close_markers) {
+"builds_strong_with_open_and_close_markers"_test = [] {
     auto m = build_model("**bold**");
     int marker_count = 0;
     for (const auto& it : m.blocks[0].inline_items) {
         if (it.kind == InlineRenderItem::Kind::Marker && it.text == U"**") ++marker_count;
     }
-    ELMD_CHECK_EQ(marker_count, 2);
-}
+    expect(fatal(bool((marker_count) == (2))));
+};
 
-ELMD_TEST(render_markers_are_exact_source_delimiters) {
+"render_markers_are_exact_source_delimiters"_test = [] {
     struct Case {
         std::string source;
         std::u32string marker;
@@ -83,74 +87,74 @@ ELMD_TEST(render_markers_are_exact_source_delimiters) {
     };
     for (auto const& test : cases) {
         auto model = build_model(test.source);
-        ELMD_CHECK_EQ(model.blocks.size(), 1u);
+        expect(fatal(bool((model.blocks.size()) == (1u))));
         if (model.blocks.empty()) continue;
         std::vector<InlineRenderItem const*> markers;
         for (auto const& item : model.blocks.front().inline_items) {
             if (item.kind == InlineRenderItem::Kind::Marker) markers.push_back(&item);
         }
-        ELMD_CHECK_EQ(markers.size(), 2u);
+        expect(fatal(bool((markers.size()) == (2u))));
         if (markers.size() != 2) continue;
-        ELMD_CHECK_EQ(markers[0]->text, test.marker);
-        ELMD_CHECK_EQ(markers[1]->text, test.marker);
-        ELMD_CHECK_EQ(markers[0]->source_range.start.v, 0u);
-        ELMD_CHECK_EQ(markers[0]->source_range.end.v, test.marker.size());
-        ELMD_CHECK_EQ(markers[1]->source_range.start.v, test.source.size() - test.marker.size());
-        ELMD_CHECK_EQ(markers[1]->source_range.end.v, test.source.size());
-        ELMD_CHECK(markers[0]->marker_owner.has_value());
-        ELMD_CHECK(markers[1]->marker_owner == markers[0]->marker_owner);
+        expect(fatal(bool((markers[0]->text) == (test.marker))));
+        expect(fatal(bool((markers[1]->text) == (test.marker))));
+        expect(fatal(bool((markers[0]->source_range.start.v) == (0u))));
+        expect(fatal(bool((markers[0]->source_range.end.v) == (test.marker.size()))));
+        expect(fatal(bool((markers[1]->source_range.start.v) == (test.source.size() - test.marker.size()))));
+        expect(fatal(bool((markers[1]->source_range.end.v) == (test.source.size()))));
+        expect(fatal(bool(markers[0]->marker_owner.has_value())));
+        expect(fatal(bool(markers[1]->marker_owner == markers[0]->marker_owner)));
     }
-}
+};
 
-ELMD_TEST(render_nested_delimiters_keep_monotonic_exact_ranges) {
+"render_nested_delimiters_keep_monotonic_exact_ranges"_test = [] {
     auto model = build_model("_outer **inner** tail_");
-    ELMD_CHECK_EQ(model.blocks.size(), 1u);
+    expect(fatal(bool((model.blocks.size()) == (1u))));
     if (model.blocks.empty()) return;
     std::vector<InlineRenderItem const*> markers;
     for (auto const& item : model.blocks.front().inline_items) {
         if (item.kind == InlineRenderItem::Kind::Marker) markers.push_back(&item);
     }
-    ELMD_CHECK_EQ(markers.size(), 4u);
+    expect(fatal(bool((markers.size()) == (4u))));
     if (markers.size() == 4) {
-        ELMD_CHECK_EQ(markers[0]->text, std::u32string(U"_"));
-        ELMD_CHECK_EQ(markers[0]->source_range.start.v, 0u);
-        ELMD_CHECK_EQ(markers[1]->text, std::u32string(U"**"));
-        ELMD_CHECK_EQ(markers[1]->source_range.start.v, 7u);
-        ELMD_CHECK_EQ(markers[2]->text, std::u32string(U"**"));
-        ELMD_CHECK_EQ(markers[2]->source_range.start.v, 14u);
-        ELMD_CHECK_EQ(markers[3]->text, std::u32string(U"_"));
-        ELMD_CHECK_EQ(markers[3]->source_range.start.v, 21u);
+        expect(fatal(bool((markers[0]->text) == (std::u32string(U"_")))));
+        expect(fatal(bool((markers[0]->source_range.start.v) == (0u))));
+        expect(fatal(bool((markers[1]->text) == (std::u32string(U"**")))));
+        expect(fatal(bool((markers[1]->source_range.start.v) == (7u))));
+        expect(fatal(bool((markers[2]->text) == (std::u32string(U"**")))));
+        expect(fatal(bool((markers[2]->source_range.start.v) == (14u))));
+        expect(fatal(bool((markers[3]->text) == (std::u32string(U"_")))));
+        expect(fatal(bool((markers[3]->source_range.start.v) == (21u))));
     }
     auto const& items = model.blocks.front().inline_items;
     for (std::size_t index = 1; index < items.size(); ++index) {
-        ELMD_CHECK(items[index - 1].source_range.end.v <= items[index].source_range.start.v);
+        expect(fatal(bool(items[index - 1].source_range.end.v <= items[index].source_range.start.v)));
     }
-}
+};
 
-ELMD_TEST(builds_code_block) {
+"builds_code_block"_test = [] {
     auto m = build_model("```rust\nfn main() {}\n```");
-    ELMD_CHECK(!m.blocks.empty());
-    ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Code);
-    ELMD_CHECK(m.blocks[0].language && *m.blocks[0].language == "rust");
-    ELMD_CHECK(m.blocks[0].line_count >= 1);
-}
+    expect(fatal(bool(!m.blocks.empty())));
+    expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Code)));
+    expect(fatal(bool(m.blocks[0].language && *m.blocks[0].language == "rust")));
+    expect(fatal(bool(m.blocks[0].line_count >= 1)));
+};
 
-ELMD_TEST(builds_indented_code_block_with_source_markers) {
+"builds_indented_code_block_with_source_markers"_test = [] {
     auto m = build_model("    alpha\n    beta\n");
-    ELMD_CHECK_EQ(m.blocks.size(), 1u);
-    ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Code);
-    ELMD_CHECK(m.blocks[0].code_indented);
-    ELMD_CHECK_EQ(m.blocks[0].code_text, std::u32string(U"alpha\nbeta\n"));
-    ELMD_CHECK_EQ(m.blocks[0].code_marker_ranges.size(), 2u);
+    expect(fatal(bool((m.blocks.size()) == (1u))));
+    expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Code)));
+    expect(fatal(bool(m.blocks[0].code_indented)));
+    expect(fatal(bool((m.blocks[0].code_text) == (std::u32string(U"alpha\nbeta\n")))));
+    expect(fatal(bool((m.blocks[0].code_marker_ranges.size()) == (2u))));
     if (m.blocks[0].code_marker_ranges.size() >= 2) {
-        ELMD_CHECK_EQ(m.blocks[0].code_marker_ranges[0].start.v, 0u);
-        ELMD_CHECK_EQ(m.blocks[0].code_marker_ranges[0].end.v, 4u);
-        ELMD_CHECK_EQ(m.blocks[0].code_marker_ranges[1].start.v, 10u);
-        ELMD_CHECK_EQ(m.blocks[0].code_marker_ranges[1].end.v, 14u);
+        expect(fatal(bool((m.blocks[0].code_marker_ranges[0].start.v) == (0u))));
+        expect(fatal(bool((m.blocks[0].code_marker_ranges[0].end.v) == (4u))));
+        expect(fatal(bool((m.blocks[0].code_marker_ranges[1].start.v) == (10u))));
+        expect(fatal(bool((m.blocks[0].code_marker_ranges[1].end.v) == (14u))));
     }
-}
+};
 
-ELMD_TEST(list_render_model_retains_nested_code_block_identity) {
+"list_render_model_retains_nested_code_block_identity"_test = [] {
     auto model = build_model(
         "1.  Open the file.\n"
         "\n"
@@ -162,146 +166,146 @@ ELMD_TEST(list_render_model_retains_nested_code_block_identity) {
         "          </head>\n"
         "\n"
         "3.  Update the title to match the name of your website.\n");
-    ELMD_CHECK_EQ(model.blocks.size(), 1u);
+    expect(fatal(bool((model.blocks.size()) == (1u))));
     if (model.blocks.empty()) return;
     auto const& list = model.blocks.front();
-    ELMD_CHECK(list.kind == RenderBlockKind::Text);
+    expect(fatal(bool(list.kind == RenderBlockKind::Text)));
     auto code = std::find_if(list.child_blocks.begin(), list.child_blocks.end(), [](auto const& child) {
         return child.kind == RenderBlockKind::Code;
     });
-    ELMD_CHECK(code != list.child_blocks.end());
+    expect(fatal(bool(code != list.child_blocks.end())));
     if (code != list.child_blocks.end()) {
-        ELMD_CHECK(code->code_indented);
-        ELMD_CHECK_EQ(code->code_text, std::u32string(U"<html>\n  <head>\n    <title>Test</title>\n  </head>\n"));
-        ELMD_CHECK_EQ(code->code_marker_ranges.size(), 4u);
+        expect(fatal(bool(code->code_indented)));
+        expect(fatal(bool((code->code_text) == (std::u32string(U"<html>\n  <head>\n    <title>Test</title>\n  </head>\n")))));
+        expect(fatal(bool((code->code_marker_ranges.size()) == (4u))));
     }
     bool styled_code = false;
     for (auto const& item : list.inline_items) {
         if (item.kind == InlineRenderItem::Kind::Text && item.style.code) styled_code = true;
     }
-    ELMD_CHECK(styled_code);
-}
+    expect(fatal(bool(styled_code)));
+};
 
-ELMD_TEST(list_render_model_retains_nested_quote_identity_and_indent) {
+"list_render_model_retains_nested_quote_identity_and_indent"_test = [] {
     auto m = build_model("- first\n- second\n  > quoted\n- third\n");
-    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    expect(fatal(bool((m.blocks.size()) == (1u))));
     if (m.blocks.empty()) return;
     auto const& list = m.blocks[0];
     auto quote = std::find_if(list.child_blocks.begin(), list.child_blocks.end(), [](auto const& child) {
         return child.kind == RenderBlockKind::Quote;
     });
-    ELMD_CHECK(quote != list.child_blocks.end());
+    expect(fatal(bool(quote != list.child_blocks.end())));
     if (quote != list.child_blocks.end()) {
-        ELMD_CHECK_EQ(quote->container_depth, 1u);
-        ELMD_CHECK_EQ(quote->container_indent_columns, 2u);
+        expect(fatal(bool((quote->container_depth) == (1u))));
+        expect(fatal(bool((quote->container_indent_columns) == (2u))));
     }
-}
+};
 
-ELMD_TEST(nested_list_markers_use_semantic_depth) {
+"nested_list_markers_use_semantic_depth"_test = [] {
     auto m = build_model("1. first\n2. second\n   - nested\n   - nested again\n3. third\n");
-    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    expect(fatal(bool((m.blocks.size()) == (1u))));
     if (m.blocks.empty()) return;
     std::vector<std::u32string> bullets;
     for (auto const& item : m.blocks[0].inline_items) {
         if (item.marker_role == MarkerRole::ListBullet) bullets.push_back(item.display_text);
     }
-    ELMD_CHECK_EQ(bullets.size(), 2u);
+    expect(fatal(bool((bullets.size()) == (2u))));
     if (bullets.size() == 2) {
-        ELMD_CHECK_EQ(bullets[0], U"   \u2022 ");
-        ELMD_CHECK_EQ(bullets[1], U"   \u2022 ");
+        expect(fatal(bool((bullets[0]) == (U"   \u2022 "))));
+        expect(fatal(bool((bullets[1]) == (U"   \u2022 "))));
     }
-}
+};
 
-ELMD_TEST(thematic_break_remains_an_atomic_render_block) {
+"thematic_break_remains_an_atomic_render_block"_test = [] {
     auto model = build_model("---");
-    ELMD_CHECK_EQ(model.blocks.size(), 1u);
-    ELMD_CHECK(model.blocks[0].kind == RenderBlockKind::ThematicBreak);
-    ELMD_CHECK(model.blocks[0].inline_items.empty());
-    ELMD_CHECK_EQ(model.blocks[0].source_range.start.v, 0u);
-    ELMD_CHECK_EQ(model.blocks[0].source_range.end.v, 3u);
-    ELMD_CHECK_EQ(model.blocks[0].content_range.end.v, 3u);
+    expect(fatal(bool((model.blocks.size()) == (1u))));
+    expect(fatal(bool(model.blocks[0].kind == RenderBlockKind::ThematicBreak)));
+    expect(fatal(bool(model.blocks[0].inline_items.empty())));
+    expect(fatal(bool((model.blocks[0].source_range.start.v) == (0u))));
+    expect(fatal(bool((model.blocks[0].source_range.end.v) == (3u))));
+    expect(fatal(bool((model.blocks[0].content_range.end.v) == (3u))));
     StubMeasurer measurer(8.0f);
     auto layout = layout_blocks(model.blocks, 800.0f, 1.0f, measurer, std::nullopt, LogicalPoint(0, 0), Outline::empty(1));
-    ELMD_CHECK_EQ(layout.blocks.size(), 1u);
-    ELMD_CHECK(layout.blocks[0].kind.kind == LayoutBlockKind::ThematicBreak);
-    ELMD_CHECK_EQ(layout.blocks[0].source_range.end.v, 3u);
-}
+    expect(fatal(bool((layout.blocks.size()) == (1u))));
+    expect(fatal(bool(layout.blocks[0].kind.kind == LayoutBlockKind::ThematicBreak)));
+    expect(fatal(bool((layout.blocks[0].source_range.end.v) == (3u))));
+};
 
-ELMD_TEST(builds_inline_math) {
+"builds_inline_math"_test = [] {
     auto m = build_model("$x^2$");
-    ELMD_CHECK(!m.blocks.empty());
+    expect(fatal(bool(!m.blocks.empty())));
     bool has_math = false;
     for (const auto& it : m.blocks[0].inline_items)
         if (it.kind == InlineRenderItem::Kind::Math) has_math = true;
-    ELMD_CHECK(has_math);
-}
+    expect(fatal(bool(has_math)));
+};
 
-ELMD_TEST(inline_math_only_line_preserves_full_visual_source_range) {
+"inline_math_only_line_preserves_full_visual_source_range"_test = [] {
     auto m = build_model("$11111$");
-    ELMD_CHECK_EQ(m.blocks.size(), 1u);
-    ELMD_CHECK_EQ(m.blocks[0].source_range.start.v, 0u);
-    ELMD_CHECK_EQ(m.blocks[0].source_range.end.v, 7u);
-    ELMD_CHECK_EQ(m.blocks[0].content_range.start.v, 0u);
-    ELMD_CHECK_EQ(m.blocks[0].content_range.end.v, 7u);
-    ELMD_CHECK_EQ(m.blocks[0].inline_items.size(), 1u);
-    ELMD_CHECK(m.blocks[0].inline_items[0].kind == InlineRenderItem::Kind::Math);
-    ELMD_CHECK_EQ(m.blocks[0].inline_items[0].source_range.start.v, 0u);
-    ELMD_CHECK_EQ(m.blocks[0].inline_items[0].source_range.end.v, 7u);
-}
+    expect(fatal(bool((m.blocks.size()) == (1u))));
+    expect(fatal(bool((m.blocks[0].source_range.start.v) == (0u))));
+    expect(fatal(bool((m.blocks[0].source_range.end.v) == (7u))));
+    expect(fatal(bool((m.blocks[0].content_range.start.v) == (0u))));
+    expect(fatal(bool((m.blocks[0].content_range.end.v) == (7u))));
+    expect(fatal(bool((m.blocks[0].inline_items.size()) == (1u))));
+    expect(fatal(bool(m.blocks[0].inline_items[0].kind == InlineRenderItem::Kind::Math)));
+    expect(fatal(bool((m.blocks[0].inline_items[0].source_range.start.v) == (0u))));
+    expect(fatal(bool((m.blocks[0].inline_items[0].source_range.end.v) == (7u))));
+};
 
-ELMD_TEST(inline_math_at_either_text_edge_preserves_paragraph_end) {
+"inline_math_at_either_text_edge_preserves_paragraph_end"_test = [] {
     auto leading = build_model("$x$ tail");
-    ELMD_CHECK_EQ(leading.blocks.size(), 1u);
-    ELMD_CHECK_EQ(leading.blocks[0].content_range.start.v, 0u);
-    ELMD_CHECK_EQ(leading.blocks[0].content_range.end.v, 8u);
+    expect(fatal(bool((leading.blocks.size()) == (1u))));
+    expect(fatal(bool((leading.blocks[0].content_range.start.v) == (0u))));
+    expect(fatal(bool((leading.blocks[0].content_range.end.v) == (8u))));
     auto trailing = build_model("lead $x$");
-    ELMD_CHECK_EQ(trailing.blocks.size(), 1u);
-    ELMD_CHECK_EQ(trailing.blocks[0].content_range.start.v, 0u);
-    ELMD_CHECK_EQ(trailing.blocks[0].content_range.end.v, 8u);
-}
+    expect(fatal(bool((trailing.blocks.size()) == (1u))));
+    expect(fatal(bool((trailing.blocks[0].content_range.start.v) == (0u))));
+    expect(fatal(bool((trailing.blocks[0].content_range.end.v) == (8u))));
+};
 
-ELMD_TEST(builds_paren_inline_math_with_exact_source_range) {
+"builds_paren_inline_math_with_exact_source_range"_test = [] {
     auto m = build_model("\\(x\\) after");
     auto it = std::find_if(m.blocks[0].inline_items.begin(), m.blocks[0].inline_items.end(), [](auto const& item) {
         return item.kind == InlineRenderItem::Kind::Math;
     });
-    ELMD_CHECK(it != m.blocks[0].inline_items.end());
-    ELMD_CHECK(it->math_delim == MathDelimiter::InlineParen);
-    ELMD_CHECK_EQ(it->source_range.start.v, 0u);
-    ELMD_CHECK_EQ(it->source_range.end.v, 5u);
-}
+    expect(fatal(bool(it != m.blocks[0].inline_items.end())));
+    expect(fatal(bool(it->math_delim == MathDelimiter::InlineParen)));
+    expect(fatal(bool((it->source_range.start.v) == (0u))));
+    expect(fatal(bool((it->source_range.end.v) == (5u))));
+};
 
-ELMD_TEST(builds_table_block) {
+"builds_table_block"_test = [] {
     auto m = build_model("| A | B |\n|---|---|\n| 1 | 2 |\n");
-    ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Table);
-    ELMD_CHECK(m.blocks[0].row_count >= 2);
-    ELMD_CHECK(m.blocks[0].column_count >= 2);
-}
+    expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Table)));
+    expect(fatal(bool(m.blocks[0].row_count >= 2)));
+    expect(fatal(bool(m.blocks[0].column_count >= 2)));
+};
 
-ELMD_TEST(builds_safe_html_table_with_cell_ranges) {
+"builds_safe_html_table_with_cell_ranges"_test = [] {
     auto m = build_model("<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>\n");
-    ELMD_CHECK_EQ(m.blocks.size(), 1u);
-    ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Table);
-    ELMD_CHECK(m.blocks[0].table_header_row);
-    ELMD_CHECK_EQ(m.blocks[0].row_count, 2u);
-    ELMD_CHECK_EQ(m.blocks[0].column_count, 2u);
-    ELMD_CHECK_EQ(m.blocks[0].table_cell_ranges.size(), 4u);
-    for (auto const& range : m.blocks[0].table_cell_ranges) ELMD_CHECK(range.end.v >= range.start.v);
-}
+    expect(fatal(bool((m.blocks.size()) == (1u))));
+    expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Table)));
+    expect(fatal(bool(m.blocks[0].table_header_row)));
+    expect(fatal(bool((m.blocks[0].row_count) == (2u))));
+    expect(fatal(bool((m.blocks[0].column_count) == (2u))));
+    expect(fatal(bool((m.blocks[0].table_cell_ranges.size()) == (4u))));
+    for (auto const& range : m.blocks[0].table_cell_ranges) expect(fatal(bool(range.end.v >= range.start.v)));
+};
 
-ELMD_TEST(builds_ordered_list_with_source_markers_and_line_breaks) {
+"builds_ordered_list_with_source_markers_and_line_breaks"_test = [] {
     auto m = build_model("9. alpha\n10. beta\n");
-    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    expect(fatal(bool((m.blocks.size()) == (1u))));
     std::u32string markers;
     for (auto const& item : m.blocks[0].inline_items) {
         if (item.kind == InlineRenderItem::Kind::Marker) markers += item.text;
     }
-    ELMD_CHECK(markers.find(U"9. ") != std::u32string::npos);
-    ELMD_CHECK(markers.find(U"10. ") != std::u32string::npos);
-    ELMD_CHECK(markers.find(U"\n") != std::u32string::npos);
-}
+    expect(fatal(bool(markers.find(U"9. ") != std::u32string::npos)));
+    expect(fatal(bool(markers.find(U"10. ") != std::u32string::npos)));
+    expect(fatal(bool(markers.find(U"\n") != std::u32string::npos)));
+};
 
-ELMD_TEST(ordered_list_display_numbers_are_sequential) {
+"ordered_list_display_numbers_are_sequential"_test = [] {
     auto m = build_model("1. first\n8. second\n3. third\n");
     std::vector<std::u32string> source;
     std::vector<std::u32string> display;
@@ -310,51 +314,51 @@ ELMD_TEST(ordered_list_display_numbers_are_sequential) {
         source.push_back(item.text);
         display.push_back(item.display_text);
     }
-    ELMD_CHECK_EQ(source.size(), 3u);
-    ELMD_CHECK(source[0] == U"1. ");
-    ELMD_CHECK(source[1] == U"8. ");
-    ELMD_CHECK(source[2] == U"3. ");
-    ELMD_CHECK(display[0] == U"1. ");
-    ELMD_CHECK(display[1] == U"2. ");
-    ELMD_CHECK(display[2] == U"3. ");
-}
+    expect(fatal(bool((source.size()) == (3u))));
+    expect(fatal(bool(source[0] == U"1. ")));
+    expect(fatal(bool(source[1] == U"8. ")));
+    expect(fatal(bool(source[2] == U"3. ")));
+    expect(fatal(bool(display[0] == U"1. ")));
+    expect(fatal(bool(display[1] == U"2. ")));
+    expect(fatal(bool(display[2] == U"3. ")));
+};
 
-ELMD_TEST(unordered_list_preserves_source_markers_and_presents_bullets) {
+"unordered_list_preserves_source_markers_and_presents_bullets"_test = [] {
     auto m = build_model("- alpha\n* beta\n+ gamma\n");
-    ELMD_CHECK_EQ(m.blocks.size(), 1u);
-    ELMD_CHECK_EQ(m.blocks[0].block_style.padding_left, 20.0f);
+    expect(fatal(bool((m.blocks.size()) == (1u))));
+    expect(fatal(bool((m.blocks[0].block_style.padding_left) == (20.0f))));
     std::vector<std::u32string> source_markers;
     std::vector<std::u32string> display_markers;
     for (auto const& item : m.blocks[0].inline_items) {
         if (item.kind != InlineRenderItem::Kind::Marker || item.marker_role != MarkerRole::ListBullet) continue;
         source_markers.push_back(item.text);
         display_markers.push_back(item.display_text);
-        ELMD_CHECK_EQ(item.source_range.len(), 2u);
+        expect(fatal(bool((item.source_range.len()) == (2u))));
     }
-    ELMD_CHECK_EQ(source_markers.size(), 3u);
-    ELMD_CHECK(source_markers[0] == U"- ");
-    ELMD_CHECK(source_markers[1] == U"* ");
-    ELMD_CHECK(source_markers[2] == U"+ ");
-    for (auto const& marker : display_markers) ELMD_CHECK(marker == U"\u2022 ");
-}
+    expect(fatal(bool((source_markers.size()) == (3u))));
+    expect(fatal(bool(source_markers[0] == U"- ")));
+    expect(fatal(bool(source_markers[1] == U"* ")));
+    expect(fatal(bool(source_markers[2] == U"+ ")));
+    for (auto const& marker : display_markers) expect(fatal(bool(marker == U"\u2022 ")));
+};
 
-ELMD_TEST(list_inline_math_reaches_the_render_model_with_exact_ranges) {
+"list_inline_math_reaches_the_render_model_with_exact_ranges"_test = [] {
     auto m = build_model("- before $x^2$ after\n- next $y$\n");
-    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    expect(fatal(bool((m.blocks.size()) == (1u))));
     std::vector<CharRange> math_ranges;
     for (auto const& item : m.blocks[0].inline_items) {
         if (item.kind == InlineRenderItem::Kind::Math) math_ranges.push_back(item.source_range);
     }
-    ELMD_CHECK_EQ(math_ranges.size(), 2u);
-    ELMD_CHECK_EQ(math_ranges[0].start.v, 9u);
-    ELMD_CHECK_EQ(math_ranges[0].end.v, 14u);
-    ELMD_CHECK_EQ(math_ranges[1].start.v, 28u);
-    ELMD_CHECK_EQ(math_ranges[1].end.v, 31u);
-}
+    expect(fatal(bool((math_ranges.size()) == (2u))));
+    expect(fatal(bool((math_ranges[0].start.v) == (9u))));
+    expect(fatal(bool((math_ranges[0].end.v) == (14u))));
+    expect(fatal(bool((math_ranges[1].start.v) == (28u))));
+    expect(fatal(bool((math_ranges[1].end.v) == (31u))));
+};
 
-ELMD_TEST(nested_list_blocks_reach_the_render_model) {
+"nested_list_blocks_reach_the_render_model"_test = [] {
     auto m = build_model("- parent\n  - child\n    1. grandchild\n\n  > quoted\n\n  ![diagram](image.png)\n");
-    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    expect(fatal(bool((m.blocks.size()) == (1u))));
     std::u32string text;
     bool image = false;
     bool quote = false;
@@ -366,15 +370,15 @@ ELMD_TEST(nested_list_blocks_reach_the_render_model) {
     quote = std::any_of(m.blocks[0].child_blocks.begin(), m.blocks[0].child_blocks.end(), [](auto const& child) {
         return child.kind == RenderBlockKind::Quote;
     });
-    ELMD_CHECK(text.find(U"parent") != std::u32string::npos);
-    ELMD_CHECK(text.find(U"child") != std::u32string::npos);
-    ELMD_CHECK(text.find(U"grandchild") != std::u32string::npos);
-    ELMD_CHECK(text.find(U"quoted") != std::u32string::npos);
-    ELMD_CHECK(image);
-    ELMD_CHECK(quote);
-}
+    expect(fatal(bool(text.find(U"parent") != std::u32string::npos)));
+    expect(fatal(bool(text.find(U"child") != std::u32string::npos)));
+    expect(fatal(bool(text.find(U"grandchild") != std::u32string::npos)));
+    expect(fatal(bool(text.find(U"quoted") != std::u32string::npos)));
+    expect(fatal(bool(image)));
+    expect(fatal(bool(quote)));
+};
 
-ELMD_TEST(math_inside_emphasis_renders_without_inheriting_text_style) {
+"math_inside_emphasis_renders_without_inheriting_text_style"_test = [] {
     auto m = build_model("**before $x$ after** *\\(y\\)* ~~$z$~~\n- **$q$**\n");
     std::vector<InlineRenderItem> math;
     for (auto const& block : m.blocks) {
@@ -382,239 +386,239 @@ ELMD_TEST(math_inside_emphasis_renders_without_inheriting_text_style) {
             if (item.kind == InlineRenderItem::Kind::Math) math.push_back(item);
         }
     }
-    ELMD_CHECK_EQ(math.size(), 4u);
+    expect(fatal(bool((math.size()) == (4u))));
     for (auto const& item : math) {
-        ELMD_CHECK(!item.style.bold);
-        ELMD_CHECK(!item.style.italic);
+        expect(fatal(bool(!item.style.bold)));
+        expect(fatal(bool(!item.style.italic)));
     }
-    ELMD_CHECK(!math[0].style.strikethrough);
-    ELMD_CHECK(!math[1].style.strikethrough);
-    ELMD_CHECK(math[2].style.strikethrough);
-    ELMD_CHECK(!math[3].style.strikethrough);
+    expect(fatal(bool(!math[0].style.strikethrough)));
+    expect(fatal(bool(!math[1].style.strikethrough)));
+    expect(fatal(bool(math[2].style.strikethrough)));
+    expect(fatal(bool(!math[3].style.strikethrough)));
     bool bold_text = false;
     for (auto const& item : m.blocks[0].inline_items) {
         if (item.kind == InlineRenderItem::Kind::Text && item.style.bold) bold_text = true;
     }
-    ELMD_CHECK(bold_text);
-}
+    expect(fatal(bool(bold_text)));
+};
 
-ELMD_TEST(table_render_cells_keep_their_own_source_ranges) {
+"table_render_cells_keep_their_own_source_ranges"_test = [] {
     auto m = build_model("| A | B |\n| :--- | ---: |\n| 1 | 2 |\n");
-    ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Table);
-    ELMD_CHECK_EQ(m.blocks[0].table_cells.size(), 4u);
-    ELMD_CHECK(!m.blocks[0].table_cells[0].empty());
-    ELMD_CHECK(!m.blocks[0].table_cells[1].empty());
+    expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Table)));
+    expect(fatal(bool((m.blocks[0].table_cells.size()) == (4u))));
+    expect(fatal(bool(!m.blocks[0].table_cells[0].empty())));
+    expect(fatal(bool(!m.blocks[0].table_cells[1].empty())));
     if (!m.blocks[0].table_cells[0].empty() && !m.blocks[0].table_cells[1].empty()) {
-        ELMD_CHECK_EQ(m.blocks[0].table_cells[0][0].source_range.start.v, 2u);
-        ELMD_CHECK_EQ(m.blocks[0].table_cells[1][0].source_range.start.v, 6u);
+        expect(fatal(bool((m.blocks[0].table_cells[0][0].source_range.start.v) == (2u))));
+        expect(fatal(bool((m.blocks[0].table_cells[1][0].source_range.start.v) == (6u))));
     }
-}
+};
 
-ELMD_TEST(table_render_cells_preserve_inline_styles) {
+"table_render_cells_preserve_inline_styles"_test = [] {
     auto m = build_model("| **bold** | plain |\n| --- | --- |\n| `code` | ~~gone~~ |\n");
-    ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Table);
-    ELMD_CHECK_EQ(m.blocks[0].table_cells.size(), 4u);
+    expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Table)));
+    expect(fatal(bool((m.blocks[0].table_cells.size()) == (4u))));
     bool bold = false;
     bool code = false;
     bool strike = false;
     for (auto const& item : m.blocks[0].table_cells[0]) bold = bold || item.style.bold;
     for (auto const& item : m.blocks[0].table_cells[2]) code = code || item.style.code;
     for (auto const& item : m.blocks[0].table_cells[3]) strike = strike || item.style.strikethrough;
-    ELMD_CHECK(bold);
-    ELMD_CHECK(code);
-    ELMD_CHECK(strike);
-}
+    expect(fatal(bool(bold)));
+    expect(fatal(bool(code)));
+    expect(fatal(bool(strike)));
+};
 
-ELMD_TEST(blockquote_render_model_contains_text_and_quote_style) {
+"blockquote_render_model_contains_text_and_quote_style"_test = [] {
     auto m = build_model("> quoted text\n");
-    ELMD_CHECK_EQ(m.blocks.size(), 1u);
-    ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Quote);
-    ELMD_CHECK_EQ(m.blocks[0].child_blocks.size(), 1u);
-    ELMD_CHECK(m.blocks[0].block_style.border_left.has_value());
+    expect(fatal(bool((m.blocks.size()) == (1u))));
+    expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Quote)));
+    expect(fatal(bool((m.blocks[0].child_blocks.size()) == (1u))));
+    expect(fatal(bool(m.blocks[0].block_style.border_left.has_value())));
     bool hasText = false;
     if (!m.blocks[0].child_blocks.empty()) {
-        ELMD_CHECK(!m.blocks[0].child_blocks[0].inline_items.empty());
+        expect(fatal(bool(!m.blocks[0].child_blocks[0].inline_items.empty())));
         for (auto const& item : m.blocks[0].child_blocks[0].inline_items) {
             hasText = hasText || (item.kind == InlineRenderItem::Kind::Text && item.text == U"quoted text");
         }
     }
-    ELMD_CHECK(hasText);
-}
+    expect(fatal(bool(hasText)));
+};
 
-ELMD_TEST(blockquote_render_model_preserves_nested_child_blocks) {
+"blockquote_render_model_preserves_nested_child_blocks"_test = [] {
     auto m = build_model("> paragraph\n> > nested\n");
-    ELMD_CHECK_EQ(m.blocks.size(), 1u);
-    ELMD_CHECK(m.blocks[0].kind == RenderBlockKind::Quote);
-    ELMD_CHECK_EQ(m.blocks[0].child_blocks.size(), 2u);
+    expect(fatal(bool((m.blocks.size()) == (1u))));
+    expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Quote)));
+    expect(fatal(bool((m.blocks[0].child_blocks.size()) == (2u))));
     if (m.blocks[0].child_blocks.size() >= 2) {
-        ELMD_CHECK(m.blocks[0].child_blocks[0].kind == RenderBlockKind::Text);
-        ELMD_CHECK(m.blocks[0].child_blocks[1].kind == RenderBlockKind::Text);
-        ELMD_CHECK_EQ(m.blocks[0].child_blocks[0].quote_depth, 0u);
-        ELMD_CHECK_EQ(m.blocks[0].child_blocks[1].quote_depth, 1u);
+        expect(fatal(bool(m.blocks[0].child_blocks[0].kind == RenderBlockKind::Text)));
+        expect(fatal(bool(m.blocks[0].child_blocks[1].kind == RenderBlockKind::Text)));
+        expect(fatal(bool((m.blocks[0].child_blocks[0].quote_depth) == (0u))));
+        expect(fatal(bool((m.blocks[0].child_blocks[1].quote_depth) == (1u))));
     }
-}
+};
 
-ELMD_TEST(nested_quote_flow_fragment_owns_only_its_visible_content) {
+"nested_quote_flow_fragment_owns_only_its_visible_content"_test = [] {
     auto m = build_model("> > The Witch bade her clean the pots and kettles\n");
-    ELMD_CHECK_EQ(m.blocks.size(), 1u);
-    ELMD_CHECK_EQ(m.blocks[0].child_blocks.size(), 1u);
+    expect(fatal(bool((m.blocks.size()) == (1u))));
+    expect(fatal(bool((m.blocks[0].child_blocks.size()) == (1u))));
     if (!m.blocks[0].child_blocks.empty()) {
         auto const& fragment = m.blocks[0].child_blocks[0];
-        ELMD_CHECK_EQ(fragment.quote_depth, 1u);
-        ELMD_CHECK_EQ(fragment.content_range.start.v, 4u);
-        ELMD_CHECK_EQ(fragment.content_range.end.v, 49u);
-        ELMD_CHECK(!fragment.inline_items.empty());
+        expect(fatal(bool((fragment.quote_depth) == (1u))));
+        expect(fatal(bool((fragment.content_range.start.v) == (4u))));
+        expect(fatal(bool((fragment.content_range.end.v) == (49u))));
+        expect(fatal(bool(!fragment.inline_items.empty())));
         if (!fragment.inline_items.empty()) {
-            ELMD_CHECK_EQ(fragment.inline_items.front().source_range.start.v, 4u);
-            ELMD_CHECK_EQ(fragment.inline_items.back().source_range.end.v, 49u);
+            expect(fatal(bool((fragment.inline_items.front().source_range.start.v) == (4u))));
+            expect(fatal(bool((fragment.inline_items.back().source_range.end.v) == (49u))));
         }
     }
-}
+};
 
-ELMD_TEST(core_quote_layout_consumes_flat_fragment_depths) {
+"core_quote_layout_consumes_flat_fragment_depths"_test = [] {
     StubMeasurer measurer(8.0f);
     auto model = build_model("> outer\n> > nested\n");
     auto tree = layout_blocks(model.blocks, 600.0f, 1.0f, measurer, std::nullopt, LogicalPoint(0.0f, 0.0f), Outline::empty(1));
-    ELMD_CHECK_EQ(tree.blocks.size(), 1u);
-    ELMD_CHECK(tree.blocks[0].kind.kind == LayoutBlockKind::Quote);
-    ELMD_CHECK_EQ(tree.blocks[0].children.size(), 2u);
+    expect(fatal(bool((tree.blocks.size()) == (1u))));
+    expect(fatal(bool(tree.blocks[0].kind.kind == LayoutBlockKind::Quote)));
+    expect(fatal(bool((tree.blocks[0].children.size()) == (2u))));
     if (tree.blocks[0].children.size() >= 2) {
-        ELMD_CHECK(tree.blocks[0].children[0].kind == LayoutItem::Kind::Line);
-        ELMD_CHECK(tree.blocks[0].children[1].kind == LayoutItem::Kind::Line);
-        ELMD_CHECK(tree.blocks[0].children[1].line.rect.x > tree.blocks[0].children[0].line.rect.x);
+        expect(fatal(bool(tree.blocks[0].children[0].kind == LayoutItem::Kind::Line)));
+        expect(fatal(bool(tree.blocks[0].children[1].kind == LayoutItem::Kind::Line)));
+        expect(fatal(bool(tree.blocks[0].children[1].line.rect.x > tree.blocks[0].children[0].line.rect.x)));
     }
-}
+};
 
-ELMD_TEST(blockquote_multiline_text_ranges_skip_each_source_marker) {
+"blockquote_multiline_text_ranges_skip_each_source_marker"_test = [] {
     auto m = build_model("> first line\n> second line\n");
-    ELMD_CHECK_EQ(m.blocks.size(), 1u);
-    ELMD_CHECK_EQ(m.blocks[0].child_blocks.size(), 1u);
+    expect(fatal(bool((m.blocks.size()) == (1u))));
+    expect(fatal(bool((m.blocks[0].child_blocks.size()) == (1u))));
     if (!m.blocks[0].child_blocks.empty()) {
         auto const& items = m.blocks[0].child_blocks[0].inline_items;
-        ELMD_CHECK_EQ(items.size(), 3u);
+        expect(fatal(bool((items.size()) == (3u))));
         if (items.size() >= 3) {
-            ELMD_CHECK_EQ(items[0].source_range.start.v, 2u);
-            ELMD_CHECK_EQ(items[1].source_range.start.v, 12u);
-            ELMD_CHECK_EQ(items[1].source_range.end.v, 15u);
-            ELMD_CHECK_EQ(items[2].source_range.start.v, 15u);
+            expect(fatal(bool((items[0].source_range.start.v) == (2u))));
+            expect(fatal(bool((items[1].source_range.start.v) == (12u))));
+            expect(fatal(bool((items[1].source_range.end.v) == (15u))));
+            expect(fatal(bool((items[2].source_range.start.v) == (15u))));
         }
     }
-}
+};
 
-ELMD_TEST(blockquote_hard_break_renders_a_newline_mapped_past_the_next_quote_marker) {
+"blockquote_hard_break_renders_a_newline_mapped_past_the_next_quote_marker"_test = [] {
     auto m = build_model("> alpha  \n> beta\n");
-    ELMD_CHECK_EQ(m.blocks.size(), 1u);
-    ELMD_CHECK_EQ(m.blocks[0].child_blocks.size(), 1u);
+    expect(fatal(bool((m.blocks.size()) == (1u))));
+    expect(fatal(bool((m.blocks[0].child_blocks.size()) == (1u))));
     if (!m.blocks[0].child_blocks.empty()) {
         auto const& items = m.blocks[0].child_blocks[0].inline_items;
         auto hard = std::find_if(items.begin(), items.end(), [](auto const& item) { return item.kind == InlineRenderItem::Kind::Text && item.text == U"\n"; });
-        ELMD_CHECK(hard != items.end());
+        expect(fatal(bool(hard != items.end())));
         if (hard != items.end()) {
-            ELMD_CHECK_EQ(hard->source_range.start.v, 9u);
-            ELMD_CHECK_EQ(hard->source_range.end.v, 12u);
+            expect(fatal(bool((hard->source_range.start.v) == (9u))));
+            expect(fatal(bool((hard->source_range.end.v) == (12u))));
         }
     }
-}
+};
 
-ELMD_TEST(trailing_blockquote_hard_break_has_a_zero_width_edit_anchor) {
+"trailing_blockquote_hard_break_has_a_zero_width_edit_anchor"_test = [] {
     auto m = build_model("> alpha  \n> \n\nafter");
-    ELMD_CHECK_EQ(m.blocks.size(), 2u);
-    ELMD_CHECK_EQ(m.blocks[0].child_blocks.size(), 3u);
+    expect(fatal(bool((m.blocks.size()) == (2u))));
+    expect(fatal(bool((m.blocks[0].child_blocks.size()) == (3u))));
     if (!m.blocks[0].child_blocks.empty()) {
         auto const& items = m.blocks[0].child_blocks[0].inline_items;
-        ELMD_CHECK(!items.empty());
-        ELMD_CHECK(items.back().text == U"\n");
-        ELMD_CHECK_EQ(items.back().source_range.end.v, 12u);
+        expect(fatal(bool(!items.empty())));
+        expect(fatal(bool(items.back().text == U"\n")));
+        expect(fatal(bool((items.back().source_range.end.v) == (12u))));
     }
-}
+};
 
-ELMD_TEST(blockquote_render_model_tracks_the_depth_of_a_trailing_empty_line) {
+"blockquote_render_model_tracks_the_depth_of_a_trailing_empty_line"_test = [] {
     auto outerBlank = build_model("> > alpha\n> ");
-    ELMD_CHECK_EQ(outerBlank.blocks.size(), 1u);
-    ELMD_CHECK_EQ(outerBlank.blocks[0].child_blocks.size(), 2u);
+    expect(fatal(bool((outerBlank.blocks.size()) == (1u))));
+    expect(fatal(bool((outerBlank.blocks[0].child_blocks.size()) == (2u))));
     if (outerBlank.blocks[0].child_blocks.size() >= 2) {
-        ELMD_CHECK(outerBlank.blocks[0].child_blocks[0].kind == RenderBlockKind::Text);
-        ELMD_CHECK_EQ(outerBlank.blocks[0].child_blocks[0].quote_depth, 1u);
-        ELMD_CHECK(outerBlank.blocks[0].child_blocks[1].kind == RenderBlockKind::Blank);
-        ELMD_CHECK_EQ(outerBlank.blocks[0].child_blocks[1].quote_depth, 0u);
+        expect(fatal(bool(outerBlank.blocks[0].child_blocks[0].kind == RenderBlockKind::Text)));
+        expect(fatal(bool((outerBlank.blocks[0].child_blocks[0].quote_depth) == (1u))));
+        expect(fatal(bool(outerBlank.blocks[0].child_blocks[1].kind == RenderBlockKind::Blank)));
+        expect(fatal(bool((outerBlank.blocks[0].child_blocks[1].quote_depth) == (0u))));
     }
 
     auto nestedBlank = build_model("> > alpha  \n> > ");
-    ELMD_CHECK_EQ(nestedBlank.blocks.size(), 1u);
-    ELMD_CHECK_EQ(nestedBlank.blocks[0].child_blocks.size(), 1u);
+    expect(fatal(bool((nestedBlank.blocks.size()) == (1u))));
+    expect(fatal(bool((nestedBlank.blocks[0].child_blocks.size()) == (1u))));
     if (!nestedBlank.blocks[0].child_blocks.empty()) {
-        ELMD_CHECK(nestedBlank.blocks[0].child_blocks[0].kind == RenderBlockKind::Text);
-        ELMD_CHECK_EQ(nestedBlank.blocks[0].child_blocks[0].quote_depth, 1u);
+        expect(fatal(bool(nestedBlank.blocks[0].child_blocks[0].kind == RenderBlockKind::Text)));
+        expect(fatal(bool((nestedBlank.blocks[0].child_blocks[0].quote_depth) == (1u))));
     }
-}
+};
 
-ELMD_TEST(list_render_model_has_no_synthetic_trailing_newline) {
+"list_render_model_has_no_synthetic_trailing_newline"_test = [] {
     auto m = build_model("- one\n- two\n");
-    ELMD_CHECK_EQ(m.blocks.size(), 1u);
-    ELMD_CHECK(!m.blocks[0].inline_items.empty());
-    if (!m.blocks[0].inline_items.empty()) ELMD_CHECK(m.blocks[0].inline_items.back().text != U"\n");
-}
+    expect(fatal(bool((m.blocks.size()) == (1u))));
+    expect(fatal(bool(!m.blocks[0].inline_items.empty())));
+    if (!m.blocks[0].inline_items.empty()) expect(fatal(bool(m.blocks[0].inline_items.back().text != U"\n")));
+};
 
-ELMD_TEST(layout_table_builds_rows_columns_and_cells) {
+"layout_table_builds_rows_columns_and_cells"_test = [] {
     StubMeasurer ms(8.0f);
     auto m = build_model("| A | B |\n| :--- | ---: |\n| 1 | 2 |\n");
     auto t = layout_blocks(m.blocks, 800.0f, 1.0f, ms, std::nullopt, LogicalPoint(0, 0), Outline::empty(1));
-    ELMD_CHECK_EQ(t.blocks.size(), 1u);
-    ELMD_CHECK(t.blocks[0].kind.kind == LayoutBlockKind::Table);
-    ELMD_CHECK_EQ(t.blocks[0].children.size(), 1u);
-    ELMD_CHECK(t.blocks[0].children[0].kind == LayoutItem::Kind::Table);
+    expect(fatal(bool((t.blocks.size()) == (1u))));
+    expect(fatal(bool(t.blocks[0].kind.kind == LayoutBlockKind::Table)));
+    expect(fatal(bool((t.blocks[0].children.size()) == (1u))));
+    expect(fatal(bool(t.blocks[0].children[0].kind == LayoutItem::Kind::Table)));
     auto const& table = t.blocks[0].children[0].table;
-    ELMD_CHECK_EQ(table.columns.size(), 2u);
-    ELMD_CHECK_EQ(table.rows.size(), 2u);
-    ELMD_CHECK_EQ(table.rows[0].cells.size(), 2u);
-    ELMD_CHECK(table.rows[0].is_header);
-    ELMD_CHECK(table.columns[0].alignment == TableAlignment::Left);
-    ELMD_CHECK(table.columns[1].alignment == TableAlignment::Right);
-    ELMD_CHECK_EQ(table.rows[0].cells[0].source_range.start.v, 2u);
-}
+    expect(fatal(bool((table.columns.size()) == (2u))));
+    expect(fatal(bool((table.rows.size()) == (2u))));
+    expect(fatal(bool((table.rows[0].cells.size()) == (2u))));
+    expect(fatal(bool(table.rows[0].is_header)));
+    expect(fatal(bool(table.columns[0].alignment == TableAlignment::Left)));
+    expect(fatal(bool(table.columns[1].alignment == TableAlignment::Right)));
+    expect(fatal(bool((table.rows[0].cells[0].source_range.start.v) == (2u))));
+};
 
-ELMD_TEST(builds_text_blocks_from_ast_paragraphs) {
+"builds_text_blocks_from_ast_paragraphs"_test = [] {
     auto trailing = build_model("Hello\n");
-    ELMD_CHECK_EQ(trailing.blocks.size(), 1u);
+    expect(fatal(bool((trailing.blocks.size()) == (1u))));
 
     auto between = build_model("Hello\n\nWorld");
-    ELMD_CHECK_EQ(between.blocks.size(), 2u);
+    expect(fatal(bool((between.blocks.size()) == (2u))));
 
     auto empty_after_break = build_model("Hello\n\n");
-    ELMD_CHECK_EQ(empty_after_break.blocks.size(), 2u);
-    ELMD_CHECK(empty_after_break.blocks[1].kind == RenderBlockKind::Blank);
-    ELMD_CHECK_EQ(empty_after_break.blocks[1].content_range.start.v, 6u);
-    ELMD_CHECK_EQ(empty_after_break.blocks[1].content_range.end.v, 6u);
+    expect(fatal(bool((empty_after_break.blocks.size()) == (2u))));
+    expect(fatal(bool(empty_after_break.blocks[1].kind == RenderBlockKind::Blank)));
+    expect(fatal(bool((empty_after_break.blocks[1].content_range.start.v) == (6u))));
+    expect(fatal(bool((empty_after_break.blocks[1].content_range.end.v) == (6u))));
 
     auto one_blank_between = build_model("Hello\n\n\nWorld");
-    ELMD_CHECK_EQ(one_blank_between.blocks.size(), 3u);
-    ELMD_CHECK(one_blank_between.blocks[0].kind == RenderBlockKind::Text);
-    ELMD_CHECK(one_blank_between.blocks[1].kind == RenderBlockKind::Blank);
-    ELMD_CHECK(one_blank_between.blocks[2].kind == RenderBlockKind::Text);
-}
+    expect(fatal(bool((one_blank_between.blocks.size()) == (3u))));
+    expect(fatal(bool(one_blank_between.blocks[0].kind == RenderBlockKind::Text)));
+    expect(fatal(bool(one_blank_between.blocks[1].kind == RenderBlockKind::Blank)));
+    expect(fatal(bool(one_blank_between.blocks[2].kind == RenderBlockKind::Text)));
+};
 
-ELMD_TEST(layout_blank_block_has_one_caret_line) {
+"layout_blank_block_has_one_caret_line"_test = [] {
     StubMeasurer ms;
     auto m = build_model("Hello\n\n");
     auto t = layout_blocks(m.blocks, 800.0f, 1.0f, ms, CharOffset(6), LogicalPoint(0, 0), Outline::empty(1));
-    ELMD_CHECK_EQ(t.blocks.size(), 2u);
-    ELMD_CHECK(t.blocks[1].kind.kind == LayoutBlockKind::Blank);
-    ELMD_CHECK_EQ(t.blocks[1].children.size(), 1u);
+    expect(fatal(bool((t.blocks.size()) == (2u))));
+    expect(fatal(bool(t.blocks[1].kind.kind == LayoutBlockKind::Blank)));
+    expect(fatal(bool((t.blocks[1].children.size()) == (1u))));
     auto caret = compute_caret_geometry(t, CharOffset(6));
-    ELMD_CHECK(caret.has_value());
-}
+    expect(fatal(bool(caret.has_value())));
+};
 
-ELMD_TEST(renders_soft_break_as_space) {
+"renders_soft_break_as_space"_test = [] {
     auto m = build_model("Hello\nWorld");
-    ELMD_CHECK_EQ(m.blocks.size(), 1u);
+    expect(fatal(bool((m.blocks.size()) == (1u))));
     std::u32string text;
     for (const auto& item : m.blocks[0].inline_items) {
         if (item.kind == InlineRenderItem::Kind::Text) text += item.text;
     }
-    ELMD_CHECK(text == U"Hello World");
-}
+    expect(fatal(bool(text == U"Hello World")));
+};
 
-ELMD_TEST(safe_block_html_becomes_rendered_content) {
+"safe_block_html_becomes_rendered_content"_test = [] {
     auto m = build_model("<div>\nhello\n</div>\n");
     bool found = false;
     for (const auto& b : m.blocks) {
@@ -622,28 +626,28 @@ ELMD_TEST(safe_block_html_becomes_rendered_content) {
             for (auto const& item : b.inline_items) if (item.text.find(U"hello") != std::u32string::npos) found = true;
         }
     }
-    ELMD_CHECK(found);
-}
+    expect(fatal(bool(found)));
+};
 
-ELMD_TEST(safe_inline_html_markers_share_their_node_owner) {
+"safe_inline_html_markers_share_their_node_owner"_test = [] {
     auto m = build_model("before <em>italic</em> after\n");
     std::vector<InlineRenderItem const*> markers;
     for (auto const& item : m.blocks[0].inline_items) if (item.kind == InlineRenderItem::Kind::Marker && item.marker_owner) markers.push_back(&item);
-    ELMD_CHECK_EQ(markers.size(), 2u);
+    expect(fatal(bool((markers.size()) == (2u))));
     if (markers.size() == 2) {
-        ELMD_CHECK(markers[0]->text == U"<em>");
-        ELMD_CHECK(markers[1]->text == U"</em>");
-        ELMD_CHECK(markers[0]->marker_owner == markers[1]->marker_owner);
+        expect(fatal(bool(markers[0]->text == U"<em>")));
+        expect(fatal(bool(markers[1]->text == U"</em>")));
+        expect(fatal(bool(markers[0]->marker_owner == markers[1]->marker_owner)));
     }
-}
+};
 
-ELMD_TEST(diagnostics_pass_through) {
+"diagnostics_pass_through"_test = [] {
     auto out = parse_text(1, "$x + 1\n");
     auto m = build_render_model(out.document, "$x + 1\n", out.outline);
-    ELMD_CHECK(!m.diagnostics.empty());
-}
+    expect(fatal(bool(!m.diagnostics.empty())));
+};
 
-ELMD_TEST(large_document_parse_and_render_model_build_are_bounded) {
+"large_document_parse_and_render_model_build_are_bounded"_test = [] {
     std::string source;
     source.reserve(512 * 1024);
     for (std::size_t index = 0; index < 1200; ++index) {
@@ -655,47 +659,47 @@ ELMD_TEST(large_document_parse_and_render_model_build_are_bounded) {
     auto parsed = parse_text(1, source);
     auto model = build_render_model(parsed.document, source, parsed.outline);
     auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
-    ELMD_CHECK(parsed.document.blocks.size() >= 3600u);
-    ELMD_CHECK(model.blocks.size() >= parsed.document.blocks.size());
-    ELMD_CHECK(elapsed < 5.0);
-}
+    expect(fatal(bool(parsed.document.blocks.size() >= 3600u)));
+    expect(fatal(bool(model.blocks.size() >= parsed.document.blocks.size())));
+    expect(fatal(bool(elapsed < 5.0)));
+};
 
-ELMD_TEST(layout_empty) {
+"layout_empty"_test = [] {
     StubMeasurer ms;
     auto t = layout_blocks({}, 800.0f, 1.0f, ms, std::nullopt, LogicalPoint(0, 0), Outline::empty(0));
-    ELMD_CHECK_EQ(t.blocks.size(), 0u);
-    ELMD_CHECK_EQ(t.total_height, 0.0f);
-}
+    expect(fatal(bool((t.blocks.size()) == (0u))));
+    expect(fatal(bool((t.total_height) == (0.0f))));
+};
 
-ELMD_TEST(layout_text_block) {
+"layout_text_block"_test = [] {
     StubMeasurer ms;
     RenderBlock rb; rb.kind = RenderBlockKind::Text; rb.block_style = BlockStyle::paragraph();
     InlineRenderItem it = InlineRenderItem::plain_text(U"Hello", CharRange(CharOffset(0), CharOffset(5)));
     rb.inline_items.push_back(it);
     auto t = layout_blocks({rb}, 800.0f, 1.0f, ms, std::nullopt, LogicalPoint(0, 0), Outline::empty(0));
-    ELMD_CHECK(!t.blocks.empty());
-    ELMD_CHECK(t.blocks[0].rect.height > 0);
-    ELMD_CHECK(!t.blocks[0].children.empty());
-}
+    expect(fatal(bool(!t.blocks.empty())));
+    expect(fatal(bool(t.blocks[0].rect.height > 0)));
+    expect(fatal(bool(!t.blocks[0].children.empty())));
+};
 
-ELMD_TEST(pipeline_parse_render_layout_hittest) {
+"pipeline_parse_render_layout_hittest"_test = [] {
     StubMeasurer ms;
     auto m = build_model("# Title\n\nSome **bold** text.\n");
-    ELMD_CHECK(!m.blocks.empty());
+    expect(fatal(bool(!m.blocks.empty())));
     auto out = parse_text(1, "# Title\n\nSome **bold** text.\n");
     Outline ol = out.outline;
     auto t = layout_blocks(m.blocks, 800.0f, 1.0f, ms, std::nullopt, LogicalPoint(0, 0), ol);
-    ELMD_CHECK(t.total_height > 0);
-    ELMD_CHECK(!t.blocks.empty());
+    expect(fatal(bool(t.total_height > 0)));
+    expect(fatal(bool(!t.blocks.empty())));
     LogicalPoint hit_point(20.0f, t.blocks[0].children[0].line.rect.y + 6.0f);
     auto hit = hit_test_layout_tree(t, hit_point);
-    ELMD_CHECK(hit.has_value());
+    expect(fatal(bool(hit.has_value())));
     bool any_line_range = false;
     for (const auto& b : t.blocks) for (const auto& ch : b.children) if (ch.line.source_range.end.v > ch.line.source_range.start.v) any_line_range = true;
-    ELMD_CHECK(any_line_range);
-}
+    expect(fatal(bool(any_line_range)));
+};
 
-ELMD_TEST(hit_test_returns_document_offset) {
+"hit_test_returns_document_offset"_test = [] {
     StubMeasurer ms(6.0f);
     LayoutTree tree;
     LayoutBlock b(NodeId(0), CharRange(CharOffset(10), CharOffset(15)), {LayoutBlockKind::Paragraph}, BlockStyle::paragraph());
@@ -711,35 +715,35 @@ ELMD_TEST(hit_test_returns_document_offset) {
     b.rect = LogicalRect(0, 0, 100, 20);
     tree.blocks.push_back(std::move(b));
     auto hit = hit_test_layout_tree(tree, LogicalPoint(15, 10));
-    ELMD_CHECK(hit.has_value());
+    expect(fatal(bool(hit.has_value())));
     if (hit) {
-        ELMD_CHECK(hit->position.v >= 10);
-        ELMD_CHECK(hit->position.v <= 15);
+        expect(fatal(bool(hit->position.v >= 10)));
+        expect(fatal(bool(hit->position.v <= 15)));
     }
-}
+};
 
-ELMD_TEST(stub_measurer_per_char_advances) {
+"stub_measurer_per_char_advances"_test = [] {
     StubMeasurer ms(8.0f);
     auto s = ms.measure(U"abc", 16.0f, InlineStyle::plain());
-    ELMD_CHECK_EQ(s.glyphs.size(), 3u);
-    ELMD_CHECK_EQ(s.width, 24.0f);
-    ELMD_CHECK(!s.glyphs[0].is_whitespace);
-}
+    expect(fatal(bool((s.glyphs.size()) == (3u))));
+    expect(fatal(bool((s.width) == (24.0f))));
+    expect(fatal(bool(!s.glyphs[0].is_whitespace)));
+};
 
-ELMD_TEST(stub_measurer_marks_whitespace) {
+"stub_measurer_marks_whitespace"_test = [] {
     StubMeasurer ms;
     auto s = ms.measure(U"a b", 16.0f, InlineStyle::plain());
-    ELMD_CHECK(!s.glyphs[0].is_whitespace);
-    ELMD_CHECK(s.glyphs[1].is_whitespace);
-}
+    expect(fatal(bool(!s.glyphs[0].is_whitespace)));
+    expect(fatal(bool(s.glyphs[1].is_whitespace)));
+};
 
-ELMD_TEST(advance_total_matches_width) {
+"advance_total_matches_width"_test = [] {
     StubMeasurer ms(7.0f);
     auto s = ms.measure(U"hello", 16.0f, InlineStyle::plain());
-    ELMD_CHECK(std::fabs(s.advance_total() - s.width) < 0.001f);
-}
+    expect(fatal(bool(std::fabs(s.advance_total() - s.width) < 0.001f)));
+};
 
-ELMD_TEST(selection_geometry_runs) {
+"selection_geometry_runs"_test = [] {
     StubMeasurer ms;
     LayoutTree t;
     LayoutBlock b(NodeId(0), CharRange(CharOffset(0), CharOffset(5)), {LayoutBlockKind::Paragraph}, BlockStyle::paragraph());
@@ -754,10 +758,10 @@ ELMD_TEST(selection_geometry_runs) {
     b.rect = LogicalRect(0, 0, 100, 20);
     t.blocks.push_back(std::move(b));
     auto sg = compute_selection_geometry(t, CharRange(CharOffset(1), CharOffset(4)));
-    ELMD_CHECK(!sg.ranges.empty());
-}
+    expect(fatal(bool(!sg.ranges.empty())));
+};
 
-ELMD_TEST(caret_geometry_at_position) {
+"caret_geometry_at_position"_test = [] {
     StubMeasurer ms;
     LayoutTree t;
     LayoutBlock b(NodeId(0), CharRange(CharOffset(0), CharOffset(5)), {LayoutBlockKind::Paragraph}, BlockStyle::paragraph());
@@ -772,12 +776,12 @@ ELMD_TEST(caret_geometry_at_position) {
     b.rect = LogicalRect(0, 0, 100, 20);
     t.blocks.push_back(std::move(b));
     auto cg = compute_caret_geometry(t, CharOffset(3));
-    ELMD_CHECK(cg.has_value());
-}
+    expect(fatal(bool(cg.has_value())));
+};
 
-ELMD_TEST(render_model_preserves_link_children_and_footnote_label) {
+"render_model_preserves_link_children_and_footnote_label"_test = [] {
     auto model = build_model("See [site](https://example.com) and [^note].\n\n[^note]: source\n");
-    ELMD_CHECK(!model.blocks.empty());
+    expect(fatal(bool(!model.blocks.empty())));
     bool link = false;
     bool footnote = false;
     for (auto const& item : model.blocks.front().inline_items) {
@@ -786,6 +790,8 @@ ELMD_TEST(render_model_preserves_link_children_and_footnote_label) {
         }
         if (item.kind == InlineRenderItem::Kind::Text && item.text == U"[^note]") footnote = true;
     }
-    ELMD_CHECK(link);
-    ELMD_CHECK(footnote);
-}
+    expect(fatal(bool(link)));
+    expect(fatal(bool(footnote)));
+};
+
+}; // suite render_layout_tests

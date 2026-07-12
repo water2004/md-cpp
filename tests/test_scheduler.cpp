@@ -1,28 +1,34 @@
 import std;
-#include "test_framework.h"
+import boost.ut;
 import elmd.core.scheduler;
 
 using namespace elmd;
+using namespace boost::ut;
 
-ELMD_TEST(test_scheduler_initial_state) {
-    ParseScheduler s;
-    ELMD_CHECK_EQ(s.debounce_ms, 50ull);
-    ELMD_CHECK(s.last_revision == 0ull);
-    ELMD_CHECK(s.running == false);
-}
 
-ELMD_TEST(test_scheduler_should_parse) {
+suite scheduler_tests = [] {
+
+"test_scheduler_initial_state"_test = [] {
     ParseScheduler s;
-    ELMD_CHECK(s.should_parse(1ull) == true);
+    expect(fatal(bool((s.debounce_ms) == (50ull))));
+    expect(fatal(bool(s.last_revision == 0ull)));
+    expect(fatal(bool(s.running == false)));
+};
+
+"test_scheduler_should_parse"_test = [] {
+    ParseScheduler s;
+    expect(fatal(bool(s.should_parse(1ull) == true)));
     s.mark_parsing();
-    ELMD_CHECK(s.should_parse(1ull) == false);
+    expect(fatal(bool(s.should_parse(1ull) == false)));
     s.complete_parse(1ull);
-    ELMD_CHECK(s.should_parse(1ull) == false);
-    ELMD_CHECK(s.should_parse(2ull) == true);
-}
+    expect(fatal(bool(s.should_parse(1ull) == false)));
+    expect(fatal(bool(s.should_parse(2ull) == true)));
+};
 
-ELMD_TEST(test_scheduler_should_parse_idle_when_current_lower) {
+"test_scheduler_should_parse_idle_when_current_lower"_test = [] {
     ParseScheduler s;
     s.complete_parse(5ull);
-    ELMD_CHECK(s.should_parse(3ull) == false);
-}
+    expect(fatal(bool(s.should_parse(3ull) == false)));
+};
+
+}; // suite scheduler_tests

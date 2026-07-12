@@ -1,5 +1,6 @@
-// el-md test runner — includes the header-only test framework for its main().
 import std;
-#include "test_framework.h"
+import boost.ut;
 
-int main() { return elmd_tests_main(); }
+int main(int argc, const char* argv[]) {
+    return boost::ut::cfg<>.run({.argc = argc, .argv = argv});
+}

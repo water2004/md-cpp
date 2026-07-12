@@ -1,5 +1,5 @@
 import std;
-#include "test_framework.h"
+import boost.ut;
 import elmd.core.exporter;
 import elmd.core.parser;
 import elmd.core.ast;
@@ -8,92 +8,98 @@ import elmd.core.settings;
 import elmd.core.utf;
 
 using namespace elmd;
+using namespace boost::ut;
 
-ELMD_TEST(test_escape_raw_html_scripts) {
+
+suite export_tests = [] {
+
+"test_escape_raw_html_scripts"_test = [] {
     std::string input = "<script>alert(1)</script>";
     std::string esc = escape_raw_html(input);
-    ELMD_CHECK(esc.find("<script>") == std::string::npos);
-    ELMD_CHECK(esc.find("&lt;script&gt;") != std::string::npos);
-}
+    expect(fatal(bool(esc.find("<script>") == std::string::npos)));
+    expect(fatal(bool(esc.find("&lt;script&gt;") != std::string::npos)));
+};
 
-ELMD_TEST(test_export_html_escapes_script) {
+"test_export_html_escapes_script"_test = [] {
     auto out = parse_text(1, "<script>alert(1)</script>\n");
     ExportOptions opts;
     auto res = export_html("", out.document, opts);
-    ELMD_CHECK(res.ok);
+    expect(fatal(bool(res.ok)));
     auto& html = res.value.content;
-    ELMD_CHECK(html.find("<script>alert") == std::string::npos);
-    ELMD_CHECK(html.find("&lt;script&gt;") != std::string::npos);
-}
+    expect(fatal(bool(html.find("<script>alert") == std::string::npos)));
+    expect(fatal(bool(html.find("&lt;script&gt;") != std::string::npos)));
+};
 
-ELMD_TEST(test_export_html_escapes_div) {
+"test_export_html_escapes_div"_test = [] {
     auto out = parse_text(1, "<div>hello</div>\n");
     ExportOptions opts;
     auto res = export_html("", out.document, opts);
-    ELMD_CHECK(res.ok);
+    expect(fatal(bool(res.ok)));
     auto& html = res.value.content;
-    ELMD_CHECK(html.find("<div>hello</div>\n") == std::string::npos);
-}
+    expect(fatal(bool(html.find("<div>hello</div>\n") == std::string::npos)));
+};
 
-ELMD_TEST(test_export_markdown_serializes_document) {
+"test_export_markdown_serializes_document"_test = [] {
     std::string src = "# Title\n\nHello *world*.\n";
     auto out = parse_text(1, src);
     ExportOptions opts;
     auto res = export_markdown(out.document, opts);
-    ELMD_CHECK(res.ok);
-    ELMD_CHECK_EQ(res.value.content, std::string("# Title\n\nHello *world*.\n"));
-    ELMD_CHECK_EQ(res.value.mime_type, std::string("text/markdown"));
-    ELMD_CHECK_EQ(res.value.extension, std::string("md"));
-}
+    expect(fatal(bool(res.ok)));
+    expect(fatal(bool((res.value.content) == (std::string("# Title\n\nHello *world*.\n")))));
+    expect(fatal(bool((res.value.mime_type) == (std::string("text/markdown")))));
+    expect(fatal(bool((res.value.extension) == (std::string("md")))));
+};
 
-ELMD_TEST(test_export_markdown_uses_authoritative_document) {
+"test_export_markdown_uses_authoritative_document"_test = [] {
     auto out = parse_text(1, "**alpha**");
     ExportOptions opts;
     auto result = export_markdown(out.document, opts);
-    ELMD_CHECK(result.ok);
-    if (result.ok) ELMD_CHECK_EQ(result.value.content, std::string("**alpha**"));
-}
+    expect(fatal(bool(result.ok)));
+    if (result.ok) expect(fatal(bool((result.value.content) == (std::string("**alpha**")))));
+};
 
-ELMD_TEST(test_export_plain_text_mime) {
+"test_export_plain_text_mime"_test = [] {
     auto res = export_plain_text("hello");
-    ELMD_CHECK(res.ok);
-    ELMD_CHECK_EQ(res.value.content, std::string("hello"));
-    ELMD_CHECK_EQ(res.value.mime_type, std::string("text/plain"));
-}
+    expect(fatal(bool(res.ok)));
+    expect(fatal(bool((res.value.content) == (std::string("hello")))));
+    expect(fatal(bool((res.value.mime_type) == (std::string("text/plain")))));
+};
 
-ELMD_TEST(test_export_html_link_sanitizes_javascript) {
+"test_export_html_link_sanitizes_javascript"_test = [] {
     std::string src = "[click](JaVaScRiPt:evil)\n";
     auto out = parse_text(1, src);
     ExportOptions opts;
     auto res = export_html("", out.document, opts);
-    ELMD_CHECK(res.ok);
-    ELMD_CHECK(res.value.content.find("href=\"javascript:") == std::string::npos);
-    ELMD_CHECK(res.value.content.find("JaVaScRiPt:") == std::string::npos);
-}
+    expect(fatal(bool(res.ok)));
+    expect(fatal(bool(res.value.content.find("href=\"javascript:") == std::string::npos)));
+    expect(fatal(bool(res.value.content.find("JaVaScRiPt:") == std::string::npos)));
+};
 
-ELMD_TEST(test_export_html_only_allows_data_urls_for_images) {
+"test_export_html_only_allows_data_urls_for_images"_test = [] {
     auto out = parse_text(1, "![ok](data:image/png;base64,QQ==)\n\n![bad](data:text/html;base64,QQ==)\n");
     ExportOptions opts;
     auto res = export_html("", out.document, opts);
-    ELMD_CHECK(res.ok);
-    ELMD_CHECK(res.value.content.find("data:image/png") != std::string::npos);
-    ELMD_CHECK(res.value.content.find("data:text/html") == std::string::npos);
-}
+    expect(fatal(bool(res.ok)));
+    expect(fatal(bool(res.value.content.find("data:image/png") != std::string::npos)));
+    expect(fatal(bool(res.value.content.find("data:text/html") == std::string::npos)));
+};
 
-ELMD_TEST(test_export_html_preserves_safe_image_dimensions) {
+"test_export_html_preserves_safe_image_dimensions"_test = [] {
     auto out = parse_text(1, "<img src=\"image.png\" width=\"320\" height=\"180\">\n");
     ExportOptions opts;
     auto res = export_html("", out.document, opts);
-    ELMD_CHECK(res.ok);
-    ELMD_CHECK(res.value.content.find("width=\"320.000000\"") != std::string::npos);
-    ELMD_CHECK(res.value.content.find("height=\"180.000000\"") != std::string::npos);
-}
+    expect(fatal(bool(res.ok)));
+    expect(fatal(bool(res.value.content.find("width=\"320.000000\"") != std::string::npos)));
+    expect(fatal(bool(res.value.content.find("height=\"180.000000\"") != std::string::npos)));
+};
 
-ELMD_TEST(test_export_html_drop_policy) {
+"test_export_html_drop_policy"_test = [] {
     auto out = parse_text(1, "<iframe>x</iframe>\n");
     ExportOptions opts;
     opts.raw_html_policy = ExportRawHtmlPolicy::Drop;
     auto res = export_html("", out.document, opts);
-    ELMD_CHECK(res.ok);
-    ELMD_CHECK(res.value.content.find("<iframe>") == std::string::npos);
-}
+    expect(fatal(bool(res.ok)));
+    expect(fatal(bool(res.value.content.find("<iframe>") == std::string::npos)));
+};
+
+}; // suite export_tests

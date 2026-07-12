@@ -12,7 +12,7 @@
 # activation token for the CxxImportStd experimental feature in CMake 4.3.
 set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b")
 
-cmake_minimum_required(VERSION 3.30)
+cmake_minimum_required(VERSION 4.0)
 
 project(el_md_cpp
     VERSION 0.1.0
@@ -107,19 +107,27 @@ endif()
 
 # ---------------------------------------------------------------------------
 # Tests — pure core tests, no Windows dependency, portable.
+#
+# Boost.UT is consumed through its C++ module. The vendored fork fixes MSVC
+# module linkage and command-line initialization; main passes argc/argv
+# explicitly so no test translation unit depends on MSVC's private CRT globals.
 # ---------------------------------------------------------------------------
+set(BOOST_UT_DISABLE_MODULE OFF CACHE BOOL "Build Boost.UT's C++ module" FORCE)
+set(BOOST_UT_BUILD_EXAMPLES OFF CACHE BOOL "Do not build Boost.UT examples" FORCE)
+set(BOOST_UT_BUILD_TESTS OFF CACHE BOOL "Do not build Boost.UT self-tests" FORCE)
+set(BOOST_UT_ENABLE_INSTALL OFF CACHE BOOL "Do not install vendored Boost.UT" FORCE)
+add_subdirectory(third_party/ut EXCLUDE_FROM_ALL)
+
 enable_testing()
 add_executable(elmd_tests)
 target_compile_features(elmd_tests PRIVATE cxx_std_23)
-set_target_properties(elmd_tests PROPERTIES CXX_MODULE_STD ON)
-# Test framework is header-only (tests/test_framework.h) so that ELMD_* macros
-# are visible via textual inclusion — macros cannot cross module boundaries.
-# Test TUs #include the header and import the elmd.core.* modules under test;
-# they deliberately do NOT `import std;` (that would collide with the header's
-# standard-library #includes under MSVC).
+set_target_properties(elmd_tests PROPERTIES
+    CXX_MODULE_STD ON
+    CXX_SCAN_FOR_MODULES ON)
 file(GLOB ELMD_TEST_SRC CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp)
-target_sources(elmd_tests PRIVATE ${ELMD_TEST_SRC})
-target_include_directories(elmd_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
-target_link_libraries(elmd_tests PRIVATE elmd_core)
+target_sources(elmd_tests PRIVATE
+    ${ELMD_TEST_SRC})
+target_link_libraries(elmd_tests PRIVATE elmd_core Boost::ut_module)
+# Boost.UT parses argv for filtering (`-t "*name*"` / suite / tag).
 add_test(NAME elmd_tests COMMAND elmd_tests)

@@ -1,41 +1,45 @@
 import std;
-#include "test_framework.h"
+import boost.ut;
 import elmd.core.extension;
 import elmd.core.dialect;
 import elmd.core.editor;
 import elmd.core.ast;
 
 using namespace elmd;
+using namespace boost::ut;
 
-ELMD_TEST(test_registry_default_extensions) {
+
+suite extension_tests = [] {
+
+"test_registry_default_extensions"_test = [] {
     auto reg = default_extensions();
     auto names = reg.names();
-    ELMD_CHECK_EQ(names.size(), 7u);
-}
+    expect(fatal(bool((names.size()) == (7u))));
+};
 
-ELMD_TEST(test_registry_can_register_math) {
+"test_registry_can_register_math"_test = [] {
     ExtensionRegistry reg;
     struct MathExt : MarkdownExtensionBase {
         std::string_view name() const override { return "math"; }
         void configure(MarkdownDialect& d) const override { d.math.inline_dollar = true; }
     };
     reg.register_extension(std::make_shared<MathExt>());
-    ELMD_CHECK_EQ(reg.names().size(), 1u);
-    ELMD_CHECK_EQ(reg.names()[0], std::string("math"));
-}
+    expect(fatal(bool((reg.names().size()) == (1u))));
+    expect(fatal(bool((reg.names()[0]) == (std::string("math")))));
+};
 
-ELMD_TEST(test_registry_can_register_toc) {
+"test_registry_can_register_toc"_test = [] {
     ExtensionRegistry reg;
     struct TocExt : MarkdownExtensionBase {
         std::string_view name() const override { return "toc"; }
         void configure(MarkdownDialect&) const override {}
     };
     reg.register_extension(std::make_shared<TocExt>());
-    ELMD_CHECK_EQ(reg.names().size(), 1u);
-    ELMD_CHECK_EQ(reg.names()[0], std::string("toc"));
-}
+    expect(fatal(bool((reg.names().size()) == (1u))));
+    expect(fatal(bool((reg.names()[0]) == (std::string("toc")))));
+};
 
-ELMD_TEST(test_registry_configure_all_applies) {
+"test_registry_configure_all_applies"_test = [] {
     ExtensionRegistry reg;
     struct EnableMath : MarkdownExtensionBase {
         std::string_view name() const override { return "math"; }
@@ -45,28 +49,28 @@ ELMD_TEST(test_registry_configure_all_applies) {
     MarkdownDialect d;
     d.math.fenced_math = false;
     reg.configure_all(d);
-    ELMD_CHECK(d.math.fenced_math == true);
-}
+    expect(fatal(bool(d.math.fenced_math == true)));
+};
 
-ELMD_TEST(test_registry_rejects_duplicate_extension_names) {
+"test_registry_rejects_duplicate_extension_names"_test = [] {
     ExtensionRegistry registry;
     struct Named : MarkdownExtensionBase {
         std::string_view name() const override { return "same"; }
         void configure(MarkdownDialect&) const override {}
     };
-    ELMD_CHECK(registry.register_extension(std::make_shared<Named>()));
-    ELMD_CHECK(!registry.register_extension(std::make_shared<Named>()));
-    ELMD_CHECK(registry.find("same") != nullptr);
-    ELMD_CHECK_EQ(registry.extensions().size(), 1u);
-}
+    expect(fatal(bool(registry.register_extension(std::make_shared<Named>()))));
+    expect(fatal(bool(!registry.register_extension(std::make_shared<Named>()))));
+    expect(fatal(bool(registry.find("same") != nullptr)));
+    expect(fatal(bool((registry.extensions().size()) == (1u))));
+};
 
-ELMD_TEST(test_extension_configured_dialect_flows_into_editor_ast) {
+"test_extension_configured_dialect_flows_into_editor_ast"_test = [] {
     MarkdownDialect disabled = default_dialect();
     disabled.math.inline_dollar = false;
     Editor withoutExtension("$x$", disabled);
-    ELMD_CHECK(withoutExtension.document().blocks.size() == 1u);
-    ELMD_CHECK(withoutExtension.document().blocks.front().children.size() == 1u);
-    ELMD_CHECK(withoutExtension.document().blocks.front().children.front().kind == InlineKind::Text);
+    expect(fatal(bool(withoutExtension.document().blocks.size() == 1u)));
+    expect(fatal(bool(withoutExtension.document().blocks.front().children.size() == 1u)));
+    expect(fatal(bool(withoutExtension.document().blocks.front().children.front().kind == InlineKind::Text)));
 
     ExtensionRegistry registry;
     struct EnableInlineMath : MarkdownExtensionBase {
@@ -75,7 +79,9 @@ ELMD_TEST(test_extension_configured_dialect_flows_into_editor_ast) {
     };
     registry.register_extension(std::make_shared<EnableInlineMath>());
     Editor withExtension("$x$", registry.configured_dialect(disabled));
-    ELMD_CHECK(withExtension.document().blocks.size() == 1u);
-    ELMD_CHECK(withExtension.document().blocks.front().children.size() == 1u);
-    ELMD_CHECK(withExtension.document().blocks.front().children.front().kind == InlineKind::InlineMath);
-}
+    expect(fatal(bool(withExtension.document().blocks.size() == 1u)));
+    expect(fatal(bool(withExtension.document().blocks.front().children.size() == 1u)));
+    expect(fatal(bool(withExtension.document().blocks.front().children.front().kind == InlineKind::InlineMath)));
+};
+
+}; // suite extension_tests

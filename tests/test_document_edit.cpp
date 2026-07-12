@@ -1,5 +1,5 @@
 import std;
-#include "test_framework.h"
+import boost.ut;
 import elmd.core.ast;
 import elmd.core.document;
 import elmd.core.document_edit;
@@ -10,23 +10,29 @@ import elmd.core.parser;
 import elmd.core.serializer;
 
 using namespace elmd;
+using namespace boost::ut;
 
-ELMD_TEST(test_backspace_on_emphasis_marker_unwraps_ast_node) {
+
+suite document_edit_marker_tests = [] {
+
+"test_backspace_on_emphasis_marker_unwraps_ast_node"_test = [] {
     auto document = parse_text(1, "_word_").document;
     auto selection = DocumentSelection::caret(*document_position_from_source_offset(document, CharOffset(1)));
     auto transaction = document_delete_backward(document, selection);
-    ELMD_CHECK(transaction.has_value());
-    ELMD_CHECK(transaction && serialize_markdown(transaction->after) == "word");
-    ELMD_CHECK(transaction && transaction->after.blocks.front().children.front().kind == InlineKind::Text);
-}
+    expect(fatal(bool(transaction.has_value())));
+    expect(fatal(bool(transaction && serialize_markdown(transaction->after) == "word")));
+    expect(fatal(bool(transaction && transaction->after.blocks.front().children.front().kind == InlineKind::Text)));
+};
 
-ELMD_TEST(test_delete_on_emphasis_marker_unwraps_ast_node) {
+"test_delete_on_emphasis_marker_unwraps_ast_node"_test = [] {
     auto document = parse_text(1, "_word_").document;
     auto selection = DocumentSelection::caret(*document_position_from_source_offset(document, CharOffset(0)));
     auto transaction = document_delete_forward(document, selection);
-    ELMD_CHECK(transaction.has_value());
-    ELMD_CHECK(transaction && serialize_markdown(transaction->after) == "word");
-}
+    expect(fatal(bool(transaction.has_value())));
+    expect(fatal(bool(transaction && serialize_markdown(transaction->after) == "word")));
+};
+
+}; // suite document_edit_marker_tests
 
 namespace {
 
@@ -49,37 +55,39 @@ DocumentSelection caret(std::uint64_t node_id, std::size_t offset = 0) {
     return DocumentSelection::caret(DocumentPosition{NodeId(node_id), offset, TextAffinity::Downstream});
 }
 
-}
+};
 
-ELMD_TEST(test_document_enter_splits_top_level_paragraph_by_node_position) {
+suite document_edit_tests = [] {
+
+"test_document_enter_splits_top_level_paragraph_by_node_position"_test = [] {
     auto document = document_with({paragraph(1, 2, U"hello world")});
     auto transaction = document_enter(document, caret(1, 5));
-    ELMD_CHECK(transaction.has_value());
-    ELMD_CHECK_EQ(transaction->after.blocks.size(), 2u);
-    ELMD_CHECK_EQ(block_inline_text_content(transaction->after.blocks[0].children), std::u32string(U"hello"));
-    ELMD_CHECK_EQ(block_inline_text_content(transaction->after.blocks[1].children), std::u32string(U" world"));
-    ELMD_CHECK(transaction->selection_after.active.node_id == transaction->after.blocks[1].id);
-    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 0u);
-    ELMD_CHECK(validate_document(transaction->after).empty());
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("hello\n\n world"));
-}
+    expect(fatal(bool(transaction.has_value())));
+    expect(fatal(bool((transaction->after.blocks.size()) == (2u))));
+    expect(fatal(bool((block_inline_text_content(transaction->after.blocks[0].children)) == (std::u32string(U"hello")))));
+    expect(fatal(bool((block_inline_text_content(transaction->after.blocks[1].children)) == (std::u32string(U" world")))));
+    expect(fatal(bool(transaction->selection_after.active.node_id == transaction->after.blocks[1].id)));
+    expect(fatal(bool((transaction->selection_after.active.offset) == (0u))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("hello\n\n world")))));
+};
 
-ELMD_TEST(test_document_enter_preserves_inline_structure_when_splitting) {
+"test_document_enter_preserves_inline_structure_when_splitting"_test = [] {
     auto parsed = parse_text(1, "hello **world**");
     auto paragraph_id = parsed.document.blocks[0].id;
     auto transaction = document_enter(parsed.document, DocumentSelection::caret(DocumentPosition{paragraph_id, 8, TextAffinity::Downstream}));
-    ELMD_CHECK(transaction.has_value());
-    ELMD_CHECK_EQ(transaction->after.blocks.size(), 2u);
-    ELMD_CHECK(transaction->after.blocks[0].children.back().kind == InlineKind::Strong);
-    ELMD_CHECK(transaction->after.blocks[1].children.front().kind == InlineKind::Strong);
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("hello **wo**\n\n**rld**"));
+    expect(fatal(bool(transaction.has_value())));
+    expect(fatal(bool((transaction->after.blocks.size()) == (2u))));
+    expect(fatal(bool(transaction->after.blocks[0].children.back().kind == InlineKind::Strong)));
+    expect(fatal(bool(transaction->after.blocks[1].children.front().kind == InlineKind::Strong)));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("hello **wo**\n\n**rld**")))));
     auto reparsed = parse_text(2, serialize_markdown(transaction->after));
-    ELMD_CHECK_EQ(reparsed.document.blocks.size(), 2u);
-    ELMD_CHECK(reparsed.document.blocks[0].children.back().kind == InlineKind::Strong);
-    ELMD_CHECK(reparsed.document.blocks[1].children.front().kind == InlineKind::Strong);
-}
+    expect(fatal(bool((reparsed.document.blocks.size()) == (2u))));
+    expect(fatal(bool(reparsed.document.blocks[0].children.back().kind == InlineKind::Strong)));
+    expect(fatal(bool(reparsed.document.blocks[1].children.front().kind == InlineKind::Strong)));
+};
 
-ELMD_TEST(test_document_enter_splits_nonempty_list_item_structurally) {
+"test_document_enter_splits_nonempty_list_item_structurally"_test = [] {
     BlockNode list;
     list.id = NodeId(1);
     list.kind = BlockKind::List;
@@ -89,16 +97,16 @@ ELMD_TEST(test_document_enter_splits_nonempty_list_item_structurally) {
     item.children.push_back(paragraph(3, 4, U"first"));
     list.list_items.push_back(std::move(item));
     auto transaction = document_enter(document_with({std::move(list)}), caret(3, 2));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     const auto& after_list = transaction->after.blocks[0];
-    ELMD_CHECK_EQ(after_list.list_items.size(), 2u);
-    ELMD_CHECK_EQ(block_inline_text_content(after_list.list_items[0].children[0].children), std::u32string(U"fi"));
-    ELMD_CHECK_EQ(block_inline_text_content(after_list.list_items[1].children[0].children), std::u32string(U"rst"));
-    ELMD_CHECK(validate_document(transaction->after).empty());
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("- fi\n- rst"));
-}
+    expect(fatal(bool((after_list.list_items.size()) == (2u))));
+    expect(fatal(bool((block_inline_text_content(after_list.list_items[0].children[0].children)) == (std::u32string(U"fi")))));
+    expect(fatal(bool((block_inline_text_content(after_list.list_items[1].children[0].children)) == (std::u32string(U"rst")))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("- fi\n- rst")))));
+};
 
-ELMD_TEST(test_document_enter_empty_only_list_item_exits_list) {
+"test_document_enter_empty_only_list_item_exits_list"_test = [] {
     BlockNode list;
     list.id = NodeId(1);
     list.kind = BlockKind::List;
@@ -108,14 +116,14 @@ ELMD_TEST(test_document_enter_empty_only_list_item_exits_list) {
     item.children.push_back(paragraph(3, 4, U""));
     list.list_items.push_back(std::move(item));
     auto transaction = document_enter(document_with({std::move(list)}), caret(3));
-    ELMD_CHECK(transaction.has_value());
-    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
-    ELMD_CHECK(transaction->after.blocks[0].kind == BlockKind::Paragraph);
-    ELMD_CHECK(transaction->selection_after.active.node_id == transaction->after.blocks[0].id);
-    ELMD_CHECK(validate_document(transaction->after).empty());
-}
+    expect(fatal(bool(transaction.has_value())));
+    expect(fatal(bool((transaction->after.blocks.size()) == (1u))));
+    expect(fatal(bool(transaction->after.blocks[0].kind == BlockKind::Paragraph)));
+    expect(fatal(bool(transaction->selection_after.active.node_id == transaction->after.blocks[0].id)));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+};
 
-ELMD_TEST(test_document_enter_empty_middle_list_item_splits_container) {
+"test_document_enter_empty_middle_list_item_splits_container"_test = [] {
     BlockNode list;
     list.id = NodeId(1);
     list.kind = BlockKind::List;
@@ -127,17 +135,17 @@ ELMD_TEST(test_document_enter_empty_middle_list_item_splits_container) {
         list.list_items.push_back(std::move(item));
     }
     auto transaction = document_enter(document_with({std::move(list)}), caret(6));
-    ELMD_CHECK(transaction.has_value());
-    ELMD_CHECK_EQ(transaction->after.blocks.size(), 3u);
-    ELMD_CHECK(transaction->after.blocks[0].kind == BlockKind::List);
-    ELMD_CHECK(transaction->after.blocks[1].kind == BlockKind::Paragraph);
-    ELMD_CHECK(transaction->after.blocks[2].kind == BlockKind::List);
-    ELMD_CHECK_EQ(transaction->after.blocks[0].list_items.size(), 1u);
-    ELMD_CHECK_EQ(transaction->after.blocks[2].list_items.size(), 1u);
-    ELMD_CHECK(validate_document(transaction->after).empty());
-}
+    expect(fatal(bool(transaction.has_value())));
+    expect(fatal(bool((transaction->after.blocks.size()) == (3u))));
+    expect(fatal(bool(transaction->after.blocks[0].kind == BlockKind::List)));
+    expect(fatal(bool(transaction->after.blocks[1].kind == BlockKind::Paragraph)));
+    expect(fatal(bool(transaction->after.blocks[2].kind == BlockKind::List)));
+    expect(fatal(bool((transaction->after.blocks[0].list_items.size()) == (1u))));
+    expect(fatal(bool((transaction->after.blocks[2].list_items.size()) == (1u))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+};
 
-ELMD_TEST(test_document_enter_empty_quote_paragraph_exits_by_tree_position) {
+"test_document_enter_empty_quote_paragraph_exits_by_tree_position"_test = [] {
     BlockNode quote;
     quote.id = NodeId(1);
     quote.kind = BlockKind::BlockQuote;
@@ -145,35 +153,35 @@ ELMD_TEST(test_document_enter_empty_quote_paragraph_exits_by_tree_position) {
     quote.quote_children.push_back(paragraph(4, 5, U""));
     quote.quote_children.push_back(paragraph(6, 7, U"after"));
     auto transaction = document_enter(document_with({std::move(quote)}), caret(4));
-    ELMD_CHECK(transaction.has_value());
-    ELMD_CHECK_EQ(transaction->after.blocks.size(), 3u);
-    ELMD_CHECK(transaction->after.blocks[0].kind == BlockKind::BlockQuote);
-    ELMD_CHECK(transaction->after.blocks[1].kind == BlockKind::Paragraph);
-    ELMD_CHECK(transaction->after.blocks[2].kind == BlockKind::BlockQuote);
-    ELMD_CHECK_EQ(transaction->after.blocks[0].quote_children.size(), 1u);
-    ELMD_CHECK_EQ(transaction->after.blocks[2].quote_children.size(), 1u);
-    ELMD_CHECK(validate_document(transaction->after).empty());
-}
+    expect(fatal(bool(transaction.has_value())));
+    expect(fatal(bool((transaction->after.blocks.size()) == (3u))));
+    expect(fatal(bool(transaction->after.blocks[0].kind == BlockKind::BlockQuote)));
+    expect(fatal(bool(transaction->after.blocks[1].kind == BlockKind::Paragraph)));
+    expect(fatal(bool(transaction->after.blocks[2].kind == BlockKind::BlockQuote)));
+    expect(fatal(bool((transaction->after.blocks[0].quote_children.size()) == (1u))));
+    expect(fatal(bool((transaction->after.blocks[2].quote_children.size()) == (1u))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+};
 
-ELMD_TEST(test_document_history_restores_document_and_node_selection) {
+"test_document_history_restores_document_and_node_selection"_test = [] {
     auto document = document_with({paragraph(1, 2, U"hello")});
     auto transaction = document_enter(document, caret(1, 2));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     DocumentHistory history;
     history.push(*transaction);
     auto undone = history.undo();
-    ELMD_CHECK(undone.has_value());
-    ELMD_CHECK_EQ(serialize_markdown(undone->first), std::string("hello"));
-    ELMD_CHECK(undone->second.active.node_id == NodeId(1));
-    ELMD_CHECK_EQ(undone->second.active.offset, 2u);
+    expect(fatal(bool(undone.has_value())));
+    expect(fatal(bool((serialize_markdown(undone->first)) == (std::string("hello")))));
+    expect(fatal(bool(undone->second.active.node_id == NodeId(1))));
+    expect(fatal(bool((undone->second.active.offset) == (2u))));
     auto redone = history.redo();
-    ELMD_CHECK(redone.has_value());
-    ELMD_CHECK_EQ(serialize_markdown(redone->first), std::string("he\n\nllo"));
-    ELMD_CHECK(redone->second.active.node_id == transaction->selection_after.active.node_id);
-    ELMD_CHECK_EQ(redone->second.active.offset, 0u);
-}
+    expect(fatal(bool(redone.has_value())));
+    expect(fatal(bool((serialize_markdown(redone->first)) == (std::string("he\n\nllo")))));
+    expect(fatal(bool(redone->second.active.node_id == transaction->selection_after.active.node_id)));
+    expect(fatal(bool((redone->second.active.offset) == (0u))));
+};
 
-ELMD_TEST(test_enter_splits_task_item_and_resets_new_checkbox) {
+"test_enter_splits_task_item_and_resets_new_checkbox"_test = [] {
     BlockNode task_list;
     task_list.id = NodeId(1);
     task_list.kind = BlockKind::TaskList;
@@ -185,16 +193,16 @@ ELMD_TEST(test_enter_splits_task_item_and_resets_new_checkbox) {
     task_list.task_items.push_back(std::move(item));
 
     auto transaction = document_enter(document_with({task_list}), caret(3, 5));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK_EQ(transaction->after.blocks[0].task_items.size(), 2u);
-    ELMD_CHECK(transaction->after.blocks[0].task_items[0].checked);
-    ELMD_CHECK(!transaction->after.blocks[0].task_items[1].checked);
-    ELMD_CHECK(transaction->after.blocks[0].task_items[1].marker.empty());
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("- [x] alpha\n- [ ] beta"));
-}
+    expect(fatal(bool((transaction->after.blocks[0].task_items.size()) == (2u))));
+    expect(fatal(bool(transaction->after.blocks[0].task_items[0].checked)));
+    expect(fatal(bool(!transaction->after.blocks[0].task_items[1].checked)));
+    expect(fatal(bool(transaction->after.blocks[0].task_items[1].marker.empty())));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("- [x] alpha\n- [ ] beta")))));
+};
 
-ELMD_TEST(test_enter_empty_only_task_item_exits_task_list) {
+"test_enter_empty_only_task_item_exits_task_list"_test = [] {
     BlockNode task_list;
     task_list.id = NodeId(1);
     task_list.kind = BlockKind::TaskList;
@@ -204,14 +212,14 @@ ELMD_TEST(test_enter_empty_only_task_item_exits_task_list) {
     task_list.task_items.push_back(std::move(item));
 
     auto transaction = document_enter(document_with({task_list}), caret(3));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
-    ELMD_CHECK_EQ(transaction->after.blocks[0].kind, BlockKind::Paragraph);
-    ELMD_CHECK(validate_document(transaction->after).empty());
-}
+    expect(fatal(bool((transaction->after.blocks.size()) == (1u))));
+    expect(fatal(bool((transaction->after.blocks[0].kind) == (BlockKind::Paragraph))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+};
 
-ELMD_TEST(test_insert_text_preserves_inline_container_identity) {
+"test_insert_text_preserves_inline_container_identity"_test = [] {
     BlockNode block;
     block.id = NodeId(1);
     block.kind = BlockKind::Paragraph;
@@ -222,15 +230,15 @@ ELMD_TEST(test_insert_text_preserves_inline_container_identity) {
     block.children.push_back(strong);
 
     auto transaction = document_insert_text(document_with({block}), caret(1, 5), U"-");
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK_EQ(transaction->after.blocks[0].children[0].id, NodeId(2));
-    ELMD_CHECK_EQ(transaction->after.blocks[0].children[0].children[0].id, NodeId(3));
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("**alpha-beta**"));
-    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 6u);
-}
+    expect(fatal(bool((transaction->after.blocks[0].children[0].id) == (NodeId(2)))));
+    expect(fatal(bool((transaction->after.blocks[0].children[0].children[0].id) == (NodeId(3)))));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("**alpha-beta**")))));
+    expect(fatal(bool((transaction->selection_after.active.offset) == (6u))));
+};
 
-ELMD_TEST(test_delete_backward_preserves_inline_container_identity) {
+"test_delete_backward_preserves_inline_container_identity"_test = [] {
     BlockNode block;
     block.id = NodeId(1);
     block.kind = BlockKind::Paragraph;
@@ -241,78 +249,78 @@ ELMD_TEST(test_delete_backward_preserves_inline_container_identity) {
     block.children.push_back(emphasis);
 
     auto transaction = document_delete_backward(document_with({block}), caret(1, 5));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK_EQ(transaction->after.blocks[0].children[0].id, NodeId(2));
-    ELMD_CHECK_EQ(transaction->after.blocks[0].children[0].children[0].id, NodeId(3));
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("*alph*"));
-    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 4u);
-}
+    expect(fatal(bool((transaction->after.blocks[0].children[0].id) == (NodeId(2)))));
+    expect(fatal(bool((transaction->after.blocks[0].children[0].children[0].id) == (NodeId(3)))));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("*alph*")))));
+    expect(fatal(bool((transaction->selection_after.active.offset) == (4u))));
+};
 
-ELMD_TEST(test_backspace_removes_adjacent_autopair_from_ast_text_leaf) {
+"test_backspace_removes_adjacent_autopair_from_ast_text_leaf"_test = [] {
     auto parsed = parse_text(1, "__");
-    ELMD_CHECK_EQ(parsed.document.blocks.size(), 1u);
+    expect(fatal(bool((parsed.document.blocks.size()) == (1u))));
     auto paragraph_id = parsed.document.blocks[0].id;
     auto transaction = document_delete_backward(parsed.document, DocumentSelection::caret(
         DocumentPosition{paragraph_id, 1, TextAffinity::Downstream}));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK(transaction->after.blocks[0].children.empty());
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string{});
-    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, paragraph_id);
-    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 0u);
-}
+    expect(fatal(bool(transaction->after.blocks[0].children.empty())));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string{}))));
+    expect(fatal(bool((transaction->selection_after.active.node_id) == (paragraph_id))));
+    expect(fatal(bool((transaction->selection_after.active.offset) == (0u))));
+};
 
-ELMD_TEST(test_delete_forward_preserves_inline_container_identity) {
+"test_delete_forward_preserves_inline_container_identity"_test = [] {
     auto document = document_with({paragraph(1, 2, U"alpha")});
     auto transaction = document_delete_forward(document, caret(1, 1));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK_EQ(transaction->after.blocks[0].children[0].id, NodeId(2));
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("apha"));
-    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 1u);
-}
+    expect(fatal(bool((transaction->after.blocks[0].children[0].id) == (NodeId(2)))));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("apha")))));
+    expect(fatal(bool((transaction->selection_after.active.offset) == (1u))));
+};
 
-ELMD_TEST(test_backspace_at_top_level_paragraph_start_merges_ast_siblings) {
+"test_backspace_at_top_level_paragraph_start_merges_ast_siblings"_test = [] {
     auto document = document_with({paragraph(1, 2, U"alpha"), paragraph(3, 4, U"beta")});
     auto transaction = document_delete_backward(document, caret(3, 0));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
-    ELMD_CHECK_EQ(transaction->after.blocks[0].id, NodeId(1));
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("alphabeta"));
-    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, NodeId(1));
-    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 5u);
-}
+    expect(fatal(bool((transaction->after.blocks.size()) == (1u))));
+    expect(fatal(bool((transaction->after.blocks[0].id) == (NodeId(1)))));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("alphabeta")))));
+    expect(fatal(bool((transaction->selection_after.active.node_id) == (NodeId(1)))));
+    expect(fatal(bool((transaction->selection_after.active.offset) == (5u))));
+};
 
-ELMD_TEST(test_delete_at_top_level_paragraph_end_merges_ast_siblings) {
+"test_delete_at_top_level_paragraph_end_merges_ast_siblings"_test = [] {
     auto document = document_with({paragraph(1, 2, U"alpha"), paragraph(3, 4, U"beta")});
     auto transaction = document_delete_forward(document, caret(1, 5));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
-    ELMD_CHECK_EQ(transaction->after.blocks[0].id, NodeId(1));
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("alphabeta"));
-    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 5u);
-}
+    expect(fatal(bool((transaction->after.blocks.size()) == (1u))));
+    expect(fatal(bool((transaction->after.blocks[0].id) == (NodeId(1)))));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("alphabeta")))));
+    expect(fatal(bool((transaction->selection_after.active.offset) == (5u))));
+};
 
-ELMD_TEST(test_backspace_unwraps_only_quote_paragraph_one_level) {
+"test_backspace_unwraps_only_quote_paragraph_one_level"_test = [] {
     BlockNode quote;
     quote.id = NodeId(1);
     quote.kind = BlockKind::BlockQuote;
     quote.quote_children.push_back(paragraph(2, 3, U"quoted"));
     auto transaction = document_delete_backward(document_with({quote}), caret(2));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
-    ELMD_CHECK_EQ(transaction->after.blocks[0].kind, BlockKind::Paragraph);
-    ELMD_CHECK_EQ(transaction->after.blocks[0].id, NodeId(2));
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("quoted"));
-    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, NodeId(2));
-    ELMD_CHECK(validate_document(transaction->after).empty());
-}
+    expect(fatal(bool((transaction->after.blocks.size()) == (1u))));
+    expect(fatal(bool((transaction->after.blocks[0].kind) == (BlockKind::Paragraph))));
+    expect(fatal(bool((transaction->after.blocks[0].id) == (NodeId(2)))));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("quoted")))));
+    expect(fatal(bool((transaction->selection_after.active.node_id) == (NodeId(2)))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+};
 
-ELMD_TEST(test_backspace_unwraps_nested_quote_exactly_one_level) {
+"test_backspace_unwraps_nested_quote_exactly_one_level"_test = [] {
     BlockNode inner;
     inner.id = NodeId(2);
     inner.kind = BlockKind::BlockQuote;
@@ -322,17 +330,17 @@ ELMD_TEST(test_backspace_unwraps_nested_quote_exactly_one_level) {
     outer.kind = BlockKind::BlockQuote;
     outer.quote_children.push_back(std::move(inner));
     auto transaction = document_delete_backward(document_with({outer}), caret(3));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
-    ELMD_CHECK_EQ(transaction->after.blocks[0].kind, BlockKind::BlockQuote);
-    ELMD_CHECK_EQ(transaction->after.blocks[0].quote_children.size(), 1u);
-    ELMD_CHECK_EQ(transaction->after.blocks[0].quote_children[0].kind, BlockKind::Paragraph);
-    ELMD_CHECK_EQ(transaction->after.blocks[0].quote_children[0].id, NodeId(3));
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("> nested"));
-}
+    expect(fatal(bool((transaction->after.blocks.size()) == (1u))));
+    expect(fatal(bool((transaction->after.blocks[0].kind) == (BlockKind::BlockQuote))));
+    expect(fatal(bool((transaction->after.blocks[0].quote_children.size()) == (1u))));
+    expect(fatal(bool((transaction->after.blocks[0].quote_children[0].kind) == (BlockKind::Paragraph))));
+    expect(fatal(bool((transaction->after.blocks[0].quote_children[0].id) == (NodeId(3)))));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("> nested")))));
+};
 
-ELMD_TEST(test_backspace_lifts_first_list_item_and_preserves_remaining_items) {
+"test_backspace_lifts_first_list_item_and_preserves_remaining_items"_test = [] {
     BlockNode list;
     list.id = NodeId(1);
     list.kind = BlockKind::List;
@@ -344,17 +352,17 @@ ELMD_TEST(test_backspace_lifts_first_list_item_and_preserves_remaining_items) {
         list.list_items.push_back(std::move(item));
     }
     auto transaction = document_delete_backward(document_with({list}), caret(3));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK_EQ(transaction->after.blocks.size(), 2u);
-    ELMD_CHECK_EQ(transaction->after.blocks[0].kind, BlockKind::Paragraph);
-    ELMD_CHECK_EQ(transaction->after.blocks[0].id, NodeId(3));
-    ELMD_CHECK_EQ(transaction->after.blocks[1].kind, BlockKind::List);
-    ELMD_CHECK_EQ(transaction->after.blocks[1].list_items.size(), 2u);
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("one\n\n- two\n- three"));
-}
+    expect(fatal(bool((transaction->after.blocks.size()) == (2u))));
+    expect(fatal(bool((transaction->after.blocks[0].kind) == (BlockKind::Paragraph))));
+    expect(fatal(bool((transaction->after.blocks[0].id) == (NodeId(3)))));
+    expect(fatal(bool((transaction->after.blocks[1].kind) == (BlockKind::List))));
+    expect(fatal(bool((transaction->after.blocks[1].list_items.size()) == (2u))));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("one\n\n- two\n- three")))));
+};
 
-ELMD_TEST(test_backspace_moves_middle_list_item_subtree_into_previous_item) {
+"test_backspace_moves_middle_list_item_subtree_into_previous_item"_test = [] {
     BlockNode nested;
     nested.id = NodeId(20);
     nested.kind = BlockKind::List;
@@ -381,18 +389,18 @@ ELMD_TEST(test_backspace_moves_middle_list_item_subtree_into_previous_item) {
     third.children.push_back(paragraph(9, 10, U"three"));
     list.list_items = {std::move(first), std::move(second), std::move(third)};
     auto transaction = document_delete_backward(document_with({list}), caret(6));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     const auto& result = transaction->after.blocks[0];
-    ELMD_CHECK_EQ(result.list_items.size(), 2u);
-    ELMD_CHECK_EQ(result.list_items[0].children.size(), 3u);
-    ELMD_CHECK_EQ(result.list_items[0].children[1].id, NodeId(6));
-    ELMD_CHECK_EQ(result.list_items[0].children[2].id, NodeId(20));
-    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, NodeId(6));
-    ELMD_CHECK(validate_document(transaction->after).empty());
-}
+    expect(fatal(bool((result.list_items.size()) == (2u))));
+    expect(fatal(bool((result.list_items[0].children.size()) == (3u))));
+    expect(fatal(bool((result.list_items[0].children[1].id) == (NodeId(6)))));
+    expect(fatal(bool((result.list_items[0].children[2].id) == (NodeId(20)))));
+    expect(fatal(bool((transaction->selection_after.active.node_id) == (NodeId(6)))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+};
 
-ELMD_TEST(test_delete_forward_merges_next_list_item_with_its_nested_subtree) {
+"test_delete_forward_merges_next_list_item_with_its_nested_subtree"_test = [] {
     BlockNode nested;
     nested.id = NodeId(20);
     nested.kind = BlockKind::List;
@@ -415,19 +423,19 @@ ELMD_TEST(test_delete_forward_merges_next_list_item_with_its_nested_subtree) {
     second.children.push_back(std::move(nested));
     list.list_items = {std::move(first), std::move(second)};
     auto transaction = document_delete_forward(document_with({list}), caret(3, 1));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     const auto& result = transaction->after.blocks[0];
-    ELMD_CHECK_EQ(result.list_items.size(), 1u);
-    ELMD_CHECK_EQ(result.list_items[0].children.size(), 2u);
-    ELMD_CHECK_EQ(block_inline_text_content(result.list_items[0].children[0].children), std::u32string(U"aC"));
-    ELMD_CHECK_EQ(result.list_items[0].children[1].id, NodeId(20));
-    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, NodeId(3));
-    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 1u);
-    ELMD_CHECK(validate_document(transaction->after).empty());
-}
+    expect(fatal(bool((result.list_items.size()) == (1u))));
+    expect(fatal(bool((result.list_items[0].children.size()) == (2u))));
+    expect(fatal(bool((block_inline_text_content(result.list_items[0].children[0].children)) == (std::u32string(U"aC")))));
+    expect(fatal(bool((result.list_items[0].children[1].id) == (NodeId(20)))));
+    expect(fatal(bool((transaction->selection_after.active.node_id) == (NodeId(3)))));
+    expect(fatal(bool((transaction->selection_after.active.offset) == (1u))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+};
 
-ELMD_TEST(test_backspace_moves_task_item_subtree_into_previous_item) {
+"test_backspace_moves_task_item_subtree_into_previous_item"_test = [] {
     BlockNode task_list;
     task_list.id = NodeId(1);
     task_list.kind = BlockKind::TaskList;
@@ -440,17 +448,17 @@ ELMD_TEST(test_backspace_moves_task_item_subtree_into_previous_item) {
     second.children.push_back(paragraph(6, 7, U"next"));
     task_list.task_items = {std::move(first), std::move(second)};
     auto transaction = document_delete_backward(document_with({task_list}), caret(6));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     const auto& result = transaction->after.blocks[0];
-    ELMD_CHECK_EQ(result.task_items.size(), 1u);
-    ELMD_CHECK_EQ(result.task_items[0].children.size(), 2u);
-    ELMD_CHECK_EQ(result.task_items[0].children[1].id, NodeId(6));
-    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, NodeId(6));
-    ELMD_CHECK(validate_document(transaction->after).empty());
-}
+    expect(fatal(bool((result.task_items.size()) == (1u))));
+    expect(fatal(bool((result.task_items[0].children.size()) == (2u))));
+    expect(fatal(bool((result.task_items[0].children[1].id) == (NodeId(6)))));
+    expect(fatal(bool((transaction->selection_after.active.node_id) == (NodeId(6)))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+};
 
-ELMD_TEST(test_delete_selection_inside_inline_tree_preserves_container) {
+"test_delete_selection_inside_inline_tree_preserves_container"_test = [] {
     BlockNode block;
     block.id = NodeId(1);
     block.kind = BlockKind::Paragraph;
@@ -464,14 +472,14 @@ ELMD_TEST(test_delete_selection_inside_inline_tree_preserves_container) {
         DocumentPosition{NodeId(1), 6, TextAffinity::Downstream}};
 
     auto transaction = document_delete_selection(document_with({block}), selection);
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK_EQ(transaction->after.blocks[0].children[0].id, NodeId(2));
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("**alet**"));
-    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 2u);
-}
+    expect(fatal(bool((transaction->after.blocks[0].children[0].id) == (NodeId(2)))));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("**alet**")))));
+    expect(fatal(bool((transaction->selection_after.active.offset) == (2u))));
+};
 
-ELMD_TEST(test_delete_selection_across_top_level_paragraphs_merges_tree_range) {
+"test_delete_selection_across_top_level_paragraphs_merges_tree_range"_test = [] {
     auto document = document_with({
         paragraph(1, 2, U"alpha"),
         paragraph(3, 4, U"middle"),
@@ -481,103 +489,103 @@ ELMD_TEST(test_delete_selection_across_top_level_paragraphs_merges_tree_range) {
         DocumentPosition{NodeId(5), 3, TextAffinity::Downstream}};
 
     auto transaction = document_delete_selection(document, selection);
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
-    ELMD_CHECK_EQ(transaction->after.blocks[0].id, NodeId(1));
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("alga"));
-    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, NodeId(1));
-    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 2u);
-}
+    expect(fatal(bool((transaction->after.blocks.size()) == (1u))));
+    expect(fatal(bool((transaction->after.blocks[0].id) == (NodeId(1)))));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("alga")))));
+    expect(fatal(bool((transaction->selection_after.active.node_id) == (NodeId(1)))));
+    expect(fatal(bool((transaction->selection_after.active.offset) == (2u))));
+};
 
-ELMD_TEST(test_indent_list_item_moves_whole_item_under_previous_sibling) {
+"test_indent_list_item_moves_whole_item_under_previous_sibling"_test = [] {
     auto parsed = parse_text(1, "- a\n- b");
     const auto second_paragraph = parsed.document.blocks[0].list_items[1].children[0].id;
     auto transaction = document_indent_list_item(parsed.document, caret(second_paragraph.v, 1));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     const auto& list = transaction->after.blocks[0];
-    ELMD_CHECK_EQ(list.list_items.size(), 1u);
-    ELMD_CHECK_EQ(list.list_items[0].children.size(), 2u);
-    ELMD_CHECK(list.list_items[0].children[1].kind == BlockKind::List);
-    ELMD_CHECK_EQ(list.list_items[0].children[1].list_items.size(), 1u);
-    ELMD_CHECK_EQ(list.list_items[0].children[1].list_items[0].children[0].id, second_paragraph);
-    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, second_paragraph);
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("- a\n  - b"));
-    ELMD_CHECK(validate_document(transaction->after).empty());
-}
+    expect(fatal(bool((list.list_items.size()) == (1u))));
+    expect(fatal(bool((list.list_items[0].children.size()) == (2u))));
+    expect(fatal(bool(list.list_items[0].children[1].kind == BlockKind::List)));
+    expect(fatal(bool((list.list_items[0].children[1].list_items.size()) == (1u))));
+    expect(fatal(bool((list.list_items[0].children[1].list_items[0].children[0].id) == (second_paragraph))));
+    expect(fatal(bool((transaction->selection_after.active.node_id) == (second_paragraph))));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("- a\n  - b")))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+};
 
-ELMD_TEST(test_outdent_list_item_restores_outer_sibling_and_selection) {
+"test_outdent_list_item_restores_outer_sibling_and_selection"_test = [] {
     auto parsed = parse_text(1, "- a\n  - b");
     const auto nested_paragraph = parsed.document.blocks[0].list_items[0].children[1].list_items[0].children[0].id;
     auto transaction = document_outdent_list_item(parsed.document, caret(nested_paragraph.v, 1));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     const auto& list = transaction->after.blocks[0];
-    ELMD_CHECK_EQ(list.list_items.size(), 2u);
-    ELMD_CHECK_EQ(list.list_items[1].children[0].id, nested_paragraph);
-    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, nested_paragraph);
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("- a\n- b"));
-    ELMD_CHECK(validate_document(transaction->after).empty());
-}
+    expect(fatal(bool((list.list_items.size()) == (2u))));
+    expect(fatal(bool((list.list_items[1].children[0].id) == (nested_paragraph))));
+    expect(fatal(bool((transaction->selection_after.active.node_id) == (nested_paragraph))));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("- a\n- b")))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+};
 
-ELMD_TEST(test_outdent_list_item_keeps_following_nested_siblings_under_lifted_item) {
+"test_outdent_list_item_keeps_following_nested_siblings_under_lifted_item"_test = [] {
     auto parsed = parse_text(1, "- a\n  - b\n  - c\n- d");
     const auto nested_paragraph = parsed.document.blocks[0].list_items[0].children[1].list_items[0].children[0].id;
     auto transaction = document_outdent_list_item(parsed.document, caret(nested_paragraph.v, 0));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     const auto& list = transaction->after.blocks[0];
-    ELMD_CHECK_EQ(list.list_items.size(), 3u);
-    ELMD_CHECK_EQ(list.list_items[1].children.size(), 2u);
-    ELMD_CHECK(list.list_items[1].children[1].kind == BlockKind::List);
-    ELMD_CHECK_EQ(block_inline_text_content(list.list_items[1].children[1].list_items[0].children[0].children), std::u32string(U"c"));
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("- a\n- b\n  - c\n- d"));
-    ELMD_CHECK(validate_document(transaction->after).empty());
-}
+    expect(fatal(bool((list.list_items.size()) == (3u))));
+    expect(fatal(bool((list.list_items[1].children.size()) == (2u))));
+    expect(fatal(bool(list.list_items[1].children[1].kind == BlockKind::List)));
+    expect(fatal(bool((block_inline_text_content(list.list_items[1].children[1].list_items[0].children[0].children)) == (std::u32string(U"c")))));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("- a\n- b\n  - c\n- d")))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+};
 
-ELMD_TEST(test_indent_first_list_item_is_noop) {
+"test_indent_first_list_item_is_noop"_test = [] {
     auto parsed = parse_text(1, "- a\n- b");
     const auto first_paragraph = parsed.document.blocks[0].list_items[0].children[0].id;
-    ELMD_CHECK(!document_indent_list_item(parsed.document, caret(first_paragraph.v, 0)).has_value());
-}
+    expect(fatal(bool(!document_indent_list_item(parsed.document, caret(first_paragraph.v, 0)).has_value())));
+};
 
-ELMD_TEST(test_outdent_replacement_promotes_content_before_first_nested_list) {
+"test_outdent_replacement_promotes_content_before_first_nested_list"_test = [] {
     auto parsed = parse_text(1, "- - A\n  - B");
     auto& nested = parsed.document.blocks[0].list_items[0].children[0];
     const auto paragraph_id = nested.list_items[1].children[0].id;
     auto transaction = document_outdent_list_item(parsed.document, caret(paragraph_id.v, 1));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     const auto& outer_item = transaction->after.blocks[0].list_items[0];
-    ELMD_CHECK_EQ(outer_item.children.size(), 2u);
-    ELMD_CHECK_EQ(outer_item.children[0].id, paragraph_id);
-    ELMD_CHECK(outer_item.children[1].kind == BlockKind::List);
-    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, paragraph_id);
-    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 1u);
-    ELMD_CHECK(validate_document(transaction->after).empty());
-}
+    expect(fatal(bool((outer_item.children.size()) == (2u))));
+    expect(fatal(bool((outer_item.children[0].id) == (paragraph_id))));
+    expect(fatal(bool(outer_item.children[1].kind == BlockKind::List)));
+    expect(fatal(bool((transaction->selection_after.active.node_id) == (paragraph_id))));
+    expect(fatal(bool((transaction->selection_after.active.offset) == (1u))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+};
 
-ELMD_TEST(test_task_list_indent_and_outdent_preserve_checked_item) {
+"test_task_list_indent_and_outdent_preserve_checked_item"_test = [] {
     auto parsed = parse_text(1, "- [ ] a\n- [x] b");
     const auto paragraph_id = parsed.document.blocks[0].task_items[1].children[0].id;
     auto indented = document_indent_list_item(parsed.document, caret(paragraph_id.v, 1));
-    ELMD_CHECK(indented.has_value());
+    expect(fatal(bool(indented.has_value())));
     if (!indented) return;
     const auto& nested = indented->after.blocks[0].task_items[0].children[1];
-    ELMD_CHECK(nested.kind == BlockKind::TaskList);
-    ELMD_CHECK_EQ(nested.task_items.size(), 1u);
-    ELMD_CHECK(nested.task_items[0].checked);
+    expect(fatal(bool(nested.kind == BlockKind::TaskList)));
+    expect(fatal(bool((nested.task_items.size()) == (1u))));
+    expect(fatal(bool(nested.task_items[0].checked)));
     auto outdented = document_outdent_list_item(indented->after, caret(paragraph_id.v, 1));
-    ELMD_CHECK(outdented.has_value());
+    expect(fatal(bool(outdented.has_value())));
     if (!outdented) return;
-    ELMD_CHECK_EQ(outdented->after.blocks[0].task_items.size(), 2u);
-    ELMD_CHECK(outdented->after.blocks[0].task_items[1].checked);
-    ELMD_CHECK_EQ(outdented->selection_after.active.node_id, paragraph_id);
-    ELMD_CHECK(validate_document(outdented->after).empty());
-}
+    expect(fatal(bool((outdented->after.blocks[0].task_items.size()) == (2u))));
+    expect(fatal(bool(outdented->after.blocks[0].task_items[1].checked)));
+    expect(fatal(bool((outdented->selection_after.active.node_id) == (paragraph_id))));
+    expect(fatal(bool(validate_document(outdented->after).empty())));
+};
 
-ELMD_TEST(test_delete_selection_across_list_items_merges_into_first_item) {
+"test_delete_selection_across_list_items_merges_into_first_item"_test = [] {
     auto parsed = parse_text(1, "- alpha\n- beta\n- gamma");
     const auto first_id = parsed.document.blocks[0].list_items[0].children[0].id;
     const auto second_id = parsed.document.blocks[0].list_items[1].children[0].id;
@@ -585,19 +593,19 @@ ELMD_TEST(test_delete_selection_across_list_items_merges_into_first_item) {
         DocumentPosition{first_id, 2, TextAffinity::Downstream},
         DocumentPosition{second_id, 2, TextAffinity::Downstream}};
     auto transaction = document_delete_selection(parsed.document, selection);
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     const auto& list = transaction->after.blocks[0];
-    ELMD_CHECK_EQ(list.list_items.size(), 2u);
-    ELMD_CHECK_EQ(list.list_items[0].children[0].id, first_id);
-    ELMD_CHECK_EQ(block_inline_text_content(list.list_items[0].children[0].children), std::u32string(U"alta"));
-    ELMD_CHECK_EQ(block_inline_text_content(list.list_items[1].children[0].children), std::u32string(U"gamma"));
-    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, first_id);
-    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 2u);
-    ELMD_CHECK(validate_document(transaction->after).empty());
-}
+    expect(fatal(bool((list.list_items.size()) == (2u))));
+    expect(fatal(bool((list.list_items[0].children[0].id) == (first_id))));
+    expect(fatal(bool((block_inline_text_content(list.list_items[0].children[0].children)) == (std::u32string(U"alta")))));
+    expect(fatal(bool((block_inline_text_content(list.list_items[1].children[0].children)) == (std::u32string(U"gamma")))));
+    expect(fatal(bool((transaction->selection_after.active.node_id) == (first_id))));
+    expect(fatal(bool((transaction->selection_after.active.offset) == (2u))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+};
 
-ELMD_TEST(test_delete_selection_across_list_items_moves_last_item_subtree) {
+"test_delete_selection_across_list_items_moves_last_item_subtree"_test = [] {
     auto parsed = parse_text(1, "- alpha\n- beta\n  - child\n- gamma");
     const auto first_id = parsed.document.blocks[0].list_items[0].children[0].id;
     const auto second_id = parsed.document.blocks[0].list_items[1].children[0].id;
@@ -605,19 +613,19 @@ ELMD_TEST(test_delete_selection_across_list_items_moves_last_item_subtree) {
         DocumentPosition{first_id, 2, TextAffinity::Downstream},
         DocumentPosition{second_id, 2, TextAffinity::Downstream}};
     auto transaction = document_delete_selection(parsed.document, selection);
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     const auto& list = transaction->after.blocks[0];
-    ELMD_CHECK_EQ(list.list_items.size(), 2u);
-    ELMD_CHECK_EQ(list.list_items[0].children.size(), 2u);
-    ELMD_CHECK_EQ(block_inline_text_content(list.list_items[0].children[0].children), std::u32string(U"alta"));
-    ELMD_CHECK(list.list_items[0].children[1].kind == BlockKind::List);
-    ELMD_CHECK_EQ(block_inline_text_content(list.list_items[0].children[1].list_items[0].children[0].children), std::u32string(U"child"));
-    ELMD_CHECK_EQ(block_inline_text_content(list.list_items[1].children[0].children), std::u32string(U"gamma"));
-    ELMD_CHECK(validate_document(transaction->after).empty());
-}
+    expect(fatal(bool((list.list_items.size()) == (2u))));
+    expect(fatal(bool((list.list_items[0].children.size()) == (2u))));
+    expect(fatal(bool((block_inline_text_content(list.list_items[0].children[0].children)) == (std::u32string(U"alta")))));
+    expect(fatal(bool(list.list_items[0].children[1].kind == BlockKind::List)));
+    expect(fatal(bool((block_inline_text_content(list.list_items[0].children[1].list_items[0].children[0].children)) == (std::u32string(U"child")))));
+    expect(fatal(bool((block_inline_text_content(list.list_items[1].children[0].children)) == (std::u32string(U"gamma")))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+};
 
-ELMD_TEST(test_delete_selection_from_quote_into_following_paragraph_keeps_first_context) {
+"test_delete_selection_from_quote_into_following_paragraph_keeps_first_context"_test = [] {
     auto parsed = parse_text(1, "> alpha\n\nomega");
     const auto quote_id = parsed.document.blocks[0].quote_children[0].id;
     const auto paragraph_id = parsed.document.blocks[1].id;
@@ -625,17 +633,17 @@ ELMD_TEST(test_delete_selection_from_quote_into_following_paragraph_keeps_first_
         DocumentPosition{quote_id, 2, TextAffinity::Downstream},
         DocumentPosition{paragraph_id, 3, TextAffinity::Downstream}};
     auto transaction = document_delete_selection(parsed.document, selection);
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
-    ELMD_CHECK(transaction->after.blocks[0].kind == BlockKind::BlockQuote);
-    ELMD_CHECK_EQ(transaction->after.blocks[0].quote_children[0].id, quote_id);
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("> alga"));
-    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, quote_id);
-    ELMD_CHECK(validate_document(transaction->after).empty());
-}
+    expect(fatal(bool((transaction->after.blocks.size()) == (1u))));
+    expect(fatal(bool(transaction->after.blocks[0].kind == BlockKind::BlockQuote)));
+    expect(fatal(bool((transaction->after.blocks[0].quote_children[0].id) == (quote_id))));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("> alga")))));
+    expect(fatal(bool((transaction->selection_after.active.node_id) == (quote_id))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+};
 
-ELMD_TEST(test_delete_selection_into_nested_list_preserves_content_after_endpoint) {
+"test_delete_selection_into_nested_list_preserves_content_after_endpoint"_test = [] {
     auto parsed = parse_text(1, "start\n\n- one\n- two\n\nafter");
     const auto first_id = parsed.document.blocks[0].id;
     const auto nested_id = parsed.document.blocks[1].list_items[0].children[0].id;
@@ -643,19 +651,19 @@ ELMD_TEST(test_delete_selection_into_nested_list_preserves_content_after_endpoin
         DocumentPosition{first_id, 2, TextAffinity::Downstream},
         DocumentPosition{nested_id, 2, TextAffinity::Downstream}};
     auto transaction = document_delete_selection(parsed.document, selection);
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK_EQ(transaction->after.blocks.size(), 3u);
-    ELMD_CHECK_EQ(transaction->after.blocks[0].id, first_id);
-    ELMD_CHECK_EQ(block_inline_text_content(transaction->after.blocks[0].children), std::u32string(U"ste"));
-    ELMD_CHECK(transaction->after.blocks[1].kind == BlockKind::List);
-    ELMD_CHECK_EQ(transaction->after.blocks[1].list_items.size(), 1u);
-    ELMD_CHECK_EQ(block_inline_text_content(transaction->after.blocks[1].list_items[0].children[0].children), std::u32string(U"two"));
-    ELMD_CHECK_EQ(block_inline_text_content(transaction->after.blocks[2].children), std::u32string(U"after"));
-    ELMD_CHECK(validate_document(transaction->after).empty());
-}
+    expect(fatal(bool((transaction->after.blocks.size()) == (3u))));
+    expect(fatal(bool((transaction->after.blocks[0].id) == (first_id))));
+    expect(fatal(bool((block_inline_text_content(transaction->after.blocks[0].children)) == (std::u32string(U"ste")))));
+    expect(fatal(bool(transaction->after.blocks[1].kind == BlockKind::List)));
+    expect(fatal(bool((transaction->after.blocks[1].list_items.size()) == (1u))));
+    expect(fatal(bool((block_inline_text_content(transaction->after.blocks[1].list_items[0].children[0].children)) == (std::u32string(U"two")))));
+    expect(fatal(bool((block_inline_text_content(transaction->after.blocks[2].children)) == (std::u32string(U"after")))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+};
 
-ELMD_TEST(test_delete_selection_removes_atomic_blocks_between_endpoints) {
+"test_delete_selection_removes_atomic_blocks_between_endpoints"_test = [] {
     auto parsed = parse_text(1, "alpha\n\n---\n\nomega");
     const auto first_id = parsed.document.blocks[0].id;
     const auto last_id = parsed.document.blocks[2].id;
@@ -663,14 +671,14 @@ ELMD_TEST(test_delete_selection_removes_atomic_blocks_between_endpoints) {
         DocumentPosition{first_id, 2, TextAffinity::Downstream},
         DocumentPosition{last_id, 3, TextAffinity::Downstream}};
     auto transaction = document_delete_selection(parsed.document, selection);
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("alga"));
-    ELMD_CHECK(validate_document(transaction->after).empty());
-}
+    expect(fatal(bool((transaction->after.blocks.size()) == (1u))));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("alga")))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+};
 
-ELMD_TEST(test_delete_selection_normalizes_reverse_document_order) {
+"test_delete_selection_normalizes_reverse_document_order"_test = [] {
     auto parsed = parse_text(1, "alpha\n\nomega");
     const auto first_id = parsed.document.blocks[0].id;
     const auto last_id = parsed.document.blocks[1].id;
@@ -678,14 +686,14 @@ ELMD_TEST(test_delete_selection_normalizes_reverse_document_order) {
         DocumentPosition{last_id, 3, TextAffinity::Upstream},
         DocumentPosition{first_id, 2, TextAffinity::Downstream}};
     auto transaction = document_delete_selection(parsed.document, selection);
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("alga"));
-    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, first_id);
-    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 2u);
-}
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("alga")))));
+    expect(fatal(bool((transaction->selection_after.active.node_id) == (first_id))));
+    expect(fatal(bool((transaction->selection_after.active.offset) == (2u))));
+};
 
-ELMD_TEST(test_delete_selection_across_task_items_moves_trailing_blocks) {
+"test_delete_selection_across_task_items_moves_trailing_blocks"_test = [] {
     auto parsed = parse_text(1, "- [ ] alpha\n- [x] beta\n      - child");
     const auto first_id = parsed.document.blocks[0].task_items[0].children[0].id;
     const auto second_id = parsed.document.blocks[0].task_items[1].children[0].id;
@@ -693,83 +701,83 @@ ELMD_TEST(test_delete_selection_across_task_items_moves_trailing_blocks) {
         DocumentPosition{first_id, 2, TextAffinity::Downstream},
         DocumentPosition{second_id, 2, TextAffinity::Downstream}};
     auto transaction = document_delete_selection(parsed.document, selection);
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     const auto& task_list = transaction->after.blocks[0];
-    ELMD_CHECK_EQ(task_list.task_items.size(), 1u);
-    ELMD_CHECK_EQ(block_inline_text_content(task_list.task_items[0].children[0].children), std::u32string(U"alta"));
-    ELMD_CHECK_EQ(task_list.task_items[0].children.size(), 2u);
-    ELMD_CHECK(validate_document(transaction->after).empty());
-}
+    expect(fatal(bool((task_list.task_items.size()) == (1u))));
+    expect(fatal(bool((block_inline_text_content(task_list.task_items[0].children[0].children)) == (std::u32string(U"alta")))));
+    expect(fatal(bool((task_list.task_items[0].children.size()) == (2u))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+};
 
-ELMD_TEST(test_document_soft_break_inserts_inline_node) {
+"test_document_soft_break_inserts_inline_node"_test = [] {
     auto document = document_with({paragraph(1, 2, U"alphaomega")});
     auto transaction = document_insert_soft_break(document, caret(1, 5));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK_EQ(transaction->after.blocks[0].children.size(), 3u);
-    ELMD_CHECK(transaction->after.blocks[0].children[1].kind == InlineKind::SoftBreak);
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("alpha\nomega"));
-    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, NodeId(1));
-    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 6u);
-    ELMD_CHECK(validate_document(transaction->after).empty());
-}
+    expect(fatal(bool((transaction->after.blocks[0].children.size()) == (3u))));
+    expect(fatal(bool(transaction->after.blocks[0].children[1].kind == InlineKind::SoftBreak)));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("alpha\nomega")))));
+    expect(fatal(bool((transaction->selection_after.active.node_id) == (NodeId(1)))));
+    expect(fatal(bool((transaction->selection_after.active.offset) == (6u))));
+    expect(fatal(bool(validate_document(transaction->after).empty())));
+};
 
-ELMD_TEST(test_document_horizontal_navigation_crosses_nodes) {
+"test_document_horizontal_navigation_crosses_nodes"_test = [] {
     auto document = document_with({paragraph(1, 2, U"alpha"), paragraph(3, 4, U"beta")});
     auto right = document_move_selection(document, caret(1, 5), DocumentMove::Right, false);
-    ELMD_CHECK(right.has_value());
+    expect(fatal(bool(right.has_value())));
     if (!right) return;
-    ELMD_CHECK_EQ(right->active.node_id, NodeId(3));
-    ELMD_CHECK_EQ(right->active.offset, 0u);
+    expect(fatal(bool((right->active.node_id) == (NodeId(3)))));
+    expect(fatal(bool((right->active.offset) == (0u))));
     auto left = document_move_selection(document, *right, DocumentMove::Left, false);
-    ELMD_CHECK(left.has_value());
+    expect(fatal(bool(left.has_value())));
     if (!left) return;
-    ELMD_CHECK_EQ(left->active.node_id, NodeId(1));
-    ELMD_CHECK_EQ(left->active.offset, 5u);
-}
+    expect(fatal(bool((left->active.node_id) == (NodeId(1)))));
+    expect(fatal(bool((left->active.offset) == (5u))));
+};
 
-ELMD_TEST(test_document_vertical_navigation_uses_node_local_lines) {
+"test_document_vertical_navigation_uses_node_local_lines"_test = [] {
     BlockNode code;
     code.id = NodeId(1);
     code.kind = BlockKind::CodeBlock;
     code.code_text = U"abcd\nxy";
     auto document = document_with({std::move(code)});
     auto down = document_move_selection(document, caret(1, 3), DocumentMove::Down, false);
-    ELMD_CHECK(down.has_value());
+    expect(fatal(bool(down.has_value())));
     if (!down) return;
-    ELMD_CHECK_EQ(down->active.offset, 7u);
+    expect(fatal(bool((down->active.offset) == (7u))));
     auto up = document_move_selection(document, *down, DocumentMove::Up, false);
-    ELMD_CHECK(up.has_value());
-    if (up) ELMD_CHECK_EQ(up->active.offset, 2u);
-}
+    expect(fatal(bool(up.has_value())));
+    if (up) expect(fatal(bool((up->active.offset) == (2u))));
+};
 
-ELMD_TEST(test_document_select_all_binds_first_and_last_nodes) {
+"test_document_select_all_binds_first_and_last_nodes"_test = [] {
     auto document = document_with({paragraph(1, 2, U"alpha"), paragraph(3, 4, U"beta")});
     auto selection = document_select_all(document);
-    ELMD_CHECK(selection.has_value());
+    expect(fatal(bool(selection.has_value())));
     if (!selection) return;
-    ELMD_CHECK_EQ(selection->anchor.node_id, NodeId(1));
-    ELMD_CHECK_EQ(selection->anchor.offset, 0u);
-    ELMD_CHECK_EQ(selection->active.node_id, NodeId(3));
-    ELMD_CHECK_EQ(selection->active.offset, 4u);
-}
+    expect(fatal(bool((selection->anchor.node_id) == (NodeId(1)))));
+    expect(fatal(bool((selection->anchor.offset) == (0u))));
+    expect(fatal(bool((selection->active.node_id) == (NodeId(3)))));
+    expect(fatal(bool((selection->active.offset) == (4u))));
+};
 
-ELMD_TEST(test_document_backspace_deletes_atomic_block_from_tree) {
+"test_document_backspace_deletes_atomic_block_from_tree"_test = [] {
     auto document = parse_text(1, "---").document;
     auto id = document.blocks.front().id;
     auto transaction = document_delete_backward(
         document,
         DocumentSelection::caret(DocumentPosition{id, 1, TextAffinity::Downstream}));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
-    ELMD_CHECK(transaction->after.blocks.front().kind == BlockKind::Paragraph);
-    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, transaction->after.blocks.front().id);
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string{});
-}
+    expect(fatal(bool((transaction->after.blocks.size()) == (1u))));
+    expect(fatal(bool(transaction->after.blocks.front().kind == BlockKind::Paragraph)));
+    expect(fatal(bool((transaction->selection_after.active.node_id) == (transaction->after.blocks.front().id))));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string{}))));
+};
 
-ELMD_TEST(test_document_delete_forward_removes_atomic_block_and_keeps_adjacent_position) {
+"test_document_delete_forward_removes_atomic_block_and_keeps_adjacent_position"_test = [] {
     BlockNode rule;
     rule.id = NodeId(3);
     rule.kind = BlockKind::ThematicBreak;
@@ -779,25 +787,27 @@ ELMD_TEST(test_document_delete_forward_removes_atomic_block_and_keeps_adjacent_p
     auto transaction = document_delete_forward(
         document,
         DocumentSelection::caret(DocumentPosition{rule_id, 0, TextAffinity::Downstream}));
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
-    ELMD_CHECK(transaction->after.blocks.front().kind == BlockKind::Paragraph);
-    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, paragraph_id);
-    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 5u);
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("alpha"));
-}
+    expect(fatal(bool((transaction->after.blocks.size()) == (1u))));
+    expect(fatal(bool(transaction->after.blocks.front().kind == BlockKind::Paragraph)));
+    expect(fatal(bool((transaction->selection_after.active.node_id) == (paragraph_id))));
+    expect(fatal(bool((transaction->selection_after.active.offset) == (5u))));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("alpha")))));
+};
 
-ELMD_TEST(test_document_paste_builds_block_structure_in_one_transaction) {
+"test_document_paste_builds_block_structure_in_one_transaction"_test = [] {
     auto document = document_with({paragraph(1, 2, U"alpha")});
     auto transaction = document_paste_text(document, caret(1, 5), U"x\r\ny");
-    ELMD_CHECK(transaction.has_value());
+    expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    ELMD_CHECK(transaction->reason == DocumentTransactionReason::Paste);
-    ELMD_CHECK_EQ(transaction->after.blocks.size(), 2u);
-    ELMD_CHECK_EQ(block_inline_text_content(transaction->after.blocks[0].children), std::u32string(U"alphax"));
-    ELMD_CHECK_EQ(block_inline_text_content(transaction->after.blocks[1].children), std::u32string(U"y"));
-    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, transaction->after.blocks[1].id);
-    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 1u);
-    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("alphax\n\ny"));
-}
+    expect(fatal(bool(transaction->reason == DocumentTransactionReason::Paste)));
+    expect(fatal(bool((transaction->after.blocks.size()) == (2u))));
+    expect(fatal(bool((block_inline_text_content(transaction->after.blocks[0].children)) == (std::u32string(U"alphax")))));
+    expect(fatal(bool((block_inline_text_content(transaction->after.blocks[1].children)) == (std::u32string(U"y")))));
+    expect(fatal(bool((transaction->selection_after.active.node_id) == (transaction->after.blocks[1].id))));
+    expect(fatal(bool((transaction->selection_after.active.offset) == (1u))));
+    expect(fatal(bool((serialize_markdown(transaction->after)) == (std::string("alphax\n\ny")))));
+};
+
+}; // suite document_edit_tests
