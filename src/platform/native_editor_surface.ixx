@@ -10,6 +10,7 @@ import elmd.core.layout_tree;
 import elmd.core.hit_test;
 import elmd.core.selection_geometry;
 import elmd.core.snapshot;
+import elmd.core.text_edit;
 
 export namespace elmd::platform {
 
@@ -42,8 +43,8 @@ public:
     virtual void request_repaint(std::optional<elmd::LogicalRect> dirty) = 0;
     virtual bool paint(PaintContext& ctx) = 0;
     virtual std::optional<elmd::HitTestResult> hit_test(elmd::LogicalPoint point) const = 0;
-    virtual std::optional<elmd::LogicalRect> caret_rect(elmd::CharOffset position) const = 0;
-    virtual void scroll_to(elmd::CharOffset position) = 0;
+    virtual std::optional<elmd::LogicalRect> caret_rect(elmd::TextPosition position) const = 0;
+    virtual void scroll_to(elmd::TextPosition position) = 0;
 };
 
 } // namespace elmd::platform

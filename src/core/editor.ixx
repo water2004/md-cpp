@@ -5,6 +5,7 @@
 export module elmd.core.editor;
 import std;
 import elmd.core.types;
+import elmd.core.ids;
 import elmd.core.theme;
 import elmd.core.selection;
 import elmd.core.command;
@@ -38,6 +39,12 @@ public:
     std::u32string markdown_cps() const { return serialize_markdown_cps(document_); }
     std::string markdown_utf8() const { return serialize_markdown(document_); }
     const TextSelection& selection() const { return selection_; }
+    std::optional<std::u32string> editable_source(NodeId id) const {
+        std::vector<document_edit_detail::EditableNode> nodes;
+        document_edit_detail::collect_editable_nodes(document_.root.children, nodes);
+        for (auto const& node : nodes) if (node.id == id) return node.text;
+        return std::nullopt;
+    }
     std::u32string boundary_text_cps() const {
         std::vector<document_edit_detail::EditableNode> nodes;
         document_edit_detail::collect_editable_nodes(document_.root.children, nodes);

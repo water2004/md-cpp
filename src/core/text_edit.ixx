@@ -7,9 +7,6 @@ import elmd.core.selection;
 export namespace elmd {
 
 // Half-open [start, end) range in an editable node's InlineDocument::source.
-// This is deliberately distinct from the legacy templated TextRange in
-// elmd.core.types; that document-wide coordinate disappears later in the
-// migration.
 struct SourceRange {
     std::size_t start = 0;
     std::size_t end = 0;

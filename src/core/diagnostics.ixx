@@ -1,7 +1,7 @@
 // elmd.core.diagnostics — diagnostic types.
 export module elmd.core.diagnostics;
 import std;
-import elmd.core.types;
+import elmd.core.text_edit;
 
 export namespace elmd {
 
@@ -10,7 +10,7 @@ enum class DiagnosticSeverity { Hint, Warning, Error };
 struct Diagnostic {
     DiagnosticSeverity severity = DiagnosticSeverity::Warning;
     std::string message;
-    std::optional<TextRange<CharOffset>> source_range;
+    std::optional<TextSpan> source_span;
     std::optional<std::string> code;
 };
 
@@ -29,10 +29,10 @@ inline constexpr const char* DIAG_MISSING_ALT_TEXT           = "W001";
 inline constexpr const char* DIAG_HEADING_NO_SPACE          = "W002";
 
 inline Diagnostic make_diagnostic(DiagnosticSeverity sev, std::string msg,
-                                  std::optional<TextRange<CharOffset>> range = std::nullopt,
+                                  std::optional<TextSpan> span = std::nullopt,
                                   std::optional<std::string> code = std::nullopt) {
     Diagnostic d; d.severity = sev; d.message = std::move(msg);
-    d.source_range = range; d.code = std::move(code); return d;
+    d.source_span = span; d.code = std::move(code); return d;
 }
 
 } // namespace elmd

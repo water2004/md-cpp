@@ -219,13 +219,13 @@ suite render_layout_tests = [] {
     expect(fatal(bool(model.blocks[0].kind == RenderBlockKind::ThematicBreak)));
     expect(fatal(bool(model.blocks[0].inline_items.empty())));
     expect(fatal(bool((model.blocks[0].source_span.source_range.start) == (0u))));
-    expect(fatal(bool(model.blocks[0].source_span.source_range.empty())));
-    expect(fatal(bool(model.blocks[0].content_span.source_range.empty())));
+    expect(fatal(bool((model.blocks[0].source_span.source_range) == (SourceRange{0, 1}))));
+    expect(fatal(bool((model.blocks[0].content_span.source_range) == (SourceRange{0, 1}))));
     StubMeasurer measurer(8.0f);
     auto layout = layout_blocks(model.blocks, 800.0f, 1.0f, measurer, std::nullopt, LogicalPoint(0, 0), Outline::empty(1));
     expect(fatal(bool((layout.blocks.size()) == (1u))));
     expect(fatal(bool(layout.blocks[0].kind.kind == LayoutBlockKind::ThematicBreak)));
-    expect(fatal(bool(layout.blocks[0].source_span.source_range.empty())));
+    expect(fatal(bool((layout.blocks[0].source_span.source_range) == (SourceRange{0, 1}))));
 };
 
 "builds_inline_math"_test = [] {

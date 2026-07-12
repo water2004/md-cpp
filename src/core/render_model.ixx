@@ -117,6 +117,7 @@ struct InlineRenderItem {
     enum class Kind { Text, Math, Image, Link, Marker };
     Kind kind = Kind::Text;
     TextSpan source_span;
+    std::u32string source_text;          // exact source spelling for this span
     std::u32string text;
     std::u32string display_text;
     std::optional<NodeId> id;             // Math/Image/Link
@@ -206,6 +207,7 @@ struct RenderModel {
     std::vector<RenderBlock> blocks;
     Outline outline;
     std::vector<RenderDiagnostic> diagnostics;
+    std::vector<NodeId> editable_order;
 };
 
 } // namespace elmd

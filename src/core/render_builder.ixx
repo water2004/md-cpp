@@ -22,7 +22,7 @@ inline RenderDiagnostic convert_diagnostic(const Diagnostic& d) {
     r.severity = (d.severity == DiagnosticSeverity::Hint)   ? RenderDiagnostic::Sev::Info
                : (d.severity == DiagnosticSeverity::Error)   ? RenderDiagnostic::Sev::Error
                : RenderDiagnostic::Sev::Warning;
-    r.message = d.message;
+    r.message = d.message; r.source_span = d.source_span;
     return r;
 }
 
@@ -40,6 +40,11 @@ inline std::size_t block_local_length(const BlockNode& block) {
         case BlockKind::UnsupportedMarkup:
         case BlockKind::LinkDefinition:
             return utf8_to_cps(block.raw).size();
+        case BlockKind::ImageBlock:
+        case BlockKind::Toc:
+        case BlockKind::ThematicBreak:
+        case BlockKind::Extension:
+            return 1;
         default:
             return 0;
     }
@@ -370,6 +375,13 @@ struct Builder {
             }
         };
         append_nodes(document.tree.nodes, base, output);
+        auto attach_source = [&](auto& self, std::vector<InlineRenderItem>& items) -> void {
+            for (auto& item : items) {
+                item.source_text = inline_source_slice(document, item.source_span.source_range);
+                self(self, item.children);
+            }
+        };
+        attach_source(attach_source, output);
         return output;
     }
 
@@ -589,6 +601,28 @@ inline RenderModel build_render_model(const EditorDocument& doc, const Outline& 
     for (const auto& d : doc.diagnostics) diags.push_back(convert_diagnostic(d));
     RenderModel m; m.revision = doc.revision; m.blocks = std::move(blocks);
     m.outline = outline; m.diagnostics = std::move(diags);
+    auto collect_editable = [&](auto& self, BlockNode const& block) -> void {
+        switch (block.kind) {
+            case BlockKind::Paragraph:
+            case BlockKind::Heading:
+            case BlockKind::TableCell:
+            case BlockKind::CodeBlock:
+            case BlockKind::MathBlock:
+            case BlockKind::ImageBlock:
+            case BlockKind::Toc:
+            case BlockKind::Frontmatter:
+            case BlockKind::ThematicBreak:
+            case BlockKind::LinkDefinition:
+            case BlockKind::UnsupportedMarkup:
+            case BlockKind::Extension:
+                m.editable_order.push_back(block.id);
+                break;
+            default:
+                break;
+        }
+        for (auto const& child : block.children) self(self, child);
+    };
+    for (auto const& block : doc.root.children) collect_editable(collect_editable, block);
     return m;
 }
 

@@ -61,14 +61,19 @@ namespace detail {
 
 // Parse-time physical ranges are transient recognizer bookkeeping only. They
 // are never stored in EditorDocument and never become an editing coordinate.
+struct PhysicalRange {
+    std::size_t start = 0;
+    std::size_t end = 0;
+};
+
 struct ParserSourceRange {
     NodeId node_id{};
-    CharRange source_range;
-    CharRange content_range;
-    std::vector<CharRange> marker_ranges;
+    PhysicalRange source_range;
+    PhysicalRange content_range;
+    std::vector<PhysicalRange> marker_ranges;
 
     ParserSourceRange() = default;
-    ParserSourceRange(NodeId id, CharRange source, CharRange content)
+    ParserSourceRange(NodeId id, PhysicalRange source, PhysicalRange content)
         : node_id(id), source_range(source), content_range(content) {}
 };
 
@@ -332,7 +337,7 @@ public:
     }
 
     NodeId next_node_id() { return NodeId(node_counter++); }
-    CharOffset cur() const { return CharOffset(pos); }
+    std::size_t cur() const { return std::size_t(pos); }
     bool eof() const { return pos >= cps.size(); }
     char32_t peek(std::size_t k = 0) const {
         return (pos + k < cps.size()) ? cps[pos + k] : 0;
@@ -429,13 +434,13 @@ public:
         return {s, i - pos};
     }
     // Push a source range. idempotent.
-    void push_range(NodeId id, CharRange sr, CharRange cr) {
+    void push_range(NodeId id, PhysicalRange sr, PhysicalRange cr) {
         ParserSourceRange r(id, sr, cr);
         source_ranges.push_back(r);
     }
     // ---- block dispatch ----
     void parse_blank_lines(std::vector<BlockNode>& blocks) {
-        std::vector<std::pair<CharOffset, CharOffset>> blank_ranges;
+        std::vector<std::pair<std::size_t, std::size_t>> blank_ranges;
         while (!eof() && is_blank_line()) {
             const auto start = cur();
             while (peek1() == ' ' || peek1() == '\t') advance();
@@ -450,8 +455,8 @@ public:
             paragraph.kind = BlockKind::Paragraph;
             push_range(
                 paragraph.id,
-                CharRange(blank_ranges[index].first, blank_ranges[index].second),
-                CharRange(blank_ranges[index].first, blank_ranges[index].first));
+                PhysicalRange(blank_ranges[index].first, blank_ranges[index].second),
+                PhysicalRange(blank_ranges[index].first, blank_ranges[index].first));
             blocks.push_back(std::move(paragraph));
         }
     }
@@ -536,7 +541,7 @@ public:
                 std::size_t eC = char_to_byte_in_input_(content_end);
                 std::string inner = input->text.substr(b2, (b1 < eC ? eC : b1) - b2);
                 NodeId id = next_node_id();
-                push_range(id, CharRange(CharOffset(save), CharOffset(pos)), CharRange(CharOffset(save), CharOffset(pos)));
+                push_range(id, PhysicalRange(std::size_t(save), std::size_t(pos)), PhysicalRange(std::size_t(save), std::size_t(pos)));
                 BlockNode b; b.id = id; b.kind = BlockKind::Frontmatter; b.fmt = fmt; b.raw = inner;
                 return b;
             }
@@ -572,9 +577,9 @@ public:
         std::string title_utf8 = cps_to_utf8(title);
         std::string slug = generate_slug(title_utf8, {});
         NodeId id = next_node_id();
-        ParserSourceRange range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(content_start), CharOffset(content_end)));
-        range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(content_start)));
-        if (closing_start < line_end) range.marker_ranges.push_back(CharRange(CharOffset(content_end), CharOffset(line_end)));
+        ParserSourceRange range(id, PhysicalRange(std::size_t(start), std::size_t(pos)), PhysicalRange(std::size_t(content_start), std::size_t(content_end)));
+        range.marker_ranges.push_back(PhysicalRange(std::size_t(start), std::size_t(content_start)));
+        if (closing_start < line_end) range.marker_ranges.push_back(PhysicalRange(std::size_t(content_end), std::size_t(line_end)));
         source_ranges.push_back(std::move(range));
         headings.push_back({id, level, title_utf8, slug});
         BlockNode b; b.id = id; b.kind = BlockKind::Heading; b.level = level; b.inline_content = std::move(inline_content); b.slug = slug;
@@ -596,7 +601,7 @@ public:
         block.id = next_node_id();
         block.kind = BlockKind::LinkDefinition;
         block.raw = cps_to_utf8(std::u32string_view(cps).substr(start, definition.source_end - start));
-        push_range(block.id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(definition.source_end)));
+        push_range(block.id, PhysicalRange(std::size_t(start), std::size_t(pos)), PhysicalRange(std::size_t(start), std::size_t(definition.source_end)));
         return block;
     }
 
@@ -629,8 +634,8 @@ public:
             auto title_utf8 = cps_to_utf8(inline_visible_text(inline_content));
             auto slug = generate_slug(title_utf8, {});
             const auto id = next_node_id();
-            ParserSourceRange range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(content_end)));
-            range.marker_ranges.push_back(CharRange(CharOffset(content_end), CharOffset(underline->line_end)));
+            ParserSourceRange range(id, PhysicalRange(std::size_t(start), std::size_t(pos)), PhysicalRange(std::size_t(start), std::size_t(content_end)));
+            range.marker_ranges.push_back(PhysicalRange(std::size_t(content_end), std::size_t(underline->line_end)));
             source_ranges.push_back(std::move(range));
             headings.push_back({id, underline->level, title_utf8, slug});
             BlockNode heading;
@@ -644,7 +649,7 @@ public:
         }
 
         const auto id = next_node_id();
-        push_range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(content_end)));
+        push_range(id, PhysicalRange(std::size_t(start), std::size_t(pos)), PhysicalRange(std::size_t(start), std::size_t(content_end)));
         BlockNode paragraph;
         paragraph.id = id;
         paragraph.kind = BlockKind::Paragraph;
@@ -687,7 +692,7 @@ public:
                 if (tag->attributes.contains("title")) block.image_title = tag->attributes.at("title");
                 block.image_width = dimension("width");
                 block.image_height = dimension("height");
-                push_range(block.id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(line_end)));
+                push_range(block.id, PhysicalRange(std::size_t(start), std::size_t(pos)), PhysicalRange(std::size_t(start), std::size_t(line_end)));
                 return block;
             }
         }
@@ -715,7 +720,7 @@ public:
         block.image_alt = image->alt;
         block.image_title = image->title;
         block.image_link = std::move(link);
-        push_range(block.id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(line_end)));
+        push_range(block.id, PhysicalRange(std::size_t(start), std::size_t(pos)), PhysicalRange(std::size_t(start), std::size_t(line_end)));
         return block;
     }
 
@@ -736,8 +741,8 @@ public:
         if (blocked.contains(tag->name)) {
             pos = source_end;
             NodeId id = next_node_id();
-            push_range(id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(start), CharOffset(source_end)));
-            diagnostics.push_back(make_diagnostic(DiagnosticSeverity::Warning, "Unsafe HTML block is shown as text", CharRange(CharOffset(start), CharOffset(source_end)), DIAG_RAW_HTML_DISABLED));
+            push_range(id, PhysicalRange(std::size_t(start), std::size_t(source_end)), PhysicalRange(std::size_t(start), std::size_t(source_end)));
+            diagnostics.push_back(make_diagnostic(DiagnosticSeverity::Warning, "Unsafe HTML block is shown as text", std::nullopt, DIAG_RAW_HTML_DISABLED));
             BlockNode block;
             block.id = id;
             block.kind = BlockKind::UnsupportedMarkup;
@@ -789,9 +794,9 @@ public:
             }
             pos = source_end;
             NodeId id = next_node_id();
-            ParserSourceRange range(id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(code_start), CharOffset(code_end)));
-            range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(code_start)));
-            range.marker_ranges.push_back(CharRange(CharOffset(code_end), CharOffset(source_end)));
+            ParserSourceRange range(id, PhysicalRange(std::size_t(start), std::size_t(source_end)), PhysicalRange(std::size_t(code_start), std::size_t(code_end)));
+            range.marker_ranges.push_back(PhysicalRange(std::size_t(start), std::size_t(code_start)));
+            range.marker_ranges.push_back(PhysicalRange(std::size_t(code_end), std::size_t(source_end)));
             source_ranges.push_back(std::move(range));
             BlockNode block;
             block.id = id;
@@ -825,11 +830,11 @@ public:
                     cell.id = next_node_id();
                     cell.kind = BlockKind::TableCell;
                     cell.inline_content = make_inline_document(cell_tag->end, cell_closing->first);
-                    push_range(cell.id, CharRange(CharOffset(cell_tag->start), CharOffset(cell_closing->second)), CharRange(CharOffset(cell_tag->end), CharOffset(cell_closing->first)));
+                    push_range(cell.id, PhysicalRange(std::size_t(cell_tag->start), std::size_t(cell_closing->second)), PhysicalRange(std::size_t(cell_tag->end), std::size_t(cell_closing->first)));
                     row.children.push_back(std::move(cell));
                     cell_cursor = cell_closing->second;
                 }
-                push_range(row.id, CharRange(CharOffset(row_tag->start), CharOffset(row_closing->second)), CharRange(CharOffset(row_tag->end), CharOffset(row_closing->first)));
+                push_range(row.id, PhysicalRange(std::size_t(row_tag->start), std::size_t(row_closing->second)), PhysicalRange(std::size_t(row_tag->end), std::size_t(row_closing->first)));
                 row.table_header_row = row_header;
                 if (!row.children.empty()) { rows.push_back(std::move(row)); row_headers.push_back(row_header); }
                 cursor = row_closing->second;
@@ -838,18 +843,18 @@ public:
             block.id = next_node_id();
             block.children = std::move(rows);
             block.table_aligns.resize(block.children.front().children.size(), TableAlignment::None);
-            ParserSourceRange range(block.id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(content_start), CharOffset(content_end)));
-            range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(content_start)));
-            range.marker_ranges.push_back(CharRange(CharOffset(content_end), CharOffset(source_end)));
+            ParserSourceRange range(block.id, PhysicalRange(std::size_t(start), std::size_t(source_end)), PhysicalRange(std::size_t(content_start), std::size_t(content_end)));
+            range.marker_ranges.push_back(PhysicalRange(std::size_t(start), std::size_t(content_start)));
+            range.marker_ranges.push_back(PhysicalRange(std::size_t(content_end), std::size_t(source_end)));
             source_ranges.push_back(std::move(range));
             pos = source_end;
             return block;
         }
         pos = source_end;
         NodeId id = next_node_id();
-        ParserSourceRange range(id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(content_start), CharOffset(content_end)));
-        range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(content_start)));
-        range.marker_ranges.push_back(CharRange(CharOffset(content_end), CharOffset(source_end)));
+        ParserSourceRange range(id, PhysicalRange(std::size_t(start), std::size_t(source_end)), PhysicalRange(std::size_t(content_start), std::size_t(content_end)));
+        range.marker_ranges.push_back(PhysicalRange(std::size_t(start), std::size_t(content_start)));
+        range.marker_ranges.push_back(PhysicalRange(std::size_t(content_end), std::size_t(source_end)));
         source_ranges.push_back(std::move(range));
         BlockNode block;
         block.id = id;
@@ -886,7 +891,7 @@ public:
         }
         std::size_t end = pos;
         NodeId id = next_node_id();
-        push_range(id, CharRange(CharOffset(start), CharOffset(end)), CharRange(CharOffset(content_start), CharOffset(end)));
+        push_range(id, PhysicalRange(std::size_t(start), std::size_t(end)), PhysicalRange(std::size_t(content_start), std::size_t(end)));
         footnotes.push_back({id, cps_to_utf8(label)});
         BlockNode b; b.id = id; b.kind = BlockKind::FootnoteDefinition; b.footnote_label = cps_to_utf8(label); b.children = std::move(children);
         return b;
@@ -905,7 +910,7 @@ public:
         auto start = pos;
         if (!indentation_end(start)) return std::nullopt;
         std::u32string text;
-        std::vector<CharRange> markers;
+        std::vector<PhysicalRange> markers;
         std::size_t content_start = start;
         std::size_t content_end = start;
         bool first_line = true;
@@ -932,13 +937,13 @@ public:
                     next = next_end < cps.size() ? next_end + 1 : next_end;
                 }
                 if (next >= cps.size() || !indentation_end(next)) break;
-                markers.push_back(CharRange(CharOffset(line_start), CharOffset(line_end)));
+                markers.push_back(PhysicalRange(std::size_t(line_start), std::size_t(line_end)));
                 text.push_back(U'\n');
                 pos = line_end < cps.size() ? line_end + 1 : line_end;
                 content_end = line_end;
                 continue;
             }
-            markers.push_back(CharRange(CharOffset(line_start), CharOffset(*indent_end)));
+            markers.push_back(PhysicalRange(std::size_t(line_start), std::size_t(*indent_end)));
             if (first_line) content_start = *indent_end;
             first_line = false;
             text.append(cps.begin() + *indent_end, cps.begin() + line_end);
@@ -947,7 +952,7 @@ public:
             pos = line_end < cps.size() ? line_end + 1 : line_end;
         }
         NodeId id = next_node_id();
-        ParserSourceRange range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(content_start), CharOffset(content_end)));
+        ParserSourceRange range(id, PhysicalRange(std::size_t(start), std::size_t(pos)), PhysicalRange(std::size_t(content_start), std::size_t(content_end)));
         range.marker_ranges = std::move(markers);
         auto line_count = range.marker_ranges.size();
         source_ranges.push_back(std::move(range));
@@ -975,7 +980,7 @@ public:
         auto trimmed = trim_utf8(info_utf8);
         if (!trimmed.empty()) lang = trimmed;
         std::u32string text;
-        std::optional<CharRange> closing_marker;
+        std::optional<PhysicalRange> closing_marker;
         while (!eof()) {
             std::size_t line_start = pos;
             std::size_t scan = pos;
@@ -985,7 +990,7 @@ public:
             while (marker_end < cps.size() && (cps[marker_end] == U' ' || cps[marker_end] == U'\t')) ++marker_end;
             if (fence_count >= count && (marker_end == cps.size() || cps[marker_end] == U'\n')) {
                 content_end = line_start;
-                closing_marker = CharRange(CharOffset(line_start), CharOffset(marker_end));
+                closing_marker = PhysicalRange(std::size_t(line_start), std::size_t(marker_end));
                 pos = marker_end;
                 if (peek1() == U'\n') advance();
                 break;
@@ -1002,8 +1007,8 @@ public:
         }
         if (content_end < content_start) content_end = pos;
         NodeId id = next_node_id();
-        ParserSourceRange node_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(content_start), CharOffset(content_end)));
-        node_range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(content_start)));
+        ParserSourceRange node_range(id, PhysicalRange(std::size_t(start), cur()), PhysicalRange(std::size_t(content_start), std::size_t(content_end)));
+        node_range.marker_ranges.push_back(PhysicalRange(std::size_t(start), std::size_t(content_start)));
         if (closing_marker) node_range.marker_ranges.push_back(*closing_marker);
         source_ranges.push_back(std::move(node_range));
         std::size_t n_lines = 1; for (char32_t c : text) if (c == '\n') ++n_lines;
@@ -1015,7 +1020,7 @@ public:
         }
         BlockNode b; b.id = id; b.kind = BlockKind::CodeBlock; b.language = lang; b.code_text = std::move(text);
         b.opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
-        if (closing_marker) b.closing_marker = std::u32string(std::u32string_view(cps).substr(closing_marker->start.v, closing_marker->end.v - closing_marker->start.v));
+        if (closing_marker) b.closing_marker = std::u32string(std::u32string_view(cps).substr(closing_marker->start, closing_marker->end - closing_marker->start));
         return b;
     }
 
@@ -1034,7 +1039,7 @@ public:
                 advance_n(2);
                 if (peek1() == '\n') advance();
                 NodeId id = next_node_id();
-                push_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(start), cur()));
+                push_range(id, PhysicalRange(std::size_t(start), cur()), PhysicalRange(std::size_t(start), cur()));
                 math_blocks.push_back({id, first_three_lines_utf8_(tex)});
                 auto trimmed = trim_math_cps_(tex);
                 BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.tex = trimmed; b.math_delim = dollar ? MathDelimiter::BlockDollar : MathDelimiter::BlockBracket;
@@ -1044,10 +1049,10 @@ public:
         }
         diagnostics.push_back(make_diagnostic(DiagnosticSeverity::Warning,
             dollar ? "Unclosed math block delimiter $$" : "Unclosed math block delimiter \\[",
-            CharRange(CharOffset(start), cur()), DIAG_UNCLOSED_MATH_DOLLAR));
+            std::nullopt, DIAG_UNCLOSED_MATH_DOLLAR));
         pos = start + 2;
         NodeId id = next_node_id();
-        push_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(start), cur()));
+        push_range(id, PhysicalRange(std::size_t(start), cur()), PhysicalRange(std::size_t(start), cur()));
         math_blocks.push_back({id, first_three_lines_utf8_(tex)});
         BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.tex = std::move(tex); b.math_delim = dollar ? MathDelimiter::BlockDollar : MathDelimiter::BlockBracket;
         return b;
@@ -1085,14 +1090,14 @@ public:
                 cell.id = next_node_id();
                 cell.kind = BlockKind::TableCell;
                 cell.inline_content = make_inline_document(row_start + row_length, row_start + row_length);
-                auto offset = CharOffset(row_start + row_length);
-                push_range(cell.id, CharRange(offset, offset), CharRange(offset, offset));
+                auto offset = std::size_t(row_start + row_length);
+                push_range(cell.id, PhysicalRange(offset, offset), PhysicalRange(offset, offset));
                 row->children.push_back(std::move(cell));
             }
             rows.push_back(std::move(*row));
         }
         NodeId id = next_node_id();
-        push_range(id, CharRange(CharOffset(save), cur()), CharRange(CharOffset(save), cur()));
+        push_range(id, PhysicalRange(std::size_t(save), cur()), PhysicalRange(std::size_t(save), cur()));
         BlockNode b; b.id = id; b.kind = BlockKind::Table;
         header_row->table_header_row = true;
         b.children.push_back(std::move(*header_row));
@@ -1136,21 +1141,21 @@ public:
                 content_end = content_start;
             }
             NodeId cell_id = next_node_id();
-            auto source_start = CharOffset(row_start + segment.first);
-            auto source_end = CharOffset(row_start + segment.second);
-            auto text_start = CharOffset(row_start + content_start);
-            auto text_end = CharOffset(row_start + content_end);
+            auto source_start = std::size_t(row_start + segment.first);
+            auto source_end = std::size_t(row_start + segment.second);
+            auto text_start = std::size_t(row_start + content_start);
+            auto text_end = std::size_t(row_start + content_end);
             BlockNode cell;
             cell.id = cell_id;
             cell.kind = BlockKind::TableCell;
-            cell.inline_content = make_inline_document(text_start.v, text_end.v);
-            push_range(cell_id, CharRange(source_start, source_end), CharRange(text_start, text_end));
+            cell.inline_content = make_inline_document(text_start, text_end);
+            push_range(cell_id, PhysicalRange(source_start, source_end), PhysicalRange(text_start, text_end));
             cells.push_back(std::move(cell));
         }
         advance_n(length);
         if (peek1() == U'\n') advance();
         NodeId row_id = next_node_id();
-        push_range(row_id, CharRange(CharOffset(row_start), cur()), CharRange(CharOffset(row_start), CharOffset(row_start + length)));
+        push_range(row_id, PhysicalRange(std::size_t(row_start), cur()), PhysicalRange(std::size_t(row_start), std::size_t(row_start + length)));
         BlockNode r; r.id = row_id; r.kind = BlockKind::TableRow; r.children = std::move(cells);
         return r;
     }
@@ -1295,13 +1300,13 @@ public:
             nested.node_counter = node_counter;
             auto children = nested.parse_blocks(nullptr);
             node_counter = nested.node_counter;
-            auto remap = [&](CharOffset value) {
-                return CharOffset(offset_map[(std::min)(value.v, offset_map.size() - 1)]);
+            auto remap = [&](std::size_t value) {
+                return std::size_t(offset_map[(std::min)(value, offset_map.size() - 1)]);
             };
             for (auto& range : nested.source_ranges) {
-                range.source_range = CharRange(remap(range.source_range.start), remap(range.source_range.end));
-                range.content_range = CharRange(remap(range.content_range.start), remap(range.content_range.end));
-                for (auto& prefix : range.marker_ranges) prefix = CharRange(remap(prefix.start), remap(prefix.end));
+                range.source_range = PhysicalRange(remap(range.source_range.start), remap(range.source_range.end));
+                range.content_range = PhysicalRange(remap(range.content_range.start), remap(range.content_range.end));
+                for (auto& prefix : range.marker_ranges) prefix = PhysicalRange(remap(prefix.start), remap(prefix.end));
                 source_ranges.push_back(std::move(range));
             }
             if (children.empty()) {
@@ -1310,12 +1315,11 @@ public:
                 paragraph.kind = BlockKind::Paragraph;
                 source_ranges.emplace_back(
                     paragraph.id,
-                    CharRange(CharOffset(marker->content_start), CharOffset(marker->content_start)),
-                    CharRange(CharOffset(marker->content_start), CharOffset(marker->content_start)));
+                    PhysicalRange(std::size_t(marker->content_start), std::size_t(marker->content_start)),
+                    PhysicalRange(std::size_t(marker->content_start), std::size_t(marker->content_start)));
                 children.push_back(std::move(paragraph));
             }
             for (auto& diagnostic : nested.diagnostics) {
-                if (diagnostic.source_range) diagnostic.source_range = CharRange(remap(diagnostic.source_range->start), remap(diagnostic.source_range->end));
                 diagnostics.push_back(std::move(diagnostic));
             }
             headings.insert(headings.end(), std::make_move_iterator(nested.headings.begin()), std::make_move_iterator(nested.headings.end()));
@@ -1324,8 +1328,8 @@ public:
             images.insert(images.end(), std::make_move_iterator(nested.images.begin()), std::make_move_iterator(nested.images.end()));
             math_blocks.insert(math_blocks.end(), std::make_move_iterator(nested.math_blocks.begin()), std::make_move_iterator(nested.math_blocks.end()));
             code_blocks.insert(code_blocks.end(), std::make_move_iterator(nested.code_blocks.begin()), std::make_move_iterator(nested.code_blocks.end()));
-            ParserSourceRange item_range(item_id, CharRange(CharOffset(marker->start), CharOffset(item_end)), CharRange(CharOffset(marker->content_start), CharOffset(inner_end_source)));
-            item_range.marker_ranges.push_back(CharRange(CharOffset(marker->start), CharOffset(marker->content_start)));
+            ParserSourceRange item_range(item_id, PhysicalRange(std::size_t(marker->start), std::size_t(item_end)), PhysicalRange(std::size_t(marker->content_start), std::size_t(inner_end_source)));
+            item_range.marker_ranges.push_back(PhysicalRange(std::size_t(marker->start), std::size_t(marker->content_start)));
             source_ranges.push_back(std::move(item_range));
             BlockNode item;
             item.id = item_id;
@@ -1338,7 +1342,7 @@ public:
             pos = item_end;
             if (pos >= cps.size()) break;
         }
-        push_range(list_id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(first_content), CharOffset(last_content)));
+        push_range(list_id, PhysicalRange(std::size_t(start), std::size_t(pos)), PhysicalRange(std::size_t(first_content), std::size_t(last_content)));
         return result;
     }
 
@@ -1347,7 +1351,7 @@ public:
         std::size_t start = pos;
         std::u32string inner;
         std::vector<std::size_t> offset_map;
-        std::vector<CharRange> marker_ranges;
+        std::vector<PhysicalRange> marker_ranges;
         std::size_t content_start = start;
         std::size_t content_end = start;
         bool first = true;
@@ -1360,7 +1364,7 @@ public:
             last_line_empty = peek1() == U'\n' || eof();
             if (first) content_start = line_content_start;
             first = false;
-            marker_ranges.push_back(CharRange(CharOffset(marker_start), CharOffset(line_content_start)));
+            marker_ranges.push_back(PhysicalRange(std::size_t(marker_start), std::size_t(line_content_start)));
             while (!eof() && peek1() != U'\n') {
                 offset_map.push_back(pos);
                 inner.push_back(peek1());
@@ -1386,14 +1390,14 @@ public:
         nested.node_counter = node_counter;
         auto children = nested.parse_blocks(nullptr);
         node_counter = nested.node_counter;
-        auto remap = [&](CharOffset value) {
-            auto index = (std::min)(body_start + value.v, offset_map.size() - 1);
-            return CharOffset(offset_map[index]);
+        auto remap = [&](std::size_t value) {
+            auto index = (std::min)(body_start + value, offset_map.size() - 1);
+            return std::size_t(offset_map[index]);
         };
         for (auto& range : nested.source_ranges) {
-            range.source_range = CharRange(remap(range.source_range.start), remap(range.source_range.end));
-            range.content_range = CharRange(remap(range.content_range.start), remap(range.content_range.end));
-            for (auto& marker : range.marker_ranges) marker = CharRange(remap(marker.start), remap(marker.end));
+            range.source_range = PhysicalRange(remap(range.source_range.start), remap(range.source_range.end));
+            range.content_range = PhysicalRange(remap(range.content_range.start), remap(range.content_range.end));
+            for (auto& marker : range.marker_ranges) marker = PhysicalRange(remap(marker.start), remap(marker.end));
             source_ranges.push_back(std::move(range));
         }
         if (children.empty()) {
@@ -1402,8 +1406,8 @@ public:
             paragraph.kind = BlockKind::Paragraph;
             source_ranges.emplace_back(
                 paragraph.id,
-                CharRange(CharOffset(content_start), CharOffset(content_start)),
-                CharRange(CharOffset(content_start), CharOffset(content_start)));
+                PhysicalRange(std::size_t(content_start), std::size_t(content_start)),
+                PhysicalRange(std::size_t(content_start), std::size_t(content_start)));
             children.push_back(std::move(paragraph));
         } else if (last_line_empty) {
             BlockNode paragraph;
@@ -1412,7 +1416,6 @@ public:
             children.push_back(std::move(paragraph));
         }
         for (auto& diagnostic : nested.diagnostics) {
-            if (diagnostic.source_range) diagnostic.source_range = CharRange(remap(diagnostic.source_range->start), remap(diagnostic.source_range->end));
             diagnostics.push_back(std::move(diagnostic));
         }
         headings.insert(headings.end(), std::make_move_iterator(nested.headings.begin()), std::make_move_iterator(nested.headings.end()));
@@ -1422,7 +1425,7 @@ public:
         math_blocks.insert(math_blocks.end(), std::make_move_iterator(nested.math_blocks.begin()), std::make_move_iterator(nested.math_blocks.end()));
         code_blocks.insert(code_blocks.end(), std::make_move_iterator(nested.code_blocks.begin()), std::make_move_iterator(nested.code_blocks.end()));
         NodeId id = next_node_id();
-        ParserSourceRange quote_range(id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(content_start), CharOffset(content_end)));
+        ParserSourceRange quote_range(id, PhysicalRange(std::size_t(start), std::size_t(source_end)), PhysicalRange(std::size_t(content_start), std::size_t(content_end)));
         quote_range.marker_ranges = std::move(marker_ranges);
         source_ranges.push_back(std::move(quote_range));
         if (callout) {
@@ -1466,7 +1469,7 @@ public:
         pos = line_end;
         if (peek1() == '\n') advance();
         NodeId id = next_node_id();
-        push_range(id, CharRange(CharOffset(start), CharOffset(line_end)), CharRange(CharOffset(start), CharOffset(line_end)));
+        push_range(id, PhysicalRange(std::size_t(start), std::size_t(line_end)), PhysicalRange(std::size_t(start), std::size_t(line_end)));
         BlockNode b; b.id = id; b.kind = BlockKind::ThematicBreak;
         return b;
     }
@@ -1484,7 +1487,7 @@ public:
         else { advance_n(7); mk = TocMarkerKind::WikiToc; }
         if (peek1() == '\n') advance();
         NodeId id = next_node_id();
-        push_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(start), cur()));
+        push_range(id, PhysicalRange(std::size_t(start), cur()), PhysicalRange(std::size_t(start), cur()));
         BlockNode b; b.id = id; b.kind = BlockKind::Toc; b.toc_marker = mk;
         return b;
     }
