@@ -1,14 +1,15 @@
-// elmd.core.selection_geometry — selection / caret geometry from the layout.
+// elmd.core.selection_geometry — selection / caret geometry in block-local coordinates.
 export module elmd.core.selection_geometry;
 import std;
 import elmd.core.types;
 import elmd.core.layout_tree;
 import elmd.core.selection;
+import elmd.core.text_edit;
 
 export namespace elmd {
 
 struct SelectionRect {
-    TextRange<CharOffset> source_range;
+    TextSpan source_span;
     LogicalRect rect;
 };
 
@@ -17,59 +18,86 @@ struct SelectionGeometry {
     std::vector<SelectionRect> ranges;
 };
 
-inline SelectionGeometry compute_selection_geometry(const LayoutTree& tree, TextRange<CharOffset> selection) {
-    SelectionGeometry sg;
-    sg.revision = tree.revision;
-    for (const auto& b : tree.blocks) {
-        for (const auto& ch : b.children) if (ch.kind == LayoutItem::Kind::Line) {
-            for (const auto& run : ch.line.runs) {
-                if (run.source_range.end.v <= selection.start.v || run.source_range.start.v >= selection.end.v) continue;
-                std::size_t sel_start = std::max(run.source_range.start.v, selection.start.v);
-                std::size_t sel_end = std::min(run.source_range.end.v, selection.end.v);
-                if (sel_start < sel_end) {
-                    float char_len = std::max(run.source_range.char_len(), std::size_t(1));
-                    float ratio_start = static_cast<float>(sel_start - run.source_range.start.v) / static_cast<float>(char_len);
-                    float ratio_end = static_cast<float>(sel_end - run.source_range.start.v) / static_cast<float>(char_len);
-                    float x = run.origin.x + ratio_start * run.width;
-                    float w = (ratio_end - ratio_start) * run.width;
-                    SelectionRect sr;
-                    sr.source_range = CharRange(CharOffset(sel_start), CharOffset(sel_end));
-                    sr.rect = LogicalRect(x, ch.line.rect.y, std::max(w, 1.0f), ch.line.rect.height);
-                    sg.ranges.push_back(std::move(sr));
-                }
-            }
+struct VisualRun {
+    const GlyphRunLayout* run = nullptr;
+    const TextLineLayout* line = nullptr;
+};
+
+inline std::vector<VisualRun> visual_runs(const LayoutTree& tree) {
+    std::vector<VisualRun> result;
+    for (const auto& block : tree.blocks) {
+        for (const auto& child : block.children) if (child.kind == LayoutItem::Kind::Line) {
+            for (const auto& run : child.line.runs) result.push_back({&run, &child.line});
         }
     }
-    return sg;
+    return result;
+}
+
+inline std::size_t visual_endpoint(const std::vector<VisualRun>& runs, const TextPosition& position) {
+    for (std::size_t index = 0; index < runs.size(); ++index) {
+        const auto& span = runs[index].run->source_span;
+        if (span.container_id == position.container_id && span.source_range.covers(position.source_offset)) return index;
+    }
+    for (std::size_t index = 0; index < runs.size(); ++index) {
+        if (runs[index].run->source_span.container_id == position.container_id) return index;
+    }
+    return runs.size();
+}
+
+inline SelectionGeometry compute_selection_geometry(const LayoutTree& tree, const TextSelection& selection) {
+    SelectionGeometry geometry;
+    geometry.revision = tree.revision;
+    if (selection.is_caret()) return geometry;
+    const auto runs = visual_runs(tree);
+    auto anchor_index = visual_endpoint(runs, selection.anchor);
+    auto active_index = visual_endpoint(runs, selection.active);
+    if (anchor_index == runs.size() || active_index == runs.size()) return geometry;
+    auto start_position = selection.anchor;
+    auto end_position = selection.active;
+    if (active_index < anchor_index || (active_index == anchor_index && end_position.source_offset < start_position.source_offset)) {
+        std::swap(anchor_index, active_index);
+        std::swap(start_position, end_position);
+    }
+    for (std::size_t index = anchor_index; index <= active_index; ++index) {
+        const auto& run = *runs[index].run;
+        auto start = run.source_span.source_range.start;
+        auto end = run.source_span.source_range.end;
+        if (run.source_span.container_id == start_position.container_id) start = (std::max)(start, start_position.source_offset);
+        if (run.source_span.container_id == end_position.container_id) end = (std::min)(end, end_position.source_offset);
+        if (start >= end) continue;
+        const auto length = (std::max)(run.source_span.source_range.length(), std::size_t{1});
+        const auto ratio_start = static_cast<float>(start - run.source_span.source_range.start) / static_cast<float>(length);
+        const auto ratio_end = static_cast<float>(end - run.source_span.source_range.start) / static_cast<float>(length);
+        geometry.ranges.push_back({
+            TextSpan{run.source_span.container_id, {start, end}},
+            LogicalRect(run.origin.x + ratio_start * run.width, runs[index].line->rect.y,
+                (std::max)((ratio_end - ratio_start) * run.width, 1.0f), runs[index].line->rect.height)});
+    }
+    return geometry;
 }
 
 struct CaretGeometry {
-    CharOffset position{};
+    TextPosition position{};
     LogicalRect rect;
-    TextAffinity affinity = TextAffinity::Downstream;
 };
 
-inline std::optional<CaretGeometry> compute_caret_geometry(const LayoutTree& tree, CharOffset pos) {
-    for (const auto& b : tree.blocks) {
-        for (const auto& ch : b.children) if (ch.kind == LayoutItem::Kind::Line) {
-            for (const auto& run : ch.line.runs) {
-                if (pos.v >= run.source_range.start.v && pos.v <= run.source_range.end.v) {
-                    float char_len = run.source_range.char_len();
-                    float ratio = char_len ? static_cast<float>(pos.v - run.source_range.start.v) / static_cast<float>(char_len) : 0.0f;
-                    float x = run.origin.x + ratio * run.width;
-                    CaretGeometry cg;
-                    cg.position = pos;
-                    cg.rect = LogicalRect(x, ch.line.rect.y, 2.0f, ch.line.rect.height);
-                    cg.affinity = TextAffinity::Downstream;
-                    return cg;
-                }
+inline std::optional<CaretGeometry> compute_caret_geometry(const LayoutTree& tree, TextPosition position) {
+    for (const auto& block : tree.blocks) {
+        for (const auto& child : block.children) if (child.kind == LayoutItem::Kind::Line) {
+            for (const auto& run : child.line.runs) {
+                const auto& span = run.source_span;
+                if (span.container_id != position.container_id || !span.source_range.covers(position.source_offset)) continue;
+                const auto length = span.source_range.length();
+                const auto ratio = length
+                    ? static_cast<float>(position.source_offset - span.source_range.start) / static_cast<float>(length)
+                    : 0.0f;
+                return CaretGeometry{position,
+                    LogicalRect(run.origin.x + ratio * run.width, child.line.rect.y, 2.0f, child.line.rect.height)};
             }
-            if (ch.line.runs.empty() && ch.line.source_range.start == pos) {
-                CaretGeometry cg;
-                cg.position = pos;
-                cg.rect = LogicalRect(ch.line.rect.x, ch.line.rect.y, 2.0f, ch.line.rect.height);
-                cg.affinity = TextAffinity::Downstream;
-                return cg;
+            if (child.line.runs.empty() && child.line.source_span.container_id == position.container_id
+                && child.line.source_span.source_range.start == position.source_offset) {
+                return CaretGeometry{position,
+                    LogicalRect(child.line.rect.x, child.line.rect.y, 2.0f, child.line.rect.height)};
             }
         }
     }

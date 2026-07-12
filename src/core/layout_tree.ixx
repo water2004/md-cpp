@@ -6,11 +6,12 @@ import elmd.core.ids;
 import elmd.core.dialect;
 import elmd.core.render_model;
 import elmd.core.text_measurer;
+import elmd.core.text_edit;
 
 export namespace elmd {
 
 struct GlyphRunLayout {
-    TextRange<CharOffset> source_range;
+    TextSpan source_span;
     std::u32string text;
     std::vector<GlyphInfo> glyphs;
     InlineStyle style;
@@ -21,15 +22,15 @@ struct GlyphRunLayout {
 };
 
 struct GlyphRunLayoutInit {
-    TextRange<CharOffset> source_range;
+    TextSpan source_span;
     std::u32string text;
     InlineStyle style;
-    GlyphRunLayoutInit(TextRange<CharOffset> sr, std::u32string t, InlineStyle s)
-        : source_range(sr), text(std::move(t)), style(std::move(s)) {}
+    GlyphRunLayoutInit(TextSpan span, std::u32string t, InlineStyle s)
+        : source_span(span), text(std::move(t)), style(std::move(s)) {}
 };
 
 struct EmbeddedLayout {
-    TextRange<CharOffset> source_range;
+    TextSpan source_span;
     LogicalRect rect;
     // EmbeddedKind values: inline-math / inline-image
     std::u32string tex;
@@ -40,12 +41,12 @@ struct EmbeddedLayout {
 struct LayoutItem;
 
 struct TextLineLayout {
-    TextRange<CharOffset> source_range;
+    TextSpan source_span;
     LogicalRect rect;
     float baseline{};
     std::vector<GlyphRunLayout> runs;
     TextLineLayout() = default;
-    explicit TextLineLayout(TextRange<CharOffset> sr) : source_range(sr) {}
+    explicit TextLineLayout(TextSpan span) : source_span(span) {}
 };
 
 struct MathLayout { NodeId id; TextRange<CharOffset> source_range; LogicalRect rect; std::u32string tex; };
@@ -53,7 +54,7 @@ struct MathLayout { NodeId id; TextRange<CharOffset> source_range; LogicalRect r
 struct ImageLayout { NodeId id; TextRange<CharOffset> source_range; LogicalRect rect; std::string src; std::string alt; };
 
 struct TableLayoutColumn { float width; TableAlignment alignment; };
-struct TableLayoutCell { TextRange<CharOffset> source_range; LogicalRect rect; std::vector<LayoutItem> content; };
+struct TableLayoutCell { TextSpan source_span; LogicalRect rect; std::vector<LayoutItem> content; };
 struct TableLayoutRow { LogicalRect rect; std::vector<TableLayoutCell> cells; bool is_header{}; };
 struct TableLayout {
     NodeId id; TextRange<CharOffset> source_range; LogicalRect rect;

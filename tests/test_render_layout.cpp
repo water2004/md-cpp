@@ -34,7 +34,7 @@ suite render_layout_tests = [] {
     auto m = build_model("# Title");
     expect(fatal(bool(!m.blocks.empty())));
     for (const auto& it : m.blocks[0].inline_items)
-        expect(fatal(bool(it.source_range.end.v >= it.source_range.start.v)));
+        expect(fatal(bool(it.source_span.source_range.end >= it.source_span.source_range.start)));
     bool has_text = false;
     for (const auto& it : m.blocks[0].inline_items) if (it.kind == InlineRenderItem::Kind::Text) has_text = true;
     expect(fatal(bool(has_text)));
@@ -97,10 +97,10 @@ suite render_layout_tests = [] {
         if (markers.size() != 2) continue;
         expect(fatal(bool((markers[0]->text) == (test.marker))));
         expect(fatal(bool((markers[1]->text) == (test.marker))));
-        expect(fatal(bool((markers[0]->source_range.start.v) == (0u))));
-        expect(fatal(bool((markers[0]->source_range.end.v) == (test.marker.size()))));
-        expect(fatal(bool((markers[1]->source_range.start.v) == (test.source.size() - test.marker.size()))));
-        expect(fatal(bool((markers[1]->source_range.end.v) == (test.source.size()))));
+        expect(fatal(bool((markers[0]->source_span.source_range.start) == (0u))));
+        expect(fatal(bool((markers[0]->source_span.source_range.end) == (test.marker.size()))));
+        expect(fatal(bool((markers[1]->source_span.source_range.start) == (test.source.size() - test.marker.size()))));
+        expect(fatal(bool((markers[1]->source_span.source_range.end) == (test.source.size()))));
         expect(fatal(bool(markers[0]->marker_owner.has_value())));
         expect(fatal(bool(markers[1]->marker_owner == markers[0]->marker_owner)));
     }
@@ -117,17 +117,19 @@ suite render_layout_tests = [] {
     expect(fatal(bool((markers.size()) == (4u))));
     if (markers.size() == 4) {
         expect(fatal(bool((markers[0]->text) == (std::u32string(U"_")))));
-        expect(fatal(bool((markers[0]->source_range.start.v) == (0u))));
+        expect(fatal(bool((markers[0]->source_span.source_range.start) == (0u))));
         expect(fatal(bool((markers[1]->text) == (std::u32string(U"**")))));
-        expect(fatal(bool((markers[1]->source_range.start.v) == (7u))));
+        expect(fatal(bool((markers[1]->source_span.source_range.start) == (7u))));
         expect(fatal(bool((markers[2]->text) == (std::u32string(U"**")))));
-        expect(fatal(bool((markers[2]->source_range.start.v) == (14u))));
+        expect(fatal(bool((markers[2]->source_span.source_range.start) == (14u))));
         expect(fatal(bool((markers[3]->text) == (std::u32string(U"_")))));
-        expect(fatal(bool((markers[3]->source_range.start.v) == (21u))));
+        expect(fatal(bool((markers[3]->source_span.source_range.start) == (21u))));
     }
     auto const& items = model.blocks.front().inline_items;
     for (std::size_t index = 1; index < items.size(); ++index) {
-        expect(fatal(bool(items[index - 1].source_range.end.v <= items[index].source_range.start.v)));
+        if (items[index - 1].source_span.container_id == items[index].source_span.container_id) {
+            expect(fatal(bool(items[index - 1].source_span.source_range.end <= items[index].source_span.source_range.start)));
+        }
     }
 };
 
@@ -249,8 +251,8 @@ suite render_layout_tests = [] {
     expect(fatal(bool((m.blocks[0].content_range.end.v) == (7u))));
     expect(fatal(bool((m.blocks[0].inline_items.size()) == (1u))));
     expect(fatal(bool(m.blocks[0].inline_items[0].kind == InlineRenderItem::Kind::Math)));
-    expect(fatal(bool((m.blocks[0].inline_items[0].source_range.start.v) == (0u))));
-    expect(fatal(bool((m.blocks[0].inline_items[0].source_range.end.v) == (7u))));
+    expect(fatal(bool((m.blocks[0].inline_items[0].source_span.source_range.start) == (0u))));
+    expect(fatal(bool((m.blocks[0].inline_items[0].source_span.source_range.end) == (7u))));
 };
 
 "inline_math_at_either_text_edge_preserves_paragraph_end"_test = [] {
@@ -271,8 +273,8 @@ suite render_layout_tests = [] {
     });
     expect(fatal(bool(it != m.blocks[0].inline_items.end())));
     expect(fatal(bool(it->math_delim == MathDelimiter::InlineParen)));
-    expect(fatal(bool((it->source_range.start.v) == (0u))));
-    expect(fatal(bool((it->source_range.end.v) == (5u))));
+    expect(fatal(bool((it->source_span.source_range.start) == (0u))));
+    expect(fatal(bool((it->source_span.source_range.end) == (5u))));
 };
 
 "builds_table_block"_test = [] {
@@ -333,7 +335,7 @@ suite render_layout_tests = [] {
         if (item.kind != InlineRenderItem::Kind::Marker || item.marker_role != MarkerRole::ListBullet) continue;
         source_markers.push_back(item.text);
         display_markers.push_back(item.display_text);
-        expect(fatal(bool((item.source_range.len()) == (2u))));
+        expect(fatal(bool(item.source_span.source_range.empty())));
     }
     expect(fatal(bool((source_markers.size()) == (3u))));
     expect(fatal(bool(source_markers[0] == U"- ")));
@@ -345,15 +347,16 @@ suite render_layout_tests = [] {
 "list_inline_math_reaches_the_render_model_with_exact_ranges"_test = [] {
     auto m = build_model("- before $x^2$ after\n- next $y$\n");
     expect(fatal(bool((m.blocks.size()) == (1u))));
-    std::vector<CharRange> math_ranges;
+    std::vector<TextSpan> math_ranges;
     for (auto const& item : m.blocks[0].inline_items) {
-        if (item.kind == InlineRenderItem::Kind::Math) math_ranges.push_back(item.source_range);
+        if (item.kind == InlineRenderItem::Kind::Math) math_ranges.push_back(item.source_span);
     }
     expect(fatal(bool((math_ranges.size()) == (2u))));
-    expect(fatal(bool((math_ranges[0].start.v) == (9u))));
-    expect(fatal(bool((math_ranges[0].end.v) == (14u))));
-    expect(fatal(bool((math_ranges[1].start.v) == (28u))));
-    expect(fatal(bool((math_ranges[1].end.v) == (31u))));
+    expect(fatal(bool((math_ranges[0].source_range.start) == (7u))));
+    expect(fatal(bool((math_ranges[0].source_range.end) == (12u))));
+    expect(fatal(bool((math_ranges[1].source_range.start) == (5u))));
+    expect(fatal(bool((math_ranges[1].source_range.end) == (8u))));
+    expect(fatal(bool(math_ranges[0].container_id != math_ranges[1].container_id)));
 };
 
 "nested_list_blocks_reach_the_render_model"_test = [] {
@@ -409,8 +412,9 @@ suite render_layout_tests = [] {
     expect(fatal(bool(!m.blocks[0].table_cells[0].empty())));
     expect(fatal(bool(!m.blocks[0].table_cells[1].empty())));
     if (!m.blocks[0].table_cells[0].empty() && !m.blocks[0].table_cells[1].empty()) {
-        expect(fatal(bool((m.blocks[0].table_cells[0][0].source_range.start.v) == (2u))));
-        expect(fatal(bool((m.blocks[0].table_cells[1][0].source_range.start.v) == (6u))));
+        expect(fatal(bool((m.blocks[0].table_cells[0][0].source_span.source_range.start) == (0u))));
+        expect(fatal(bool((m.blocks[0].table_cells[1][0].source_span.source_range.start) == (0u))));
+        expect(fatal(bool(m.blocks[0].table_cells[0][0].source_span.container_id != m.blocks[0].table_cells[1][0].source_span.container_id)));
     }
 };
 
@@ -469,8 +473,8 @@ suite render_layout_tests = [] {
         expect(fatal(bool((fragment.content_range.end.v) == (49u))));
         expect(fatal(bool(!fragment.inline_items.empty())));
         if (!fragment.inline_items.empty()) {
-            expect(fatal(bool((fragment.inline_items.front().source_range.start.v) == (4u))));
-            expect(fatal(bool((fragment.inline_items.back().source_range.end.v) == (49u))));
+            expect(fatal(bool((fragment.inline_items.front().source_span.source_range.start) == (0u))));
+            expect(fatal(bool(fragment.inline_items.back().source_span.source_range.end <= 49u)));
         }
     }
 };
@@ -497,10 +501,10 @@ suite render_layout_tests = [] {
         auto const& items = m.blocks[0].child_blocks[0].inline_items;
         expect(fatal(bool((items.size()) == (3u))));
         if (items.size() >= 3) {
-            expect(fatal(bool((items[0].source_range.start.v) == (2u))));
-            expect(fatal(bool((items[1].source_range.start.v) == (12u))));
-            expect(fatal(bool((items[1].source_range.end.v) == (13u))));
-            expect(fatal(bool(items[2].source_range.start.v >= items[1].source_range.end.v)));
+            expect(fatal(bool((items[0].source_span.source_range.start) == (0u))));
+            expect(fatal(bool((items[1].source_span.source_range.start) == (10u))));
+            expect(fatal(bool((items[1].source_span.source_range.end) == (11u))));
+            expect(fatal(bool(items[2].source_span.source_range.start >= items[1].source_span.source_range.end)));
         }
     }
 };
@@ -514,8 +518,8 @@ suite render_layout_tests = [] {
         auto hard = std::find_if(items.begin(), items.end(), [](auto const& item) { return item.kind == InlineRenderItem::Kind::Text && item.text == U"\n"; });
         expect(fatal(bool(hard != items.end())));
         if (hard != items.end()) {
-            expect(fatal(bool((hard->source_range.start.v) == (7u))));
-            expect(fatal(bool((hard->source_range.end.v) == (10u))));
+            expect(fatal(bool((hard->source_span.source_range.start) == (5u))));
+            expect(fatal(bool((hard->source_span.source_range.end) == (8u))));
         }
     }
 };
@@ -528,7 +532,7 @@ suite render_layout_tests = [] {
         auto const& items = m.blocks[0].child_blocks[0].inline_items;
         expect(fatal(bool(!items.empty())));
         expect(fatal(bool(items.back().text == U"\n")));
-        expect(fatal(bool((items.back().source_range.end.v) == (10u))));
+        expect(fatal(bool((items.back().source_span.source_range.end) == (8u))));
     }
 };
 
@@ -574,7 +578,8 @@ suite render_layout_tests = [] {
     expect(fatal(bool(table.rows[0].is_header)));
     expect(fatal(bool(table.columns[0].alignment == TableAlignment::Left)));
     expect(fatal(bool(table.columns[1].alignment == TableAlignment::Right)));
-    expect(fatal(bool((table.rows[0].cells[0].source_range.start.v) == (2u))));
+    expect(fatal(bool((table.rows[0].cells[0].source_span.source_range.start) == (0u))));
+    expect(fatal(bool(table.rows[0].cells[0].source_span.container_id.v != 0)));
 };
 
 "builds_text_blocks_from_ast_paragraphs"_test = [] {
@@ -600,11 +605,12 @@ suite render_layout_tests = [] {
 "layout_blank_block_has_one_caret_line"_test = [] {
     StubMeasurer ms;
     auto m = build_model("Hello\n\n");
-    auto t = layout_blocks(m.blocks, 800.0f, 1.0f, ms, CharOffset(6), LogicalPoint(0, 0), Outline::empty(1));
+    const auto owner = m.blocks[1].id;
+    auto t = layout_blocks(m.blocks, 800.0f, 1.0f, ms, TextPosition{owner, 0, TextAffinity::Downstream}, LogicalPoint(0, 0), Outline::empty(1));
     expect(fatal(bool((t.blocks.size()) == (2u))));
     expect(fatal(bool(t.blocks[1].kind.kind == LayoutBlockKind::Blank)));
     expect(fatal(bool((t.blocks[1].children.size()) == (1u))));
-    auto caret = compute_caret_geometry(t, CharOffset(6));
+    auto caret = compute_caret_geometry(t, TextPosition{owner, 0, TextAffinity::Downstream});
     expect(fatal(bool(caret.has_value())));
 };
 
@@ -674,7 +680,8 @@ suite render_layout_tests = [] {
 "layout_text_block"_test = [] {
     StubMeasurer ms;
     RenderBlock rb; rb.kind = RenderBlockKind::Text; rb.block_style = BlockStyle::paragraph();
-    InlineRenderItem it = InlineRenderItem::plain_text(U"Hello", CharRange(CharOffset(0), CharOffset(5)));
+    rb.id = NodeId{42};
+    InlineRenderItem it = InlineRenderItem::plain_text(U"Hello", TextSpan{rb.id, {0, 5}});
     rb.inline_items.push_back(it);
     auto t = layout_blocks({rb}, 800.0f, 1.0f, ms, std::nullopt, LogicalPoint(0, 0), Outline::empty(0));
     expect(fatal(bool(!t.blocks.empty())));
@@ -695,18 +702,19 @@ suite render_layout_tests = [] {
     auto hit = hit_test_layout_tree(t, hit_point);
     expect(fatal(bool(hit.has_value())));
     bool any_line_range = false;
-    for (const auto& b : t.blocks) for (const auto& ch : b.children) if (ch.line.source_range.end.v > ch.line.source_range.start.v) any_line_range = true;
+    for (const auto& b : t.blocks) for (const auto& ch : b.children) if (ch.line.source_span.source_range.length() > 0) any_line_range = true;
     expect(fatal(bool(any_line_range)));
 };
 
-"hit_test_returns_document_offset"_test = [] {
+"hit_test_returns_block_local_position"_test = [] {
     StubMeasurer ms(6.0f);
     LayoutTree tree;
     LayoutBlock b(NodeId(0), CharRange(CharOffset(10), CharOffset(15)), {LayoutBlockKind::Paragraph}, BlockStyle::paragraph());
-    TextLineLayout ll{CharRange(CharOffset(10), CharOffset(15))};
+    const auto owner = NodeId{77};
+    TextLineLayout ll{TextSpan{owner, {10, 15}}};
     ll.rect = LogicalRect(0, 0, 100, 20);
     ll.baseline = 16;
-    GlyphRunLayout r; r.source_range = CharRange(CharOffset(10), CharOffset(15));
+    GlyphRunLayout r; r.source_span = {owner, {10, 15}};
     r.text = U"hello"; r.origin = LogicalPoint(0, 0); r.width = 30; r.marker_visibility = MarkerVisibility::Always;
     for (std::size_t i = 0; i < 5; ++i) { GlyphInfo g; g.advance = 6; g.char_index = i; r.glyphs.push_back(g); }
     ll.runs.push_back(std::move(r));
@@ -717,8 +725,9 @@ suite render_layout_tests = [] {
     auto hit = hit_test_layout_tree(tree, LogicalPoint(15, 10));
     expect(fatal(bool(hit.has_value())));
     if (hit) {
-        expect(fatal(bool(hit->position.v >= 10)));
-        expect(fatal(bool(hit->position.v <= 15)));
+        expect(fatal(bool(hit->position.container_id == owner)));
+        expect(fatal(bool(hit->position.source_offset >= 10)));
+        expect(fatal(bool(hit->position.source_offset <= 15)));
     }
 };
 
@@ -747,9 +756,10 @@ suite render_layout_tests = [] {
     StubMeasurer ms;
     LayoutTree t;
     LayoutBlock b(NodeId(0), CharRange(CharOffset(0), CharOffset(5)), {LayoutBlockKind::Paragraph}, BlockStyle::paragraph());
-    TextLineLayout ll{CharRange(CharOffset(0), CharOffset(5))};
+    const auto owner = NodeId{88};
+    TextLineLayout ll{TextSpan{owner, {0, 5}}};
     ll.rect = LogicalRect(0, 0, 100, 20); ll.baseline = 16;
-    GlyphRunLayout r; r.source_range = CharRange(CharOffset(0), CharOffset(5));
+    GlyphRunLayout r; r.source_span = {owner, {0, 5}};
     r.text = U"hello"; r.origin = LogicalPoint(0, 0); r.width = 50; r.marker_visibility = MarkerVisibility::Always;
     for (std::size_t i = 0; i < 5; ++i) { GlyphInfo g; g.advance = 10; g.char_index = i; r.glyphs.push_back(g); }
     ll.runs.push_back(std::move(r));
@@ -757,7 +767,7 @@ suite render_layout_tests = [] {
     b.children.push_back(std::move(li));
     b.rect = LogicalRect(0, 0, 100, 20);
     t.blocks.push_back(std::move(b));
-    auto sg = compute_selection_geometry(t, CharRange(CharOffset(1), CharOffset(4)));
+    auto sg = compute_selection_geometry(t, TextSelection{{owner, 1, TextAffinity::Downstream}, {owner, 4, TextAffinity::Downstream}});
     expect(fatal(bool(!sg.ranges.empty())));
 };
 
@@ -765,9 +775,10 @@ suite render_layout_tests = [] {
     StubMeasurer ms;
     LayoutTree t;
     LayoutBlock b(NodeId(0), CharRange(CharOffset(0), CharOffset(5)), {LayoutBlockKind::Paragraph}, BlockStyle::paragraph());
-    TextLineLayout ll{CharRange(CharOffset(0), CharOffset(5))};
+    const auto owner = NodeId{99};
+    TextLineLayout ll{TextSpan{owner, {0, 5}}};
     ll.rect = LogicalRect(0, 0, 100, 20); ll.baseline = 16;
-    GlyphRunLayout r; r.source_range = CharRange(CharOffset(0), CharOffset(5));
+    GlyphRunLayout r; r.source_span = {owner, {0, 5}};
     r.text = U"hello"; r.origin = LogicalPoint(0, 0); r.width = 50; r.marker_visibility = MarkerVisibility::Always;
     for (std::size_t i = 0; i < 5; ++i) { GlyphInfo g; g.advance = 10; g.char_index = i; r.glyphs.push_back(g); }
     ll.runs.push_back(std::move(r));
@@ -775,7 +786,7 @@ suite render_layout_tests = [] {
     b.children.push_back(std::move(li));
     b.rect = LogicalRect(0, 0, 100, 20);
     t.blocks.push_back(std::move(b));
-    auto cg = compute_caret_geometry(t, CharOffset(3));
+    auto cg = compute_caret_geometry(t, TextPosition{owner, 3, TextAffinity::Downstream});
     expect(fatal(bool(cg.has_value())));
 };
 

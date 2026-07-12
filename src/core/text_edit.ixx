@@ -34,6 +34,14 @@ struct TextPosition {
     bool operator==(const TextPosition&) const = default;
 };
 
+// A render/layout range in the same single coordinate system as selection.
+struct TextSpan {
+    NodeId container_id{};
+    SourceRange source_range;
+
+    bool operator==(const TextSpan&) const = default;
+};
+
 struct TextSelection {
     TextPosition anchor;
     TextPosition active;

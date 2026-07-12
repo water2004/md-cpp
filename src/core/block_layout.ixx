@@ -9,18 +9,19 @@ import elmd.core.text_measurer;
 import elmd.core.utf;
 import elmd.core.layout_tree;
 import elmd.core.outline;
+import elmd.core.text_edit;
 
 export namespace elmd {
 
-inline MarkerVisibility marker_visibility_for(TextRange<CharOffset> range, std::optional<CharOffset> caret) {
-    if (caret && range.contains(*caret)) return MarkerVisibility::Always;
+inline MarkerVisibility marker_visibility_for(TextSpan span, std::optional<TextPosition> caret) {
+    if (caret && caret->container_id == span.container_id && span.source_range.covers(caret->source_offset)) return MarkerVisibility::Always;
     return MarkerVisibility::HiddenButEditable;
 }
 
 inline std::pair<LayoutBlock, float> layout_text_block(const RenderBlock& rb, float y,
                                                        float viewport_width, float scale,
                                                        TextMeasurer& measurer,
-                                                       std::optional<CharOffset> caret,
+                                                       std::optional<TextPosition> caret,
                                                        LogicalPoint origin) {
     const auto& style = rb.block_style;
     const char32_t strip_chars[] = {' ', '\t'};
@@ -45,7 +46,7 @@ inline std::pair<LayoutBlock, float> layout_text_block(const RenderBlock& rb, fl
                 cur_x = pad_left;
             }
             GlyphRunLayout r;
-            r.source_range = it.source_range; r.text = it.text; r.glyphs = std::move(shape.glyphs);
+            r.source_span = it.source_span; r.text = it.text; r.glyphs = std::move(shape.glyphs);
             r.style = it.style; r.origin = LogicalPoint(cur_x, 0.0f);
             r.width = shape.width; r.height = line_height; r.marker_visibility = MarkerVisibility::Always;
             cur_x += shape.width;
@@ -59,17 +60,17 @@ inline std::pair<LayoutBlock, float> layout_text_block(const RenderBlock& rb, fl
                 cur_x = pad_left;
             }
             GlyphRunLayout r;
-            r.source_range = it.source_range; r.text = mt; r.glyphs = std::move(shape.glyphs);
+            r.source_span = it.source_span; r.text = mt; r.glyphs = std::move(shape.glyphs);
             r.style = InlineStyle::plain(); r.origin = LogicalPoint(cur_x, 0.0f);
             r.width = shape.width; r.height = line_height;
             r.marker_visibility = MarkerVisibility::Always;
             cur_x += shape.width; line_runs.push_back(std::move(r));
         } else if (it.kind == InlineRenderItem::Kind::Marker) {
             auto shape = measurer.measure(it.text, font_size, InlineStyle::plain());
-            auto vis = marker_visibility_for(it.source_range, caret);
+            auto vis = marker_visibility_for(it.source_span, caret);
             float marker_width = (vis == MarkerVisibility::HiddenButEditable) ? 0.0f : shape.width;
             GlyphRunLayout r;
-            r.source_range = it.source_range; r.text = it.text; r.glyphs = std::move(shape.glyphs);
+            r.source_span = it.source_span; r.text = it.text; r.glyphs = std::move(shape.glyphs);
             r.style = InlineStyle::plain(); r.origin = LogicalPoint(cur_x, 0.0f);
             r.width = marker_width; r.height = line_height; r.marker_visibility = vis;
             cur_x += marker_width;
@@ -85,17 +86,16 @@ inline std::pair<LayoutBlock, float> layout_text_block(const RenderBlock& rb, fl
     lb.rect = LogicalRect(origin.x, y + margin_top, viewport_width, block_height - margin_top - style.margin_bottom * scale);
     for (std::size_t i = 0; i < runs.size(); ++i) {
         float line_y = y + margin_top + pad_top + i * line_height;
-        CharRange lr{CharOffset(), CharOffset()};
+        TextSpan line_span{rb.id, {0, 0}};
         bool first = true;
         for (const auto& r : runs[i]) {
-            if (first) { lr = r.source_range; first = false; }
-            else {
-                lr.start = (r.source_range.start < lr.start) ? r.source_range.start : lr.start;
-                lr.end = (r.source_range.end > lr.end) ? r.source_range.end : lr.end;
+            if (first) { line_span = r.source_span; first = false; }
+            else if (r.source_span.container_id == line_span.container_id) {
+                line_span.source_range.start = (std::min)(line_span.source_range.start, r.source_span.source_range.start);
+                line_span.source_range.end = (std::max)(line_span.source_range.end, r.source_span.source_range.end);
             }
         }
-        if (first) lr = rb.source_range;
-        TextLineLayout ll{lr};
+        TextLineLayout ll{line_span};
         ll.rect = LogicalRect(origin.x, line_y, viewport_width, line_height);
         ll.baseline = line_y + font_size;
         ll.runs = runs[i];
@@ -109,7 +109,7 @@ inline std::pair<LayoutBlock, float> layout_blank_block(const RenderBlock& rb, f
     float line_height = 24.0f * scale;
     LayoutBlock block(rb.id, rb.source_range, {LayoutBlockKind::Blank}, rb.block_style);
     block.rect = LogicalRect(origin.x, y, viewport_width, line_height);
-    TextLineLayout line{rb.content_range};
+    TextLineLayout line{TextSpan{rb.id, {0, 0}}};
     line.rect = block.rect;
     line.baseline = y + 16.0f * scale;
     LayoutItem item;
@@ -122,7 +122,7 @@ inline std::pair<LayoutBlock, float> layout_blank_block(const RenderBlock& rb, f
 inline std::pair<LayoutBlock, float> layout_quote_block(const RenderBlock& rb, float y,
                                                         float viewport_width, float scale,
                                                         TextMeasurer& measurer,
-                                                        std::optional<CharOffset> caret,
+                                                        std::optional<TextPosition> caret,
                                                         LogicalPoint origin) {
     auto padding_top = rb.block_style.padding_top * scale;
     auto padding_bottom = rb.block_style.padding_bottom * scale;
@@ -177,7 +177,7 @@ inline std::pair<LayoutBlock, float> layout_code_block(const RenderBlock& rb, fl
         ll.rect = LogicalRect(pad, y + style.margin_top * scale + pad + i * line_height, viewport_width - pad, line_height);
         ll.baseline = ll.rect.y + font_size;
         GlyphRunLayout r;
-        r.source_range = rb.source_range; r.text = lines[i]; r.glyphs = std::move(shape.glyphs);
+        r.source_span = {rb.id, {0, lines[i].size()}}; r.text = lines[i]; r.glyphs = std::move(shape.glyphs);
         r.style = InlineStyle::plain(); r.origin = LogicalPoint(pad, 0.0f);
         r.width = shape.width; r.height = line_height; r.marker_visibility = MarkerVisibility::Always;
         ll.runs.push_back(std::move(r));
@@ -204,14 +204,15 @@ inline std::u32string table_cell_layout_text(const std::vector<InlineRenderItem>
     return text;
 }
 
-inline CharRange table_cell_layout_range(const std::vector<InlineRenderItem>& items, CharRange fallback) {
-    if (items.empty()) return fallback;
-    CharRange range = items.front().source_range;
+inline TextSpan table_cell_layout_span(const std::vector<InlineRenderItem>& items, NodeId fallback_owner) {
+    if (items.empty()) return {fallback_owner, {0, 0}};
+    TextSpan span = items.front().source_span;
     for (const auto& item : items) {
-        if (item.source_range.start < range.start) range.start = item.source_range.start;
-        if (item.source_range.end > range.end) range.end = item.source_range.end;
+        if (item.source_span.container_id != span.container_id) continue;
+        span.source_range.start = (std::min)(span.source_range.start, item.source_span.source_range.start);
+        span.source_range.end = (std::max)(span.source_range.end, item.source_span.source_range.end);
     }
-    return range;
+    return span;
 }
 
 inline std::pair<LayoutBlock, float> layout_table_block(const RenderBlock& rb, float y, float viewport_width, float scale, TextMeasurer& measurer, LogicalPoint origin) {
@@ -262,11 +263,11 @@ inline std::pair<LayoutBlock, float> layout_table_block(const RenderBlock& rb, f
         for (std::size_t column = 0; column < columns; ++column) {
             auto index = row * columns + column;
             const std::vector<InlineRenderItem>* items = index < rb.table_cells.size() ? &rb.table_cells[index] : nullptr;
-            CharRange source_range = items ? table_cell_layout_range(*items, rb.content_range) : rb.content_range;
+            TextSpan source_span = items ? table_cell_layout_span(*items, rb.id) : TextSpan{rb.id, {0, 0}};
             TableLayoutCell cell;
-            cell.source_range = source_range;
+            cell.source_span = source_span;
             cell.rect = LogicalRect(x, layout_row.rect.y, widths[column], line_height);
-            TextLineLayout line(source_range);
+            TextLineLayout line(source_span);
             line.rect = cell.rect;
             line.baseline = line.rect.y + font_size;
             std::u32string text = items ? table_cell_layout_text(*items) : U"";
@@ -279,7 +280,7 @@ inline std::pair<LayoutBlock, float> layout_table_block(const RenderBlock& rb, f
             if (alignment == TableAlignment::Right) text_x += (std::max)(0.0f, inner_width - shape.width);
             if (alignment == TableAlignment::Center) text_x += (std::max)(0.0f, (inner_width - shape.width) * 0.5f);
             GlyphRunLayout run;
-            run.source_range = source_range;
+            run.source_span = source_span;
             run.text = std::move(text);
             run.glyphs = std::move(shape.glyphs);
             run.style = text_style;
@@ -325,7 +326,7 @@ inline std::pair<LayoutBlock, float> layout_math_block(const RenderBlock& rb, fl
         ll.rect = LogicalRect(pad, y + style.margin_top * scale + pad + i * line_height, viewport_width - pad, line_height);
         ll.baseline = ll.rect.y + font_size;
         GlyphRunLayout r;
-        r.source_range = rb.source_range; r.text = lines[i]; r.glyphs = std::move(shape.glyphs);
+        r.source_span = {rb.id, {0, lines[i].size()}}; r.text = lines[i]; r.glyphs = std::move(shape.glyphs);
         r.style = InlineStyle::plain(); r.origin = LogicalPoint(pad, 0.0f);
         r.width = shape.width; r.height = line_height; r.marker_visibility = MarkerVisibility::Always;
         ll.runs.push_back(std::move(r));
@@ -393,7 +394,7 @@ inline std::pair<LayoutBlock, float> layout_unsupported(const RenderBlock& rb, f
 
 inline LayoutTree layout_blocks(const std::vector<RenderBlock>& blocks, float viewport_width,
                                 float scale, TextMeasurer& measurer,
-                                std::optional<CharOffset> caret, LogicalPoint origin,
+                                std::optional<TextPosition> caret, LogicalPoint origin,
                                 const Outline& outline) {
     LayoutTree tree;
     float y = origin.y;

@@ -58,10 +58,10 @@ inline RenderBlock render_block_base(BlockKind k, NodeId id, TextRange<CharOffse
 }
 
 // Build a Marker inline item at the running cursor; advances `cursor`.
-inline void push_marker(std::vector<InlineRenderItem>& out, std::size_t& cursor, std::u32string text,
+inline void push_marker(std::vector<InlineRenderItem>& out, NodeId owner, std::size_t& cursor, std::u32string text,
                         MarkerRole role = MarkerRole::Syntax, std::u32string display_text = {}) {
     InlineRenderItem m; m.kind = InlineRenderItem::Kind::Marker;
-    m.source_range = CharRange(CharOffset(cursor), CharOffset(cursor + text.size()));
+    m.source_span = {owner, {cursor, cursor}};
     m.text = std::move(text); m.display_text = std::move(display_text); m.marker_role = role;
     m.marker_style = MarkerStyle{true, {}}; m.visibility = MarkerVisibility::Always;
     out.push_back(std::move(m));
@@ -79,15 +79,15 @@ struct Builder {
         if (const auto* range = sm ? sm->find_node_by_id(id) : nullptr) return range->content_range;
         return {};
     }
-    void append_block_break(std::vector<InlineRenderItem>& out, std::size_t source_offset) {
+    void append_block_break(std::vector<InlineRenderItem>& out, NodeId owner, std::size_t source_offset = 0) {
         std::size_t cursor = source_offset;
-        push_marker(out, cursor, U"\n", MarkerRole::Structural);
+        push_marker(out, owner, cursor, U"\n", MarkerRole::Structural);
     }
-    void append_generated_indent(std::vector<InlineRenderItem>& out, std::size_t source_offset, std::size_t columns) {
+    void append_generated_indent(std::vector<InlineRenderItem>& out, NodeId owner, std::size_t source_offset, std::size_t columns) {
         if (columns == 0) return;
         InlineRenderItem marker;
         marker.kind = InlineRenderItem::Kind::Marker;
-        marker.source_range = CharRange(CharOffset(source_offset), CharOffset(source_offset));
+        marker.source_span = {owner, {source_offset, source_offset}};
         marker.display_text = std::u32string(columns, U' ');
         marker.marker_role = MarkerRole::Structural;
         marker.visibility = MarkerVisibility::Always;
@@ -97,6 +97,7 @@ struct Builder {
         auto append_items = [&](const BlockVec& items, bool tasks) {
             for (std::size_t index = 0; index < items.size(); ++index) {
                 auto const& item = items[index];
+                const auto owner = item.children.empty() ? item.id : item.children.front().id;
                 auto item_source = node_source_range(item.id);
                 auto item_content = node_content_range(item.id);
                 std::size_t cursor = item_source.start.v;
@@ -108,17 +109,17 @@ struct Builder {
                 }
                 if (tasks) {
                     auto display = std::u32string(indent_columns, U' ') + (marker.empty() ? U"- [ ] " : marker);
-                    push_marker(out, cursor, marker, MarkerRole::TaskCheckbox, std::move(display));
+                    push_marker(out, owner, cursor, marker, MarkerRole::TaskCheckbox, std::move(display));
                 } else if (list.list_ordered) {
                     auto display = std::u32string(indent_columns, U' ') + utf8_to_cps(std::to_string(list.list_start + index)) + std::u32string(1, list.list_delimiter) + U" ";
-                    push_marker(out, cursor, marker, MarkerRole::ListNumber, std::move(display));
+                    push_marker(out, owner, cursor, marker, MarkerRole::ListNumber, std::move(display));
                 } else {
-                    push_marker(out, cursor, marker, MarkerRole::ListBullet, std::u32string(indent_columns, U' ') + U"\u2022 ");
+                    push_marker(out, owner, cursor, marker, MarkerRole::ListBullet, std::u32string(indent_columns, U' ') + U"\u2022 ");
                 }
                 bool first_child = true;
                 for (auto const& child : item.children) {
                     auto child_source = node_source_range(child.id);
-                    if (!first_child) append_block_break(out, child_source.start.v > 0 ? child_source.start.v - 1 : child_source.start.v);
+                    if (!first_child) append_block_break(out, child.id);
                     auto marker_columns = tasks ? std::size_t{6}
                         : list.list_ordered ? std::to_string(list.list_start + index).size() + 2
                         : std::size_t{2};
@@ -127,7 +128,7 @@ struct Builder {
                 }
                 if (index + 1 < items.size()) {
                     auto newline = item_source.end.v > item_content.end.v && item_source.end.v > 0 ? item_source.end.v - 1 : item_source.end.v;
-                    append_block_break(out, newline);
+                    append_block_break(out, owner);
                 }
             }
         };
@@ -140,7 +141,7 @@ struct Builder {
             case BlockKind::Heading: {
                 InlineStyle style = InlineStyle::plain();
                 if (block.kind == BlockKind::Heading) style.heading_level = block.level;
-                auto items = build_inline_document(block.inline_content, content.start.v, style);
+                auto items = build_inline_document(block.inline_content, block.id, style);
                 out.insert(out.end(), std::make_move_iterator(items.begin()), std::make_move_iterator(items.end()));
                 return;
             }
@@ -158,7 +159,7 @@ struct Builder {
                         auto end = (std::min)((std::max)(marker_range.end.v, start), source.size());
                         InlineRenderItem marker;
                         marker.kind = InlineRenderItem::Kind::Marker;
-                        marker.source_range = marker_range;
+                        marker.source_span = {block.id, {0, 0}};
                         marker.text = std::u32string(source.substr(start, end - start));
                         marker.display_text = std::u32string(indent_columns, U' ');
                         marker.marker_role = MarkerRole::Structural;
@@ -169,15 +170,15 @@ struct Builder {
                 bool first = true;
                 for (auto const& child : block.children) {
                     auto child_source = node_source_range(child.id);
-                    if (!first) append_block_break(out, child_source.start.v > 0 ? child_source.start.v - 1 : child_source.start.v);
+                    if (!first) append_block_break(out, child.id);
                     append_nested_block(out, child, depth + 1, indent_columns);
                     first = false;
                 }
                 return;
             }
             case BlockKind::CodeBlock: {
-                append_generated_indent(out, content.start.v, indent_columns);
-                auto item = InlineRenderItem::plain_text(block.code_text, content);
+                append_generated_indent(out, block.id, 0, indent_columns);
+                auto item = InlineRenderItem::plain_text(block.code_text, {block.id, {0, block.code_text.size()}});
                 item.style.code = true;
                 out.push_back(std::move(item));
                 return;
@@ -186,7 +187,7 @@ struct Builder {
                 InlineRenderItem item;
                 item.kind = InlineRenderItem::Kind::Math;
                 item.id = block.id;
-                item.source_range = node_source_range(block.id);
+                item.source_span = {block.id, {0, block.tex.size()}};
                 item.text = block.tex;
                 item.display = MathDisplayMode::Block;
                 item.math_delim = block.math_delim;
@@ -197,7 +198,7 @@ struct Builder {
                 InlineRenderItem item;
                 item.kind = InlineRenderItem::Kind::Image;
                 item.id = block.id;
-                item.source_range = node_source_range(block.id);
+                item.source_span = {block.id, {0, 0}};
                 item.src = block.src;
                 item.alt = block.image_alt;
                 item.title = block.image_title;
@@ -209,24 +210,25 @@ struct Builder {
             case BlockKind::Table: {
                 auto append_cell = [&](BlockNode const& cell) {
                     auto cell_content = node_content_range(cell.id);
-                    auto items = build_inline_document(cell.inline_content, cell_content.start.v, InlineStyle::plain());
+                    auto items = build_inline_document(cell.inline_content, cell.id, InlineStyle::plain());
                     out.insert(out.end(), std::make_move_iterator(items.begin()), std::make_move_iterator(items.end()));
                 };
                 bool first_cell = true;
                 for (const auto& row : block.children) for (const auto& cell : row.children) {
-                    if (!first_cell) append_block_break(out, node_source_range(cell.id).start.v);
+                    if (!first_cell) append_block_break(out, cell.id);
                     append_cell(cell);
                     first_cell = false;
                 }
                 return;
             }
             case BlockKind::UnsupportedMarkup: {
-                auto item = InlineRenderItem::plain_text(utf8_to_cps(block.raw), node_source_range(block.id));
+                auto raw = utf8_to_cps(block.raw);
+                auto item = InlineRenderItem::plain_text(raw, {block.id, {0, raw.size()}});
                 out.push_back(std::move(item));
                 return;
             }
             case BlockKind::ThematicBreak: {
-                auto item = InlineRenderItem::plain_text(U"\u2014", node_source_range(block.id));
+                auto item = InlineRenderItem::plain_text(U"\u2014", {block.id, {0, 0}});
                 out.push_back(std::move(item));
                 return;
             }
@@ -236,11 +238,11 @@ struct Builder {
     }
     std::vector<InlineRenderItem> build_inline_document(
         const InlineDocument& document,
-        std::size_t content_start,
+        NodeId owner_id,
         const InlineStyle& base) {
         std::vector<InlineRenderItem> output;
-        auto global_range = [&](SourceRange range) {
-            return CharRange(CharOffset(content_start + range.start), CharOffset(content_start + range.end));
+        auto source_span = [&](SourceRange range) {
+            return TextSpan{owner_id, range};
         };
         auto append_marker = [&](std::vector<InlineRenderItem>& target, const InlineCstNode& owner, SourceRange range) {
             if (range.empty()) return;
@@ -248,7 +250,7 @@ struct Builder {
             marker.kind = InlineRenderItem::Kind::Marker;
             marker.id = owner.id;
             marker.marker_owner = owner.id;
-            marker.source_range = global_range(range);
+            marker.source_span = source_span(range);
             marker.text = inline_source_slice(document, range);
             marker.marker_style = MarkerStyle{true, {}};
             marker.visibility = MarkerVisibility::Always;
@@ -259,7 +261,7 @@ struct Builder {
             for (const auto& node : nodes) {
                 using K = InlineCstKind;
                 auto append_text = [&](std::u32string text, SourceRange range, InlineStyle text_style = InlineStyle::plain()) {
-                    InlineRenderItem item = InlineRenderItem::plain_text(std::move(text), global_range(range));
+                    InlineRenderItem item = InlineRenderItem::plain_text(std::move(text), source_span(range));
                     item.id = node.id;
                     item.style = text_style;
                     target.push_back(std::move(item));
@@ -297,7 +299,7 @@ struct Builder {
                         InlineRenderItem item;
                         item.kind = InlineRenderItem::Kind::Math;
                         item.id = node.id;
-                        item.source_range = global_range(node.range);
+                        item.source_span = source_span(node.range);
                         item.text = inline_source_slice(document, node.delim.content);
                         item.display = MathDisplayMode::Inline;
                         item.math_delim = node.math_delim;
@@ -314,7 +316,7 @@ struct Builder {
                         InlineRenderItem item;
                         item.kind = InlineRenderItem::Kind::Link;
                         item.id = node.id;
-                        item.source_range = global_range(node.range);
+                        item.source_span = source_span(node.range);
                         item.href = node.href;
                         item.title = node.title;
                         auto child_style = style; child_style.link = true;
@@ -325,7 +327,7 @@ struct Builder {
                         } else {
                             append_marker(item.children, node, node.delim.opening);
                             InlineRenderItem text_item = InlineRenderItem::plain_text(
-                                inline_source_slice(document, node.delim.content), global_range(node.delim.content));
+                                inline_source_slice(document, node.delim.content), source_span(node.delim.content));
                             text_item.style = child_style;
                             item.children.push_back(std::move(text_item));
                             if (node.delim.closing) append_marker(item.children, node, *node.delim.closing);
@@ -337,7 +339,7 @@ struct Builder {
                         InlineRenderItem item;
                         item.kind = InlineRenderItem::Kind::Image;
                         item.id = node.id;
-                        item.source_range = global_range(node.range);
+                        item.source_span = source_span(node.range);
                         item.src = node.href;
                         item.alt = node.alt;
                         item.title = node.title;
@@ -442,12 +444,12 @@ struct Builder {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::paragraph());
                 InlineStyle s = InlineStyle::plain();
                 auto cursor = base_range().start.v;
-                if (!b.opening_marker.empty()) { push_marker(rb.inline_items, cursor, b.opening_marker); rb.inline_items.back().marker_owner = b.id; }
-                auto items = build_inline_document(b.inline_content, content_range().start.v, s);
+                if (!b.opening_marker.empty()) { cursor = 0; push_marker(rb.inline_items, b.id, cursor, b.opening_marker); rb.inline_items.back().marker_owner = b.id; }
+                auto items = build_inline_document(b.inline_content, b.id, s);
                 for (auto& item : items) rb.inline_items.push_back(std::move(item));
                 if (!b.closing_marker.empty()) {
-                    cursor = content_range().end.v;
-                    push_marker(rb.inline_items, cursor, b.closing_marker);
+                    cursor = b.inline_content.source.size();
+                    push_marker(rb.inline_items, b.id, cursor, b.closing_marker);
                     rb.inline_items.back().marker_owner = b.id;
                 }
                 return with_content_range(std::move(rb));
@@ -464,7 +466,9 @@ struct Builder {
                         auto end = (std::min)((std::max)(markerRange.end.v, start), source.size());
                         InlineRenderItem marker;
                         marker.kind = InlineRenderItem::Kind::Marker;
-                        marker.source_range = markerRange;
+                        const auto offset = markerRange.end <= range->content_range.start
+                            ? std::size_t{0} : b.inline_content.source.size();
+                        marker.source_span = {b.id, {offset, offset}};
                         marker.text = std::u32string(source.substr(start, end - start));
                         marker.style = s;
                         marker.marker_role = MarkerRole::Heading;
@@ -474,10 +478,10 @@ struct Builder {
                         rb.inline_items.push_back(std::move(marker));
                     }
                 }
-                auto items = build_inline_document(b.inline_content, cs, s);
+                auto items = build_inline_document(b.inline_content, b.id, s);
                 for (auto& it : items) rb.inline_items.push_back(std::move(it));
                 std::stable_sort(rb.inline_items.begin(), rb.inline_items.end(), [](auto const& left, auto const& right) {
-                    return left.source_range.start.v < right.source_range.start.v;
+                    return left.source_span.source_range.start < right.source_span.source_range.start;
                 });
                 return with_content_range(std::move(rb));
             }
@@ -562,7 +566,7 @@ struct Builder {
                     auto cell_range = base_range();
                     if (const auto* range = sm ? sm->find_node_by_id(cell.id) : nullptr) { start = range->content_range.start.v; cell_range = range->content_range; }
                     rb.table_cell_ranges.push_back(cell_range);
-                    return build_inline_document(cell.inline_content, start, InlineStyle::plain());
+                    return build_inline_document(cell.inline_content, cell.id, InlineStyle::plain());
                 };
                 for (const auto& row : b.children) for (const auto& cell : row.children) rb.table_cells.push_back(build_cell(cell));
                 return with_content_range(std::move(rb));
@@ -578,7 +582,7 @@ struct Builder {
                 rb.callout_kind = b.callout_kind;
                 if (b.callout_title) {
                     std::vector<InlineRenderItem> items;
-                    items = build_inline_document(*b.callout_title, base_range().start.v, InlineStyle::plain());
+                    items = build_inline_document(*b.callout_title, b.id, InlineStyle::plain());
                     rb.callout_title = std::move(items);
                 }
                 for (const auto& ch : b.children) rb.child_blocks.push_back(build_block(ch));

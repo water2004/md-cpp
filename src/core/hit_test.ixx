@@ -5,15 +5,14 @@ import elmd.core.types;
 import elmd.core.ids;
 import elmd.core.layout_tree;
 import elmd.core.selection;
+import elmd.core.text_edit;
 
 export namespace elmd {
 
 enum class HitKind { Text, Marker, Embedded, LineEnd, BlockGap };
 
 struct HitTestResult {
-    CharOffset position{};
-    std::optional<NodeId> node_id;
-    TextAffinity affinity = TextAffinity::Downstream;
+    TextPosition position{};
     HitKind hit_kind = HitKind::Text;
 };
 
@@ -32,19 +31,17 @@ inline std::optional<HitTestResult> hit_test_line(const TextLineLayout& line, Lo
                 }
                 acc += run.glyphs[i].advance;
             }
-            std::size_t pos = run.source_range.start.v + std::min(char_index, run.glyphs.size());
+            std::size_t pos = run.source_span.source_range.start + std::min(char_index, run.glyphs.size());
             HitTestResult hr;
-            hr.position = CharOffset(pos);
-            hr.node_id = node_id;
-            hr.affinity = (point.x > (sx + run.width * 0.5f)) ? TextAffinity::Downstream : TextAffinity::Upstream;
+            hr.position = TextPosition{run.source_span.container_id, pos,
+                (point.x > (sx + run.width * 0.5f)) ? TextAffinity::Downstream : TextAffinity::Upstream};
             hr.hit_kind = (run.marker_visibility == MarkerVisibility::HiddenButEditable) ? HitKind::Marker : HitKind::Text;
             return hr;
         }
     }
-    std::size_t end_pos = line.runs.empty() ? line.source_range.start.v : line.runs.back().source_range.end.v;
+    const auto span = line.runs.empty() ? line.source_span : line.runs.back().source_span;
     HitTestResult hr;
-    hr.position = CharOffset(end_pos);
-    hr.affinity = TextAffinity::Downstream;
+    hr.position = TextPosition{span.container_id, span.source_range.end, TextAffinity::Downstream};
     hr.hit_kind = HitKind::LineEnd;
     return hr;
 }
@@ -55,7 +52,8 @@ inline std::optional<HitTestResult> hit_test_block(const LayoutBlock& b, Logical
             return hit_test_line(ch.line, point, b.id);
         }
         if (ch.kind == LayoutItem::Kind::Embedded && ch.embedded.rect.contains_point(point)) {
-            embedded_hit = HitTestResult{b.source_range.start, b.id, TextAffinity::Downstream, HitKind::Embedded};
+            embedded_hit = HitTestResult{TextPosition{ch.embedded.source_span.container_id,
+                ch.embedded.source_span.source_range.start, TextAffinity::Downstream}, HitKind::Embedded};
         }
     }
     return std::nullopt;
@@ -67,13 +65,13 @@ inline std::optional<HitTestResult> hit_test_layout_tree(const LayoutTree& tree,
         if (b.rect.contains_point(point)) {
             auto r = hit_test_block(b, point, embedded_hit);
             if (r) return r;
-            return HitTestResult{b.source_range.start, b.id, TextAffinity::Downstream, HitKind::BlockGap};
+            return HitTestResult{TextPosition{b.id, 0, TextAffinity::Downstream}, HitKind::BlockGap};
         }
     }
     if (const auto* b = tree.block_at_y(point.y)) {
         auto r = hit_test_block(*b, point, embedded_hit);
         if (r) return r;
-        return HitTestResult{b->source_range.start, b->id, TextAffinity::Downstream, HitKind::BlockGap};
+        return HitTestResult{TextPosition{b->id, 0, TextAffinity::Downstream}, HitKind::BlockGap};
     }
     return std::nullopt;
 }

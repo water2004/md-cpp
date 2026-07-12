@@ -9,6 +9,7 @@ import elmd.core.theme;
 import elmd.core.outline;
 import elmd.core.diagnostics;
 import elmd.core.ast; // for AST contents reused during build (children)
+import elmd.core.text_edit;
 
 export namespace elmd {
 
@@ -115,7 +116,7 @@ struct BlockStyle {
 struct InlineRenderItem {
     enum class Kind { Text, Math, Image, Link, Marker };
     Kind kind = Kind::Text;
-    TextRange<CharOffset> source_range;
+    TextSpan source_span;
     std::u32string text;
     std::u32string display_text;
     std::optional<NodeId> id;             // Math/Image/Link
@@ -132,8 +133,8 @@ struct InlineRenderItem {
     MarkerRole marker_role = MarkerRole::Syntax;
     std::vector<InlineRenderItem> children; // Link children
 
-    static InlineRenderItem plain_text(std::u32string t, TextRange<CharOffset> r) {
-        InlineRenderItem i; i.kind = Kind::Text; i.text = std::move(t); i.source_range = r; i.style = InlineStyle::plain();
+    static InlineRenderItem plain_text(std::u32string t, TextSpan span) {
+        InlineRenderItem i; i.kind = Kind::Text; i.text = std::move(t); i.source_span = span; i.style = InlineStyle::plain();
         return i;
     }
 };
