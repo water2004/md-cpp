@@ -184,19 +184,13 @@ namespace winrt::ElMd
         auto codepointOffset = core_->editor.boundary_offset(position).value_or(0);
         auto text = core_->editor.boundary_text_cps();
         codepointOffset = (std::min)(codepointOffset, text.size());
-        return BoundaryWide(std::u32string_view(text).substr(0, codepointOffset)).size();
+        return elmd::char_index_to_utf16(text, codepointOffset);
     }
 
     elmd::TextPosition EditorSession::PositionFromAcp(std::size_t offset, elmd::TextAffinity affinity) const
     {
         auto text = core_->editor.boundary_text_cps();
-        std::size_t codepointOffset = 0;
-        std::size_t utf16Offset = 0;
-        while (codepointOffset < text.size() && utf16Offset < offset)
-        {
-            utf16Offset += text[codepointOffset] > 0xffff ? 2 : 1;
-            ++codepointOffset;
-        }
+        auto codepointOffset = elmd::utf16_to_char_index(text, offset);
         return core_->editor.boundary_position(codepointOffset, affinity).value_or(elmd::TextPosition{});
     }
 

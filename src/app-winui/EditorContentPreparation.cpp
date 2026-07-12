@@ -8,16 +8,6 @@ import elmd.core.utf;
 
 namespace winrt::ElMd
 {
-    namespace
-    {
-        std::size_t Utf16Length(std::u32string_view text)
-        {
-            std::size_t length = 0;
-            for (auto codepoint : text) length += codepoint > 0xffff ? 2 : 1;
-            return length;
-        }
-    }
-
     std::wstring ToWide(std::u32string_view text)
     {
         std::wstring wide;
@@ -309,9 +299,9 @@ namespace winrt::ElMd
 
     void AppendDisplayText(DisplayInlineText& display, std::u32string const& text, elmd::TextSpan sourceSpan, elmd::InlineStyle style, bool marker)
     {
-        auto start = static_cast<UINT32>(Utf16Length(display.text));
+        auto start = static_cast<UINT32>(elmd::utf16_len(display.text));
         display.text += text;
-        auto length = static_cast<UINT32>(Utf16Length(text));
+        auto length = static_cast<UINT32>(elmd::utf16_len(text));
         for (std::size_t index = 0; index < text.size(); ++index)
         {
             auto position = elmd::TextPosition{
@@ -334,17 +324,17 @@ namespace winrt::ElMd
 
     void AppendGeneratedText(DisplayInlineText& display, std::u32string const& text, elmd::TextPosition sourcePosition, elmd::InlineStyle style)
     {
-        auto start = static_cast<UINT32>(Utf16Length(display.text));
+        auto start = static_cast<UINT32>(elmd::utf16_len(display.text));
         display.text += text;
-        auto length = Utf16Length(text);
+        auto length = elmd::utf16_len(text);
         display.displayToSource.insert(display.displayToSource.end(), length, sourcePosition);
         if (!text.empty()) display.ranges.push_back(InlineStyleRange{start, static_cast<UINT32>(length), style, false, SyntaxHighlightKind::None});
     }
 
     void MergeDisplayText(DisplayInlineText& target, DisplayInlineText source)
     {
-        auto offset = static_cast<UINT32>(Utf16Length(target.text));
-        auto characterCount = Utf16Length(source.text);
+        auto offset = static_cast<UINT32>(elmd::utf16_len(target.text));
+        auto characterCount = elmd::utf16_len(source.text);
         target.text += source.text;
         if (source.displayToSource.size() > characterCount) source.displayToSource.resize(characterCount);
         target.displayToSource.insert(target.displayToSource.end(), source.displayToSource.begin(), source.displayToSource.end());
@@ -378,7 +368,7 @@ namespace winrt::ElMd
 
     void AppendMathPlaceholder(DisplayInlineText& display, std::size_t count, elmd::TextPosition sourcePosition)
     {
-        auto start = static_cast<UINT32>(Utf16Length(display.text));
+        auto start = static_cast<UINT32>(elmd::utf16_len(display.text));
         display.text.append(count, U'\u2007');
         display.displayToSource.insert(display.displayToSource.end(), count, sourcePosition);
         if (count > 0)
@@ -407,7 +397,7 @@ namespace winrt::ElMd
             {
                 AppendGeneratedText(display, U"\u200B", {sourceSpan.container_id, mappedOffset, elmd::TextAffinity::Downstream}, style);
             }
-            auto start = static_cast<UINT32>(Utf16Length(display.text));
+            auto start = static_cast<UINT32>(elmd::utf16_len(display.text));
             display.text.push_back(U'\uFFFC');
             display.displayToSource.push_back({sourceSpan.container_id, mappedOffset, elmd::TextAffinity::Downstream});
             display.ranges.push_back(InlineStyleRange{ start, 1, style, false, SyntaxHighlightKind::None });
@@ -484,7 +474,7 @@ namespace winrt::ElMd
                 if (CaretTouchesSpan(caret, item.source_span)) AppendSourceText(display, item.source_text, item.source_span, item.style, false);
                 else
                 {
-                    auto displayStart = static_cast<std::uint32_t>(Utf16Length(display.text));
+                    auto displayStart = static_cast<std::uint32_t>(elmd::utf16_len(display.text));
                     AppendGeneratedText(display, U"\uFFFC", {item.source_span.container_id, item.source_span.source_range.start, elmd::TextAffinity::Downstream}, item.style);
                     display.imageOverlays.push_back(DisplayInlineText::ImageOverlay{ displayStart, item.source_span, item.src, item.alt, item.image_width, item.image_height });
                 }
@@ -513,12 +503,12 @@ namespace winrt::ElMd
 
                 if (editing)
                 {
-                    auto displayStart = static_cast<std::uint32_t>(Utf16Length(display.text));
+                    auto displayStart = static_cast<std::uint32_t>(elmd::utf16_len(display.text));
                     AppendSourceText(display, item.source_text, item.source_span, item.style, false);
                     display.mathPreviews.push_back(DisplayInlineText::MathPreview{
                         *math,
                         displayStart,
-                        static_cast<std::uint32_t>(Utf16Length(item.source_text)),
+                        static_cast<std::uint32_t>(elmd::utf16_len(item.source_text)),
                         item.source_span,
                         elmd::TextSpan{item.source_span.container_id, {contentStart, contentEnd}},
                         item.style.strikethrough,
