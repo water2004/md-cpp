@@ -32,37 +32,6 @@ struct DocumentTransaction {
 
 struct DocumentInvariantError { NodeId node_id{}; std::string message; };
 
-class DocumentHistory {
-public:
-    explicit DocumentHistory(std::size_t capacity = 1000) : capacity_(capacity) {}
-    void push(DocumentTransaction transaction) {
-        undo_.push_back(std::move(transaction));
-        redo_.clear();
-        if (undo_.size() > capacity_) undo_.erase(undo_.begin());
-    }
-    std::optional<std::pair<EditorDocument, TextSelection>> undo() {
-        if (undo_.empty()) return std::nullopt;
-        auto transaction = std::move(undo_.back()); undo_.pop_back();
-        auto result = std::pair{transaction.before, transaction.selection_before};
-        redo_.push_back(std::move(transaction));
-        return result;
-    }
-    std::optional<std::pair<EditorDocument, TextSelection>> redo() {
-        if (redo_.empty()) return std::nullopt;
-        auto transaction = std::move(redo_.back()); redo_.pop_back();
-        auto result = std::pair{transaction.after, transaction.selection_after};
-        undo_.push_back(std::move(transaction));
-        return result;
-    }
-    void clear() { undo_.clear(); redo_.clear(); }
-    bool has_undo() const { return !undo_.empty(); }
-    bool has_redo() const { return !redo_.empty(); }
-private:
-    std::size_t capacity_;
-    std::vector<DocumentTransaction> undo_;
-    std::vector<DocumentTransaction> redo_;
-};
-
 namespace document_edit_detail {
 
 inline bool text_block(BlockKind kind) { return kind == BlockKind::Paragraph || kind == BlockKind::Heading; }
@@ -825,7 +794,12 @@ inline BlockNode make_table_block(const EditorDocument& document, std::size_t ro
 
 inline std::optional<DocumentTransaction> document_insert_atomic_block(const EditorDocument& document, const TextSelection& selection, BlockNode block) {
     if (!selection.is_caret()) return std::nullopt;
-    auto after = document; document_edit_detail::NodeAllocator allocator(after); document_edit_detail::assign_missing_ids(block, after, allocator);
+    auto after = document;
+    document_edit_detail::NodeAllocator allocator(after);
+    std::uint64_t block_maximum = 0;
+    document_edit_detail::scan_block_ids(block, block_maximum);
+    allocator.next = (std::max)(allocator.next, block_maximum + 1);
+    document_edit_detail::assign_missing_ids(block, after, allocator);
     for (std::size_t index = 0; index < after.root.children.size(); ++index) {
         if (after.root.children[index].id != selection.active.container_id) continue;
         const auto inserted_id = block.id;

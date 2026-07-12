@@ -14,6 +14,7 @@ import elmd.core.dialect;
 import elmd.core.document;
 import elmd.core.ast;
 import elmd.core.document_edit;
+import elmd.core.document_history;
 import elmd.core.document_projection;
 import elmd.core.text_edit;
 import elmd.core.symbols;
@@ -243,19 +244,13 @@ public:
     }
 
     bool undo() {
-        auto state = document_history_.undo();
-        if (!state) return false;
-        document_ = std::move(state->first);
-        selection_ = state->second;
+        if (!document_history_.undo(document_, selection_)) return false;
         refresh_derived_from_document_();
         return true;
     }
 
     bool redo() {
-        auto state = document_history_.redo();
-        if (!state) return false;
-        document_ = std::move(state->first);
-        selection_ = state->second;
+        if (!document_history_.redo(document_, selection_)) return false;
         refresh_derived_from_document_();
         return true;
     }

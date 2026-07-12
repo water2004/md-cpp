@@ -94,6 +94,49 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.markdown_utf8() == "alpha")));
 };
 
+"tree_operation_history_restores_inserted_subtrees_and_ids"_test = [] {
+    Editor editor("anchor");
+    const auto original_selection = caret(first_text(editor), 0);
+    editor.set_selection(original_selection);
+    Command insert_table;
+    insert_table.kind = CommandKind::InsertTable;
+    insert_table.rows = 1;
+    insert_table.cols = 2;
+    expect(fatal(bool(editor.execute_command(insert_table))));
+    expect(fatal(bool(editor.document().root.children.size() == 2u)));
+    const auto inserted = editor.document().root.children[1];
+    const auto after_selection = editor.selection();
+
+    expect(fatal(bool(editor.undo())));
+    expect(fatal(bool(editor.document().root.children.size() == 1u)));
+    expect(fatal(bool(editor.selection() == original_selection)));
+    expect(fatal(bool(editor.redo())));
+    expect(fatal(bool(editor.document().root.children.size() == 2u)));
+    expect(fatal(bool(editor.document().root.children[1].id == inserted.id)));
+    expect(fatal(bool(editor.document().root.children[1].children.front().id == inserted.children.front().id)));
+    expect(fatal(bool(editor.selection() == after_selection)));
+};
+
+"tree_move_history_replays_list_indent_without_snapshots"_test = [] {
+    Editor editor("- one\n- two");
+    const auto& list = editor.document().root.children.front();
+    const auto second_text_id = list.children[1].children.front().id;
+    editor.set_selection(TextSelection::caret({second_text_id, 1, TextAffinity::Downstream}));
+    const auto before_markdown = editor.markdown_utf8();
+    const auto before_selection = editor.selection();
+    expect(fatal(bool(editor.execute_document_indent_list_item(editor.selection()).has_value())));
+    const auto after_markdown = editor.markdown_utf8();
+    const auto after_selection = editor.selection();
+    expect(fatal(bool(after_markdown != before_markdown)));
+
+    expect(fatal(bool(editor.undo())));
+    expect(fatal(bool(editor.markdown_utf8() == before_markdown)));
+    expect(fatal(bool(editor.selection() == before_selection)));
+    expect(fatal(bool(editor.redo())));
+    expect(fatal(bool(editor.markdown_utf8() == after_markdown)));
+    expect(fatal(bool(editor.selection() == after_selection)));
+};
+
 "source_offset_movement_counts_markers"_test = [] {
     Editor editor("**abc**");
     editor.set_selection(caret(first_text(editor), 0));
