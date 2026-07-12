@@ -959,6 +959,66 @@ inline bool erase_empty_inline_in_blocks(BlockVec& blocks, NodeId id, std::size_
     return false;
 }
 
+inline std::optional<std::size_t> marked_inline_content_length(const InlineVec& nodes, NodeId id) {
+    for (const auto& node : nodes) {
+        if (node.id == id) return inline_text_content(node).size();
+        if (auto length = marked_inline_content_length(node.children, id)) return length;
+    }
+    return std::nullopt;
+}
+
+inline std::optional<std::size_t> marked_inline_content_length_in_blocks(const BlockVec& blocks, NodeId id) {
+    for (const auto& block : blocks) {
+        if (auto length = marked_inline_content_length(block.children, id)) return length;
+        if (auto length = marked_inline_content_length_in_blocks(block.quote_children, id)) return length;
+        for (const auto& item : block.list_items) if (auto length = marked_inline_content_length_in_blocks(item.children, id)) return length;
+        for (const auto& item : block.task_items) if (auto length = marked_inline_content_length_in_blocks(item.children, id)) return length;
+        for (const auto& cell : block.table_header) if (auto length = marked_inline_content_length(cell.children, id)) return length;
+        for (const auto& row : block.table_rows) for (const auto& cell : row.cells) {
+            if (auto length = marked_inline_content_length(cell.children, id)) return length;
+        }
+    }
+    return std::nullopt;
+}
+
+inline bool unwrap_marked_inline(InlineVec& nodes, NodeId id) {
+    for (std::size_t index = 0; index < nodes.size(); ++index) {
+        auto& node = nodes[index];
+        if (node.id == id) {
+            if (!node.children.empty()) {
+                auto children = std::move(node.children);
+                nodes.erase(nodes.begin() + static_cast<std::ptrdiff_t>(index));
+                nodes.insert(
+                    nodes.begin() + static_cast<std::ptrdiff_t>(index),
+                    std::make_move_iterator(children.begin()),
+                    std::make_move_iterator(children.end()));
+            } else {
+                node.kind = InlineKind::Text;
+                node.opening_marker.clear();
+                node.closing_marker.clear();
+                node.math_delim = MathDelimiter::InlineDollar;
+            }
+            return true;
+        }
+        if (unwrap_marked_inline(node.children, id)) return true;
+    }
+    return false;
+}
+
+inline bool unwrap_marked_inline_in_blocks(BlockVec& blocks, NodeId id) {
+    for (auto& block : blocks) {
+        if (unwrap_marked_inline(block.children, id)) return true;
+        if (unwrap_marked_inline_in_blocks(block.quote_children, id)) return true;
+        for (auto& item : block.list_items) if (unwrap_marked_inline_in_blocks(item.children, id)) return true;
+        for (auto& item : block.task_items) if (unwrap_marked_inline_in_blocks(item.children, id)) return true;
+        for (auto& cell : block.table_header) if (unwrap_marked_inline(cell.children, id)) return true;
+        for (auto& row : block.table_rows) for (auto& cell : row.cells) {
+            if (unwrap_marked_inline(cell.children, id)) return true;
+        }
+    }
+    return false;
+}
+
 inline bool erase_adjacent_pair_in_inlines(InlineVec& nodes, std::size_t offset) {
     std::size_t consumed = 0;
     for (std::size_t index = 0; index < nodes.size(); ++index) {
@@ -3223,7 +3283,14 @@ inline std::optional<DocumentTransaction> document_delete_backward(
     auto target = selection.active;
     bool changed = false;
     document_edit_detail::NodeAllocator allocator(after);
-    if (target.offset == 1) {
+    const auto removes_marker = target.inline_node_id.v != 0
+        && (target.part == DocumentPositionPart::ClosingMarker
+            || (target.part == DocumentPositionPart::OpeningMarker && target.part_offset > 0)
+            || (target.part == DocumentPositionPart::Content && target.part_offset == 0));
+    if (removes_marker) {
+        changed = document_edit_detail::unwrap_marked_inline_in_blocks(after.blocks, target.inline_node_id);
+    }
+    if (!changed && target.offset == 1) {
         changed = document_edit_detail::erase_atomic_block(after.blocks, target.node_id, allocator, target);
     }
     if (!changed) changed = document_edit_detail::backspace_in_code_blocks(after.blocks, target.node_id, target.offset, allocator, target);
@@ -3268,7 +3335,17 @@ inline std::optional<DocumentTransaction> document_delete_forward(
     if (!length) return std::nullopt;
     bool changed = false;
     document_edit_detail::NodeAllocator allocator(after);
-    if (target.offset == 0) {
+    const auto marked_length = target.inline_node_id.v == 0
+        ? std::optional<std::size_t>{}
+        : document_edit_detail::marked_inline_content_length_in_blocks(after.blocks, target.inline_node_id);
+    const auto removes_marker = target.inline_node_id.v != 0
+        && (target.part == DocumentPositionPart::OpeningMarker
+            || target.part == DocumentPositionPart::ClosingMarker
+            || (target.part == DocumentPositionPart::Content && marked_length && target.part_offset == *marked_length));
+    if (removes_marker) {
+        changed = document_edit_detail::unwrap_marked_inline_in_blocks(after.blocks, target.inline_node_id);
+    }
+    if (!changed && target.offset == 0) {
         changed = document_edit_detail::erase_atomic_block(after.blocks, target.node_id, allocator, target);
     }
     if (!changed && target.offset < *length) {

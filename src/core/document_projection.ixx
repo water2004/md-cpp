@@ -300,6 +300,36 @@ inline std::optional<DocumentPosition> position_in_blocks(
             for (const auto& row : block.table_rows) {
                 for (const auto& cell : row.cells) if (auto position = position_in_cell(cell)) return position;
             }
+            const auto* table_range = document.source_map.find_node_by_id(block.id);
+            if (table_range && source_offset.v >= table_range->source_range.start.v
+                && source_offset.v <= table_range->source_range.end.v) {
+                const TableCell* nearest = nullptr;
+                const NodeSourceRange* nearest_range = nullptr;
+                std::size_t nearest_distance = (std::numeric_limits<std::size_t>::max)();
+                auto consider = [&](const TableCell& cell) {
+                    const auto* range = document.source_map.find_node_by_id(cell.id);
+                    if (!range) return;
+                    const auto distance = source_offset.v < range->source_range.start.v
+                        ? range->source_range.start.v - source_offset.v
+                        : source_offset.v > range->source_range.end.v
+                            ? source_offset.v - range->source_range.end.v
+                            : 0;
+                    if (distance < nearest_distance) {
+                        nearest = &cell;
+                        nearest_range = range;
+                        nearest_distance = distance;
+                    }
+                };
+                for (const auto& cell : block.table_header) consider(cell);
+                for (const auto& row : block.table_rows) for (const auto& cell : row.cells) consider(cell);
+                if (nearest && nearest_range) {
+                    const auto after = source_offset.v > nearest_range->source_range.end.v;
+                    return DocumentPosition{
+                        nearest->id,
+                        after ? block_inline_text_content(nearest->children).size() : 0,
+                        after ? TextAffinity::Downstream : TextAffinity::Upstream};
+                }
+            }
         }
         if (atomic_editable_kind(block.kind)) {
             const auto* range = document.source_map.find_node_by_id(block.id);

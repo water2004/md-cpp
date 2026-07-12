@@ -2,12 +2,14 @@ import std;
 #include "test_framework.h"
 import elmd.core.editor;
 import elmd.core.command;
+import elmd.core.types;
+import elmd.core.ast;
+import elmd.core.source_map;
 import elmd.core.parser;
 import elmd.core.selection;
 import elmd.core.transaction;
 import elmd.core.utf;
 import elmd.core.source_structure;
-import elmd.core.table_edit;
 import elmd.core.render_builder;
 import elmd.core.render_model;
 import elmd.core.document_position;
@@ -15,6 +17,58 @@ import elmd.core.document_projection;
 import elmd.core.document_edit;
 
 using namespace elmd;
+
+namespace {
+struct TestTableCellProjection {
+    TextRange<CharOffset> content_range;
+    std::u32string text;
+};
+
+struct TestTableRowProjection {
+    TextRange<CharOffset> line_range;
+    std::vector<TestTableCellProjection> cells;
+};
+
+struct TestTableProjection {
+    TextRange<CharOffset> range;
+    std::vector<TestTableRowProjection> rows;
+};
+
+std::optional<TestTableProjection> table_projection(const Editor& editor) {
+    if (editor.document().blocks.empty() || editor.document().blocks.front().kind != BlockKind::Table) return std::nullopt;
+    const auto& block = editor.document().blocks.front();
+    const auto* block_range = editor.document().source_map.find_node_by_id(block.id);
+    if (!block_range) return std::nullopt;
+    TestTableProjection result;
+    result.range = block_range->source_range;
+    const auto source = editor.text_cps();
+    auto append_row = [&](const std::vector<TableCell>& cells, std::optional<NodeId> row_id) {
+        TestTableRowProjection row;
+        for (const auto& cell : cells) {
+            const auto* range = editor.document().source_map.find_node_by_id(cell.id);
+            if (!range) return false;
+            row.cells.push_back(TestTableCellProjection{range->content_range, block_inline_text_content(cell.children)});
+        }
+        if (row_id) {
+            const auto* range = editor.document().source_map.find_node_by_id(*row_id);
+            if (!range) return false;
+            row.line_range = range->source_range;
+        } else if (!row.cells.empty()) {
+            auto start = row.cells.front().content_range.start.v;
+            while (start > 0 && source[start - 1] != U'\n') --start;
+            auto end = row.cells.back().content_range.end.v;
+            while (end < source.size() && source[end] != U'\n') ++end;
+            row.line_range = TextRange<CharOffset>{CharOffset(start), CharOffset(end)};
+        }
+        result.rows.push_back(std::move(row));
+        return true;
+    };
+    if (!append_row(block.table_header, std::nullopt)) return std::nullopt;
+    result.rows.push_back(TestTableRowProjection{});
+    for (const auto& row : block.table_rows) if (!append_row(row.cells, row.id)) return std::nullopt;
+    return result;
+}
+}
 
 ELMD_TEST(test_new_editor_empty) {
     Editor e;
@@ -654,7 +708,7 @@ ELMD_TEST(test_table_structure_commands_preserve_ast_nodes_and_document_history)
 
 ELMD_TEST(test_typing_into_empty_table_cell_updates_source_and_ast) {
     Editor e("| A | B |\n| --- | --- |\n|   | 2 |\n");
-    auto table = table_source_at(e.text_cps(), 0);
+    auto table = table_projection(e);
     ELMD_CHECK(table.has_value());
     ELMD_CHECK(table && table->rows.size() == 3);
     if (!table || table->rows.size() != 3) return;
@@ -663,8 +717,8 @@ ELMD_TEST(test_typing_into_empty_table_cell_updates_source_and_ast) {
     auto emptyCellOffset = table->rows[2].cells[0].content_range.start;
     e.set_caret(emptyCellOffset);
     e.execute_command(Command::InsertText(U"x"));
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A | B |\n| --- | --- |\n| x | 2 |"));
-    ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
+    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A | B |\n| --- | --- |\n| x | 2 |\n"));
+    ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
     ELMD_CHECK(e.document().blocks[0].kind == BlockKind::Table);
     auto const& row = e.document().blocks[0].table_rows[0];
     ELMD_CHECK_EQ(row.cells.size(), 2u);
@@ -673,7 +727,7 @@ ELMD_TEST(test_typing_into_empty_table_cell_updates_source_and_ast) {
 
 ELMD_TEST(test_enter_at_end_of_table_exits_after_closing_pipe) {
     Editor e("| H1 | H2 |\n| --- | --- |\n| A | B |");
-    auto table = table_source_at(e.text_cps(), 0);
+    auto table = table_projection(e);
     ELMD_CHECK(table.has_value());
     if (!table) return;
     auto const& last_cell = table->rows.back().cells.back();
@@ -687,7 +741,7 @@ ELMD_TEST(test_enter_at_end_of_table_exits_after_closing_pipe) {
 
 ELMD_TEST(test_enter_at_end_of_table_reuses_trailing_newline) {
     Editor e("| H |\n| --- |\n| A |\n");
-    auto table = table_source_at(e.text_cps(), 0);
+    auto table = table_projection(e);
     ELMD_CHECK(table.has_value());
     if (!table) return;
     e.set_caret(table->rows.back().cells.back().content_range.end);
@@ -700,7 +754,7 @@ ELMD_TEST(test_enter_at_end_of_table_reuses_trailing_newline) {
 
 ELMD_TEST(test_enter_in_table_moves_to_same_column_of_next_row) {
     Editor e("| H1 | H2 |\n| --- | --- |\n| A1 | A2 |\n| B1 | B2 |");
-    auto table = table_source_at(e.text_cps(), 0);
+    auto table = table_projection(e);
     ELMD_CHECK(table.has_value());
     if (!table) return;
     auto source_before = e.buffer().text_utf8();
@@ -714,7 +768,7 @@ ELMD_TEST(test_enter_in_table_moves_to_same_column_of_next_row) {
 
 ELMD_TEST(test_enter_in_table_header_skips_separator_row) {
     Editor e("| H1 | H2 |\n| --- | --- |\n| A1 | A2 |");
-    auto table = table_source_at(e.text_cps(), 0);
+    auto table = table_projection(e);
     ELMD_CHECK(table.has_value());
     if (!table) return;
     auto source_before = e.buffer().text_utf8();
@@ -728,7 +782,7 @@ ELMD_TEST(test_enter_in_table_header_skips_separator_row) {
 
 ELMD_TEST(test_enter_in_any_cell_of_last_table_row_exits_table) {
     Editor e("| H1 | H2 |\n| --- | --- |\n| A1 | A2 |");
-    auto table = table_source_at(e.text_cps(), 0);
+    auto table = table_projection(e);
     ELMD_CHECK(table.has_value());
     if (!table) return;
     e.set_caret(table->rows.back().cells[0].content_range.start);
@@ -741,7 +795,7 @@ ELMD_TEST(test_enter_in_any_cell_of_last_table_row_exits_table) {
 
 ELMD_TEST(test_empty_table_cell_has_zero_width_content_after_leading_padding) {
     Editor e("| H |\n| --- |\n|     |");
-    auto table = table_source_at(e.text_cps(), 0);
+    auto table = table_projection(e);
     ELMD_CHECK(table.has_value());
     if (!table) return;
     auto const& cell = table->rows.back().cells.front();
@@ -754,7 +808,7 @@ ELMD_TEST(test_empty_table_cell_has_zero_width_content_after_leading_padding) {
 
 ELMD_TEST(test_backspace_and_delete_do_not_remove_empty_table_padding_or_pipe) {
     Editor e("| H |\n| --- |\n|     |");
-    auto table = table_source_at(e.text_cps(), 0);
+    auto table = table_projection(e);
     ELMD_CHECK(table.has_value());
     if (!table) return;
     auto offset = table->rows.back().cells.front().content_range.start;
@@ -772,7 +826,7 @@ ELMD_TEST(test_backspace_and_delete_do_not_remove_empty_table_padding_or_pipe) {
 
 ELMD_TEST(test_table_character_delete_stays_inside_cell_content) {
     Editor e("| H |\n| --- |\n| ABC |");
-    auto table = table_source_at(e.text_cps(), 0);
+    auto table = table_projection(e);
     ELMD_CHECK(table.has_value());
     if (!table) return;
     auto cell = table->rows.back().cells.front();
@@ -781,7 +835,7 @@ ELMD_TEST(test_table_character_delete_stays_inside_cell_content) {
     backward.kind = CommandKind::DeleteBackward;
     e.execute_command(backward);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| H |\n| --- |\n| AB |"));
-    table = table_source_at(e.text_cps(), 0);
+    table = table_projection(e);
     ELMD_CHECK(table.has_value());
     if (!table) return;
     e.set_caret(table->rows.back().cells.front().content_range.start);
@@ -794,7 +848,7 @@ ELMD_TEST(test_table_character_delete_stays_inside_cell_content) {
 
 ELMD_TEST(test_deleting_last_table_cell_character_keeps_empty_caret_stable) {
     Editor e("| H |\n| --- |\n| X |");
-    auto table = table_source_at(e.text_cps(), 0);
+    auto table = table_projection(e);
     ELMD_CHECK(table.has_value());
     if (!table) return;
     e.set_caret(table->rows.back().cells.front().content_range.end);
@@ -802,7 +856,7 @@ ELMD_TEST(test_deleting_last_table_cell_character_keeps_empty_caret_stable) {
     command.kind = CommandKind::DeleteBackward;
     e.execute_command(command);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| H |\n| --- |\n|  |"));
-    table = table_source_at(e.text_cps(), 0);
+    table = table_projection(e);
     ELMD_CHECK(table.has_value());
     if (!table) return;
     auto const& empty = table->rows.back().cells.front();
@@ -813,7 +867,7 @@ ELMD_TEST(test_deleting_last_table_cell_character_keeps_empty_caret_stable) {
 
 ELMD_TEST(test_delete_from_adjacent_paragraph_does_not_consume_table_boundary) {
     Editor e("| H |\n| --- |\n| A |\n\nafter");
-    auto table = table_source_at(e.text_cps(), 0);
+    auto table = table_projection(e);
     ELMD_CHECK(table.has_value());
     if (!table) return;
     auto source = e.buffer().text_utf8();
@@ -827,7 +881,7 @@ ELMD_TEST(test_delete_from_adjacent_paragraph_does_not_consume_table_boundary) {
 
 ELMD_TEST(test_table_cross_cell_selection_delete_preserves_structure) {
     Editor e("| H1 | H2 |\n| --- | --- |\n| A1 | A2 |");
-    auto table = table_source_at(e.text_cps(), 0);
+    auto table = table_projection(e);
     ELMD_CHECK(table.has_value());
     if (!table) return;
     auto const& row = table->rows.back();

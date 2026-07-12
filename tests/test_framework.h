@@ -28,6 +28,7 @@ inline int& fail_count() { static int s = 0; return s; }
 inline int& test_count() { static int s = 0; return s; }
 
 struct TestCase { void(*run)(); const char* name; };
+struct TestAbort {};
 inline std::vector<TestCase>& tests() { static std::vector<TestCase> v; return v; }
 inline void register_test(void(*f)(), const char* name) { tests().push_back(TestCase{f, name}); }
 
@@ -41,12 +42,15 @@ inline int run_all() {
 #pragma warning(push)
 #pragma warning(disable: 4996)
     const auto* raw_filter = std::getenv("ELMD_TEST_FILTER");
+    const auto* raw_trace = std::getenv("ELMD_TEST_TRACE");
 #pragma warning(pop)
     const auto filter = raw_filter ? std::string_view(raw_filter) : std::string_view{};
     for (const auto& test : v) {
         if (!filter.empty() && !std::string_view(test.name).contains(filter)) continue;
+        if (raw_trace) { std::printf("RUN %s\n", test.name); std::fflush(nullptr); }
         ++test_count();
-        test.run();
+        try { test.run(); }
+        catch (const TestAbort&) {}
     }
     if (fail_count() == 0) {
         std::printf("ALL %d TESTS PASSED\n", test_count());
@@ -67,9 +71,9 @@ inline int elmd_tests_main() { return ::elmdtest::run_all(); }
     static void name()
 
 #define ELMD_CHECK(cond) \
-    do { if (!bool(cond)) { ::elmdtest::record_fail(__FILE__, __LINE__, "CHECK(" #cond ") failed"); } } while (0)
+    do { if (!bool(cond)) { ::elmdtest::record_fail(__FILE__, __LINE__, "CHECK(" #cond ") failed"); throw ::elmdtest::TestAbort{}; } } while (0)
 
 #define ELMD_CHECK_EQ(a, b) \
-    do { if (!((a) == (b))) { ::elmdtest::record_fail(__FILE__, __LINE__, "CHECK_EQ(" #a ", " #b ") failed"); } } while (0)
+    do { if (!((a) == (b))) { ::elmdtest::record_fail(__FILE__, __LINE__, "CHECK_EQ(" #a ", " #b ") failed"); throw ::elmdtest::TestAbort{}; } } while (0)
 
 #endif // ELMD_TEST_FRAMEWORK_H

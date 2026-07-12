@@ -1,7 +1,6 @@
 #include "pch.h"
 
 import elmd.core.render_model;
-import elmd.core.table_edit;
 import elmd.core.types;
 
 #include "EditorContentPreparation.h"
@@ -32,16 +31,14 @@ namespace winrt::ElMd
         EditorDrawMath const& drawMath,
         EditorDrawMathFallback const& drawMathFallback)
     {
-        auto tableSource = elmd::table_source_at(sourceText, block.source_range.start.v);
-        auto markdownTable = tableSource && tableSource->rows.size() >= 2 && tableSource->column_count > 0;
         auto modeledTable = block.row_count > 0 && block.column_count > 0 && !block.table_cells.empty();
-        if (!markdownTable && !modeledTable) return std::nullopt;
+        if (!modeledTable) return std::nullopt;
         EditorVisualTable table;
         table.sourceStart = block.source_range.start.v;
         table.sourceEnd = block.source_range.end.v;
-        table.editable = markdownTable;
-        table.columnCount = markdownTable ? tableSource->column_count : block.column_count;
-        table.rowCount = markdownTable ? tableSource->rows.size() - 1 : block.row_count;
+        table.editable = true;
+        table.columnCount = block.column_count;
+        table.rowCount = block.row_count;
         auto tableWidth = (std::max)(1.0f, documentRight - documentLeft);
         auto columnWidth = tableWidth / static_cast<float>(table.columnCount);
         std::vector<float> rowHeights(table.rowCount, styleSheet.body.lineHeight + 16.0f);
@@ -55,27 +52,11 @@ namespace winrt::ElMd
             {
                 auto sourceStart = block.source_range.start.v;
                 auto sourceEnd = sourceStart;
-                if (markdownTable)
+                auto rangeIndex = row * table.columnCount + column;
+                if (rangeIndex < block.table_cell_ranges.size())
                 {
-                    auto sourceRowIndex = row == 0 ? 0 : row + 1;
-                    auto const& sourceRow = tableSource->rows[sourceRowIndex];
-                    sourceStart = sourceRow.line_range.end.v;
-                    sourceEnd = sourceStart;
-                    if (column < sourceRow.cells.size())
-                    {
-                        auto const& sourceCell = sourceRow.cells[column];
-                        sourceStart = sourceCell.content_range.start.v;
-                        sourceEnd = sourceCell.content_range.end.v;
-                    }
-                }
-                else
-                {
-                    auto rangeIndex = row * table.columnCount + column;
-                    if (rangeIndex < block.table_cell_ranges.size())
-                    {
-                        sourceStart = block.table_cell_ranges[rangeIndex].start.v;
-                        sourceEnd = block.table_cell_ranges[rangeIndex].end.v;
-                    }
+                    sourceStart = block.table_cell_ranges[rangeIndex].start.v;
+                    sourceEnd = block.table_cell_ranges[rangeIndex].end.v;
                 }
                 DisplayInlineText display;
                 auto renderCellIndex = row * table.columnCount + column;

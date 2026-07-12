@@ -4,10 +4,29 @@ import elmd.core.ast;
 import elmd.core.document;
 import elmd.core.document_edit;
 import elmd.core.document_position;
+import elmd.core.document_projection;
+import elmd.core.types;
 import elmd.core.parser;
 import elmd.core.serializer;
 
 using namespace elmd;
+
+ELMD_TEST(test_backspace_on_emphasis_marker_unwraps_ast_node) {
+    auto document = parse_text(1, "_word_").document;
+    auto selection = DocumentSelection::caret(*document_position_from_source_offset(document, CharOffset(1)));
+    auto transaction = document_delete_backward(document, selection);
+    ELMD_CHECK(transaction.has_value());
+    ELMD_CHECK(transaction && serialize_markdown(transaction->after) == "word");
+    ELMD_CHECK(transaction && transaction->after.blocks.front().children.front().kind == InlineKind::Text);
+}
+
+ELMD_TEST(test_delete_on_emphasis_marker_unwraps_ast_node) {
+    auto document = parse_text(1, "_word_").document;
+    auto selection = DocumentSelection::caret(*document_position_from_source_offset(document, CharOffset(0)));
+    auto transaction = document_delete_forward(document, selection);
+    ELMD_CHECK(transaction.has_value());
+    ELMD_CHECK(transaction && serialize_markdown(transaction->after) == "word");
+}
 
 namespace {
 
