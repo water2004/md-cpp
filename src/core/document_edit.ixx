@@ -1332,7 +1332,12 @@ inline bool insert_soft_break_in_blocks(
 }
 
 inline DocumentPosition merge_paragraphs(BlockNode& first, BlockNode& second) {
-    const auto offset = block_inline_text_content(first.children).size();
+    auto offset = block_inline_text_content(first.children).size();
+    if (second.children.empty() && !first.children.empty()
+        && first.children.back().kind == InlineKind::HardBreak) {
+        first.children.pop_back();
+        --offset;
+    }
     first.children.insert(
         first.children.end(),
         std::make_move_iterator(second.children.begin()),
@@ -1446,6 +1451,11 @@ inline bool backspace_in_task_list(BlockVec& owner, std::size_t list_index, Node
 inline bool backspace_in_blocks(BlockVec& blocks, NodeId id, DocumentPosition& after) {
     for (std::size_t index = 0; index < blocks.size(); ++index) {
         auto& block = blocks[index];
+        if (block.id == id && index > 0 && block_is_empty_paragraph(blocks[index - 1])) {
+            after = DocumentPosition{block.id, 0, TextAffinity::Upstream};
+            blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index - 1));
+            return true;
+        }
         if (block.id == id && block.kind == BlockKind::Paragraph) {
             if (index == 0 || blocks[index - 1].kind != BlockKind::Paragraph) return false;
             after = merge_paragraphs(blocks[index - 1], block);
@@ -1772,10 +1782,29 @@ inline bool split_direct_paragraph(BlockVec& blocks, std::size_t index, std::siz
     return true;
 }
 
-inline bool insert_newline_in_verbatim_blocks(BlockVec& blocks, NodeId id, std::size_t offset, DocumentPosition& after) {
-    for (auto& block : blocks) {
+inline bool insert_newline_in_verbatim_blocks(
+    BlockVec& blocks,
+    NodeId id,
+    std::size_t offset,
+    NodeAllocator& allocator,
+    DocumentPosition& after) {
+    for (std::size_t index = 0; index < blocks.size(); ++index) {
+        auto& block = blocks[index];
         if (block.id == id && block.kind == BlockKind::CodeBlock) {
             if (offset > block.code_text.size()) return false;
+            auto line_start = offset == 0 ? 0 : block.code_text.rfind(U'\n', offset - 1);
+            line_start = line_start == std::u32string::npos ? 0 : line_start + 1;
+            auto line_end = block.code_text.find(U'\n', line_start);
+            if (line_end == std::u32string::npos) line_end = block.code_text.size();
+            if (block.code_indented && offset == line_start && line_start == line_end) {
+                const auto erase_start = line_start > 0 ? line_start - 1 : line_start;
+                const auto erase_end = line_end < block.code_text.size() ? line_end + 1 : line_end;
+                block.code_text.erase(erase_start, erase_end - erase_start);
+                auto paragraph = empty_paragraph(allocator);
+                after = DocumentPosition{paragraph.id, 0, TextAffinity::Downstream};
+                blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(index + 1), std::move(paragraph));
+                return true;
+            }
             block.code_text.insert(offset, 1, U'\n');
             after = DocumentPosition{id, offset + 1, TextAffinity::Downstream};
             return true;
@@ -1786,9 +1815,9 @@ inline bool insert_newline_in_verbatim_blocks(BlockVec& blocks, NodeId id, std::
             after = DocumentPosition{id, offset + 1, TextAffinity::Downstream};
             return true;
         }
-        if (insert_newline_in_verbatim_blocks(block.quote_children, id, offset, after)) return true;
-        for (auto& item : block.list_items) if (insert_newline_in_verbatim_blocks(item.children, id, offset, after)) return true;
-        for (auto& item : block.task_items) if (insert_newline_in_verbatim_blocks(item.children, id, offset, after)) return true;
+        if (insert_newline_in_verbatim_blocks(block.quote_children, id, offset, allocator, after)) return true;
+        for (auto& item : block.list_items) if (insert_newline_in_verbatim_blocks(item.children, id, offset, allocator, after)) return true;
+        for (auto& item : block.task_items) if (insert_newline_in_verbatim_blocks(item.children, id, offset, allocator, after)) return true;
     }
     return false;
 }
@@ -2618,7 +2647,7 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
     bool handled = document_edit_detail::enter_table(after.blocks, selection.active.node_id, allocator, target, changed);
     if (!handled) {
         handled = document_edit_detail::insert_newline_in_verbatim_blocks(
-            after.blocks, selection.active.node_id, selection.active.offset, target);
+            after.blocks, selection.active.node_id, selection.active.offset, allocator, target);
     }
     if (!handled) {
         handled = document_edit_detail::enter_atomic_block(

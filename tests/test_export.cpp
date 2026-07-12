@@ -41,7 +41,7 @@ ELMD_TEST(test_export_markdown_serializes_document) {
     ExportOptions opts;
     auto res = export_markdown(out.document, opts);
     ELMD_CHECK(res.ok);
-    ELMD_CHECK_EQ(res.value.content, std::string("# Title\n\nHello *world*."));
+    ELMD_CHECK_EQ(res.value.content, std::string("# Title\n\nHello *world*.\n"));
     ELMD_CHECK_EQ(res.value.mime_type, std::string("text/markdown"));
     ELMD_CHECK_EQ(res.value.extension, std::string("md"));
 }

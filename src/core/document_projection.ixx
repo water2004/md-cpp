@@ -284,6 +284,19 @@ inline std::optional<DocumentPosition> position_in_blocks(
     const BlockVec& blocks,
     CharOffset source_offset) {
     for (const auto& block : blocks) {
+        if (block.kind != BlockKind::Paragraph || !block.children.empty()) continue;
+        const auto* range = document.source_map.find_node_by_id(block.id);
+        if (range && source_offset.v >= range->source_range.start.v
+            && source_offset.v <= range->source_range.end.v) {
+            return DocumentPosition{
+                block.id,
+                0,
+                source_offset.v <= range->content_range.start.v
+                    ? TextAffinity::Upstream
+                    : TextAffinity::Downstream};
+        }
+    }
+    for (const auto& block : blocks) {
         if (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading) {
             const auto* range = document.source_map.find_node_by_id(block.id);
             if (block.kind == BlockKind::Heading && range
@@ -315,6 +328,16 @@ inline std::optional<DocumentPosition> position_in_blocks(
         }
         if (block.kind == BlockKind::CodeBlock) {
             const auto* range = document.source_map.find_node_by_id(block.id);
+            if (range && source_offset.v >= range->source_range.start.v && source_offset.v < range->content_range.start.v) {
+                return DocumentPosition{
+                    block.id, 0, TextAffinity::Upstream, NodeId{}, DocumentPositionPart::OpeningMarker,
+                    source_offset.v - range->source_range.start.v};
+            }
+            if (range && source_offset.v > range->content_range.end.v && source_offset.v <= range->source_range.end.v) {
+                return DocumentPosition{
+                    block.id, block.code_text.size(), TextAffinity::Downstream, NodeId{}, DocumentPositionPart::ClosingMarker,
+                    source_offset.v - range->content_range.end.v};
+            }
             if (range && source_offset.v >= range->content_range.start.v && source_offset.v <= range->content_range.end.v) {
                 if (!block.code_indented) {
                     return DocumentPosition{block.id, source_offset.v - range->content_range.start.v, TextAffinity::Downstream};
@@ -342,6 +365,16 @@ inline std::optional<DocumentPosition> position_in_blocks(
         }
         if (block.kind == BlockKind::MathBlock) {
             const auto* range = document.source_map.find_node_by_id(block.id);
+            if (range && source_offset.v >= range->source_range.start.v && source_offset.v < range->content_range.start.v) {
+                return DocumentPosition{
+                    block.id, 0, TextAffinity::Upstream, NodeId{}, DocumentPositionPart::OpeningMarker,
+                    source_offset.v - range->source_range.start.v};
+            }
+            if (range && source_offset.v > range->content_range.end.v && source_offset.v <= range->source_range.end.v) {
+                return DocumentPosition{
+                    block.id, block.tex.size(), TextAffinity::Downstream, NodeId{}, DocumentPositionPart::ClosingMarker,
+                    source_offset.v - range->content_range.end.v};
+            }
             if (range && source_offset.v >= range->content_range.start.v && source_offset.v <= range->content_range.end.v) {
                 return DocumentPosition{block.id, source_offset.v - range->content_range.start.v, TextAffinity::Downstream};
             }
@@ -476,6 +509,10 @@ inline std::optional<CharOffset> source_offset_from_document_position(
         if (position.part == DocumentPositionPart::OpeningMarker) {
             const auto marker_length = range->content_range.start.v - range->source_range.start.v;
             return CharOffset(range->source_range.start.v + (std::min)(position.part_offset, marker_length));
+        }
+        if (position.part == DocumentPositionPart::ClosingMarker) {
+            const auto marker_length = range->source_range.end.v - range->content_range.end.v;
+            return CharOffset(range->content_range.end.v + (std::min)(position.part_offset, marker_length));
         }
         std::function<const BlockNode*(const BlockVec&)> find_atomic = [&](const BlockVec& blocks) -> const BlockNode* {
             for (const auto& block : blocks) {

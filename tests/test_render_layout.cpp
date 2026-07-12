@@ -519,7 +519,7 @@ ELMD_TEST(blockquote_hard_break_renders_a_newline_mapped_past_the_next_quote_mar
 ELMD_TEST(trailing_blockquote_hard_break_has_a_zero_width_edit_anchor) {
     auto m = build_model("> alpha  \n> \n\nafter");
     ELMD_CHECK_EQ(m.blocks.size(), 2u);
-    ELMD_CHECK_EQ(m.blocks[0].child_blocks.size(), 1u);
+    ELMD_CHECK_EQ(m.blocks[0].child_blocks.size(), 3u);
     if (!m.blocks[0].child_blocks.empty()) {
         auto const& items = m.blocks[0].child_blocks[0].inline_items;
         ELMD_CHECK(!items.empty());
@@ -583,8 +583,8 @@ ELMD_TEST(builds_text_blocks_from_ast_paragraphs) {
     auto empty_after_break = build_model("Hello\n\n");
     ELMD_CHECK_EQ(empty_after_break.blocks.size(), 2u);
     ELMD_CHECK(empty_after_break.blocks[1].kind == RenderBlockKind::Blank);
-    ELMD_CHECK_EQ(empty_after_break.blocks[1].content_range.start.v, 7u);
-    ELMD_CHECK_EQ(empty_after_break.blocks[1].content_range.end.v, 7u);
+    ELMD_CHECK_EQ(empty_after_break.blocks[1].content_range.start.v, 6u);
+    ELMD_CHECK_EQ(empty_after_break.blocks[1].content_range.end.v, 6u);
 
     auto one_blank_between = build_model("Hello\n\n\nWorld");
     ELMD_CHECK_EQ(one_blank_between.blocks.size(), 3u);
@@ -596,11 +596,11 @@ ELMD_TEST(builds_text_blocks_from_ast_paragraphs) {
 ELMD_TEST(layout_blank_block_has_one_caret_line) {
     StubMeasurer ms;
     auto m = build_model("Hello\n\n");
-    auto t = layout_blocks(m.blocks, 800.0f, 1.0f, ms, CharOffset(7), LogicalPoint(0, 0), Outline::empty(1));
+    auto t = layout_blocks(m.blocks, 800.0f, 1.0f, ms, CharOffset(6), LogicalPoint(0, 0), Outline::empty(1));
     ELMD_CHECK_EQ(t.blocks.size(), 2u);
     ELMD_CHECK(t.blocks[1].kind.kind == LayoutBlockKind::Blank);
     ELMD_CHECK_EQ(t.blocks[1].children.size(), 1u);
-    auto caret = compute_caret_geometry(t, CharOffset(7));
+    auto caret = compute_caret_geometry(t, CharOffset(6));
     ELMD_CHECK(caret.has_value());
 }
 

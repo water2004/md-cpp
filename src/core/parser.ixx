@@ -403,18 +403,33 @@ public:
         source_ranges.push_back(r);
     }
     // ---- block dispatch ----
+    void parse_blank_lines(std::vector<BlockNode>& blocks) {
+        std::vector<std::pair<CharOffset, CharOffset>> blank_ranges;
+        while (!eof() && is_blank_line()) {
+            const auto start = cur();
+            while (peek1() == ' ' || peek1() == '\t') advance();
+            if (peek1() == '\n') advance();
+            blank_ranges.emplace_back(start, cur());
+        }
+        const auto separator = !eof() && !blocks.empty()
+            && !(blocks.back().kind == BlockKind::Paragraph && blocks.back().children.empty());
+        for (std::size_t index = separator ? 1u : 0u; index < blank_ranges.size(); ++index) {
+            BlockNode paragraph;
+            paragraph.id = next_node_id();
+            paragraph.kind = BlockKind::Paragraph;
+            push_range(
+                paragraph.id,
+                CharRange(blank_ranges[index].first, blank_ranges[index].second),
+                CharRange(blank_ranges[index].first, blank_ranges[index].first));
+            blocks.push_back(std::move(paragraph));
+        }
+    }
+
     std::vector<BlockNode> parse_blocks(std::function<bool(const std::u32string&)> stop = nullptr) {
         std::vector<BlockNode> blocks;
         while (!eof()) {
             if (is_blank_line()) {
-                const auto start = cur();
-                while (peek1() == ' ' || peek1() == '\t') advance();
-                if (peek1() == '\n') advance();
-                BlockNode paragraph;
-                paragraph.id = next_node_id();
-                paragraph.kind = BlockKind::Paragraph;
-                push_range(paragraph.id, CharRange(start, cur()), CharRange(start, start));
-                blocks.push_back(std::move(paragraph));
+                parse_blank_lines(blocks);
                 continue;
             }
             if (stop) {
@@ -2404,8 +2419,7 @@ inline ParseOutput parse_incremental(const ParseInput& input, const EditorDocume
     std::optional<std::size_t> suffix_begin;
     while (!parser.eof()) {
         if (parser.is_blank_line()) {
-            while (parser.peek1() == U' ' || parser.peek1() == U'\t') parser.advance();
-            if (parser.peek1() == U'\n') parser.advance();
+            parser.parse_blank_lines(rebuilt_blocks);
         } else if (auto block = parser.parse_block()) {
             rebuilt_blocks.push_back(std::move(*block));
         } else {
@@ -2462,14 +2476,6 @@ inline ParseOutput parse_incremental(const ParseInput& input, const EditorDocume
 inline ParseOutput parse(const ParseInput& input) {
     detail::Parser p(&input);
     auto blocks = p.parse_blocks(nullptr);
-    if (!p.cps.empty() && p.cps.back() == U'\n') {
-        BlockNode paragraph;
-        paragraph.id = p.next_node_id();
-        paragraph.kind = BlockKind::Paragraph;
-        const auto end = CharOffset(p.cps.size());
-        p.push_range(paragraph.id, CharRange(end, end), CharRange(end, end));
-        blocks.push_back(std::move(paragraph));
-    }
     EditorDocument doc;
     doc.revision = input.revision;
     doc.blocks = std::move(blocks);

@@ -269,7 +269,7 @@ ELMD_TEST(test_editor_list_indent_commands_use_document_history) {
 ELMD_TEST(test_editor_cross_container_selection_delete_uses_document_history) {
     Editor editor("> alpha\n\nomega");
     const auto quote_id = editor.document().blocks[0].quote_children[0].id;
-    const auto paragraph_id = editor.document().blocks[2].id;
+    const auto paragraph_id = editor.document().blocks[1].id;
     DocumentSelection selection{
         DocumentPosition{quote_id, 2, TextAffinity::Downstream},
         DocumentPosition{paragraph_id, 3, TextAffinity::Downstream}};
@@ -296,7 +296,7 @@ ELMD_TEST(test_editor_enter_at_paragraph_end_projects_empty_node_caret_anchor) {
     auto transaction = editor.execute_command(newline);
 
     ELMD_CHECK(transaction);
-    ELMD_CHECK_EQ(editor.text_utf8(), std::string("alpha\n"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("alpha\n\n"));
     ELMD_CHECK_EQ(editor.document().blocks.size(), 2u);
     ELMD_CHECK_EQ(editor.document().blocks.front().id, first_id);
     ELMD_CHECK(editor.document().source_map.find_node_by_id(editor.document().blocks[1].id) != nullptr);
@@ -306,7 +306,7 @@ ELMD_TEST(test_editor_enter_at_paragraph_end_projects_empty_node_caret_anchor) {
 ELMD_TEST(test_editor_document_range_delete_restores_ast_and_selection_on_undo) {
     Editor editor("alpha\n\nomega");
     const auto first_id = editor.document().blocks[0].id;
-    const auto last_id = editor.document().blocks[2].id;
+    const auto last_id = editor.document().blocks[1].id;
     DocumentSelection selection{
         DocumentPosition{first_id, 2, TextAffinity::Downstream},
         DocumentPosition{last_id, 3, TextAffinity::Downstream}};
@@ -318,9 +318,7 @@ ELMD_TEST(test_editor_document_range_delete_restores_ast_and_selection_on_undo) 
     ELMD_CHECK_EQ(editor.document().blocks[0].id, first_id);
     ELMD_CHECK(editor.undo_document());
     ELMD_CHECK_EQ(editor.text_utf8(), std::string("alpha\n\nomega"));
-    ELMD_CHECK_EQ(editor.document().blocks.size(), 3u);
-    ELMD_CHECK(editor.document().blocks[1].kind == BlockKind::Paragraph);
-    ELMD_CHECK(editor.document().blocks[1].children.empty());
+    ELMD_CHECK_EQ(editor.document().blocks.size(), 2u);
     {
         ELMD_CHECK_EQ(editor.document_selection().anchor.node_id, first_id);
         ELMD_CHECK_EQ(editor.document_selection().active.node_id, last_id);
@@ -628,7 +626,7 @@ ELMD_TEST(test_table_insert_row_below) {
     e.set_caret(CharOffset(27));
     Command c; c.kind = CommandKind::InsertTableRowBelow;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.text_utf8(), std::string("| A | B |\n| --- | --- |\n| C | D |\n|  |  |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| A | B |\n| --- | --- |\n| C | D |\n|  |  |\n"));
 }
 
 ELMD_TEST(test_table_delete_column) {
@@ -636,7 +634,7 @@ ELMD_TEST(test_table_delete_column) {
     e.set_caret(CharOffset(6));
     Command c; c.kind = CommandKind::DeleteTableColumn;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.text_utf8(), std::string("| A |\n| --- |\n| C |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| A |\n| --- |\n| C |\n"));
 }
 
 ELMD_TEST(test_table_move_column_left) {
@@ -644,7 +642,7 @@ ELMD_TEST(test_table_move_column_left) {
     e.set_caret(CharOffset(6));
     Command c; c.kind = CommandKind::MoveTableColumnLeft;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.text_utf8(), std::string("| B | A |\n| --- | --- |\n| D | C |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| B | A |\n| --- | --- |\n| D | C |\n"));
 }
 
 ELMD_TEST(test_table_column_alignment_is_preserved_by_structural_edits) {
@@ -652,11 +650,11 @@ ELMD_TEST(test_table_column_alignment_is_preserved_by_structural_edits) {
     e.set_caret(CharOffset(6));
     Command align; align.kind = CommandKind::SetTableColumnAlignment; align.table_alignment = TableAlignment::Right;
     e.execute_command(align);
-    ELMD_CHECK_EQ(e.text_utf8(), std::string("| A | B |\n| --- | ---: |\n| 1 | 2 |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| A | B |\n| --- | ---: |\n| 1 | 2 |\n"));
     ELMD_CHECK_EQ(e.selection().head().v, 6u);
     Command move; move.kind = CommandKind::MoveTableColumnLeft;
     e.execute_command(move);
-    ELMD_CHECK_EQ(e.text_utf8(), std::string("| B | A |\n| ---: | --- |\n| 2 | 1 |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| B | A |\n| ---: | --- |\n| 2 | 1 |\n"));
 }
 
 ELMD_TEST(test_normalize_table_canonicalizes_widths_without_losing_alignment) {
@@ -664,7 +662,7 @@ ELMD_TEST(test_normalize_table_canonicalizes_widths_without_losing_alignment) {
     e.set_caret(CharOffset(2));
     Command c; c.kind = CommandKind::NormalizeTable;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.text_utf8(), std::string("| Long | B |\n| :--- | ---: |\n| 1 | 2 |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| Long | B |\n| :--- | ---: |\n| 1 | 2 |\n"));
 }
 
 ELMD_TEST(test_table_insert_row_and_column_at_visual_boundaries) {
@@ -672,10 +670,10 @@ ELMD_TEST(test_table_insert_row_and_column_at_visual_boundaries) {
     e.set_caret(CharOffset(2));
     Command row; row.kind = CommandKind::InsertTableRowAt; row.table_index = 1;
     e.execute_command(row);
-    ELMD_CHECK_EQ(e.text_utf8(), std::string("| A | B |\n| --- | --- |\n|  |  |\n| 1 | 2 |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| A | B |\n| --- | --- |\n|  |  |\n| 1 | 2 |\n"));
     Command column; column.kind = CommandKind::InsertTableColumnAt; column.table_index = 1;
     e.execute_command(column);
-    ELMD_CHECK_EQ(e.text_utf8(), std::string("| A |  | B |\n| --- | --- | --- |\n|  |  |  |\n| 1 |  | 2 |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| A |  | B |\n| --- | --- | --- |\n|  |  |  |\n| 1 |  | 2 |\n"));
 }
 
 ELMD_TEST(test_table_drag_moves_row_and_column_atomically) {
@@ -683,11 +681,11 @@ ELMD_TEST(test_table_drag_moves_row_and_column_atomically) {
     e.set_caret(CharOffset(29));
     Command row; row.kind = CommandKind::MoveTableRowTo; row.table_index = 0;
     e.execute_command(row);
-    ELMD_CHECK_EQ(e.text_utf8(), std::string("| 1 | 2 |\n| --- | --- |\n| A | B |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| 1 | 2 |\n| --- | --- |\n| A | B |\n"));
     e.set_caret(CharOffset(8));
     Command column; column.kind = CommandKind::MoveTableColumnTo; column.table_index = 0;
     e.execute_command(column);
-    ELMD_CHECK_EQ(e.text_utf8(), std::string("| 2 | 1 |\n| --- | --- |\n| B | A |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| 2 | 1 |\n| --- | --- |\n| B | A |\n"));
 }
 
 ELMD_TEST(test_table_structure_commands_preserve_ast_nodes_and_document_history) {
@@ -721,7 +719,7 @@ ELMD_TEST(test_typing_into_empty_table_cell_updates_source_and_ast) {
     e.set_caret(emptyCellOffset);
     e.execute_command(Command::InsertText(U"x"));
     ELMD_CHECK_EQ(e.text_utf8(), std::string("| A | B |\n| --- | --- |\n| x | 2 |\n"));
-    ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
     ELMD_CHECK(e.document().blocks[0].kind == BlockKind::Table);
     auto const& row = e.document().blocks[0].table_rows[0];
     ELMD_CHECK_EQ(row.cells.size(), 2u);
@@ -739,7 +737,7 @@ ELMD_TEST(test_enter_at_end_of_table_exits_after_closing_pipe) {
     command.kind = CommandKind::InsertNewline;
     e.execute_command(command);
     ELMD_CHECK_EQ(e.text_utf8(), std::string("| H1 | H2 |\n| --- | --- |\n| A | B |\n\n"));
-    ELMD_CHECK_EQ(e.selection().head().v, e.text_cps().size());
+    ELMD_CHECK_EQ(e.selection().head().v, e.text_cps().size() - 1);
 }
 
 ELMD_TEST(test_enter_at_end_of_table_reuses_trailing_newline) {
@@ -752,7 +750,7 @@ ELMD_TEST(test_enter_at_end_of_table_reuses_trailing_newline) {
     command.kind = CommandKind::InsertNewline;
     e.execute_command(command);
     ELMD_CHECK_EQ(e.text_utf8(), std::string("| H |\n| --- |\n| A |\n\n"));
-    ELMD_CHECK_EQ(e.selection().head().v, e.text_cps().size());
+    ELMD_CHECK_EQ(e.selection().head().v, e.text_cps().size() - 1);
 }
 
 ELMD_TEST(test_enter_in_table_moves_to_same_column_of_next_row) {
@@ -793,7 +791,7 @@ ELMD_TEST(test_enter_in_any_cell_of_last_table_row_exits_table) {
     command.kind = CommandKind::InsertNewline;
     e.execute_command(command);
     ELMD_CHECK_EQ(e.text_utf8(), std::string("| H1 | H2 |\n| --- | --- |\n| A1 | A2 |\n\n"));
-    ELMD_CHECK_EQ(e.selection().head().v, e.text_cps().size());
+    ELMD_CHECK_EQ(e.selection().head().v, e.text_cps().size() - 1);
 }
 
 ELMD_TEST(test_empty_table_cell_has_zero_width_content_after_leading_padding) {
@@ -874,7 +872,9 @@ ELMD_TEST(test_delete_from_adjacent_paragraph_does_not_consume_table_boundary) {
     ELMD_CHECK(table.has_value());
     if (!table) return;
     auto source = e.text_utf8();
-    e.set_caret(CharOffset(table->range.end.v));
+    ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
+    e.set_document_selection(DocumentSelection::caret(DocumentPosition{
+        e.document().blocks[1].id, 0, TextAffinity::Upstream}));
     Command command;
     command.kind = CommandKind::DeleteBackward;
     ELMD_CHECK(!e.execute_command(command));
@@ -926,14 +926,13 @@ ELMD_TEST(test_enter_at_block_end_reuses_existing_separator_and_creates_one_blan
     Command c; c.kind = CommandKind::InsertNewline;
     e.execute_command(c);
     ELMD_CHECK_EQ(e.text_utf8(), std::string("# H\n\n\n## Next"));
-    ELMD_CHECK_EQ(e.selection().head().v, 4u);
-    ELMD_CHECK_EQ(e.document().blocks.size(), 4u);
+    ELMD_CHECK_EQ(e.selection().head().v, 5u);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 3u);
     auto structure = build_source_structure(e.document());
-    ELMD_CHECK_EQ(structure.blocks.size(), 4u);
+    ELMD_CHECK_EQ(structure.blocks.size(), 3u);
     ELMD_CHECK(structure.blocks[0].kind == SourceBlockKind::Semantic);
     ELMD_CHECK(structure.blocks[1].kind == SourceBlockKind::Blank);
-    ELMD_CHECK(structure.blocks[2].kind == SourceBlockKind::Blank);
-    ELMD_CHECK(structure.blocks[3].kind == SourceBlockKind::Semantic);
+    ELMD_CHECK(structure.blocks[2].kind == SourceBlockKind::Semantic);
 }
 
 ELMD_TEST(test_repeated_enter_between_early_blocks_keeps_incremental_ranges_in_sync) {
@@ -946,7 +945,7 @@ ELMD_TEST(test_repeated_enter_between_early_blocks_keeps_incremental_ranges_in_s
     for (std::size_t count = 1; count <= 4; ++count) {
         Command c; c.kind = CommandKind::InsertNewline;
         e.execute_command(c);
-        ELMD_CHECK_EQ(e.selection().head().v, 9u + count);
+        ELMD_CHECK_EQ(e.selection().head().v, 10u + count);
         auto full = parse_text(e.revision(), e.text_utf8());
         ELMD_CHECK_EQ(e.document().blocks.size(), full.document.blocks.size());
         for (std::size_t index = 0; index < e.document().blocks.size() && index < full.document.blocks.size(); ++index) {
@@ -969,20 +968,21 @@ ELMD_TEST(test_repeated_enter_between_early_blocks_keeps_incremental_ranges_in_s
     }
 }
 
-ELMD_TEST(test_backspace_before_opening_fence_only_removes_preceding_block_separator) {
+ELMD_TEST(test_backspace_before_opening_fence_does_not_mutate_ast_separator) {
     Editor e("before\n\n```cpp\n```\n");
     e.set_caret(CharOffset(8));
     Command c; c.kind = CommandKind::DeleteBackward;
-    e.execute_command(c);
-    ELMD_CHECK_EQ(e.text_utf8(), std::string("before\n```cpp\n```\n"));
-    ELMD_CHECK_EQ(e.selection().head().v, 7u);
+    const auto changed = e.execute_command(c);
+    ELMD_CHECK(!changed);
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("before\n\n```cpp\n```\n"));
+    ELMD_CHECK_EQ(e.selection().head().v, 8u);
     ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
     ELMD_CHECK(e.document().blocks[0].kind == BlockKind::Paragraph);
     ELMD_CHECK(e.document().blocks[1].kind == BlockKind::CodeBlock);
     auto* range = e.document().source_map.find_node_by_id(e.document().blocks[1].id);
     ELMD_CHECK(range != nullptr);
     if (range) {
-        ELMD_CHECK_EQ(range->source_range.start.v, 7u);
+        ELMD_CHECK_EQ(range->source_range.start.v, 8u);
         ELMD_CHECK_EQ(range->marker_ranges.size(), 2u);
     }
 }
@@ -994,10 +994,8 @@ ELMD_TEST(test_enter_inside_code_block_inserts_single_newline) {
     e.execute_command(c);
     ELMD_CHECK_EQ(e.text_utf8(), std::string("```\nabc\n\n```\n"));
     ELMD_CHECK_EQ(e.selection().head().v, 8u);
-    ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
     ELMD_CHECK(e.document().blocks[0].kind == BlockKind::CodeBlock);
-    ELMD_CHECK(e.document().blocks[1].kind == BlockKind::Paragraph);
-    ELMD_CHECK(e.document().blocks[1].children.empty());
 }
 
 ELMD_TEST(test_enter_inside_indented_code_block_preserves_indent) {
@@ -1008,11 +1006,9 @@ ELMD_TEST(test_enter_inside_indented_code_block_preserves_indent) {
     e.execute_command(command);
     ELMD_CHECK_EQ(e.text_utf8(), std::string("    abc\n    \n"));
     ELMD_CHECK_EQ(e.selection().head().v, 12u);
-    ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
     ELMD_CHECK(e.document().blocks[0].kind == BlockKind::CodeBlock);
     ELMD_CHECK(e.document().blocks[0].code_indented);
-    ELMD_CHECK(e.document().blocks[1].kind == BlockKind::Paragraph);
-    ELMD_CHECK(e.document().blocks[1].children.empty());
 }
 
 ELMD_TEST(test_soft_break_in_plain_paragraph_inserts_single_newline) {
@@ -1031,8 +1027,8 @@ ELMD_TEST(test_enter_on_empty_paragraph_inserts_one_empty_sibling) {
     Command c; c.kind = CommandKind::InsertNewline;
     e.execute_command(c);
     ELMD_CHECK_EQ(e.text_utf8(), std::string("alpha\n\n\n"));
-    ELMD_CHECK_EQ(e.selection().head().v, 8u);
-    ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
+    ELMD_CHECK_EQ(e.selection().head().v, 7u);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 3u);
     auto structure = build_source_structure(e.document());
     ELMD_CHECK_EQ(structure.blocks.size(), 3u);
     ELMD_CHECK(structure.blocks[1].kind == SourceBlockKind::Blank);
@@ -1045,7 +1041,7 @@ ELMD_TEST(test_backspace_on_empty_block_deletes_semantic_block) {
     Command c; c.kind = CommandKind::DeleteBackward;
     e.execute_command(c);
     ELMD_CHECK_EQ(e.text_utf8(), std::string("alpha\n"));
-    ELMD_CHECK_EQ(e.selection().head().v, 6u);
+    ELMD_CHECK_EQ(e.selection().head().v, 5u);
     ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
 }
 
@@ -1055,8 +1051,8 @@ ELMD_TEST(test_backspace_on_consecutive_empty_block_deletes_block_span) {
     Command c; c.kind = CommandKind::DeleteBackward;
     e.execute_command(c);
     ELMD_CHECK_EQ(e.text_utf8(), std::string("alpha\n\n\n"));
-    ELMD_CHECK_EQ(e.selection().head().v, 8u);
-    ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
+    ELMD_CHECK_EQ(e.selection().head().v, 7u);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 3u);
     auto structure = build_source_structure(e.document());
     ELMD_CHECK_EQ(structure.blocks.size(), 3u);
 }
@@ -1291,10 +1287,12 @@ ELMD_TEST(test_enter_on_empty_indented_code_line_exits_the_code_block) {
     Command newline; newline.kind = CommandKind::InsertNewline;
     e.execute_command(newline);
     ELMD_CHECK_EQ(e.text_utf8(), std::string("    alpha\n\n\nafter"));
-    ELMD_CHECK_EQ(e.selection().head().v, 10u);
-    ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
+    ELMD_CHECK_EQ(e.selection().head().v, 11u);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 3u);
     ELMD_CHECK(e.document().blocks[0].kind == BlockKind::CodeBlock);
     ELMD_CHECK(e.document().blocks[1].kind == BlockKind::Paragraph);
+    ELMD_CHECK(e.document().blocks[1].children.empty());
+    ELMD_CHECK(e.document().blocks[2].kind == BlockKind::Paragraph);
 }
 
 ELMD_TEST(test_backspace_on_empty_indented_code_line_exits_the_code_block) {
@@ -1433,7 +1431,7 @@ ELMD_TEST(test_editor_auto_pairing_uses_document_tree_transactions) {
     fence.execute_command(Command::InsertText(U"`"));
     fence.execute_command(Command::InsertText(U"`"));
     fence.execute_command(Command::InsertText(U"`"));
-    ELMD_CHECK_EQ(fence.text_utf8(), std::string("```\n\n```"));
+    ELMD_CHECK_EQ(fence.text_utf8(), std::string("```\n```"));
     ELMD_CHECK_EQ(fence.selection().head().v, 4u);
     ELMD_CHECK(!fence.document().blocks.empty());
     ELMD_CHECK(fence.document().blocks.front().kind == BlockKind::CodeBlock);
@@ -1696,18 +1694,18 @@ ELMD_TEST(test_enter_after_thematic_break_creates_blank_lines_without_duplicate_
         auto range = editor.document().source_map.find_node_by_id(editor.document().blocks[0].id);
         ELMD_CHECK(range != nullptr);
         ELMD_CHECK_EQ(range->source_range.start.v, 0u);
-        ELMD_CHECK_EQ(range->source_range.end.v, 3u);
+        ELMD_CHECK_EQ(range->source_range.end.v, 4u);
     };
     editor.execute_command(enter);
-    ELMD_CHECK_EQ(editor.text_utf8(), std::string("---\n"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("---\n\n"));
     ELMD_CHECK_EQ(editor.selection().head().v, 4u);
     check_structure(1);
     editor.execute_command(enter);
-    ELMD_CHECK_EQ(editor.text_utf8(), std::string("---\n\n"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("---\n\n\n"));
     ELMD_CHECK_EQ(editor.selection().head().v, 5u);
     check_structure(2);
     editor.execute_command(enter);
-    ELMD_CHECK_EQ(editor.text_utf8(), std::string("---\n\n\n"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("---\n\n\n\n"));
     ELMD_CHECK_EQ(editor.selection().head().v, 6u);
     check_structure(3);
     auto breaks = std::count_if(editor.document().blocks.begin(), editor.document().blocks.end(), [](auto const& block) {

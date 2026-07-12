@@ -19,7 +19,17 @@ struct EditorDocument {
     bool trailing_newline = false;
 
     static EditorDocument empty(std::uint64_t rev) {
-        EditorDocument d; d.revision = rev; return d;
+        EditorDocument d;
+        d.revision = rev;
+        BlockNode paragraph;
+        paragraph.id = NodeId(1);
+        paragraph.kind = BlockKind::Paragraph;
+        d.blocks.push_back(paragraph);
+        d.source_map.node_ranges.emplace_back(
+            paragraph.id,
+            CharRange(CharOffset(0), CharOffset(0)),
+            CharRange(CharOffset(0), CharOffset(0)));
+        return d;
     }
 };
 

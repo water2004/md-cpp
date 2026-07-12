@@ -113,10 +113,12 @@ ELMD_TEST(test_two_spaces_before_newline_are_a_hard_break) {
     }
 }
 
-ELMD_TEST(test_trailing_blank_lines_are_not_ast_blocks) {
+ELMD_TEST(test_trailing_blank_line_preserves_eof_empty_block) {
     auto out = parse_text(1, "Hello\n\n");
-    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    ELMD_CHECK_EQ(out.document.blocks.size(), 2u);
     ELMD_CHECK(out.document.blocks[0].kind == BlockKind::Paragraph);
+    ELMD_CHECK(out.document.blocks[1].kind == BlockKind::Paragraph);
+    ELMD_CHECK(out.document.blocks[1].children.empty());
 }
 
 ELMD_TEST(test_parse_block_break_between_paragraphs_is_separator_no_empty_block) {
@@ -126,16 +128,19 @@ ELMD_TEST(test_parse_block_break_between_paragraphs_is_separator_no_empty_block)
     ELMD_CHECK(!out.document.blocks[1].children.empty());
 }
 
-ELMD_TEST(test_consecutive_blank_lines_remain_source_trivia) {
+ELMD_TEST(test_extra_blank_line_becomes_an_empty_paragraph) {
     auto out = parse_text(1, "Hello\n\n\nWorld");
-    ELMD_CHECK_EQ(out.document.blocks.size(), 2u);
+    ELMD_CHECK_EQ(out.document.blocks.size(), 3u);
     ELMD_CHECK(!out.document.blocks[0].children.empty());
-    ELMD_CHECK(!out.document.blocks[1].children.empty());
+    ELMD_CHECK(out.document.blocks[1].children.empty());
+    ELMD_CHECK(!out.document.blocks[2].children.empty());
 }
 
-ELMD_TEST(test_parse_trailing_consecutive_blank_lines_as_trivia) {
+ELMD_TEST(test_parse_trailing_consecutive_blank_lines_as_explicit_and_eof_blocks) {
     auto out = parse_text(1, "Hello\n\n\n");
-    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    ELMD_CHECK_EQ(out.document.blocks.size(), 3u);
+    ELMD_CHECK(out.document.blocks[1].children.empty());
+    ELMD_CHECK(out.document.blocks[2].children.empty());
 }
 
 ELMD_TEST(test_incremental_enter_rescans_from_previous_block_and_keeps_suffix) {
@@ -144,12 +149,13 @@ ELMD_TEST(test_incremental_enter_rescans_from_previous_block_and_keeps_suffix) {
     std::string new_text = "one\n\ntwo\n\n\nthree";
     IncrementalParseEdit edit{CharRange(CharOffset(8), CharOffset(8)), U"\n"};
     auto out = parse_incremental(ParseInput(2, new_text), old_out.document, old_out.symbols, old_text, edit);
-    ELMD_CHECK_EQ(out.document.blocks.size(), 3u);
+    ELMD_CHECK_EQ(out.document.blocks.size(), 4u);
     ELMD_CHECK(!out.document.blocks[0].children.empty());
     ELMD_CHECK(!out.document.blocks[1].children.empty());
-    ELMD_CHECK(!out.document.blocks[2].children.empty());
-    ELMD_CHECK(out.document.blocks[2].id == old_out.document.blocks[2].id);
-    auto* suffix_range = out.document.source_map.find_node_by_id(out.document.blocks[2].id);
+    ELMD_CHECK(out.document.blocks[2].children.empty());
+    ELMD_CHECK(!out.document.blocks[3].children.empty());
+    ELMD_CHECK(out.document.blocks[3].id == old_out.document.blocks[2].id);
+    auto* suffix_range = out.document.source_map.find_node_by_id(out.document.blocks[3].id);
     ELMD_CHECK(suffix_range != nullptr);
     ELMD_CHECK_EQ(suffix_range->source_range.start.v, 11u);
 }
@@ -170,7 +176,11 @@ ELMD_TEST(test_incremental_repeated_trailing_enter_keeps_ast_semantic) {
     std::string new_text = "alpha\n\n\n";
     IncrementalParseEdit edit{CharRange(CharOffset(7), CharOffset(7)), U"\n"};
     auto out = parse_incremental(ParseInput(2, new_text), old_out.document, old_out.symbols, old_text, edit);
-    ELMD_CHECK_EQ(out.document.blocks.size(), 1u);
+    ELMD_CHECK_EQ(out.document.blocks.size(), 3u);
+    ELMD_CHECK(out.document.blocks[1].kind == BlockKind::Paragraph);
+    ELMD_CHECK(out.document.blocks[1].children.empty());
+    ELMD_CHECK(out.document.blocks[2].kind == BlockKind::Paragraph);
+    ELMD_CHECK(out.document.blocks[2].children.empty());
 }
 
 ELMD_TEST(test_parse_strong) {

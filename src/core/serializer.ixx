@@ -176,7 +176,7 @@ inline std::u32string serialize_block(const BlockNode& block) {
         case BlockKind::CodeBlock:
             if (block.code_indented) return serialize_indented_code(block.code_text);
             return U"```" + (block.language ? utf8_to_cps(*block.language) : std::u32string{}) + U"\n" + block.code_text
-                + (block.code_text.empty() || block.code_text.back() != U'\n' ? U"\n" : U"") + U"```";
+                + (!block.code_text.empty() && block.code_text.back() != U'\n' ? U"\n" : U"") + U"```";
         case BlockKind::MathBlock: {
             const auto newline = block.tex.empty() || block.tex.back() != U'\n' ? U"\n" : U"";
             if (block.math_delim == MathDelimiter::BlockBracket) return U"\\[\n" + block.tex + newline + U"\\]";
@@ -234,8 +234,11 @@ inline bool is_empty_paragraph(const BlockNode& block) {
     return block.kind == BlockKind::Paragraph && block.children.empty();
 }
 
-inline std::u32string_view block_separator(const BlockNode& previous, const BlockNode& current) {
-    return is_empty_paragraph(previous) || is_empty_paragraph(current) ? U"\n" : U"\n\n";
+inline std::u32string_view block_separator(const BlockNode& previous, const BlockNode&) {
+    if (is_empty_paragraph(previous)) return U"\n";
+    const auto serialized = serialize_block(previous);
+    if (!serialized.empty() && serialized.back() == U'\n') return U"\n";
+    return U"\n\n";
 }
 
 inline std::u32string serialize_blocks(const BlockVec& blocks) {
@@ -528,8 +531,12 @@ inline SourceMap build_source_map(const EditorDocument& document, const std::u32
     std::size_t cursor = 0;
     for (std::size_t index = 0; index < document.blocks.size(); ++index) {
         if (index > 0) cursor += block_separator(document.blocks[index - 1], document.blocks[index]).size();
+        const auto boundary = cursor;
         const auto serialized = serialize_block(document.blocks[index]);
-        const auto start = (std::min)(cursor, markdown.size());
+        const auto start = (std::min)(
+            index + 1 == document.blocks.size() && index > 0
+                && is_empty_paragraph(document.blocks[index]) && cursor > 0 ? cursor - 1 : cursor,
+            markdown.size());
         const auto end = (std::min)(start + serialized.size(), markdown.size());
         map_block(document.blocks[index], markdown, start, end, source_map);
         const auto physical_end = end < markdown.size() && markdown[end] == U'\n' ? end + 1 : end;
@@ -539,7 +546,7 @@ inline SourceMap build_source_map(const EditorDocument& document, const std::u32
                 break;
             }
         }
-        cursor = end;
+        cursor = (std::max)(boundary, end);
     }
     return source_map;
 }

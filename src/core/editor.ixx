@@ -505,12 +505,6 @@ private:
         auto anchor = source_offset_from_document_position(document_, document_selection_.anchor);
         auto active = source_offset_from_document_position(document_, document_selection_.active);
         if (anchor && active) {
-            auto canonical_anchor = document_position_from_source_offset(document_, *anchor);
-            auto canonical_active = document_position_from_source_offset(document_, *active);
-            if (!canonical_anchor || !canonical_active) {
-                throw std::logic_error("serialized selection cannot be rebound to the document tree");
-            }
-            document_selection_ = DocumentSelection{*canonical_anchor, *canonical_active};
             selection_.anchor = *anchor;
             selection_.active = *active;
             selection_.affinity = document_selection_.active.affinity;
