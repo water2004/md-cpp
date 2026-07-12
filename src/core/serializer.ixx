@@ -4,6 +4,7 @@ import elmd.core.ast;
 import elmd.core.document;
 import elmd.core.source_map;
 import elmd.core.utf;
+import elmd.core.instrumentation;
 
 export namespace elmd {
 
@@ -397,6 +398,7 @@ inline SourceMap build_source_map(const EditorDocument& document, const std::u32
 }
 
 inline SerializedDocument serialize_document(const EditorDocument& document) {
+    record_full_document_serialization();
     SerializedDocument result;
     result.markdown = serializer_detail::serialize_blocks(document.root.children);
     if (document.trailing_newline && (result.markdown.empty() || result.markdown.back() != U'\n')) result.markdown.push_back(U'\n');

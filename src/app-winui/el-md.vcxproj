@@ -193,6 +193,9 @@
     <ClCompile Include="..\core\input.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\core\instrumentation.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\core\inline_cst.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>

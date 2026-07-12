@@ -33,6 +33,7 @@ import elmd.core.utf;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
 import elmd.core.inline_parser;
+import elmd.core.instrumentation;
 
 export namespace elmd {
 
@@ -1813,6 +1814,7 @@ inline ParseOutput parse_incremental(const ParseInput& input, const EditorDocume
 
 // Public entry point.
 inline ParseOutput parse(const ParseInput& input) {
+    record_full_document_parse();
     detail::Parser p(&input);
     auto blocks = p.parse_blocks(nullptr);
     EditorDocument doc;

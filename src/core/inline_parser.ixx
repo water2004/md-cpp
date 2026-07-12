@@ -22,6 +22,7 @@ import elmd.core.dialect;
 import elmd.core.utf;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
+import elmd.core.instrumentation;
 
 export namespace elmd {
 
@@ -1048,6 +1049,7 @@ struct Parser {
 } // namespace inline_parser_detail
 
 inline InlineCstTree parse_inline(std::u32string_view source, const InlineParseContext& ctx) {
+    record_inline_reparse();
     inline_parser_detail::Parser parser{source, ctx};
     return parser.parse_all();
 }

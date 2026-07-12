@@ -9,6 +9,7 @@ import elmd.core.document_edit;
 import elmd.core.editor;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
+import elmd.core.instrumentation;
 import elmd.core.input;
 import elmd.core.serializer;
 import elmd.core.text_edit;
@@ -64,6 +65,24 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.redo())));
     expect(fatal(bool(editor.markdown_utf8() == "aXbc")));
     expect(fatal(bool(editor.selection() == after_selection)));
+};
+
+"normal_source_edits_never_parse_or_serialize_the_full_document"_test = [] {
+    Editor editor("**alpha**\n\nbeta");
+    editor.set_selection(caret(first_text(editor), 3));
+    reset_core_operation_counters();
+    expect(fatal(bool(editor.execute_command(Command::InsertText(U"X")))));
+    const auto edit = read_core_operation_counters();
+    expect(fatal(bool(edit.full_document_parses == 0u)));
+    expect(fatal(bool(edit.full_document_serializations == 0u)));
+    expect(fatal(bool(edit.inline_reparses == 1u)));
+
+    reset_core_operation_counters();
+    expect(fatal(bool(editor.undo())));
+    const auto undo = read_core_operation_counters();
+    expect(fatal(bool(undo.full_document_parses == 0u)));
+    expect(fatal(bool(undo.full_document_serializations == 0u)));
+    expect(fatal(bool(undo.inline_reparses == 1u)));
 };
 
 "format_undo_redo_preserve_original_marker_spelling"_test = [] {
