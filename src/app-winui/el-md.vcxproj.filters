@@ -45,7 +45,6 @@
     <ClCompile Include="..\core\source_structure.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\symbols.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\theme.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\transaction.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\types.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\utf.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="pch.cpp">

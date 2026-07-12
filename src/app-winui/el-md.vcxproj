@@ -232,9 +232,6 @@
     <ClCompile Include="..\core\theme.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\transaction.ixx">
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-    </ClCompile>
     <ClCompile Include="..\core\types.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>

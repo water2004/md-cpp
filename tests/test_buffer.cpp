@@ -5,7 +5,6 @@ import elmd.core.ids;
 import elmd.core.error;
 import elmd.core.buffer;
 import elmd.core.utf;
-import elmd.core.transaction;
 
 using namespace elmd;
 

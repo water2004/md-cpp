@@ -9,7 +9,6 @@ import elmd.core.theme;
 import elmd.core.buffer;
 import elmd.core.selection;
 import elmd.core.command;
-import elmd.core.transaction;
 import elmd.core.input;
 import elmd.core.utf;
 import elmd.core.dialect;
@@ -263,8 +262,7 @@ public:
         return true;
     }
 
-    // Apply a Command. Returns the transaction if it produced a change.
-    std::optional<Transaction> execute_command(const Command& cmd) {
+    bool execute_command(const Command& cmd) {
         if (cmd.kind == CommandKind::Undo) return undo();
         if (cmd.kind == CommandKind::Redo) return redo();
         if (cmd.kind == CommandKind::MoveLeft || cmd.kind == CommandKind::MoveRight
@@ -282,28 +280,20 @@ public:
                 case CommandKind::MoveDocumentEnd: movement = DocumentMove::DocumentEnd; break;
                 default: break;
             }
-            const auto revision_before = buffer_.revision();
-            const auto selection_before = selection_;
-            if (!execute_document_move(movement, cmd.extend_selection)) return std::nullopt;
-            return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
+            return execute_document_move(movement, cmd.extend_selection);
         }
         if (cmd.kind == CommandKind::SelectAll) {
             auto selection = document_select_all(document_);
-            if (!selection) return std::nullopt;
-            const auto revision_before = buffer_.revision();
-            const auto selection_before = selection_;
+            if (!selection) return false;
             document_selection_ = *selection;
             synchronize_legacy_selection_();
-            return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
+            return true;
         }
         if (cmd.kind == CommandKind::ToggleCallout || cmd.kind == CommandKind::InsertFootnote) {
-            const auto revision_before = buffer_.revision();
-            const auto selection_before = selection_;
             const auto changed = cmd.kind == CommandKind::ToggleCallout
                 ? execute_document_toggle_callout(document_selection_, cmd).has_value()
                 : execute_document_insert_footnote(document_selection_, cmd).has_value();
-            if (!changed) return std::nullopt;
-            return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
+            return changed;
         }
         if (cmd.kind == CommandKind::MoveTableCellNext || cmd.kind == CommandKind::MoveTableCellPrevious
             || cmd.kind == CommandKind::InsertTableRowAbove || cmd.kind == CommandKind::InsertTableRowBelow
@@ -335,33 +325,22 @@ public:
                 case CommandKind::MoveTableColumnTo: edit = DocumentTableEdit::MoveColumnTo; break;
                 default: break;
             }
-            const auto revision_before = buffer_.revision();
-            const auto selection_before = selection_;
-            if (!execute_document_table_edit(document_selection_, edit, cmd.table_alignment, cmd.table_index)) return std::nullopt;
-            return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
+            return execute_document_table_edit(document_selection_, edit, cmd.table_alignment, cmd.table_index).has_value();
         }
         if (cmd.kind == CommandKind::InsertCodeBlock || cmd.kind == CommandKind::InsertMathBlock
             || cmd.kind == CommandKind::InsertToc || cmd.kind == CommandKind::InsertTable) {
-            const auto revision_before = buffer_.revision();
-            const auto selection_before = selection_;
-            if (!execute_document_insert_atomic_block(document_selection_, cmd)) return std::nullopt;
-            return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
+            return execute_document_insert_atomic_block(document_selection_, cmd).has_value();
         }
         if (cmd.kind == CommandKind::InsertLink || cmd.kind == CommandKind::InsertImage) {
-            const auto revision_before = buffer_.revision();
-            const auto selection_before = selection_;
             const auto changed = cmd.kind == CommandKind::InsertLink
                 ? execute_document_insert_link(document_selection_, cmd).has_value()
                 : execute_document_insert_image(document_selection_, cmd).has_value();
-            if (!changed) return std::nullopt;
-            return Transaction(revision_before, selection_before, selection_, TransactionReason::FormatCommand);
+            return changed;
         }
         if (cmd.kind == CommandKind::SetHeading || cmd.kind == CommandKind::ClearHeading
             || cmd.kind == CommandKind::ToggleBlockQuote || cmd.kind == CommandKind::ToggleUnorderedList
             || cmd.kind == CommandKind::ToggleOrderedList || cmd.kind == CommandKind::ToggleTaskList
             || cmd.kind == CommandKind::ToggleTaskCheckbox) {
-            const auto revision_before = buffer_.revision();
-            const auto selection_before = selection_;
             bool changed = false;
             if (cmd.kind == CommandKind::SetHeading || cmd.kind == CommandKind::ClearHeading) {
                 changed = execute_document_set_heading(document_selection_,
@@ -375,8 +354,7 @@ public:
                     cmd.kind == CommandKind::ToggleOrderedList,
                     cmd.kind == CommandKind::ToggleTaskList).has_value();
             }
-            if (!changed) return std::nullopt;
-            return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
+            return changed;
         }
         if (cmd.kind == CommandKind::ToggleStrong || cmd.kind == CommandKind::ToggleEmphasis
             || cmd.kind == CommandKind::ToggleStrikethrough || cmd.kind == CommandKind::ToggleInlineCode
@@ -386,45 +364,27 @@ public:
             else if (cmd.kind == CommandKind::ToggleStrikethrough) kind = InlineKind::Strike;
             else if (cmd.kind == CommandKind::ToggleInlineCode) kind = InlineKind::InlineCode;
             else if (cmd.kind == CommandKind::InsertMathInline) kind = InlineKind::InlineMath;
-            const auto revision_before = buffer_.revision();
-            const auto selection_before = selection_;
-            if (!execute_document_toggle_inline_format(document_selection_, kind)) return std::nullopt;
-            return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
+            return execute_document_toggle_inline_format(document_selection_, kind).has_value();
         }
         if (cmd.kind == CommandKind::InsertText || cmd.kind == CommandKind::Paste) {
-            const auto revision_before = buffer_.revision();
-            const auto selection_before = selection_;
             const auto changed = cmd.kind == CommandKind::Paste
                 ? execute_document_paste_text(document_selection_, cmd.text).has_value()
                 : execute_document_insert_text(document_selection_, cmd.text).has_value();
-            if (!changed) return std::nullopt;
-            return Transaction(
-                revision_before,
-                selection_before,
-                selection_,
-                cmd.kind == CommandKind::Paste ? TransactionReason::Paste : TransactionReason::Typing);
+            return changed;
         }
         if (cmd.kind == CommandKind::IndentListItem || cmd.kind == CommandKind::OutdentListItem) {
-            const auto revision_before = buffer_.revision();
-            const auto selection_before = selection_;
             const auto changed = cmd.kind == CommandKind::IndentListItem
                 ? execute_document_indent_list_item(document_selection_).has_value()
                 : execute_document_outdent_list_item(document_selection_).has_value();
-            if (!changed) return std::nullopt;
-            return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
+            return changed;
         }
         if (cmd.kind == CommandKind::InsertNewline || cmd.kind == CommandKind::InsertSoftBreak) {
-            const auto revision_before = buffer_.revision();
-            const auto selection_before = selection_;
             const auto changed = cmd.kind == CommandKind::InsertNewline
                 ? execute_document_enter(document_selection_).has_value()
                 : execute_document_insert_soft_break(document_selection_).has_value();
-            if (!changed) return std::nullopt;
-            return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
+            return changed;
         }
         if (cmd.kind == CommandKind::DeleteBackward || cmd.kind == CommandKind::DeleteForward || cmd.kind == CommandKind::DeleteSelection) {
-            const auto revision_before = buffer_.revision();
-            const auto selection_before = selection_;
             bool changed = false;
             if (!document_selection_.is_caret() || cmd.kind == CommandKind::DeleteSelection) {
                 changed = execute_document_delete_selection(document_selection_).has_value();
@@ -433,29 +393,16 @@ public:
             } else {
                 changed = execute_document_delete_forward(document_selection_).has_value();
             }
-            if (!changed) return std::nullopt;
-            return Transaction(revision_before, selection_before, selection_, TransactionReason::Delete);
+            return changed;
         }
-        return std::nullopt;
+        return false;
     }
 
-    std::optional<Transaction> undo() {
-        if (document_history_.has_undo()) {
-            const auto revision_before = buffer_.revision();
-            const auto selection_before = selection_;
-            if (!undo_document()) return std::nullopt;
-            return Transaction(revision_before, selection_before, selection_, TransactionReason::Undo);
-        }
-        return std::nullopt;
+    bool undo() {
+        return document_history_.has_undo() && undo_document();
     }
-    std::optional<Transaction> redo() {
-        if (document_history_.has_redo()) {
-            const auto revision_before = buffer_.revision();
-            const auto selection_before = selection_;
-            if (!redo_document()) return std::nullopt;
-            return Transaction(revision_before, selection_before, selection_, TransactionReason::Redo);
-        }
-        return std::nullopt;
+    bool redo() {
+        return document_history_.has_redo() && redo_document();
     }
 
     // Translate an input event to a Command (common key bindings). Returns
