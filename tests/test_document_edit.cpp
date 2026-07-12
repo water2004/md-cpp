@@ -74,9 +74,10 @@ ELMD_TEST(test_document_enter_preserves_inline_structure_when_splitting) {
     ELMD_CHECK(transaction->after.blocks[1].children.front().kind == InlineKind::Strong);
     ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("hello **wo**\n\n**rld**"));
     auto reparsed = parse_text(2, serialize_markdown(transaction->after));
-    ELMD_CHECK_EQ(reparsed.document.blocks.size(), 2u);
+    ELMD_CHECK_EQ(reparsed.document.blocks.size(), 3u);
     ELMD_CHECK(reparsed.document.blocks[0].children.back().kind == InlineKind::Strong);
-    ELMD_CHECK(reparsed.document.blocks[1].children.front().kind == InlineKind::Strong);
+    ELMD_CHECK(reparsed.document.blocks[1].kind == BlockKind::Paragraph && reparsed.document.blocks[1].children.empty());
+    ELMD_CHECK(reparsed.document.blocks[2].children.front().kind == InlineKind::Strong);
 }
 
 ELMD_TEST(test_document_enter_splits_nonempty_list_item_structurally) {
@@ -620,7 +621,7 @@ ELMD_TEST(test_delete_selection_across_list_items_moves_last_item_subtree) {
 ELMD_TEST(test_delete_selection_from_quote_into_following_paragraph_keeps_first_context) {
     auto parsed = parse_text(1, "> alpha\n\nomega");
     const auto quote_id = parsed.document.blocks[0].quote_children[0].id;
-    const auto paragraph_id = parsed.document.blocks[1].id;
+    const auto paragraph_id = parsed.document.blocks[2].id;
     DocumentSelection selection{
         DocumentPosition{quote_id, 2, TextAffinity::Downstream},
         DocumentPosition{paragraph_id, 3, TextAffinity::Downstream}};
@@ -638,7 +639,7 @@ ELMD_TEST(test_delete_selection_from_quote_into_following_paragraph_keeps_first_
 ELMD_TEST(test_delete_selection_into_nested_list_preserves_content_after_endpoint) {
     auto parsed = parse_text(1, "start\n\n- one\n- two\n\nafter");
     const auto first_id = parsed.document.blocks[0].id;
-    const auto nested_id = parsed.document.blocks[1].list_items[0].children[0].id;
+    const auto nested_id = parsed.document.blocks[2].list_items[0].children[0].id;
     DocumentSelection selection{
         DocumentPosition{first_id, 2, TextAffinity::Downstream},
         DocumentPosition{nested_id, 2, TextAffinity::Downstream}};
@@ -658,7 +659,7 @@ ELMD_TEST(test_delete_selection_into_nested_list_preserves_content_after_endpoin
 ELMD_TEST(test_delete_selection_removes_atomic_blocks_between_endpoints) {
     auto parsed = parse_text(1, "alpha\n\n---\n\nomega");
     const auto first_id = parsed.document.blocks[0].id;
-    const auto last_id = parsed.document.blocks[2].id;
+    const auto last_id = parsed.document.blocks[4].id;
     DocumentSelection selection{
         DocumentPosition{first_id, 2, TextAffinity::Downstream},
         DocumentPosition{last_id, 3, TextAffinity::Downstream}};
@@ -673,7 +674,7 @@ ELMD_TEST(test_delete_selection_removes_atomic_blocks_between_endpoints) {
 ELMD_TEST(test_delete_selection_normalizes_reverse_document_order) {
     auto parsed = parse_text(1, "alpha\n\nomega");
     const auto first_id = parsed.document.blocks[0].id;
-    const auto last_id = parsed.document.blocks[1].id;
+    const auto last_id = parsed.document.blocks[2].id;
     DocumentSelection selection{
         DocumentPosition{last_id, 3, TextAffinity::Upstream},
         DocumentPosition{first_id, 2, TextAffinity::Downstream}};
