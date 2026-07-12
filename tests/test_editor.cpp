@@ -910,7 +910,7 @@ ELMD_TEST(test_enter_in_plain_paragraph_inserts_semantic_block_break) {
     ELMD_CHECK_EQ(e.text_utf8(), std::string("alpha\n\nomega"));
     ELMD_CHECK_EQ(e.selection().head().v, 7u);
     ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
-    auto structure = build_source_structure(e.document(), e.text_cps());
+    auto structure = build_source_structure(e.document());
     ELMD_CHECK_EQ(structure.blocks.size(), 2u);
     ELMD_CHECK(structure.blocks[0].kind == SourceBlockKind::Semantic);
     ELMD_CHECK(structure.blocks[1].kind == SourceBlockKind::Semantic);
@@ -924,7 +924,7 @@ ELMD_TEST(test_enter_at_block_end_reuses_existing_separator_and_creates_one_blan
     ELMD_CHECK_EQ(e.text_utf8(), std::string("# H\n\n\n## Next"));
     ELMD_CHECK_EQ(e.selection().head().v, 4u);
     ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
-    auto structure = build_source_structure(e.document(), e.text_cps());
+    auto structure = build_source_structure(e.document());
     ELMD_CHECK_EQ(structure.blocks.size(), 3u);
     ELMD_CHECK(structure.blocks[0].kind == SourceBlockKind::Semantic);
     ELMD_CHECK(structure.blocks[1].kind == SourceBlockKind::Blank);
@@ -953,7 +953,7 @@ ELMD_TEST(test_repeated_enter_between_early_blocks_keeps_incremental_ranges_in_s
                 ELMD_CHECK(incremental_range->content_range.end == full_range->content_range.end);
             }
         }
-        auto structure = build_source_structure(e.document(), e.text_cps());
+        auto structure = build_source_structure(e.document());
         std::size_t blank_count = 0;
         for (const auto& block : structure.blocks) if (block.kind == SourceBlockKind::Blank) ++blank_count;
         ELMD_CHECK_EQ(blank_count, count);
@@ -1024,7 +1024,7 @@ ELMD_TEST(test_enter_on_empty_paragraph_inserts_one_empty_sibling) {
     ELMD_CHECK_EQ(e.text_utf8(), std::string("alpha\n\n\n"));
     ELMD_CHECK_EQ(e.selection().head().v, 8u);
     ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
-    auto structure = build_source_structure(e.document(), e.text_cps());
+    auto structure = build_source_structure(e.document());
     ELMD_CHECK_EQ(structure.blocks.size(), 3u);
     ELMD_CHECK(structure.blocks[1].kind == SourceBlockKind::Blank);
     ELMD_CHECK(structure.blocks[2].kind == SourceBlockKind::Blank);
@@ -1048,7 +1048,7 @@ ELMD_TEST(test_backspace_on_consecutive_empty_block_deletes_block_span) {
     ELMD_CHECK_EQ(e.text_utf8(), std::string("alpha\n\n\n"));
     ELMD_CHECK_EQ(e.selection().head().v, 8u);
     ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
-    auto structure = build_source_structure(e.document(), e.text_cps());
+    auto structure = build_source_structure(e.document());
     ELMD_CHECK_EQ(structure.blocks.size(), 3u);
 }
 
@@ -1248,22 +1248,6 @@ ELMD_TEST(test_backspace_inside_nested_quote_content_never_touches_quote_markers
     e.execute_command(backspace);
     ELMD_CHECK_EQ(e.text_utf8(), std::string("> > abcdefghijklmopqrstuvwxyz"));
     ELMD_CHECK_EQ(e.document_selection().active.offset, 13u);
-}
-
-ELMD_TEST(test_quote_source_line_model_owns_each_marker_and_content_range) {
-    auto text = std::u32string(U"> > nested text\n");
-    auto line = quote_source_line_at(text, CharOffset(8));
-    ELMD_CHECK(line.has_value());
-    if (line) {
-        ELMD_CHECK_EQ(line->marker_ranges.size(), 2u);
-        ELMD_CHECK_EQ(line->marker_ranges[0].start.v, 0u);
-        ELMD_CHECK_EQ(line->marker_ranges[0].end.v, 2u);
-        ELMD_CHECK_EQ(line->marker_ranges[1].start.v, 2u);
-        ELMD_CHECK_EQ(line->marker_ranges[1].end.v, 4u);
-        ELMD_CHECK_EQ(line->content_range.start.v, 4u);
-        ELMD_CHECK_EQ(line->content_range.end.v, 15u);
-        ELMD_CHECK(!line->empty);
-    }
 }
 
 ELMD_TEST(test_blockquote_newline_with_following_block_keeps_an_editable_quote_line) {
@@ -1695,7 +1679,7 @@ ELMD_TEST(test_enter_after_thematic_break_creates_blank_lines_without_duplicate_
     editor.set_caret(CharOffset(3));
     Command enter; enter.kind = CommandKind::InsertNewline;
     auto check_structure = [&](std::size_t blank_count) {
-        auto structure = build_source_structure(editor.document(), editor.text_cps());
+        auto structure = build_source_structure(editor.document());
         auto actual = std::count_if(structure.blocks.begin(), structure.blocks.end(), [](auto const& block) {
             return block.kind == SourceBlockKind::Blank;
         });

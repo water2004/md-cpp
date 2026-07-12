@@ -717,7 +717,7 @@ inline RenderModel build_render_model(const EditorDocument& doc,
     std::vector<RenderBlock> blocks;
     auto source = utf8_to_cps(source_text);
     bd.source = source;
-    auto structure = build_source_structure(doc, source);
+    auto structure = build_source_structure(doc);
     for (const auto& span : structure.blocks) {
         if (span.kind == SourceBlockKind::Semantic && span.document_block_index && *span.document_block_index < doc.blocks.size()) {
             auto rendered = bd.build_block(doc.blocks[*span.document_block_index]);

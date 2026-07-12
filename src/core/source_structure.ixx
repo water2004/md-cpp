@@ -25,67 +25,7 @@ struct SourceStructure {
     std::vector<CharRange> separators;
 };
 
-struct QuoteSourceLine {
-    CharRange source_range;
-    CharRange content_range;
-    std::vector<CharRange> marker_ranges;
-    bool empty = false;
-    bool hard_break_from_previous = false;
-};
-
-inline std::optional<QuoteSourceLine> quote_source_line_at(std::u32string_view text, CharOffset offset) {
-    auto position = (std::min)(offset.v, text.size());
-    auto line_start = position;
-    while (line_start > 0 && text[line_start - 1] != U'\n') --line_start;
-    auto line_end = position;
-    while (line_end < text.size() && text[line_end] != U'\n') ++line_end;
-    auto source_end = line_end < text.size() ? line_end + 1 : line_end;
-    auto cursor = line_start;
-    while (cursor < line_end && cursor - line_start < 3 && text[cursor] == U' ') ++cursor;
-    QuoteSourceLine line;
-    line.source_range = CharRange(CharOffset(line_start), CharOffset(source_end));
-    while (cursor < line_end && text[cursor] == U'>') {
-        auto marker_start = cursor++;
-        if (cursor < line_end && text[cursor] == U' ') ++cursor;
-        line.marker_ranges.push_back(CharRange(CharOffset(marker_start), CharOffset(cursor)));
-    }
-    if (line.marker_ranges.empty()) return std::nullopt;
-    line.content_range = CharRange(CharOffset(cursor), CharOffset(line_end));
-    line.empty = true;
-    for (auto index = cursor; index < line_end; ++index) if (text[index] != U' ' && text[index] != U'\t') line.empty = false;
-    line.hard_break_from_previous = line_start >= 3 && text[line_start - 1] == U'\n' && text[line_start - 2] == U' ' && text[line_start - 3] == U' ';
-    return line;
-}
-
-inline std::vector<SourceBlockSpan> blank_lines_in_range(std::u32string_view text, std::size_t start, std::size_t end) {
-    std::vector<SourceBlockSpan> lines;
-    start = (std::min)(start, text.size());
-    end = (std::min)((std::max)(end, start), text.size());
-    std::size_t pos = start;
-    while (pos < end) {
-        std::size_t line_start = pos;
-        while (pos < end && text[pos] != U'\n') ++pos;
-        std::size_t content_end = pos;
-        if (pos < end && text[pos] == U'\n') ++pos;
-        SourceBlockSpan line;
-        line.kind = SourceBlockKind::Blank;
-        line.source_range = CharRange(CharOffset(line_start), CharOffset(pos));
-        line.content_range = CharRange(CharOffset(line_start), CharOffset(content_end));
-        lines.push_back(std::move(line));
-    }
-    return lines;
-}
-
-inline SourceBlockSpan terminal_blank_at(std::size_t offset) {
-    SourceBlockSpan line;
-    line.kind = SourceBlockKind::Blank;
-    line.source_range = CharRange(CharOffset(offset), CharOffset(offset));
-    line.content_range = line.source_range;
-    return line;
-}
-
-inline SourceStructure build_source_structure(const EditorDocument& document, std::u32string_view text) {
-    static_cast<void>(text);
+inline SourceStructure build_source_structure(const EditorDocument& document) {
     SourceStructure structure;
     structure.blocks.reserve(document.blocks.size());
     for (std::size_t index = 0; index < document.blocks.size(); ++index) {
