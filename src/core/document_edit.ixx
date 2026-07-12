@@ -2791,7 +2791,9 @@ inline std::optional<DocumentTransaction> document_toggle_inline_format(
     if (!document_edit_detail::toggle_inline_format(*owner, start, end, kind, allocator)) return std::nullopt;
     normalize_document(after);
     ++after.revision;
-    auto selection_after = selection;
+    auto selection_after = DocumentSelection{
+        DocumentPosition{selection.anchor.node_id, selection.anchor.offset, selection.anchor.affinity},
+        DocumentPosition{selection.active.node_id, selection.active.offset, selection.active.affinity}};
     if (selection.is_caret()) {
         selection_after = DocumentSelection::caret(DocumentPosition{
             selection.active.node_id, selection.active.offset, TextAffinity::Upstream});

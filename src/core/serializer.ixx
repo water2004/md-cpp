@@ -230,14 +230,18 @@ inline std::u32string serialize_block(const BlockNode& block) {
     return {};
 }
 
+inline bool is_empty_paragraph(const BlockNode& block) {
+    return block.kind == BlockKind::Paragraph && block.children.empty();
+}
+
+inline std::u32string_view block_separator(const BlockNode& previous, const BlockNode& current) {
+    return is_empty_paragraph(previous) || is_empty_paragraph(current) ? U"\n" : U"\n\n";
+}
+
 inline std::u32string serialize_blocks(const BlockVec& blocks) {
     std::u32string result;
     for (std::size_t index = 0; index < blocks.size(); ++index) {
-        if (index > 0) {
-            const auto previous_empty = blocks[index - 1].kind == BlockKind::Paragraph && blocks[index - 1].children.empty();
-            const auto current_empty = blocks[index].kind == BlockKind::Paragraph && blocks[index].children.empty();
-            result += previous_empty || current_empty ? U"\n" : U"\n\n";
-        }
+        if (index > 0) result += block_separator(blocks[index - 1], blocks[index]);
         result += serialize_block(blocks[index]);
     }
     return result;
@@ -523,12 +527,19 @@ inline SourceMap build_source_map(const EditorDocument& document, const std::u32
     SourceMap source_map;
     std::size_t cursor = 0;
     for (std::size_t index = 0; index < document.blocks.size(); ++index) {
+        if (index > 0) cursor += block_separator(document.blocks[index - 1], document.blocks[index]).size();
         const auto serialized = serialize_block(document.blocks[index]);
-        const auto start = find_serialized(markdown, serialized, cursor, markdown.size());
+        const auto start = (std::min)(cursor, markdown.size());
         const auto end = (std::min)(start + serialized.size(), markdown.size());
         map_block(document.blocks[index], markdown, start, end, source_map);
+        const auto physical_end = end < markdown.size() && markdown[end] == U'\n' ? end + 1 : end;
+        for (auto& range : source_map.node_ranges) {
+            if (range.node_id == document.blocks[index].id) {
+                range.source_range.end = CharOffset(physical_end);
+                break;
+            }
+        }
         cursor = end;
-        if (index + 1 < document.blocks.size()) cursor = (std::min)(cursor + 2, markdown.size());
     }
     return source_map;
 }

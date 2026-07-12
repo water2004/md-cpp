@@ -269,14 +269,15 @@ ELMD_TEST(test_editor_list_indent_commands_use_document_history) {
 ELMD_TEST(test_editor_cross_container_selection_delete_uses_document_history) {
     Editor editor("> alpha\n\nomega");
     const auto quote_id = editor.document().blocks[0].quote_children[0].id;
-    const auto paragraph_id = editor.document().blocks[1].id;
+    const auto paragraph_id = editor.document().blocks[2].id;
     DocumentSelection selection{
         DocumentPosition{quote_id, 2, TextAffinity::Downstream},
         DocumentPosition{paragraph_id, 3, TextAffinity::Downstream}};
     editor.set_document_selection(selection);
     Command command;
     command.kind = CommandKind::DeleteSelection;
-    ELMD_CHECK(editor.execute_command(command));
+    auto changed = editor.execute_command(command);
+    ELMD_CHECK(changed);
     ELMD_CHECK_EQ(editor.markdown_utf8(), std::string("> alga"));
     ELMD_CHECK_EQ(editor.document_selection().active.node_id, quote_id);
     ELMD_CHECK_EQ(editor.document_selection().active.offset, 2u);
@@ -295,17 +296,17 @@ ELMD_TEST(test_editor_enter_at_paragraph_end_projects_empty_node_caret_anchor) {
     auto transaction = editor.execute_command(newline);
 
     ELMD_CHECK(transaction);
-    ELMD_CHECK_EQ(editor.text_utf8(), std::string("alpha\n\n"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("alpha\n"));
     ELMD_CHECK_EQ(editor.document().blocks.size(), 2u);
     ELMD_CHECK_EQ(editor.document().blocks.front().id, first_id);
     ELMD_CHECK(editor.document().source_map.find_node_by_id(editor.document().blocks[1].id) != nullptr);
-    ELMD_CHECK_EQ(editor.selection().active.v, 7u);
+    ELMD_CHECK_EQ(editor.selection().active.v, 6u);
 }
 
 ELMD_TEST(test_editor_document_range_delete_restores_ast_and_selection_on_undo) {
     Editor editor("alpha\n\nomega");
     const auto first_id = editor.document().blocks[0].id;
-    const auto last_id = editor.document().blocks[1].id;
+    const auto last_id = editor.document().blocks[2].id;
     DocumentSelection selection{
         DocumentPosition{first_id, 2, TextAffinity::Downstream},
         DocumentPosition{last_id, 3, TextAffinity::Downstream}};
@@ -317,7 +318,9 @@ ELMD_TEST(test_editor_document_range_delete_restores_ast_and_selection_on_undo) 
     ELMD_CHECK_EQ(editor.document().blocks[0].id, first_id);
     ELMD_CHECK(editor.undo_document());
     ELMD_CHECK_EQ(editor.text_utf8(), std::string("alpha\n\nomega"));
-    ELMD_CHECK_EQ(editor.document().blocks.size(), 2u);
+    ELMD_CHECK_EQ(editor.document().blocks.size(), 3u);
+    ELMD_CHECK(editor.document().blocks[1].kind == BlockKind::Paragraph);
+    ELMD_CHECK(editor.document().blocks[1].children.empty());
     {
         ELMD_CHECK_EQ(editor.document_selection().anchor.node_id, first_id);
         ELMD_CHECK_EQ(editor.document_selection().active.node_id, last_id);
@@ -550,6 +553,7 @@ ELMD_TEST(test_inline_format_commands_wrap_and_unwrap_inline_subtrees) {
     emphasis.execute_command(command);
     ELMD_CHECK_EQ(emphasis.text_utf8(), std::string("a*lph*a"));
     ELMD_CHECK_EQ(emphasis.document().blocks.front().id, paragraph_id);
+    ELMD_CHECK(emphasis.document().blocks.front().children.size() > 1);
     ELMD_CHECK(emphasis.document().blocks.front().children[1].kind == InlineKind::Emphasis);
     emphasis.execute_command(command);
     ELMD_CHECK_EQ(emphasis.text_utf8(), std::string("alpha"));
@@ -923,17 +927,22 @@ ELMD_TEST(test_enter_at_block_end_reuses_existing_separator_and_creates_one_blan
     e.execute_command(c);
     ELMD_CHECK_EQ(e.text_utf8(), std::string("# H\n\n\n## Next"));
     ELMD_CHECK_EQ(e.selection().head().v, 4u);
-    ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 4u);
     auto structure = build_source_structure(e.document());
-    ELMD_CHECK_EQ(structure.blocks.size(), 3u);
+    ELMD_CHECK_EQ(structure.blocks.size(), 4u);
     ELMD_CHECK(structure.blocks[0].kind == SourceBlockKind::Semantic);
     ELMD_CHECK(structure.blocks[1].kind == SourceBlockKind::Blank);
-    ELMD_CHECK(structure.blocks[2].kind == SourceBlockKind::Semantic);
+    ELMD_CHECK(structure.blocks[2].kind == SourceBlockKind::Blank);
+    ELMD_CHECK(structure.blocks[3].kind == SourceBlockKind::Semantic);
 }
 
 ELMD_TEST(test_repeated_enter_between_early_blocks_keeps_incremental_ranges_in_sync) {
     Editor e("## Sample\n\n```cpp\nx\n```\n\n## Later 1\n\n## Later 2\n\n## Later 3\n\n## Later 4\n");
     e.set_caret(CharOffset(9));
+    const auto initial_structure = build_source_structure(e.document());
+    const auto initial_blank_count = static_cast<std::size_t>(std::count_if(
+        initial_structure.blocks.begin(), initial_structure.blocks.end(),
+        [](const auto& block) { return block.kind == SourceBlockKind::Blank; }));
     for (std::size_t count = 1; count <= 4; ++count) {
         Command c; c.kind = CommandKind::InsertNewline;
         e.execute_command(c);
@@ -956,7 +965,7 @@ ELMD_TEST(test_repeated_enter_between_early_blocks_keeps_incremental_ranges_in_s
         auto structure = build_source_structure(e.document());
         std::size_t blank_count = 0;
         for (const auto& block : structure.blocks) if (block.kind == SourceBlockKind::Blank) ++blank_count;
-        ELMD_CHECK_EQ(blank_count, count);
+        ELMD_CHECK_EQ(blank_count, initial_blank_count + count);
     }
 }
 

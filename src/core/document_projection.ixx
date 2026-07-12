@@ -95,6 +95,65 @@ inline std::optional<DocumentPosition> first_position_in_blocks(const BlockVec& 
     return std::nullopt;
 }
 
+inline std::optional<DocumentPosition> last_position_in_blocks(const BlockVec& blocks) {
+    for (auto block = blocks.rbegin(); block != blocks.rend(); ++block) {
+        if (block->kind == BlockKind::Paragraph || block->kind == BlockKind::Heading
+            || block->kind == BlockKind::CodeBlock || block->kind == BlockKind::MathBlock) {
+            const auto length = block->kind == BlockKind::CodeBlock ? block->code_text.size()
+                : block->kind == BlockKind::MathBlock ? block->tex.size()
+                : block_inline_text_content(block->children).size();
+            return DocumentPosition{block->id, length, TextAffinity::Downstream};
+        }
+        if (atomic_editable_kind(block->kind)) return DocumentPosition{block->id, 1, TextAffinity::Downstream};
+        if (auto position = last_position_in_blocks(block->quote_children)) return position;
+        for (auto item = block->task_items.rbegin(); item != block->task_items.rend(); ++item) {
+            if (auto position = last_position_in_blocks(item->children)) return position;
+        }
+        for (auto item = block->list_items.rbegin(); item != block->list_items.rend(); ++item) {
+            if (auto position = last_position_in_blocks(item->children)) return position;
+        }
+        if (block->kind == BlockKind::Table) {
+            if (!block->table_rows.empty() && !block->table_rows.back().cells.empty()) {
+                const auto& cell = block->table_rows.back().cells.back();
+                return DocumentPosition{cell.id, block_inline_text_content(cell.children).size(), TextAffinity::Downstream};
+            }
+            if (!block->table_header.empty()) {
+                const auto& cell = block->table_header.back();
+                return DocumentPosition{cell.id, block_inline_text_content(cell.children).size(), TextAffinity::Downstream};
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+inline std::optional<DocumentPosition> position_near_blocks(
+    const EditorDocument& document,
+    const BlockVec& blocks,
+    CharOffset source_offset) {
+    const BlockNode* nearest = nullptr;
+    const NodeSourceRange* nearest_range = nullptr;
+    std::size_t nearest_distance = (std::numeric_limits<std::size_t>::max)();
+    for (const auto& block : blocks) {
+        const auto* range = document.source_map.find_node_by_id(block.id);
+        if (!range) continue;
+        const auto distance = source_offset.v < range->source_range.start.v
+            ? range->source_range.start.v - source_offset.v
+            : source_offset.v > range->source_range.end.v
+                ? source_offset.v - range->source_range.end.v
+                : 0;
+        if (distance < nearest_distance) {
+            nearest = &block;
+            nearest_range = range;
+            nearest_distance = distance;
+        }
+    }
+    if (!nearest || !nearest_range) return std::nullopt;
+    BlockVec single{*nearest};
+    return source_offset.v <= nearest_range->content_range.start.v
+        ? first_position_in_blocks(single)
+        : last_position_in_blocks(single);
+}
+
 inline std::size_t logical_offset_from_source(
     const EditorDocument& document,
     const InlineVec& nodes,
@@ -227,6 +286,17 @@ inline std::optional<DocumentPosition> position_in_blocks(
     for (const auto& block : blocks) {
         if (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading) {
             const auto* range = document.source_map.find_node_by_id(block.id);
+            if (block.kind == BlockKind::Heading && range
+                && source_offset.v >= range->source_range.start.v
+                && source_offset.v < range->content_range.start.v) {
+                return DocumentPosition{
+                    block.id,
+                    0,
+                    TextAffinity::Upstream,
+                    NodeId{},
+                    DocumentPositionPart::OpeningMarker,
+                    source_offset.v - range->source_range.start.v};
+            }
             if (range && source_offset.v >= range->content_range.start.v && source_offset.v <= range->content_range.end.v) {
                 if (auto inline_position = inline_position_from_source(document, block.children, source_offset)) {
                     return DocumentPosition{
@@ -341,18 +411,24 @@ inline std::optional<DocumentPosition> position_in_blocks(
             }
         }
         if (auto position = position_in_blocks(document, block.quote_children, source_offset)) return position;
+        if (!block.quote_children.empty()) {
+            const auto* range = document.source_map.find_node_by_id(block.id);
+            if (range && source_offset.v >= range->source_range.start.v && source_offset.v <= range->source_range.end.v) {
+                if (auto position = position_near_blocks(document, block.quote_children, source_offset)) return position;
+            }
+        }
         for (const auto& item : block.list_items) {
             if (auto position = position_in_blocks(document, item.children, source_offset)) return position;
             const auto* range = document.source_map.find_node_by_id(item.id);
             if (range && source_offset.v >= range->source_range.start.v && source_offset.v <= range->source_range.end.v) {
-                if (auto position = first_position_in_blocks(item.children)) return position;
+                if (auto position = position_near_blocks(document, item.children, source_offset)) return position;
             }
         }
         for (const auto& item : block.task_items) {
             if (auto position = position_in_blocks(document, item.children, source_offset)) return position;
             const auto* range = document.source_map.find_node_by_id(item.id);
             if (range && source_offset.v >= range->source_range.start.v && source_offset.v <= range->source_range.end.v) {
-                if (auto position = first_position_in_blocks(item.children)) return position;
+                if (auto position = position_near_blocks(document, item.children, source_offset)) return position;
             }
         }
     }
@@ -397,6 +473,10 @@ inline std::optional<CharOffset> source_offset_from_document_position(
     const auto* paragraph = document_projection_detail::find_text_block(document.blocks, position.node_id);
     const auto* range = document.source_map.find_node_by_id(position.node_id);
     if (range) {
+        if (position.part == DocumentPositionPart::OpeningMarker) {
+            const auto marker_length = range->content_range.start.v - range->source_range.start.v;
+            return CharOffset(range->source_range.start.v + (std::min)(position.part_offset, marker_length));
+        }
         std::function<const BlockNode*(const BlockVec&)> find_atomic = [&](const BlockVec& blocks) -> const BlockNode* {
             for (const auto& block : blocks) {
                 if (block.id == position.node_id && document_projection_detail::atomic_editable_kind(block.kind)) return &block;
