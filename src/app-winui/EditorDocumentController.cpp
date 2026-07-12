@@ -288,7 +288,13 @@ namespace winrt::ElMd
             if (!content.Contains(winrt::Windows::ApplicationModel::DataTransfer::StandardDataFormats::Text())) co_return;
             auto text = co_await content.GetTextAsync();
             if (!Active(state, generation) || text.empty()) co_return;
-            if (state->executeCommand) state->executeCommand(elmd::Command::InsertText(elmd::utf8_to_cps(winrt::to_string(text))));
+            if (state->executeCommand)
+            {
+                elmd::Command command;
+                command.kind = elmd::CommandKind::Paste;
+                command.text = elmd::utf8_to_cps(winrt::to_string(text));
+                state->executeCommand(command);
+            }
         }
         catch (winrt::hresult_error const& error)
         {

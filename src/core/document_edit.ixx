@@ -60,6 +60,12 @@ struct DocumentInvariantError {
     std::string message;
 };
 
+inline void reset_inline_position(DocumentPosition& position) {
+    position.inline_node_id = NodeId{};
+    position.part = DocumentPositionPart::Content;
+    position.part_offset = position.offset;
+}
+
 class DocumentHistory {
 public:
     explicit DocumentHistory(std::size_t capacity = 1000) : capacity_(capacity) {}
@@ -992,11 +998,14 @@ inline bool erase_adjacent_pair_in_blocks(BlockVec& blocks, NodeId id, std::size
     return false;
 }
 
+inline bool atomic_editable_kind(BlockKind kind);
+
 inline std::optional<std::size_t> editable_length_in_blocks(const BlockVec& blocks, NodeId id) {
     for (const auto& block : blocks) {
         if (block.id == id && (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading)) return block_inline_text_content(block.children).size();
         if (block.id == id && block.kind == BlockKind::CodeBlock) return block.code_text.size();
         if (block.id == id && block.kind == BlockKind::MathBlock) return block.tex.size();
+        if (block.id == id && atomic_editable_kind(block.kind)) return 1;
         if (block.kind == BlockKind::Table) {
             for (const auto& cell : block.table_header) if (cell.id == id) return block_inline_text_content(cell.children).size();
             for (const auto& row : block.table_rows) for (const auto& cell : row.cells) if (cell.id == id) return block_inline_text_content(cell.children).size();
@@ -1011,6 +1020,7 @@ inline std::optional<std::size_t> editable_length_in_blocks(const BlockVec& bloc
 struct EditableNode {
     NodeId id{};
     std::u32string text;
+    std::vector<DocumentPosition> positions;
 };
 
 inline bool atomic_editable_kind(BlockKind kind) {
@@ -1019,26 +1029,159 @@ inline bool atomic_editable_kind(BlockKind kind) {
         || kind == BlockKind::UnsupportedMarkup || kind == BlockKind::Extension;
 }
 
-inline void collect_editable_nodes(const BlockVec& blocks, std::vector<EditableNode>& nodes) {
-    for (const auto& block : blocks) {
-        if (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading) {
-            nodes.push_back(EditableNode{block.id, block_inline_text_content(block.children)});
-        } else if (block.kind == BlockKind::CodeBlock) {
-            nodes.push_back(EditableNode{block.id, block.code_text});
-        } else if (block.kind == BlockKind::MathBlock) {
-            nodes.push_back(EditableNode{block.id, block.tex});
-        } else if (block.kind == BlockKind::Table) {
-            for (const auto& cell : block.table_header) nodes.push_back(EditableNode{cell.id, block_inline_text_content(cell.children)});
-            for (const auto& row : block.table_rows) {
-                for (const auto& cell : row.cells) nodes.push_back(EditableNode{cell.id, block_inline_text_content(cell.children)});
-            }
-        } else if (atomic_editable_kind(block.kind)) {
-            nodes.push_back(EditableNode{block.id, U"\uFFFC"});
-        }
-        collect_editable_nodes(block.quote_children, nodes);
-        for (const auto& item : block.list_items) collect_editable_nodes(item.children, nodes);
-        for (const auto& item : block.task_items) collect_editable_nodes(item.children, nodes);
+inline std::pair<std::u32string, std::u32string> inline_markers(const InlineNode& node) {
+    auto opening = node.opening_marker;
+    auto closing = node.closing_marker;
+    if (node.kind == InlineKind::InlineMath && opening.empty()) {
+        opening = node.math_delim == MathDelimiter::InlineParen ? U"\\(" : U"$";
+        closing = node.math_delim == MathDelimiter::InlineParen ? U"\\)" : U"$";
+    } else if (opening.empty()) {
+        opening = default_opening_marker(node.kind);
+        closing = opening;
     }
+    return {std::move(opening), std::move(closing)};
+}
+
+inline void append_inline_positions(
+    const InlineVec& inlines,
+    NodeId owner,
+    std::size_t& logical_offset,
+    std::vector<DocumentPosition>& positions,
+    NodeId content_node = NodeId{},
+    std::size_t content_start = 0) {
+    for (const auto& node : inlines) {
+        const bool marked = node.kind == InlineKind::Emphasis || node.kind == InlineKind::Strong
+            || node.kind == InlineKind::Strike || node.kind == InlineKind::InlineCode
+            || node.kind == InlineKind::InlineMath;
+        if (!marked) {
+            if (!node.children.empty()) {
+                append_inline_positions(node.children, owner, logical_offset, positions, content_node, content_start);
+                continue;
+            }
+            const auto text = inline_text_content(node);
+            for (std::size_t index = 0; index < text.size(); ++index) {
+                ++logical_offset;
+                if (content_node.v != 0) {
+                    positions.push_back(DocumentPosition{
+                        owner,
+                        logical_offset,
+                        TextAffinity::Downstream,
+                        content_node,
+                        DocumentPositionPart::Content,
+                        logical_offset - content_start});
+                } else {
+                    positions.push_back(DocumentPosition{owner, logical_offset, TextAffinity::Downstream});
+                }
+            }
+            continue;
+        }
+        auto [opening, closing] = inline_markers(node);
+        positions.back() = DocumentPosition{
+            owner, logical_offset, TextAffinity::Upstream, node.id, DocumentPositionPart::OpeningMarker, 0};
+        for (std::size_t index = 1; index < opening.size(); ++index) {
+            positions.push_back(DocumentPosition{
+                owner, logical_offset, TextAffinity::Downstream, node.id, DocumentPositionPart::OpeningMarker, index});
+        }
+        positions.push_back(DocumentPosition{
+            owner, logical_offset, TextAffinity::Downstream, node.id, DocumentPositionPart::Content, 0});
+        if (node.kind == InlineKind::InlineCode || node.kind == InlineKind::InlineMath) {
+            for (std::size_t index = 0; index < node.text.size(); ++index) {
+                ++logical_offset;
+                positions.push_back(DocumentPosition{
+                    owner, logical_offset, TextAffinity::Downstream, node.id, DocumentPositionPart::Content, index + 1});
+            }
+        } else {
+            const auto nested_start = logical_offset;
+            append_inline_positions(node.children, owner, logical_offset, positions, node.id, nested_start);
+        }
+        for (std::size_t index = 1; index <= closing.size(); ++index) {
+            positions.push_back(DocumentPosition{
+                owner, logical_offset, TextAffinity::Downstream, node.id, DocumentPositionPart::ClosingMarker, index});
+        }
+    }
+}
+
+inline EditableNode inline_editable_node(NodeId owner, const InlineVec& inlines) {
+    EditableNode result{owner, block_inline_text_content(inlines), {}};
+    result.positions.push_back(DocumentPosition{owner, 0, TextAffinity::Downstream});
+    std::size_t logical_offset = 0;
+    append_inline_positions(inlines, owner, logical_offset, result.positions);
+    return result;
+}
+
+inline EditableNode text_editable_node(NodeId owner, std::u32string text) {
+    EditableNode result{owner, std::move(text), {}};
+    result.positions.reserve(result.text.size() + 1);
+    for (std::size_t offset = 0; offset <= result.text.size(); ++offset) {
+        result.positions.push_back(DocumentPosition{owner, offset, TextAffinity::Downstream});
+    }
+    return result;
+}
+
+inline void collect_editable_nodes(const BlockVec& blocks, std::vector<EditableNode>& nodes);
+
+inline void collect_editable_node(const BlockNode& block, std::vector<EditableNode>& nodes) {
+    if (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading) {
+        nodes.push_back(inline_editable_node(block.id, block.children));
+    } else if (block.kind == BlockKind::CodeBlock) {
+        nodes.push_back(text_editable_node(block.id, block.code_text));
+    } else if (block.kind == BlockKind::MathBlock) {
+        nodes.push_back(text_editable_node(block.id, block.tex));
+    } else if (block.kind == BlockKind::Table) {
+        for (const auto& cell : block.table_header) nodes.push_back(inline_editable_node(cell.id, cell.children));
+        for (const auto& row : block.table_rows) {
+            for (const auto& cell : row.cells) nodes.push_back(inline_editable_node(cell.id, cell.children));
+        }
+    } else if (atomic_editable_kind(block.kind)) {
+        auto atomic = text_editable_node(block.id, U"\uFFFC");
+        atomic.positions[0].affinity = TextAffinity::Upstream;
+        nodes.push_back(std::move(atomic));
+    }
+    collect_editable_nodes(block.quote_children, nodes);
+    for (const auto& item : block.list_items) collect_editable_nodes(item.children, nodes);
+    for (const auto& item : block.task_items) collect_editable_nodes(item.children, nodes);
+}
+
+inline void collect_editable_nodes(const BlockVec& blocks, std::vector<EditableNode>& nodes) {
+    for (const auto& block : blocks) collect_editable_node(block, nodes);
+}
+
+inline bool erase_atomic_block(
+    BlockVec& blocks,
+    NodeId id,
+    NodeAllocator& allocator,
+    DocumentPosition& after) {
+    for (std::size_t index = 0; index < blocks.size(); ++index) {
+        auto& block = blocks[index];
+        if (block.id == id && atomic_editable_kind(block.kind)) {
+            blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index));
+            std::vector<EditableNode> adjacent;
+            if (index > 0) {
+                collect_editable_node(blocks[index - 1], adjacent);
+                if (!adjacent.empty()) {
+                    const auto& target = adjacent.back();
+                    after = DocumentPosition{target.id, target.text.size(), TextAffinity::Upstream};
+                    return true;
+                }
+            }
+            if (index < blocks.size()) {
+                adjacent.clear();
+                collect_editable_node(blocks[index], adjacent);
+                if (!adjacent.empty()) {
+                    after = DocumentPosition{adjacent.front().id, 0, TextAffinity::Downstream};
+                    return true;
+                }
+            }
+            auto paragraph = empty_paragraph(allocator);
+            after = DocumentPosition{paragraph.id, 0, TextAffinity::Downstream};
+            blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(index), std::move(paragraph));
+            return true;
+        }
+        if (erase_atomic_block(block.quote_children, id, allocator, after)) return true;
+        for (auto& item : block.list_items) if (erase_atomic_block(item.children, id, allocator, after)) return true;
+        for (auto& item : block.task_items) if (erase_atomic_block(item.children, id, allocator, after)) return true;
+    }
+    return false;
 }
 
 inline bool enter_atomic_block(
@@ -2505,12 +2648,70 @@ inline std::optional<DocumentTransaction> document_insert_text(
     auto target = selection.active;
     target.offset = inserted->offset;
     target.affinity = inserted->affinity;
+    reset_inline_position(target);
     DocumentTransaction transaction;
     transaction.before = document;
     transaction.after = std::move(after);
     transaction.selection_before = selection;
     transaction.selection_after = DocumentSelection::caret(target);
     transaction.reason = DocumentTransactionReason::InsertText;
+    return transaction;
+}
+
+inline std::optional<DocumentTransaction> document_paste_text(
+    const EditorDocument& document,
+    const DocumentSelection& selection,
+    std::u32string_view text) {
+    if (text.empty()) return std::nullopt;
+    std::u32string normalized;
+    normalized.reserve(text.size());
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        if (text[index] == U'\r') {
+            if (index + 1 < text.size() && text[index + 1] == U'\n') ++index;
+            normalized.push_back(U'\n');
+        } else {
+            normalized.push_back(text[index]);
+        }
+    }
+    auto working = document;
+    auto current = selection;
+    bool changed = false;
+    if (!current.is_caret()) {
+        auto deletion = document_delete_selection(working, current);
+        if (!deletion) return std::nullopt;
+        working = std::move(deletion->after);
+        current = deletion->selection_after;
+        changed = true;
+    }
+    std::size_t start = 0;
+    while (start <= normalized.size()) {
+        const auto end = normalized.find(U'\n', start);
+        const auto segment_end = end == std::u32string::npos ? normalized.size() : end;
+        if (segment_end > start) {
+            auto insertion = document_insert_text(
+                working,
+                current,
+                std::u32string_view(normalized).substr(start, segment_end - start));
+            if (!insertion) return std::nullopt;
+            working = std::move(insertion->after);
+            current = insertion->selection_after;
+            changed = true;
+        }
+        if (end == std::u32string::npos) break;
+        auto split = document_enter(working, current);
+        if (!split) return std::nullopt;
+        working = std::move(split->after);
+        current = split->selection_after;
+        changed = true;
+        start = end + 1;
+    }
+    if (!changed) return std::nullopt;
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(working);
+    transaction.selection_before = selection;
+    transaction.selection_after = current;
+    transaction.reason = DocumentTransactionReason::Paste;
     return transaction;
 }
 
@@ -2904,10 +3105,25 @@ inline std::optional<DocumentSelection> document_move_selection(
     auto active_index = find_index(selection.active.node_id);
     auto anchor_index = find_index(selection.anchor.node_id);
     if (!active_index || !anchor_index) return std::nullopt;
+    auto find_position_index = [](const document_edit_detail::EditableNode& node, const DocumentPosition& position) -> std::size_t {
+        auto exact = std::find(node.positions.begin(), node.positions.end(), position);
+        if (exact != node.positions.end()) return static_cast<std::size_t>(exact - node.positions.begin());
+        auto same_offset = std::find_if(node.positions.begin(), node.positions.end(), [&](const auto& candidate) {
+            return candidate.offset == position.offset && candidate.affinity == position.affinity;
+        });
+        if (same_offset != node.positions.end()) return static_cast<std::size_t>(same_offset - node.positions.begin());
+        same_offset = std::find_if(node.positions.begin(), node.positions.end(), [&](const auto& candidate) {
+            return candidate.offset == position.offset;
+        });
+        return same_offset == node.positions.end()
+            ? node.positions.size() - 1
+            : static_cast<std::size_t>(same_offset - node.positions.begin());
+    };
     auto ordered_before = [&](const DocumentPosition& left, const DocumentPosition& right) {
         const auto left_index = *find_index(left.node_id);
         const auto right_index = *find_index(right.node_id);
-        return left_index < right_index || (left_index == right_index && left.offset < right.offset);
+        return left_index < right_index || (left_index == right_index
+            && find_position_index(nodes[left_index], left) < find_position_index(nodes[right_index], right));
     };
     DocumentPosition target = selection.active;
     if (!extend_selection && !selection.is_caret()) {
@@ -2922,24 +3138,24 @@ inline std::optional<DocumentSelection> document_move_selection(
     const auto& current = nodes[*active_index].text;
     target.offset = (std::min)(target.offset, current.size());
     if (movement == DocumentMove::DocumentStart) {
-        target = DocumentPosition{nodes.front().id, 0, TextAffinity::Downstream};
+        target = nodes.front().positions.front();
     } else if (movement == DocumentMove::DocumentEnd) {
-        target = DocumentPosition{nodes.back().id, nodes.back().text.size(), TextAffinity::Downstream};
+        target = nodes.back().positions.back();
     } else if (movement == DocumentMove::Left) {
-        if (target.offset > 0) {
-            --target.offset;
+        const auto position_index = find_position_index(nodes[*active_index], target);
+        if (position_index > 0) {
+            target = nodes[*active_index].positions[position_index - 1];
         } else if (*active_index > 0) {
             const auto& previous = nodes[*active_index - 1];
-            target = DocumentPosition{previous.id, previous.text.size(), TextAffinity::Upstream};
+            target = previous.positions.back();
         }
-        target.affinity = TextAffinity::Upstream;
     } else if (movement == DocumentMove::Right) {
-        if (target.offset < current.size()) {
-            ++target.offset;
+        const auto position_index = find_position_index(nodes[*active_index], target);
+        if (position_index + 1 < nodes[*active_index].positions.size()) {
+            target = nodes[*active_index].positions[position_index + 1];
         } else if (*active_index + 1 < nodes.size()) {
-            target = DocumentPosition{nodes[*active_index + 1].id, 0, TextAffinity::Downstream};
+            target = nodes[*active_index + 1].positions.front();
         }
-        target.affinity = TextAffinity::Downstream;
     } else if (movement == DocumentMove::LineStart || movement == DocumentMove::LineEnd) {
         const auto before = target.offset == 0 ? std::u32string::npos : current.rfind(U'\n', target.offset - 1);
         const auto line_start = before == std::u32string::npos ? 0 : before + 1;
@@ -2947,6 +3163,9 @@ inline std::optional<DocumentSelection> document_move_selection(
         const auto line_end = after == std::u32string::npos ? current.size() : after;
         target.offset = movement == DocumentMove::LineStart ? line_start : line_end;
         target.affinity = movement == DocumentMove::LineStart ? TextAffinity::Upstream : TextAffinity::Downstream;
+        target.inline_node_id = NodeId{};
+        target.part = DocumentPositionPart::Content;
+        target.part_offset = target.offset;
     } else {
         const auto before = target.offset == 0 ? std::u32string::npos : current.rfind(U'\n', target.offset - 1);
         const auto line_start = before == std::u32string::npos ? 0 : before + 1;
@@ -2979,6 +3198,9 @@ inline std::optional<DocumentSelection> document_move_selection(
             }
             target.affinity = TextAffinity::Downstream;
         }
+        target.inline_node_id = NodeId{};
+        target.part = DocumentPositionPart::Content;
+        target.part_offset = target.offset;
     }
     if (target == selection.active) return std::nullopt;
     return extend_selection ? DocumentSelection{selection.anchor, target} : DocumentSelection::caret(target);
@@ -2989,8 +3211,8 @@ inline std::optional<DocumentSelection> document_select_all(const EditorDocument
     document_edit_detail::collect_editable_nodes(document.blocks, nodes);
     if (nodes.empty()) return std::nullopt;
     return DocumentSelection{
-        DocumentPosition{nodes.front().id, 0, TextAffinity::Downstream},
-        DocumentPosition{nodes.back().id, nodes.back().text.size(), TextAffinity::Downstream}};
+        nodes.front().positions.front(),
+        nodes.back().positions.back()};
 }
 
 inline std::optional<DocumentTransaction> document_delete_backward(
@@ -3001,7 +3223,10 @@ inline std::optional<DocumentTransaction> document_delete_backward(
     auto target = selection.active;
     bool changed = false;
     document_edit_detail::NodeAllocator allocator(after);
-    changed = document_edit_detail::backspace_in_code_blocks(after.blocks, target.node_id, target.offset, allocator, target);
+    if (target.offset == 1) {
+        changed = document_edit_detail::erase_atomic_block(after.blocks, target.node_id, allocator, target);
+    }
+    if (!changed) changed = document_edit_detail::backspace_in_code_blocks(after.blocks, target.node_id, target.offset, allocator, target);
     if (!changed && target.offset > 0) {
         changed = document_edit_detail::erase_adjacent_pair_in_blocks(after.blocks, target.node_id, target.offset);
         if (changed) {
@@ -3021,6 +3246,7 @@ inline std::optional<DocumentTransaction> document_delete_backward(
     }
     if (!changed) return std::nullopt;
     target.affinity = TextAffinity::Upstream;
+    reset_inline_position(target);
     normalize_document(after);
     ++after.revision;
     DocumentTransaction transaction;
@@ -3041,12 +3267,17 @@ inline std::optional<DocumentTransaction> document_delete_forward(
     const auto length = document_edit_detail::editable_length_in_blocks(after.blocks, target.node_id);
     if (!length) return std::nullopt;
     bool changed = false;
-    if (target.offset < *length) {
+    document_edit_detail::NodeAllocator allocator(after);
+    if (target.offset == 0) {
+        changed = document_edit_detail::erase_atomic_block(after.blocks, target.node_id, allocator, target);
+    }
+    if (!changed && target.offset < *length) {
         changed = document_edit_detail::erase_text_in_blocks(after.blocks, target.node_id, target.offset, 1);
-    } else {
+    } else if (!changed) {
         changed = document_edit_detail::delete_forward_in_blocks(after.blocks, target.node_id, target);
     }
     if (!changed) return std::nullopt;
+    reset_inline_position(target);
     normalize_document(after);
     ++after.revision;
     DocumentTransaction transaction;

@@ -40,11 +40,11 @@ public:
     Selection selection() const { return selection_; }
     std::uint64_t revision() const { return buffer_.revision(); }
     void set_selection(Selection s) {
-        selection_ = s;
         auto anchor = document_position_from_source_offset(document_, s.anchor);
         auto active = document_position_from_source_offset(document_, s.active);
-        if (anchor && active) document_selection_ = DocumentSelection{*anchor, *active};
-        else document_selection_.reset();
+        if (!anchor || !active) throw std::logic_error("source selection does not map to the document tree");
+        document_selection_ = DocumentSelection{*anchor, *active};
+        synchronize_legacy_selection_();
     }
     void set_theme(Theme t) { theme_ = t; }
     Theme theme() const { return theme_; }
@@ -56,7 +56,7 @@ public:
     bool has_redo() const { return document_history_.has_redo(); }
     bool has_document_undo() const { return document_history_.has_undo(); }
     bool has_document_redo() const { return document_history_.has_redo(); }
-    std::optional<DocumentSelection> document_selection() const { return document_selection_; }
+    const DocumentSelection& document_selection() const { return document_selection_; }
     void set_document_selection(DocumentSelection selection) {
         document_selection_ = std::move(selection);
         synchronize_legacy_selection_();
@@ -86,6 +86,13 @@ public:
         return transaction;
     }
 
+    std::optional<DocumentTransaction> execute_document_paste_text(DocumentSelection selection, std::u32string_view text) {
+        auto transaction = document_paste_text(document_, selection, text);
+        if (!transaction) return std::nullopt;
+        apply_document_transaction_(*transaction);
+        return transaction;
+    }
+
     std::optional<DocumentTransaction> execute_document_insert_soft_break(DocumentSelection selection) {
         auto transaction = document_insert_soft_break(document_, selection);
         if (!transaction) return std::nullopt;
@@ -94,8 +101,7 @@ public:
     }
 
     bool execute_document_move(DocumentMove movement, bool extend_selection) {
-        if (!document_selection_) return false;
-        auto selection = document_move_selection(document_, *document_selection_, movement, extend_selection);
+        auto selection = document_move_selection(document_, document_selection_, movement, extend_selection);
         if (!selection) return false;
         document_selection_ = *selection;
         synchronize_legacy_selection_();
@@ -291,12 +297,11 @@ public:
             return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
         }
         if (cmd.kind == CommandKind::ToggleCallout || cmd.kind == CommandKind::InsertFootnote) {
-            if (!document_selection_) return std::nullopt;
             const auto revision_before = buffer_.revision();
             const auto selection_before = selection_;
             const auto changed = cmd.kind == CommandKind::ToggleCallout
-                ? execute_document_toggle_callout(*document_selection_, cmd).has_value()
-                : execute_document_insert_footnote(*document_selection_, cmd).has_value();
+                ? execute_document_toggle_callout(document_selection_, cmd).has_value()
+                : execute_document_insert_footnote(document_selection_, cmd).has_value();
             if (!changed) return std::nullopt;
             return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
         }
@@ -309,7 +314,6 @@ public:
             || cmd.kind == CommandKind::SetTableColumnAlignment || cmd.kind == CommandKind::NormalizeTable
             || cmd.kind == CommandKind::InsertTableRowAt || cmd.kind == CommandKind::InsertTableColumnAt
             || cmd.kind == CommandKind::MoveTableRowTo || cmd.kind == CommandKind::MoveTableColumnTo) {
-            if (!document_selection_) return std::nullopt;
             auto edit = DocumentTableEdit::Normalize;
             switch (cmd.kind) {
                 case CommandKind::MoveTableCellNext: edit = DocumentTableEdit::MoveCellNext; break;
@@ -333,24 +337,22 @@ public:
             }
             const auto revision_before = buffer_.revision();
             const auto selection_before = selection_;
-            if (!execute_document_table_edit(*document_selection_, edit, cmd.table_alignment, cmd.table_index)) return std::nullopt;
+            if (!execute_document_table_edit(document_selection_, edit, cmd.table_alignment, cmd.table_index)) return std::nullopt;
             return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
         }
         if (cmd.kind == CommandKind::InsertCodeBlock || cmd.kind == CommandKind::InsertMathBlock
             || cmd.kind == CommandKind::InsertToc || cmd.kind == CommandKind::InsertTable) {
-            if (!document_selection_) return std::nullopt;
             const auto revision_before = buffer_.revision();
             const auto selection_before = selection_;
-            if (!execute_document_insert_atomic_block(*document_selection_, cmd)) return std::nullopt;
+            if (!execute_document_insert_atomic_block(document_selection_, cmd)) return std::nullopt;
             return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
         }
         if (cmd.kind == CommandKind::InsertLink || cmd.kind == CommandKind::InsertImage) {
-            if (!document_selection_) return std::nullopt;
             const auto revision_before = buffer_.revision();
             const auto selection_before = selection_;
             const auto changed = cmd.kind == CommandKind::InsertLink
-                ? execute_document_insert_link(*document_selection_, cmd).has_value()
-                : execute_document_insert_image(*document_selection_, cmd).has_value();
+                ? execute_document_insert_link(document_selection_, cmd).has_value()
+                : execute_document_insert_image(document_selection_, cmd).has_value();
             if (!changed) return std::nullopt;
             return Transaction(revision_before, selection_before, selection_, TransactionReason::FormatCommand);
         }
@@ -358,19 +360,18 @@ public:
             || cmd.kind == CommandKind::ToggleBlockQuote || cmd.kind == CommandKind::ToggleUnorderedList
             || cmd.kind == CommandKind::ToggleOrderedList || cmd.kind == CommandKind::ToggleTaskList
             || cmd.kind == CommandKind::ToggleTaskCheckbox) {
-            if (!document_selection_) return std::nullopt;
             const auto revision_before = buffer_.revision();
             const auto selection_before = selection_;
             bool changed = false;
             if (cmd.kind == CommandKind::SetHeading || cmd.kind == CommandKind::ClearHeading) {
-                changed = execute_document_set_heading(*document_selection_,
+                changed = execute_document_set_heading(document_selection_,
                     cmd.kind == CommandKind::ClearHeading ? 0 : (std::min)(cmd.level, std::uint8_t{6})).has_value();
             } else if (cmd.kind == CommandKind::ToggleBlockQuote) {
-                changed = execute_document_toggle_block_quote(*document_selection_).has_value();
+                changed = execute_document_toggle_block_quote(document_selection_).has_value();
             } else if (cmd.kind == CommandKind::ToggleTaskCheckbox) {
-                changed = execute_document_toggle_task_checkbox(*document_selection_).has_value();
+                changed = execute_document_toggle_task_checkbox(document_selection_).has_value();
             } else {
-                changed = execute_document_toggle_list(*document_selection_,
+                changed = execute_document_toggle_list(document_selection_,
                     cmd.kind == CommandKind::ToggleOrderedList,
                     cmd.kind == CommandKind::ToggleTaskList).has_value();
             }
@@ -380,7 +381,6 @@ public:
         if (cmd.kind == CommandKind::ToggleStrong || cmd.kind == CommandKind::ToggleEmphasis
             || cmd.kind == CommandKind::ToggleStrikethrough || cmd.kind == CommandKind::ToggleInlineCode
             || cmd.kind == CommandKind::InsertMathInline) {
-            if (!document_selection_) return std::nullopt;
             auto kind = InlineKind::Strong;
             if (cmd.kind == CommandKind::ToggleEmphasis) kind = InlineKind::Emphasis;
             else if (cmd.kind == CommandKind::ToggleStrikethrough) kind = InlineKind::Strike;
@@ -388,47 +388,50 @@ public:
             else if (cmd.kind == CommandKind::InsertMathInline) kind = InlineKind::InlineMath;
             const auto revision_before = buffer_.revision();
             const auto selection_before = selection_;
-            if (!execute_document_toggle_inline_format(*document_selection_, kind)) return std::nullopt;
+            if (!execute_document_toggle_inline_format(document_selection_, kind)) return std::nullopt;
             return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
         }
-        if (cmd.kind == CommandKind::InsertText) {
-            if (!document_selection_) return std::nullopt;
+        if (cmd.kind == CommandKind::InsertText || cmd.kind == CommandKind::Paste) {
             const auto revision_before = buffer_.revision();
             const auto selection_before = selection_;
-            if (!execute_document_insert_text(*document_selection_, cmd.text)) return std::nullopt;
-            return Transaction(revision_before, selection_before, selection_, TransactionReason::Typing);
+            const auto changed = cmd.kind == CommandKind::Paste
+                ? execute_document_paste_text(document_selection_, cmd.text).has_value()
+                : execute_document_insert_text(document_selection_, cmd.text).has_value();
+            if (!changed) return std::nullopt;
+            return Transaction(
+                revision_before,
+                selection_before,
+                selection_,
+                cmd.kind == CommandKind::Paste ? TransactionReason::Paste : TransactionReason::Typing);
         }
         if (cmd.kind == CommandKind::IndentListItem || cmd.kind == CommandKind::OutdentListItem) {
-            if (!document_selection_) return std::nullopt;
             const auto revision_before = buffer_.revision();
             const auto selection_before = selection_;
             const auto changed = cmd.kind == CommandKind::IndentListItem
-                ? execute_document_indent_list_item(*document_selection_).has_value()
-                : execute_document_outdent_list_item(*document_selection_).has_value();
+                ? execute_document_indent_list_item(document_selection_).has_value()
+                : execute_document_outdent_list_item(document_selection_).has_value();
             if (!changed) return std::nullopt;
             return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
         }
         if (cmd.kind == CommandKind::InsertNewline || cmd.kind == CommandKind::InsertSoftBreak) {
-            if (!document_selection_) return std::nullopt;
             const auto revision_before = buffer_.revision();
             const auto selection_before = selection_;
             const auto changed = cmd.kind == CommandKind::InsertNewline
-                ? execute_document_enter(*document_selection_).has_value()
-                : execute_document_insert_soft_break(*document_selection_).has_value();
+                ? execute_document_enter(document_selection_).has_value()
+                : execute_document_insert_soft_break(document_selection_).has_value();
             if (!changed) return std::nullopt;
             return Transaction(revision_before, selection_before, selection_, TransactionReason::StructuralCommand);
         }
         if (cmd.kind == CommandKind::DeleteBackward || cmd.kind == CommandKind::DeleteForward || cmd.kind == CommandKind::DeleteSelection) {
-            if (!document_selection_) return std::nullopt;
             const auto revision_before = buffer_.revision();
             const auto selection_before = selection_;
             bool changed = false;
-            if (!document_selection_->is_caret() || cmd.kind == CommandKind::DeleteSelection) {
-                changed = execute_document_delete_selection(*document_selection_).has_value();
+            if (!document_selection_.is_caret() || cmd.kind == CommandKind::DeleteSelection) {
+                changed = execute_document_delete_selection(document_selection_).has_value();
             } else if (cmd.kind == CommandKind::DeleteBackward) {
-                changed = execute_document_delete_backward(*document_selection_).has_value();
+                changed = execute_document_delete_backward(document_selection_).has_value();
             } else {
-                changed = execute_document_delete_forward(*document_selection_).has_value();
+                changed = execute_document_delete_forward(document_selection_).has_value();
             }
             if (!changed) return std::nullopt;
             return Transaction(revision_before, selection_before, selection_, TransactionReason::Delete);
@@ -511,7 +514,7 @@ private:
     Outline outline_;
     Selection selection_;
     DocumentHistory document_history_{1000};
-    std::optional<DocumentSelection> document_selection_;
+    DocumentSelection document_selection_{};
     Theme theme_ = Theme::Dark;
     float scale_factor_ = 1.0f;
     MarkdownDialect dialect_ = default_dialect();
@@ -528,8 +531,8 @@ private:
         }
         auto anchor = document_position_from_source_offset(document_, selection_.anchor);
         auto active = document_position_from_source_offset(document_, selection_.active);
-        if (anchor && active) document_selection_ = DocumentSelection{*anchor, *active};
-        else document_selection_.reset();
+        if (!anchor || !active) throw std::logic_error("serialized selection does not map to the document tree");
+        document_selection_ = DocumentSelection{*anchor, *active};
     }
 
     void refresh_projection_from_document_() {
@@ -551,18 +554,25 @@ private:
     }
 
     void synchronize_legacy_selection_() {
-        if (!document_selection_) return;
-        auto anchor = source_offset_from_document_position(document_, document_selection_->anchor);
-        auto active = source_offset_from_document_position(document_, document_selection_->active);
+        auto anchor = source_offset_from_document_position(document_, document_selection_.anchor);
+        auto active = source_offset_from_document_position(document_, document_selection_.active);
         if (anchor && active) {
+            auto canonical_anchor = document_position_from_source_offset(document_, *anchor);
+            auto canonical_active = document_position_from_source_offset(document_, *active);
+            if (!canonical_anchor || !canonical_active) {
+                throw std::logic_error("serialized selection cannot be rebound to the document tree");
+            }
+            document_selection_ = DocumentSelection{*canonical_anchor, *canonical_active};
             selection_.anchor = *anchor;
             selection_.active = *active;
-            selection_.affinity = document_selection_->active.affinity;
+            selection_.affinity = document_selection_.active.affinity;
+        } else {
+            throw std::logic_error("document selection does not map to serialized Markdown");
         }
     }
 
     std::optional<DocumentPosition> current_document_caret_() const {
-        if (document_selection_ && document_selection_->is_caret()) return document_selection_->active;
+        if (document_selection_.is_caret()) return document_selection_.active;
         return document_position_from_source_offset(document_, selection_.active);
     }
 

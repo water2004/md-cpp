@@ -1,4 +1,4 @@
-﻿import std;
+import std;
 #include "test_framework.h"
 import elmd.core.editor;
 import elmd.core.command;
@@ -128,9 +128,7 @@ ELMD_TEST(test_editor_document_enter_keeps_ast_authoritative_and_projects_markdo
     ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alpha\n\nomega"));
     ELMD_CHECK_EQ(editor.document().blocks.size(), 2u);
     ELMD_CHECK_EQ(editor.document().blocks.front().id, original_id);
-    ELMD_CHECK(editor.document_selection().has_value());
-    if (!editor.document_selection()) return;
-    ELMD_CHECK_EQ(editor.document_selection()->active.node_id, editor.document().blocks[1].id);
+    ELMD_CHECK_EQ(editor.document_selection().active.node_id, editor.document().blocks[1].id);
     ELMD_CHECK(editor.document().source_map.find_node_by_id(editor.document().blocks[1].id) != nullptr);
 
     ELMD_CHECK(editor.undo_document());
@@ -172,8 +170,7 @@ ELMD_TEST(test_editor_document_delete_projects_and_restores_node_selection) {
     ELMD_CHECK_EQ(editor.document().blocks.front().id, block_id);
     ELMD_CHECK(editor.undo_document());
     ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alphabeta"));
-    ELMD_CHECK(editor.document_selection().has_value());
-    if (editor.document_selection()) ELMD_CHECK_EQ(editor.document_selection()->active.offset, 5u);
+    ELMD_CHECK_EQ(editor.document_selection().active.offset, 5u);
 }
 
 ELMD_TEST(test_editor_backspace_command_moves_list_item_tree_and_undo_restores_it) {
@@ -188,8 +185,7 @@ ELMD_TEST(test_editor_backspace_command_moves_list_item_tree_and_undo_restores_i
     ELMD_CHECK_EQ(editor.document().blocks[0].list_items.size(), 1u);
     ELMD_CHECK_EQ(editor.document().blocks[0].list_items[0].children.size(), 2u);
     ELMD_CHECK_EQ(editor.document().blocks[0].list_items[0].children[1].id, second_id);
-    ELMD_CHECK(editor.document_selection().has_value());
-    if (editor.document_selection()) ELMD_CHECK_EQ(editor.document_selection()->active.node_id, second_id);
+    ELMD_CHECK_EQ(editor.document_selection().active.node_id, second_id);
     ELMD_CHECK(editor.undo_document());
     ELMD_CHECK_EQ(editor.document().blocks[0].list_items.size(), 2u);
     ELMD_CHECK(editor.redo_document());
@@ -213,9 +209,8 @@ ELMD_TEST(test_editor_list_indent_commands_use_document_history) {
     outdent.kind = CommandKind::OutdentListItem;
     ELMD_CHECK(editor.execute_command(outdent).has_value());
     ELMD_CHECK_EQ(editor.markdown_utf8(), std::string("- a\n- b"));
-    ELMD_CHECK(editor.document_selection().has_value());
-    ELMD_CHECK_EQ(editor.document_selection()->active.node_id, second_id);
-    ELMD_CHECK_EQ(editor.document_selection()->active.offset, 1u);
+    ELMD_CHECK_EQ(editor.document_selection().active.node_id, second_id);
+    ELMD_CHECK_EQ(editor.document_selection().active.offset, 1u);
 }
 
 ELMD_TEST(test_editor_cross_container_selection_delete_uses_document_history) {
@@ -230,14 +225,12 @@ ELMD_TEST(test_editor_cross_container_selection_delete_uses_document_history) {
     command.kind = CommandKind::DeleteSelection;
     ELMD_CHECK(editor.execute_command(command).has_value());
     ELMD_CHECK_EQ(editor.markdown_utf8(), std::string("> alga"));
-    ELMD_CHECK(editor.document_selection().has_value());
-    ELMD_CHECK_EQ(editor.document_selection()->active.node_id, quote_id);
-    ELMD_CHECK_EQ(editor.document_selection()->active.offset, 2u);
+    ELMD_CHECK_EQ(editor.document_selection().active.node_id, quote_id);
+    ELMD_CHECK_EQ(editor.document_selection().active.offset, 2u);
     ELMD_CHECK(editor.undo_document());
     ELMD_CHECK_EQ(editor.markdown_utf8(), std::string("> alpha\n\nomega"));
-    ELMD_CHECK(editor.document_selection().has_value());
-    ELMD_CHECK_EQ(editor.document_selection()->anchor.node_id, quote_id);
-    ELMD_CHECK_EQ(editor.document_selection()->active.node_id, paragraph_id);
+    ELMD_CHECK_EQ(editor.document_selection().anchor.node_id, quote_id);
+    ELMD_CHECK_EQ(editor.document_selection().active.node_id, paragraph_id);
 }
 
 ELMD_TEST(test_editor_enter_at_paragraph_end_projects_empty_node_caret_anchor) {
@@ -272,10 +265,9 @@ ELMD_TEST(test_editor_document_range_delete_restores_ast_and_selection_on_undo) 
     ELMD_CHECK(editor.undo_document());
     ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alpha\n\nomega"));
     ELMD_CHECK_EQ(editor.document().blocks.size(), 2u);
-    ELMD_CHECK(editor.document_selection().has_value());
-    if (editor.document_selection()) {
-        ELMD_CHECK_EQ(editor.document_selection()->anchor.node_id, first_id);
-        ELMD_CHECK_EQ(editor.document_selection()->active.node_id, last_id);
+    {
+        ELMD_CHECK_EQ(editor.document_selection().anchor.node_id, first_id);
+        ELMD_CHECK_EQ(editor.document_selection().active.node_id, last_id);
     }
 }
 
@@ -333,6 +325,21 @@ ELMD_TEST(test_editor_incremental_inline_math_keeps_exact_source_mapping) {
         ELMD_CHECK(e.execute_command(Command::MoveLeft(false)) != std::nullopt);
         ELMD_CHECK_EQ(e.selection().active.v, expected);
         if (expected == 0) break;
+    }
+}
+
+ELMD_TEST(test_inline_marker_navigation_preserves_each_serialized_caret_slot) {
+    for (const auto& markdown : {std::string("_word_"), std::string("**x**"), std::string("`code`")}) {
+        Editor editor(markdown);
+        editor.set_caret(CharOffset(0));
+        for (std::size_t expected = 1; expected <= markdown.size(); ++expected) {
+            ELMD_CHECK(editor.execute_command(Command::MoveRight(false)).has_value());
+            ELMD_CHECK_EQ(editor.selection().active.v, expected);
+        }
+        for (std::size_t expected = markdown.size(); expected > 0; --expected) {
+            ELMD_CHECK(editor.execute_command(Command::MoveLeft(false)).has_value());
+            ELMD_CHECK_EQ(editor.selection().active.v, expected - 1);
+        }
     }
 }
 
@@ -408,8 +415,7 @@ ELMD_TEST(test_atomic_block_commands_insert_document_nodes) {
     Command math_command; math_command.kind = CommandKind::InsertMathBlock;
     math.execute_command(math_command);
     ELMD_CHECK(math.document().blocks.front().kind == BlockKind::MathBlock);
-    ELMD_CHECK(math.document_selection().has_value());
-    ELMD_CHECK_EQ(math.document_selection()->active.node_id, math.document().blocks.front().id);
+    ELMD_CHECK_EQ(math.document_selection().active.node_id, math.document().blocks.front().id);
     ELMD_CHECK(validate_document(math.document()).empty());
     math.undo();
     ELMD_CHECK(math.document().blocks.front().kind == BlockKind::Paragraph);
@@ -420,8 +426,7 @@ ELMD_TEST(test_atomic_block_commands_insert_document_nodes) {
     ELMD_CHECK(table.document().blocks.front().kind == BlockKind::Table);
     ELMD_CHECK_EQ(table.document().blocks.front().table_header.size(), 3u);
     ELMD_CHECK_EQ(table.document().blocks.front().table_rows.size(), 2u);
-    ELMD_CHECK(table.document_selection().has_value());
-    ELMD_CHECK_EQ(table.document_selection()->active.node_id, table.document().blocks.front().table_header.front().id);
+    ELMD_CHECK_EQ(table.document_selection().active.node_id, table.document().blocks.front().table_header.front().id);
     ELMD_CHECK(validate_document(table.document()).empty());
 }
 
@@ -448,6 +453,24 @@ ELMD_TEST(test_delete_transaction) {
     ELMD_CHECK(e.execute_command(command).has_value());
     ELMD_CHECK_EQ(e.markdown_utf8(), std::string("hello"));
     ELMD_CHECK(e.has_document_undo());
+}
+
+ELMD_TEST(test_paste_command_is_one_document_history_transaction) {
+    Editor editor("alpha");
+    editor.set_caret(CharOffset(5));
+    Command paste;
+    paste.kind = CommandKind::Paste;
+    paste.text = U"x\r\ny";
+    auto transaction = editor.execute_command(paste);
+    ELMD_CHECK(transaction.has_value());
+    ELMD_CHECK_EQ(editor.markdown_utf8(), std::string("alphax\n\ny"));
+    ELMD_CHECK_EQ(editor.document().blocks.size(), 2u);
+    ELMD_CHECK_EQ(editor.document_selection().active.node_id, editor.document().blocks[1].id);
+    ELMD_CHECK(editor.has_document_undo());
+    ELMD_CHECK(editor.undo_document());
+    ELMD_CHECK_EQ(editor.markdown_utf8(), std::string("alpha"));
+    ELMD_CHECK_EQ(editor.document().blocks.size(), 1u);
+    ELMD_CHECK_EQ(editor.document_selection().active.offset, 5u);
 }
 
 ELMD_TEST(test_toggle_strong_uses_document_transaction) {
@@ -984,10 +1007,9 @@ ELMD_TEST(test_enter_continues_unordered_list) {
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- alpha\n- "));
     ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
     ELMD_CHECK_EQ(e.document().blocks[0].list_items.size(), 2u);
-    ELMD_CHECK(e.document_selection().has_value());
-    if (e.document_selection()) {
-        ELMD_CHECK_EQ(e.document_selection()->active.node_id, e.document().blocks[0].list_items[1].children[0].id);
-        ELMD_CHECK_EQ(e.document_selection()->active.offset, 0u);
+    {
+        ELMD_CHECK_EQ(e.document_selection().active.node_id, e.document().blocks[0].list_items[1].children[0].id);
+        ELMD_CHECK_EQ(e.document_selection().active.offset, 0u);
     }
 }
 
@@ -1000,8 +1022,7 @@ ELMD_TEST(test_enter_continues_ordered_list) {
     ELMD_CHECK(e.document().blocks[0].list_ordered);
     ELMD_CHECK_EQ(e.document().blocks[0].list_items.size(), 2u);
     ELMD_CHECK(e.document().blocks[0].list_items[1].marker.empty());
-    ELMD_CHECK(e.document_selection().has_value());
-    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.node_id, e.document().blocks[0].list_items[1].children[0].id);
+    ELMD_CHECK_EQ(e.document_selection().active.node_id, e.document().blocks[0].list_items[1].children[0].id);
 }
 
 ELMD_TEST(test_enter_continues_task_list_unchecked) {
@@ -1013,8 +1034,7 @@ ELMD_TEST(test_enter_continues_task_list_unchecked) {
     ELMD_CHECK_EQ(e.document().blocks[0].task_items.size(), 2u);
     ELMD_CHECK(e.document().blocks[0].task_items[0].checked);
     ELMD_CHECK(!e.document().blocks[0].task_items[1].checked);
-    ELMD_CHECK(e.document_selection().has_value());
-    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.node_id, e.document().blocks[0].task_items[1].children[0].id);
+    ELMD_CHECK_EQ(e.document_selection().active.node_id, e.document().blocks[0].task_items[1].children[0].id);
 }
 
 ELMD_TEST(test_enter_exits_list_one_level_before_exiting_blockquote) {
@@ -1053,12 +1073,10 @@ ELMD_TEST(test_empty_list_item_reuses_following_empty_quote_line) {
     Command newline; newline.kind = CommandKind::InsertNewline;
     e.execute_command(newline);
     ELMD_CHECK(validate_document(e.document()).empty());
-    ELMD_CHECK(e.document_selection().has_value());
-    auto empty_item_id = e.document_selection() ? e.document_selection()->active.node_id : NodeId{};
+    auto empty_item_id = e.document_selection().active.node_id;
     e.execute_command(newline);
     ELMD_CHECK(validate_document(e.document()).empty());
-    ELMD_CHECK(e.document_selection().has_value());
-    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.node_id, empty_item_id);
+    ELMD_CHECK_EQ(e.document_selection().active.node_id, empty_item_id);
 }
 
 ELMD_TEST(test_enter_continues_blockquote) {
@@ -1070,8 +1088,7 @@ ELMD_TEST(test_enter_continues_blockquote) {
     ELMD_CHECK_EQ(e.document().blocks[0].kind, BlockKind::BlockQuote);
     ELMD_CHECK_EQ(e.document().blocks[0].quote_children.size(), 2u);
     ELMD_CHECK_EQ(block_inline_text_content(e.document().blocks[0].quote_children[0].children), std::u32string(U"alpha"));
-    ELMD_CHECK(e.document_selection().has_value());
-    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.node_id, e.document().blocks[0].quote_children[1].id);
+    ELMD_CHECK_EQ(e.document_selection().active.node_id, e.document().blocks[0].quote_children[1].id);
 }
 
 ELMD_TEST(test_second_enter_exits_empty_blockquote_line) {
@@ -1083,8 +1100,7 @@ ELMD_TEST(test_second_enter_exits_empty_blockquote_line) {
     ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
     ELMD_CHECK_EQ(e.document().blocks[0].kind, BlockKind::BlockQuote);
     ELMD_CHECK_EQ(e.document().blocks[1].kind, BlockKind::Paragraph);
-    ELMD_CHECK(e.document_selection().has_value());
-    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.node_id, e.document().blocks[1].id);
+    ELMD_CHECK_EQ(e.document_selection().active.node_id, e.document().blocks[1].id);
 }
 
 ELMD_TEST(test_second_enter_removes_the_empty_quote_line_before_a_following_block) {
@@ -1129,7 +1145,7 @@ ELMD_TEST(test_backspace_exits_nested_blockquotes_one_level_at_a_time) {
     ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
     ELMD_CHECK_EQ(e.document().blocks[0].kind, BlockKind::BlockQuote);
     ELMD_CHECK_EQ(e.document().blocks[0].quote_children[0].id, paragraph_id);
-    auto second = e.execute_document_delete_backward(*e.document_selection());
+    auto second = e.execute_document_delete_backward(e.document_selection());
     ELMD_CHECK(second.has_value());
     ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
     ELMD_CHECK_EQ(e.document().blocks[0].kind, BlockKind::Paragraph);
@@ -1146,13 +1162,11 @@ ELMD_TEST(test_backspace_at_first_quote_content_start_removes_exactly_one_level)
     Command backspace; backspace.kind = CommandKind::DeleteBackward;
     e.execute_command(backspace);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha"));
-    ELMD_CHECK(e.document_selection().has_value());
-    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.offset, 0u);
+    ELMD_CHECK_EQ(e.document_selection().active.offset, 0u);
     e.execute_command(backspace);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha"));
     ELMD_CHECK_EQ(e.document().blocks[0].kind, BlockKind::Paragraph);
-    ELMD_CHECK(e.document_selection().has_value());
-    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.node_id, e.document().blocks[0].id);
+    ELMD_CHECK_EQ(e.document_selection().active.node_id, e.document().blocks[0].id);
 }
 
 ELMD_TEST(test_backspace_at_following_quote_line_start_joins_the_same_depth_first) {
@@ -1161,8 +1175,7 @@ ELMD_TEST(test_backspace_at_following_quote_line_start_joins_the_same_depth_firs
     Command backspace; backspace.kind = CommandKind::DeleteBackward;
     e.execute_command(backspace);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > firstsecond"));
-    ELMD_CHECK(e.document_selection().has_value());
-    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.offset, 5u);
+    ELMD_CHECK_EQ(e.document_selection().active.offset, 5u);
     ELMD_CHECK_EQ(e.document().blocks[0].quote_children[0].quote_children.size(), 1u);
 }
 
@@ -1172,8 +1185,7 @@ ELMD_TEST(test_backspace_join_removes_the_preceding_hard_break_marker) {
     Command backspace; backspace.kind = CommandKind::DeleteBackward;
     e.execute_command(backspace);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > firstsecond"));
-    ELMD_CHECK(e.document_selection().has_value());
-    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.offset, 5u);
+    ELMD_CHECK_EQ(e.document_selection().active.offset, 5u);
 }
 
 ELMD_TEST(test_backspace_inside_nested_quote_content_never_touches_quote_markers) {
@@ -1182,8 +1194,7 @@ ELMD_TEST(test_backspace_inside_nested_quote_content_never_touches_quote_markers
     Command backspace; backspace.kind = CommandKind::DeleteBackward;
     e.execute_command(backspace);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > abcdefghijklmopqrstuvwxyz"));
-    ELMD_CHECK(e.document_selection().has_value());
-    if (e.document_selection()) ELMD_CHECK_EQ(e.document_selection()->active.offset, 13u);
+    ELMD_CHECK_EQ(e.document_selection().active.offset, 13u);
 }
 
 ELMD_TEST(test_quote_source_line_model_owns_each_marker_and_content_range) {
@@ -1207,13 +1218,11 @@ ELMD_TEST(test_blockquote_newline_with_following_block_keeps_an_editable_quote_l
     e.set_caret(CharOffset(7));
     Command newline; newline.kind = CommandKind::InsertNewline;
     e.execute_command(newline);
-    ELMD_CHECK(e.document_selection().has_value());
-    if (!e.document_selection()) return;
-    auto insertion = e.execute_document_insert_text(*e.document_selection(), U"11111");
+    auto insertion = e.execute_document_insert_text(e.document_selection(), U"11111");
     ELMD_CHECK(insertion.has_value());
     ELMD_CHECK_EQ(e.document().blocks[0].quote_children.size(), 2u);
     ELMD_CHECK_EQ(block_inline_text_content(e.document().blocks[0].quote_children[1].children), std::u32string(U"11111"));
-    auto split = e.execute_document_enter(*e.document_selection());
+    auto split = e.execute_document_enter(e.document_selection());
     ELMD_CHECK(split.has_value());
     ELMD_CHECK_EQ(e.document().blocks[0].quote_children.size(), 3u);
     ELMD_CHECK_EQ(block_inline_text_content(e.document().blocks[0].quote_children[1].children), std::u32string(U"11111"));
@@ -1248,10 +1257,9 @@ ELMD_TEST(test_backspace_on_empty_indented_code_line_exits_the_code_block) {
     Command backspace; backspace.kind = CommandKind::DeleteBackward;
     e.execute_command(backspace);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("    alpha\n\nafter"));
-    ELMD_CHECK(e.document_selection().has_value());
-    ELMD_CHECK_EQ(e.document_selection()->active.node_id, e.document().blocks[1].id);
-    ELMD_CHECK_EQ(e.document_selection()->active.offset, 0u);
-    ELMD_CHECK(e.document_selection()->active.affinity == TextAffinity::Upstream);
+    ELMD_CHECK_EQ(e.document_selection().active.node_id, e.document().blocks[1].id);
+    ELMD_CHECK_EQ(e.document_selection().active.offset, 0u);
+    ELMD_CHECK(e.document_selection().active.affinity == TextAffinity::Upstream);
 }
 
 ELMD_TEST(test_delete_forward_inside_indented_code_edits_code_node) {
@@ -1263,9 +1271,8 @@ ELMD_TEST(test_delete_forward_inside_indented_code_edits_code_node) {
     ELMD_CHECK(editor.execute_command(command).has_value());
     ELMD_CHECK_EQ(editor.document().blocks[0].id, code_id);
     ELMD_CHECK_EQ(editor.document().blocks[0].code_text, std::u32string(U"a\n"));
-    ELMD_CHECK(editor.document_selection().has_value());
-    ELMD_CHECK_EQ(editor.document_selection()->active.node_id, code_id);
-    ELMD_CHECK_EQ(editor.document_selection()->active.offset, 1u);
+    ELMD_CHECK_EQ(editor.document_selection().active.node_id, code_id);
+    ELMD_CHECK_EQ(editor.document_selection().active.offset, 1u);
 }
 
 ELMD_TEST(test_enter_on_empty_list_exits_list) {
@@ -1404,11 +1411,10 @@ ELMD_TEST(test_typing_inside_auto_pair_promotes_ast_inline_node) {
     ELMD_CHECK_EQ(emphasis.document().blocks.front().children.size(), 1u);
     ELMD_CHECK(emphasis.document().blocks.front().children.front().kind == InlineKind::Emphasis);
     ELMD_CHECK_EQ(block_inline_text_content(emphasis.document().blocks.front().children), std::u32string(U"value"));
-    ELMD_CHECK(emphasis.document_selection().has_value());
-    if (emphasis.document_selection()) {
-        ELMD_CHECK_EQ(emphasis.document_selection()->active.node_id, paragraph_id);
-        ELMD_CHECK_EQ(emphasis.document_selection()->active.offset, 5u);
-        ELMD_CHECK(emphasis.document_selection()->active.affinity == TextAffinity::Upstream);
+    {
+        ELMD_CHECK_EQ(emphasis.document_selection().active.node_id, paragraph_id);
+        ELMD_CHECK_EQ(emphasis.document_selection().active.offset, 5u);
+        ELMD_CHECK(emphasis.document_selection().active.affinity == TextAffinity::Upstream);
     }
 
     Editor strong;
@@ -1431,17 +1437,15 @@ ELMD_TEST(test_insert_text_replaces_cross_node_selection_in_document_tree) {
     ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alXga"));
     ELMD_CHECK_EQ(editor.document().blocks.size(), 1u);
     ELMD_CHECK_EQ(editor.document().blocks.front().id, first_id);
-    ELMD_CHECK(editor.document_selection().has_value());
-    if (editor.document_selection()) {
-        ELMD_CHECK_EQ(editor.document_selection()->active.node_id, first_id);
-        ELMD_CHECK_EQ(editor.document_selection()->active.offset, 3u);
+    {
+        ELMD_CHECK_EQ(editor.document_selection().active.node_id, first_id);
+        ELMD_CHECK_EQ(editor.document_selection().active.offset, 3u);
     }
     editor.undo();
     ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alpha\n\nomega"));
     ELMD_CHECK_EQ(editor.document().blocks[0].id, first_id);
     ELMD_CHECK_EQ(editor.document().blocks[1].id, second_id);
-    ELMD_CHECK(editor.document_selection().has_value());
-    if (editor.document_selection()) ELMD_CHECK(!editor.document_selection()->is_caret());
+    ELMD_CHECK(!editor.document_selection().is_caret());
 }
 
 ELMD_TEST(test_table_text_input_and_delete_share_document_history) {
@@ -1588,8 +1592,7 @@ ELMD_TEST(test_insert_footnote_adds_unique_definition) {
     ELMD_CHECK(std::any_of(e.document().blocks.begin(), e.document().blocks.end(), [](auto const& block) { return block.kind == BlockKind::FootnoteDefinition; }));
     ELMD_CHECK(e.document().blocks.front().children.back().kind == InlineKind::FootnoteRef);
     ELMD_CHECK_EQ(e.document().blocks.front().children.back().label, std::string("2"));
-    ELMD_CHECK(e.document_selection().has_value());
-    ELMD_CHECK_EQ(e.document_selection()->active.node_id, e.document().blocks.back().quote_children.front().id);
+    ELMD_CHECK_EQ(e.document_selection().active.node_id, e.document().blocks.back().quote_children.front().id);
     ELMD_CHECK(e.has_document_undo());
 }
 

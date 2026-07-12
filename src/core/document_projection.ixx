@@ -126,6 +126,66 @@ inline std::size_t logical_offset_from_source(
     return consumed;
 }
 
+struct InlineDocumentPosition {
+    std::size_t logical_offset = 0;
+    NodeId inline_node_id{};
+    DocumentPositionPart part = DocumentPositionPart::Content;
+    std::size_t part_offset = 0;
+};
+
+inline std::optional<InlineDocumentPosition> inline_position_from_source(
+    const EditorDocument& document,
+    const InlineVec& nodes,
+    CharOffset source_offset,
+    std::size_t logical_base = 0) {
+    std::size_t consumed = logical_base;
+    for (const auto& node : nodes) {
+        const auto length = inline_text_content(node).size();
+        const auto* range = document.source_map.find_node_by_id(node.id);
+        if (!range || source_offset.v < range->source_range.start.v || source_offset.v > range->source_range.end.v) {
+            consumed += length;
+            continue;
+        }
+        if (source_offset.v < range->content_range.start.v) {
+            return InlineDocumentPosition{
+                consumed,
+                node.id,
+                DocumentPositionPart::OpeningMarker,
+                source_offset.v - range->source_range.start.v};
+        }
+        if (source_offset.v > range->content_range.end.v) {
+            return InlineDocumentPosition{
+                consumed + length,
+                node.id,
+                DocumentPositionPart::ClosingMarker,
+                source_offset.v - range->content_range.end.v};
+        }
+        const bool container = node.kind == InlineKind::Emphasis || node.kind == InlineKind::Strong
+            || node.kind == InlineKind::Strike || node.kind == InlineKind::Span || node.kind == InlineKind::Link;
+        if (container) {
+            if (auto nested = inline_position_from_source(document, node.children, source_offset, consumed)) {
+                if (nested->inline_node_id.v != 0 || node.kind == InlineKind::Span || node.kind == InlineKind::Link) return nested;
+            }
+            const auto local = (std::min)(source_offset.v - range->content_range.start.v, length);
+            return InlineDocumentPosition{
+                consumed + local,
+                node.id,
+                DocumentPositionPart::Content,
+                local};
+        }
+        if (node.kind == InlineKind::InlineCode || node.kind == InlineKind::InlineMath) {
+            return InlineDocumentPosition{
+                consumed + (std::min)(source_offset.v - range->content_range.start.v, length),
+                node.id,
+                DocumentPositionPart::Content,
+                (std::min)(source_offset.v - range->content_range.start.v, length)};
+        }
+        return InlineDocumentPosition{consumed + logical_offset_from_source(
+            document, InlineVec{node}, source_offset, range->content_range.start)};
+    }
+    return std::nullopt;
+}
+
 inline std::optional<CharOffset> source_offset_from_logical(
     const EditorDocument& document,
     const InlineVec& nodes,
@@ -168,6 +228,17 @@ inline std::optional<DocumentPosition> position_in_blocks(
         if (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading) {
             const auto* range = document.source_map.find_node_by_id(block.id);
             if (range && source_offset.v >= range->content_range.start.v && source_offset.v <= range->content_range.end.v) {
+                if (auto inline_position = inline_position_from_source(document, block.children, source_offset)) {
+                    return DocumentPosition{
+                        block.id,
+                        inline_position->logical_offset,
+                        inline_position->part == DocumentPositionPart::OpeningMarker && inline_position->part_offset == 0
+                            ? TextAffinity::Upstream
+                            : TextAffinity::Downstream,
+                        inline_position->inline_node_id,
+                        inline_position->part,
+                        inline_position->part_offset};
+                }
                 const auto offset = logical_offset_from_source(document, block.children, source_offset, range->content_range.start);
                 return DocumentPosition{block.id, offset, TextAffinity::Downstream};
             }
@@ -211,6 +282,17 @@ inline std::optional<DocumentPosition> position_in_blocks(
                 if (!range || source_offset.v < range->source_range.start.v || source_offset.v > range->source_range.end.v) return std::nullopt;
                 const auto content_offset = CharOffset((std::clamp)(
                     source_offset.v, range->content_range.start.v, range->content_range.end.v));
+                if (auto inline_position = inline_position_from_source(document, cell.children, content_offset)) {
+                    return DocumentPosition{
+                        cell.id,
+                        inline_position->logical_offset,
+                        inline_position->part == DocumentPositionPart::OpeningMarker && inline_position->part_offset == 0
+                            ? TextAffinity::Upstream
+                            : TextAffinity::Downstream,
+                        inline_position->inline_node_id,
+                        inline_position->part,
+                        inline_position->part_offset};
+                }
                 const auto offset = logical_offset_from_source(document, cell.children, content_offset, range->content_range.start);
                 return DocumentPosition{cell.id, offset, TextAffinity::Downstream};
             };
@@ -271,6 +353,17 @@ inline std::optional<DocumentPosition> document_position_from_source_offset(
 inline std::optional<CharOffset> source_offset_from_document_position(
     const EditorDocument& document,
     DocumentPosition position) {
+    if (position.inline_node_id.v != 0) {
+        const auto* inline_range = document.source_map.find_node_by_id(position.inline_node_id);
+        if (!inline_range) return std::nullopt;
+        if (position.part == DocumentPositionPart::OpeningMarker) {
+            return CharOffset(inline_range->source_range.start.v + position.part_offset);
+        }
+        if (position.part == DocumentPositionPart::ClosingMarker) {
+            return CharOffset(inline_range->content_range.end.v + position.part_offset);
+        }
+        return CharOffset(inline_range->content_range.start.v + position.part_offset);
+    }
     const auto* paragraph = document_projection_detail::find_text_block(document.blocks, position.node_id);
     const auto* range = document.source_map.find_node_by_id(position.node_id);
     if (range) {

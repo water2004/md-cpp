@@ -735,3 +735,50 @@ ELMD_TEST(test_document_select_all_binds_first_and_last_nodes) {
     ELMD_CHECK_EQ(selection->active.node_id, NodeId(3));
     ELMD_CHECK_EQ(selection->active.offset, 4u);
 }
+
+ELMD_TEST(test_document_backspace_deletes_atomic_block_from_tree) {
+    auto document = parse_text(1, "---").document;
+    auto id = document.blocks.front().id;
+    auto transaction = document_delete_backward(
+        document,
+        DocumentSelection::caret(DocumentPosition{id, 1, TextAffinity::Downstream}));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
+    ELMD_CHECK(transaction->after.blocks.front().kind == BlockKind::Paragraph);
+    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, transaction->after.blocks.front().id);
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string{});
+}
+
+ELMD_TEST(test_document_delete_forward_removes_atomic_block_and_keeps_adjacent_position) {
+    BlockNode rule;
+    rule.id = NodeId(3);
+    rule.kind = BlockKind::ThematicBreak;
+    auto document = document_with({paragraph(1, 2, U"alpha"), std::move(rule)});
+    auto paragraph_id = document.blocks.front().id;
+    auto rule_id = document.blocks.back().id;
+    auto transaction = document_delete_forward(
+        document,
+        DocumentSelection::caret(DocumentPosition{rule_id, 0, TextAffinity::Downstream}));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(transaction->after.blocks.size(), 1u);
+    ELMD_CHECK(transaction->after.blocks.front().kind == BlockKind::Paragraph);
+    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, paragraph_id);
+    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 5u);
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("alpha"));
+}
+
+ELMD_TEST(test_document_paste_builds_block_structure_in_one_transaction) {
+    auto document = document_with({paragraph(1, 2, U"alpha")});
+    auto transaction = document_paste_text(document, caret(1, 5), U"x\r\ny");
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK(transaction->reason == DocumentTransactionReason::Paste);
+    ELMD_CHECK_EQ(transaction->after.blocks.size(), 2u);
+    ELMD_CHECK_EQ(block_inline_text_content(transaction->after.blocks[0].children), std::u32string(U"alphax"));
+    ELMD_CHECK_EQ(block_inline_text_content(transaction->after.blocks[1].children), std::u32string(U"y"));
+    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, transaction->after.blocks[1].id);
+    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 1u);
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("alphax\n\ny"));
+}
