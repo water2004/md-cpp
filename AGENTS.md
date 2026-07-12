@@ -13,7 +13,7 @@
 - Core modules under `src/core` are platform-independent and must not include Windows, WinRT, Direct2D, DirectWrite, DXGI, or TSF headers.
 - Windows and rendering APIs belong in `src/platform` or the WinUI application layer.
 - The application shell remains WinUI 3 with C++/WinRT; do not introduce a Win32 WndProc shell.
-- Tests include `tests/test_framework.h` after `import std;`; test macros do not cross module boundaries.
+- Tests use Boost.UT (header-only `<boost/ut.hpp>`) via the shared `tests/elmd_test.hpp`; test TUs are plain translation units that `#include` standard headers + `elmd_test.hpp`, then `import elmd.core.*`. They deliberately do NOT `import std;` (it collides with `<boost/ut.hpp>` under MSVC). A single `tests/main.cpp` provides `main()` and parses argv so Boost.UT's positional/option filters work.
 - Prefer semantic fixes and focused tests. Do not add source-text special cases to make one example pass.
 
 ## Document model — block tree plus block-local lossless source
