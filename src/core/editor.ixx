@@ -34,16 +34,53 @@ public:
     const DocumentSymbolIndex& symbols() const { return symbols_; }
     const Outline& outline() const { return outline_; }
     std::u32string text_cps() const { return serialize_markdown_cps(document_); }
-    std::u32string text_range(CharRange range) const {
-        const auto markdown = serialize_markdown_cps(document_);
-        const auto start = (std::min)(range.start.v, markdown.size());
-        const auto end = (std::min)((std::max)(range.end.v, start), markdown.size());
-        return markdown.substr(start, end - start);
-    }
     std::string text_utf8() const { return serialize_markdown(document_); }
     std::u32string markdown_cps() const { return serialize_markdown_cps(document_); }
     std::string markdown_utf8() const { return serialize_markdown(document_); }
     const TextSelection& selection() const { return selection_; }
+    std::u32string boundary_text_cps() const {
+        std::vector<document_edit_detail::EditableNode> nodes;
+        document_edit_detail::collect_editable_nodes(document_.root.children, nodes);
+        std::u32string result;
+        for (std::size_t index = 0; index < nodes.size(); ++index) {
+            if (index) result.push_back(U'\n');
+            result += nodes[index].text;
+        }
+        return result;
+    }
+    std::optional<std::size_t> boundary_offset(TextPosition position) const {
+        std::vector<document_edit_detail::EditableNode> nodes;
+        document_edit_detail::collect_editable_nodes(document_.root.children, nodes);
+        std::size_t offset = 0;
+        for (const auto& node : nodes) {
+            if (node.id == position.container_id) return offset + (std::min)(position.source_offset, node.text.size());
+            offset += node.text.size() + 1;
+        }
+        return std::nullopt;
+    }
+    std::optional<TextPosition> boundary_position(std::size_t offset, TextAffinity affinity = TextAffinity::Downstream) const {
+        std::vector<document_edit_detail::EditableNode> nodes;
+        document_edit_detail::collect_editable_nodes(document_.root.children, nodes);
+        for (std::size_t index = 0; index < nodes.size(); ++index) {
+            if (offset <= nodes[index].text.size()) return TextPosition{nodes[index].id, offset, affinity};
+            offset -= nodes[index].text.size();
+            if (index + 1 < nodes.size()) {
+                if (offset == 0) return TextPosition{nodes[index].id, nodes[index].text.size(), affinity};
+                --offset;
+            }
+        }
+        if (!nodes.empty()) return TextPosition{nodes.back().id, nodes.back().text.size(), affinity};
+        return std::nullopt;
+    }
+    std::u32string selected_text_cps() const {
+        auto anchor = boundary_offset(selection_.anchor);
+        auto active = boundary_offset(selection_.active);
+        if (!anchor || !active) return {};
+        auto text = boundary_text_cps();
+        const auto start = (std::min)(*anchor, *active);
+        const auto end = (std::max)(*anchor, *active);
+        return text.substr(start, end - start);
+    }
     std::uint64_t revision() const { return revision_; }
     void set_selection(TextSelection selection) {
         const auto anchor_length = document_edit_detail::editable_length(document_, selection.anchor.container_id);

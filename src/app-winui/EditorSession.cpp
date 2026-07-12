@@ -70,8 +70,7 @@ namespace winrt::ElMd
         }
         else if (command.kind == elmd::CommandKind::SelectAll)
         {
-            SetSelection(0, core_->editor.text_cps().size());
-            return true;
+            return core_->editor.execute_command(command);
         }
         else
         {
@@ -90,12 +89,9 @@ namespace winrt::ElMd
 
     void EditorSession::SetSelection(std::size_t anchor, std::size_t active, elmd::TextAffinity affinity)
     {
-        auto length = core_->editor.text_cps().size();
-        elmd::Selection selection;
-        selection.anchor = elmd::CharOffset((std::min)(anchor, length));
-        selection.active = elmd::CharOffset((std::min)(active, length));
-        selection.affinity = affinity;
-        core_->editor.set_selection(selection);
+        auto anchorPosition = core_->editor.boundary_position(anchor, affinity);
+        auto activePosition = core_->editor.boundary_position(active, affinity);
+        if (anchorPosition && activePosition) core_->editor.set_selection({*anchorPosition, *activePosition});
     }
 
     bool EditorSession::HasSelection() const
@@ -105,8 +101,7 @@ namespace winrt::ElMd
 
     std::string EditorSession::SelectedTextUtf8() const
     {
-        auto range = core_->editor.selection().normalized_range();
-        return elmd::cps_to_utf8(core_->editor.text_range(range));
+        return elmd::cps_to_utf8(core_->editor.selected_text_cps());
     }
 
     bool EditorSession::HasFile() const
@@ -141,17 +136,27 @@ namespace winrt::ElMd
 
     std::size_t EditorSession::TextLength() const
     {
-        return core_->editor.text_cps().size();
+        return core_->editor.boundary_text_cps().size();
     }
 
-    std::u32string_view EditorSession::TextView() const
+    std::u32string EditorSession::TextView() const
     {
-        return core_->editor.text_cps();
+        return core_->editor.boundary_text_cps();
     }
 
-    elmd::Selection EditorSession::Selection() const
+    elmd::TextSelection EditorSession::Selection() const
     {
         return core_->editor.selection();
+    }
+
+    std::size_t EditorSession::BoundaryOffset(elmd::TextPosition position) const
+    {
+        return core_->editor.boundary_offset(position).value_or(0);
+    }
+
+    elmd::TextPosition EditorSession::BoundaryPosition(std::size_t offset, elmd::TextAffinity affinity) const
+    {
+        return core_->editor.boundary_position(offset, affinity).value_or(elmd::TextPosition{});
     }
 
     elmd::RenderModel const& EditorSession::RenderModel() const

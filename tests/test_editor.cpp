@@ -85,6 +85,17 @@ suite editor_tests = [] {
     expect(fatal(bool(undo.inline_reparses == 1u)));
 };
 
+"platform_boundary_offsets_are_derived_from_text_positions"_test = [] {
+    Editor editor("one\n\ntwo");
+    const auto first = editor.document().root.children.front().id;
+    const auto second = editor.document().root.children.back().id;
+    expect(fatal(bool(editor.boundary_text_cps() == U"one\ntwo")));
+    expect(fatal(bool(editor.boundary_offset({first, 2, TextAffinity::Downstream}) == 2u)));
+    expect(fatal(bool(editor.boundary_offset({second, 1, TextAffinity::Downstream}) == 5u)));
+    expect(fatal(bool(editor.boundary_position(5)->container_id == second)));
+    expect(fatal(bool(editor.boundary_position(5)->source_offset == 1u)));
+};
+
 "format_undo_redo_preserve_original_marker_spelling"_test = [] {
     Editor editor("value");
     editor.set_selection(range(first_text(editor), 0, 5));

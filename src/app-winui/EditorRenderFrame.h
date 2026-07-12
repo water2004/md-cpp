@@ -2,6 +2,7 @@
 
 import elmd.core.render_model;
 import elmd.core.selection;
+import elmd.core.text_edit;
 
 namespace winrt::ElMd::detail
 {
@@ -9,7 +10,7 @@ namespace winrt::ElMd::detail
     {
         elmd::RenderModel const& renderModel;
         std::u32string_view sourceText;
-        elmd::Selection selection;
+        elmd::TextSelection selection;
         std::wstring const& baseDirectory;
     };
 }

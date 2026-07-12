@@ -41,8 +41,10 @@ namespace winrt::ElMd
         winrt::hstring Path() const;
         uint64_t Revision() const;
         std::size_t TextLength() const;
-        std::u32string_view TextView() const;
-        elmd::Selection Selection() const;
+        std::u32string TextView() const;
+        elmd::TextSelection Selection() const;
+        std::size_t BoundaryOffset(elmd::TextPosition position) const;
+        elmd::TextPosition BoundaryPosition(std::size_t offset, elmd::TextAffinity affinity = elmd::TextAffinity::Downstream) const;
         elmd::RenderModel const& RenderModel() const;
         std::wstring const& BaseDirectory() const;
         detail::EditorRenderFrame RenderFrame() const;
