@@ -9,13 +9,14 @@ import elmd.core.layout_tree;
 import elmd.core.outline;
 import elmd.core.symbols;
 import elmd.core.diagnostics;
+import elmd.core.text_edit;
 
 export namespace elmd {
 
 struct EditorSnapshot {
     std::uint64_t revision = 0;
     std::string text;
-    Selection selection;
+    TextSelection selection;
     EditorDocument markdown_doc;
     RenderModel render_model;
     LayoutTree layout_tree;

@@ -154,9 +154,6 @@
     <ClCompile Include="..\core\block_tree.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\caret.ixx">
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-    </ClCompile>
     <ClCompile Include="..\core\command.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>

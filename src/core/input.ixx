@@ -4,6 +4,8 @@ import std;
 import elmd.core.types;
 import elmd.core.theme;
 import elmd.core.selection;
+import elmd.core.text_edit;
+import elmd.core.ids;
 
 export namespace elmd {
 
@@ -41,7 +43,8 @@ struct TextInputEvent {
     enum class Kind { InsertText, CompositionStart, CompositionUpdate, CompositionCommit, CompositionCancel };
     Kind kind = Kind::InsertText;
     std::u32string text;
-    TextRange<CharOffset> range;       // composition range / commit replace range
+    NodeId container_id{};
+    SourceRange range;                 // composition range / commit replace range
 };
 
 struct EditorInputEvent {
