@@ -1,28 +1,17 @@
-// Read-only projections derived from the authoritative block tree.
-export module elmd.core.document_projection;
+// elmd.core.document_symbols — derive symbols directly from the block tree and
+// each editable node's lossless inline CST.
+export module elmd.core.document_symbols;
 import std;
 import elmd.core.ast;
 import elmd.core.document;
-import elmd.core.diagnostics;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
-import elmd.core.metadata;
-import elmd.core.outline;
-import elmd.core.serializer;
 import elmd.core.symbols;
 import elmd.core.utf;
 
 export namespace elmd {
 
-struct DocumentProjection {
-    std::u32string markdown;
-    DocumentMetadata metadata;
-    std::vector<Diagnostic> diagnostics;
-    DocumentSymbolIndex symbols;
-    Outline outline;
-};
-
-namespace document_projection_detail {
+namespace document_symbols_detail {
 
 inline void collect_inline_symbols(
     const InlineDocument& document,
@@ -63,22 +52,12 @@ inline void collect_block_symbols(const BlockNode& block, DocumentSymbolIndex& s
     for (const auto& child : block.children) collect_block_symbols(child, symbols);
 }
 
-} // namespace document_projection_detail
+} // namespace document_symbols_detail
 
 inline DocumentSymbolIndex build_document_symbol_index(const EditorDocument& document) {
     DocumentSymbolIndex symbols;
-    for (const auto& block : document.root.children) document_projection_detail::collect_block_symbols(block, symbols);
+    for (const auto& block : document.root.children) document_symbols_detail::collect_block_symbols(block, symbols);
     return symbols;
-}
-
-inline DocumentProjection project_document(const EditorDocument& document) {
-    DocumentProjection projection;
-    projection.markdown = serialize_markdown_cps(document);
-    projection.metadata = document.metadata;
-    projection.diagnostics = document.diagnostics;
-    projection.symbols = build_document_symbol_index(document);
-    projection.outline = build_outline_from_blocks(document.revision, document.root.children);
-    return projection;
 }
 
 } // namespace elmd

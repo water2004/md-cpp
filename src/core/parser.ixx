@@ -25,7 +25,7 @@ import elmd.core.metadata;
 import elmd.core.symbols;
 import elmd.core.ast;
 import elmd.core.document;
-import elmd.core.document_projection;
+import elmd.core.document_symbols;
 import elmd.core.outline;
 import elmd.core.slug;
 import elmd.core.utf;

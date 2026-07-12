@@ -16,7 +16,7 @@ import elmd.core.document;
 import elmd.core.ast;
 import elmd.core.document_edit;
 import elmd.core.document_history;
-import elmd.core.document_projection;
+import elmd.core.document_symbols;
 import elmd.core.text_edit;
 import elmd.core.symbols;
 import elmd.core.outline;
