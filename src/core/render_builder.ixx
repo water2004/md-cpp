@@ -8,6 +8,9 @@ import elmd.core.types;
 import elmd.core.ids;
 import elmd.core.dialect;
 import elmd.core.ast;
+import elmd.core.inline_cst;
+import elmd.core.inline_document;
+import elmd.core.text_edit;
 import elmd.core.source_map;
 import elmd.core.source_structure;
 import elmd.core.document;
@@ -91,7 +94,7 @@ struct Builder {
         out.push_back(std::move(marker));
     }
     void append_list_contents(std::vector<InlineRenderItem>& out, const BlockNode& list, std::size_t depth, std::size_t indent_columns = 0) {
-        auto append_items = [&](auto const& items, bool tasks) {
+        auto append_items = [&](const BlockVec& items, bool tasks) {
             for (std::size_t index = 0; index < items.size(); ++index) {
                 auto const& item = items[index];
                 auto item_source = node_source_range(item.id);
@@ -99,7 +102,7 @@ struct Builder {
                 std::size_t cursor = item_source.start.v;
                 auto marker = item.marker;
                 if (marker.empty()) {
-                    if constexpr (requires { item.checked; }) marker = item.checked ? U"- [x] " : U"- [ ] ";
+                    if (tasks) marker = item.checked ? U"- [x] " : U"- [ ] ";
                     else if (list.list_ordered) marker = utf8_to_cps(std::to_string(list.list_start + index)) + std::u32string(1, list.list_delimiter) + U" ";
                     else marker = U"- ";
                 }
@@ -128,8 +131,7 @@ struct Builder {
                 }
             }
         };
-        if (list.kind == BlockKind::TaskList) append_items(list.task_items, true);
-        else append_items(list.list_items, false);
+        append_items(list.children, list.kind == BlockKind::TaskList);
     }
     void append_nested_block(std::vector<InlineRenderItem>& out, const BlockNode& block, std::size_t depth, std::size_t indent_columns) {
         auto content = node_content_range(block.id);
@@ -138,7 +140,7 @@ struct Builder {
             case BlockKind::Heading: {
                 InlineStyle style = InlineStyle::plain();
                 if (block.kind == BlockKind::Heading) style.heading_level = block.level;
-                auto items = build_inlines(block.children, content.start.v, style);
+                auto items = build_inline_document(block.inline_content, content.start.v, style);
                 out.insert(out.end(), std::make_move_iterator(items.begin()), std::make_move_iterator(items.end()));
                 return;
             }
@@ -165,7 +167,7 @@ struct Builder {
                     }
                 }
                 bool first = true;
-                for (auto const& child : block.quote_children) {
+                for (auto const& child : block.children) {
                     auto child_source = node_source_range(child.id);
                     if (!first) append_block_break(out, child_source.start.v > 0 ? child_source.start.v - 1 : child_source.start.v);
                     append_nested_block(out, child, depth + 1, indent_columns);
@@ -205,18 +207,16 @@ struct Builder {
                 return;
             }
             case BlockKind::Table: {
-                auto append_cell = [&](TableCell const& cell) {
+                auto append_cell = [&](BlockNode const& cell) {
                     auto cell_content = node_content_range(cell.id);
-                    auto items = build_inlines(cell.children, cell_content.start.v, InlineStyle::plain());
+                    auto items = build_inline_document(cell.inline_content, cell_content.start.v, InlineStyle::plain());
                     out.insert(out.end(), std::make_move_iterator(items.begin()), std::make_move_iterator(items.end()));
                 };
-                for (std::size_t index = 0; index < block.table_header.size(); ++index) {
-                    if (index) append_block_break(out, node_source_range(block.table_header[index].id).start.v);
-                    append_cell(block.table_header[index]);
-                }
-                for (auto const& row : block.table_rows) for (auto const& cell : row.cells) {
-                    append_block_break(out, node_source_range(cell.id).start.v);
+                bool first_cell = true;
+                for (const auto& row : block.children) for (const auto& cell : row.children) {
+                    if (!first_cell) append_block_break(out, node_source_range(cell.id).start.v);
                     append_cell(cell);
+                    first_cell = false;
                 }
                 return;
             }
@@ -234,238 +234,158 @@ struct Builder {
                 return;
         }
     }
-    std::vector<InlineRenderItem> build_inlines(const InlineVec& nodes, std::size_t content_start, const InlineStyle& base) {
-        std::vector<InlineRenderItem> out;
-        std::size_t cursor = content_start;
-        for (const auto& node : nodes) build_inline(node, out, cursor, base);
-        return out;
-    }
-    void build_inline(const InlineNode& node, std::vector<InlineRenderItem>& out, std::size_t& cursor, const InlineStyle& style) {
-        using K = InlineKind;
-        auto range_for = [&](NodeId id, std::size_t fallback_end) -> TextRange<CharOffset> {
-            if (const auto* r = sm ? sm->find_node_by_id(id) : nullptr) return r->source_range;
-            return CharRange(CharOffset(cursor), CharOffset(fallback_end));
+    std::vector<InlineRenderItem> build_inline_document(
+        const InlineDocument& document,
+        std::size_t content_start,
+        const InlineStyle& base) {
+        std::vector<InlineRenderItem> output;
+        auto global_range = [&](SourceRange range) {
+            return CharRange(CharOffset(content_start + range.start), CharOffset(content_start + range.end));
         };
-        auto content_start_for = [&](NodeId id) -> std::size_t {
-            if (const auto* r = sm ? sm->find_node_by_id(id) : nullptr) return r->content_range.start.v;
-            return cursor;
-        };
-        auto source_text = [&](TextRange<CharOffset> range) {
-            auto start = (std::min)(range.start.v, source.size());
-            auto end = (std::min)((std::max)(range.end.v, start), source.size());
-            return std::u32string(source.substr(start, end - start));
-        };
-        auto append_exact_marker = [&](TextRange<CharOffset> marker_range) {
+        auto append_marker = [&](std::vector<InlineRenderItem>& target, const InlineCstNode& owner, SourceRange range) {
+            if (range.empty()) return;
             InlineRenderItem marker;
             marker.kind = InlineRenderItem::Kind::Marker;
-            marker.marker_owner = node.id;
-            marker.source_range = marker_range;
-            marker.text = source_text(marker_range);
+            marker.id = owner.id;
+            marker.marker_owner = owner.id;
+            marker.source_range = global_range(range);
+            marker.text = inline_source_slice(document, range);
             marker.marker_style = MarkerStyle{true, {}};
             marker.visibility = MarkerVisibility::Always;
-            out.push_back(std::move(marker));
+            target.push_back(std::move(marker));
         };
-        auto append_delimited = [&](const InlineStyle& child_style, std::u32string fallback_opening,
-                                    std::u32string fallback_closing) {
-            if (const auto* range = sm ? sm->find_node_by_id(node.id) : nullptr;
-                range && range->marker_ranges.size() >= 2) {
-                append_exact_marker(range->marker_ranges.front());
-                auto child_items = build_inlines(node.children, range->content_range.start.v, child_style);
-                out.insert(out.end(), std::make_move_iterator(child_items.begin()), std::make_move_iterator(child_items.end()));
-                append_exact_marker(range->marker_ranges.back());
-                cursor = range->source_range.end.v;
-                return;
-            }
-            if (!fallback_opening.empty()) {
-                push_marker(out, cursor, std::move(fallback_opening));
-                out.back().marker_owner = node.id;
-            }
-            auto child_items = build_inlines(node.children, cursor, child_style);
-            if (!child_items.empty()) cursor = child_items.back().source_range.end.v;
-            out.insert(out.end(), std::make_move_iterator(child_items.begin()), std::make_move_iterator(child_items.end()));
-            if (!fallback_closing.empty()) {
-                push_marker(out, cursor, std::move(fallback_closing));
-                out.back().marker_owner = node.id;
+        std::function<void(const InlineCstNodes&, const InlineStyle&, std::vector<InlineRenderItem>&)> append_nodes;
+        append_nodes = [&](const InlineCstNodes& nodes, const InlineStyle& style, std::vector<InlineRenderItem>& target) {
+            for (const auto& node : nodes) {
+                using K = InlineCstKind;
+                auto append_text = [&](std::u32string text, SourceRange range, InlineStyle text_style = InlineStyle::plain()) {
+                    InlineRenderItem item = InlineRenderItem::plain_text(std::move(text), global_range(range));
+                    item.id = node.id;
+                    item.style = text_style;
+                    target.push_back(std::move(item));
+                };
+                switch (node.kind) {
+                    case K::Strong: {
+                        auto child_style = style; child_style.bold = true;
+                        append_marker(target, node, node.delim.opening);
+                        append_nodes(node.children, child_style, target);
+                        if (node.delim.closing) append_marker(target, node, *node.delim.closing);
+                        break;
+                    }
+                    case K::Emphasis: {
+                        auto child_style = style; child_style.italic = true;
+                        append_marker(target, node, node.delim.opening);
+                        append_nodes(node.children, child_style, target);
+                        if (node.delim.closing) append_marker(target, node, *node.delim.closing);
+                        break;
+                    }
+                    case K::Strikethrough: {
+                        auto child_style = style; child_style.strikethrough = true;
+                        append_marker(target, node, node.delim.opening);
+                        append_nodes(node.children, child_style, target);
+                        if (node.delim.closing) append_marker(target, node, *node.delim.closing);
+                        break;
+                    }
+                    case K::CodeSpan: {
+                        auto child_style = style; child_style.code = true;
+                        append_marker(target, node, node.delim.opening);
+                        append_text(inline_source_slice(document, node.delim.content), node.delim.content, child_style);
+                        if (node.delim.closing) append_marker(target, node, *node.delim.closing);
+                        break;
+                    }
+                    case K::InlineMath: {
+                        InlineRenderItem item;
+                        item.kind = InlineRenderItem::Kind::Math;
+                        item.id = node.id;
+                        item.source_range = global_range(node.range);
+                        item.text = inline_source_slice(document, node.delim.content);
+                        item.display = MathDisplayMode::Inline;
+                        item.math_delim = node.math_delim;
+                        item.style = style;
+                        item.style.bold = false;
+                        item.style.italic = false;
+                        item.style.code = false;
+                        item.style.link = false;
+                        target.push_back(std::move(item));
+                        break;
+                    }
+                    case K::Link:
+                    case K::Autolink: {
+                        InlineRenderItem item;
+                        item.kind = InlineRenderItem::Kind::Link;
+                        item.id = node.id;
+                        item.source_range = global_range(node.range);
+                        item.href = node.href;
+                        item.title = node.title;
+                        auto child_style = style; child_style.link = true;
+                        if (node.kind == K::Link) {
+                            append_marker(item.children, node, node.delim.opening);
+                            append_nodes(node.children, child_style, item.children);
+                            if (node.delim.closing) append_marker(item.children, node, *node.delim.closing);
+                        } else {
+                            append_marker(item.children, node, node.delim.opening);
+                            InlineRenderItem text_item = InlineRenderItem::plain_text(
+                                inline_source_slice(document, node.delim.content), global_range(node.delim.content));
+                            text_item.style = child_style;
+                            item.children.push_back(std::move(text_item));
+                            if (node.delim.closing) append_marker(item.children, node, *node.delim.closing);
+                        }
+                        target.push_back(std::move(item));
+                        break;
+                    }
+                    case K::Image: {
+                        InlineRenderItem item;
+                        item.kind = InlineRenderItem::Kind::Image;
+                        item.id = node.id;
+                        item.source_range = global_range(node.range);
+                        item.src = node.href;
+                        item.alt = node.alt;
+                        item.title = node.title;
+                        item.image_width = node.image_width;
+                        item.image_height = node.image_height;
+                        target.push_back(std::move(item));
+                        break;
+                    }
+                    case K::HtmlElement:
+                        append_marker(target, node, node.delim.opening);
+                        append_nodes(node.children, style, target);
+                        if (node.delim.closing) append_marker(target, node, *node.delim.closing);
+                        break;
+                    case K::Escape: {
+                        const auto raw = inline_source_slice(document, node.range);
+                        if (!raw.empty()) {
+                            append_marker(target, node, {node.range.start, node.range.start + 1});
+                            append_text(raw.substr(1), {node.range.start + 1, node.range.end}, style);
+                        }
+                        break;
+                    }
+                    case K::Entity:
+                        append_text(decode_inline_entity(inline_source_slice(document, node.range)), node.range, style);
+                        break;
+                    case K::SoftBreak:
+                        append_text(U" ", node.range, style);
+                        break;
+                    case K::HardBreak:
+                        append_text(U"\n", node.range, style);
+                        break;
+                    case K::FootnoteRef:
+                        append_text(U"[^" + utf8_to_cps(node.label) + U"]", node.range, InlineStyle{.link = true});
+                        break;
+                    case K::WikiLink:
+                        append_text(utf8_to_cps(node.alias.value_or(node.target)), node.range, InlineStyle{.link = true});
+                        break;
+                    case K::Incomplete:
+                        append_marker(target, node, node.delim.opening);
+                        if (!node.delim.content.empty()) append_text(inline_source_slice(document, node.delim.content), node.delim.content, style);
+                        break;
+                    default:
+                        append_text(inline_source_slice(document, node.range), node.range, style);
+                        break;
+                }
             }
         };
-        switch (node.kind) {
-            case K::Text: {
-                std::size_t len = node.text.size();
-                auto sr = range_for(node.id, cursor + len);
-                InlineRenderItem it = InlineRenderItem::plain_text(node.text, sr);
-                it.style = style;
-                out.push_back(std::move(it));
-                cursor = sr.end.v;
-                return;
-            }
-            case K::Strong: {
-                InlineStyle cs = style; cs.bold = true;
-                append_delimited(cs, node.opening_marker.empty() ? U"**" : node.opening_marker,
-                                 node.closing_marker.empty() ? U"**" : node.closing_marker);
-                return;
-            }
-            case K::Emphasis: {
-                InlineStyle cs = style; cs.italic = true;
-                append_delimited(cs, node.opening_marker.empty() ? U"*" : node.opening_marker,
-                                 node.closing_marker.empty() ? U"*" : node.closing_marker);
-                return;
-            }
-            case K::Strike: {
-                InlineStyle cs = style; cs.strikethrough = true;
-                append_delimited(cs, node.opening_marker.empty() ? U"~~" : node.opening_marker,
-                                 node.closing_marker.empty() ? U"~~" : node.closing_marker);
-                return;
-            }
-            case K::Span: {
-                append_delimited(style, node.opening_marker, node.closing_marker);
-                return;
-            }
-            case K::InlineCode: {
-                const auto* range = sm ? sm->find_node_by_id(node.id) : nullptr;
-                if (range && range->marker_ranges.size() == 2) {
-                    InlineRenderItem opening;
-                    opening.kind = InlineRenderItem::Kind::Marker;
-                    opening.marker_owner = node.id;
-                    opening.source_range = range->marker_ranges[0];
-                    opening.text = source_text(opening.source_range);
-                    opening.marker_style = MarkerStyle{true, {}};
-                    opening.visibility = MarkerVisibility::Always;
-                    out.push_back(std::move(opening));
-                    InlineStyle cs = style; cs.code = true;
-                    InlineRenderItem content = InlineRenderItem::plain_text(node.text, range->content_range);
-                    content.style = cs;
-                    out.push_back(std::move(content));
-                    InlineRenderItem closing;
-                    closing.kind = InlineRenderItem::Kind::Marker;
-                    closing.marker_owner = node.id;
-                    closing.source_range = range->marker_ranges[1];
-                    closing.text = source_text(closing.source_range);
-                    closing.marker_style = MarkerStyle{true, {}};
-                    closing.visibility = MarkerVisibility::Always;
-                    out.push_back(std::move(closing));
-                    cursor = range->source_range.end.v;
-                    return;
-                }
-                push_marker(out, cursor, U"`");
-                out.back().marker_owner = node.id;
-                InlineStyle cs = style; cs.code = true;
-                InlineRenderItem it = InlineRenderItem::plain_text(node.text, CharRange(CharOffset(cursor), CharOffset(cursor + node.text.size())));
-                it.style = cs;
-                out.push_back(std::move(it));
-                cursor += node.text.size();
-                push_marker(out, cursor, U"`");
-                out.back().marker_owner = node.id;
-                return;
-            }
-            case K::InlineMath: {
-                std::size_t len = node.text.size() + (node.math_delim == MathDelimiter::InlineParen ? 4 : 2);
-                auto sr = range_for(node.id, cursor + len);
-                MathDisplayMode disp = (node.math_delim == MathDelimiter::BlockDollar
-                                        || node.math_delim == MathDelimiter::BlockBracket
-                                        || node.math_delim == MathDelimiter::FencedMath)
-                                       ? MathDisplayMode::Block : MathDisplayMode::Inline;
-                InlineRenderItem it; it.kind = InlineRenderItem::Kind::Math;
-                it.id = node.id; it.source_range = sr; it.text = node.text; it.display = disp; it.math_delim = node.math_delim;
-                it.style.strikethrough = style.strikethrough;
-                out.push_back(std::move(it));
-                cursor = sr.end.v;
-                return;
-            }
-            case K::Link: {
-                std::size_t inner = content_start_for(node.id);
-                InlineStyle ls = style; ls.link = true;
-                auto child_items = build_inlines(node.children, inner, ls);
-                std::size_t consumed = 0;
-                if (const auto* r = sm ? sm->find_node_by_id(node.id) : nullptr) consumed = r->source_range.len();
-                else {
-                    // fallback: sum grandchildren text + 4
-                    std::size_t sum = 0;
-                    for (const auto& c : node.children) sum += inline_text_content(c).size();
-                    consumed = sum + 4;
-                }
-                InlineRenderItem it; it.kind = InlineRenderItem::Kind::Link;
-                it.id = node.id; it.source_range = range_for(node.id, cursor + consumed);
-                it.href = node.href; it.title = node.title; it.children = std::move(child_items);
-                out.push_back(std::move(it));
-                cursor += consumed;
-                return;
-            }
-            case K::Image: {
-                std::size_t len = node.alt.size() + 5;
-                auto sr = range_for(node.id, cursor + len);
-                InlineRenderItem it; it.kind = InlineRenderItem::Kind::Image;
-                it.id = node.id; it.source_range = sr; it.src = node.href; it.alt = node.alt;
-                it.title = node.title;
-                it.image_width = node.image_width; it.image_height = node.image_height;
-                out.push_back(std::move(it));
-                cursor += len;
-                return;
-            }
-            case K::FootnoteRef: {
-                std::u32string raw = U"[^" + (node.label.empty() ? U"" : utf8_to_cps(node.label));
-                raw.push_back(']');
-                std::size_t len = raw.size();
-                auto sr = range_for(node.id, cursor + len);
-                InlineStyle ls = style; ls.link = true;
-                InlineRenderItem it = InlineRenderItem::plain_text(raw, sr);
-                it.style = ls;
-                out.push_back(std::move(it));
-                cursor += len;
-                return;
-            }
-            case K::WikiLink: {
-                std::u32string raw;
-                raw = U"[[" + utf8_to_cps(node.target);
-                if (node.alias) { raw.push_back('|'); raw += utf8_to_cps(*node.alias); }
-                raw += U"]]";
-                std::size_t len = raw.size();
-                auto sr = range_for(node.id, cursor + len);
-                InlineStyle ls = style; ls.link = true;
-                InlineRenderItem it = InlineRenderItem::plain_text(raw, sr);
-                it.style = ls;
-                out.push_back(std::move(it));
-                cursor += len;
-                return;
-            }
-            case K::SoftBreak: {
-                auto sr = range_for(node.id, cursor + 1);
-                InlineRenderItem it = InlineRenderItem::plain_text(U" ", sr);
-                it.style = style;
-                out.push_back(std::move(it));
-                cursor = sr.end.v;
-                return;
-            }
-            case K::HardBreak: {
-                const auto* range = sm ? sm->find_node_by_id(node.id) : nullptr;
-                auto sr = range ? range->content_range : range_for(node.id, cursor + 1);
-                InlineRenderItem it = InlineRenderItem::plain_text(U"\n", sr);
-                it.style = style;
-                out.push_back(std::move(it));
-                cursor = sr.end.v;
-                return;
-            }
-            case K::UnsupportedMarkup: {
-                std::size_t len = node.text.size();
-                auto sr = range_for(node.id, cursor + len);
-                InlineRenderItem it = InlineRenderItem::plain_text(node.text, sr);
-                it.style = style;
-                out.push_back(std::move(it));
-                cursor += len;
-                return;
-            }
-            case K::Extension: {
-                std::u32string raw = node.ext_text.empty()
-                    ? U"[ext:" + utf8_to_cps(node.ext_name) + U"]"
-                    : U"[ext:" + utf8_to_cps(node.ext_name) + U":" + node.ext_text + U"]";
-                std::size_t len = raw.size();
-                auto sr = range_for(node.id, cursor + len);
-                InlineRenderItem it = InlineRenderItem::plain_text(raw, sr);
-                it.style = style;
-                out.push_back(std::move(it));
-                cursor += len;
-                return;
-            }
-        }
+        append_nodes(document.tree.nodes, base, output);
+        return output;
     }
 
     std::size_t list_marker_columns(const BlockNode& list, std::size_t index) const {
@@ -483,23 +403,23 @@ struct Builder {
             return;
         }
         if (child.kind == BlockKind::List) {
-            for (std::size_t index = 0; index < child.list_items.size(); ++index) {
-                auto const& item = child.list_items[index];
+            for (std::size_t index = 0; index < child.children.size(); ++index) {
+                auto const& item = child.children[index];
                 auto next_indent = indent_columns + list_marker_columns(child, index);
                 for (auto const& nested : item.children) collect_nested_blocks(parent, nested, depth + 1, next_indent);
             }
             return;
         }
         if (child.kind == BlockKind::TaskList) {
-            for (std::size_t index = 0; index < child.task_items.size(); ++index) {
-                auto const& item = child.task_items[index];
+            for (std::size_t index = 0; index < child.children.size(); ++index) {
+                auto const& item = child.children[index];
                 auto next_indent = indent_columns + list_marker_columns(child, index);
                 for (auto const& nested : item.children) collect_nested_blocks(parent, nested, depth + 1, next_indent);
             }
             return;
         }
         if (child.kind == BlockKind::Callout || child.kind == BlockKind::FootnoteDefinition) {
-            for (auto const& nested : child.quote_children) collect_nested_blocks(parent, nested, depth, indent_columns);
+            for (auto const& nested : child.children) collect_nested_blocks(parent, nested, depth, indent_columns);
         }
     }
 
@@ -523,7 +443,7 @@ struct Builder {
                 InlineStyle s = InlineStyle::plain();
                 auto cursor = base_range().start.v;
                 if (!b.opening_marker.empty()) { push_marker(rb.inline_items, cursor, b.opening_marker); rb.inline_items.back().marker_owner = b.id; }
-                auto items = build_inlines(b.children, content_range().start.v, s);
+                auto items = build_inline_document(b.inline_content, content_range().start.v, s);
                 for (auto& item : items) rb.inline_items.push_back(std::move(item));
                 if (!b.closing_marker.empty()) {
                     cursor = content_range().end.v;
@@ -554,7 +474,7 @@ struct Builder {
                         rb.inline_items.push_back(std::move(marker));
                     }
                 }
-                auto items = build_inlines(b.children, cs, s);
+                auto items = build_inline_document(b.inline_content, cs, s);
                 for (auto& it : items) rb.inline_items.push_back(std::move(it));
                 std::stable_sort(rb.inline_items.begin(), rb.inline_items.end(), [](auto const& left, auto const& right) {
                     return left.source_range.start.v < right.source_range.start.v;
@@ -565,7 +485,7 @@ struct Builder {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::blockquote());
                 std::function<void(const BlockNode&, std::size_t)> append_quote;
                 append_quote = [&](const BlockNode& quote, std::size_t depth) {
-                    for (const auto& child : quote.quote_children) {
+                    for (const auto& child : quote.children) {
                         if (child.kind == BlockKind::BlockQuote) {
                             append_quote(child, depth + 1);
                             continue;
@@ -597,8 +517,8 @@ struct Builder {
             case BK::List: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::list());
                 append_list_contents(rb.inline_items, b, 0);
-                for (std::size_t index = 0; index < b.list_items.size(); ++index) {
-                    auto const& item = b.list_items[index];
+                for (std::size_t index = 0; index < b.children.size(); ++index) {
+                    auto const& item = b.children[index];
                     auto indent = list_marker_columns(b, index);
                     for (auto const& child : item.children) collect_nested_blocks(rb, child, 1, indent);
                 }
@@ -607,8 +527,8 @@ struct Builder {
             case BK::TaskList: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::list());
                 append_list_contents(rb.inline_items, b, 0);
-                for (std::size_t index = 0; index < b.task_items.size(); ++index) {
-                    auto const& item = b.task_items[index];
+                for (std::size_t index = 0; index < b.children.size(); ++index) {
+                    auto const& item = b.children[index];
                     auto indent = list_marker_columns(b, index);
                     for (auto const& child : item.children) collect_nested_blocks(rb, child, 1, indent);
                 }
@@ -634,24 +554,17 @@ struct Builder {
             case BK::Table: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::table());
                 rb.table_aligns = b.table_aligns;
-                rb.table_header_row = b.table_header_row;
-                rb.column_count = std::max(b.table_header.size(), b.table_rows.empty() ? 0 : b.table_rows[0].cells.size());
-                rb.row_count = 1 + b.table_rows.size();
-                auto build_cell = [&](const TableCell& cell) {
+                rb.table_header_row = !b.children.empty() && b.children.front().table_header_row;
+                rb.column_count = b.children.empty() ? 0 : b.children.front().children.size();
+                rb.row_count = b.children.size();
+                auto build_cell = [&](const BlockNode& cell) {
                     std::size_t start = base_range().start.v;
                     auto cell_range = base_range();
                     if (const auto* range = sm ? sm->find_node_by_id(cell.id) : nullptr) { start = range->content_range.start.v; cell_range = range->content_range; }
                     rb.table_cell_ranges.push_back(cell_range);
-                    return build_inlines(cell.children, start, InlineStyle::plain());
+                    return build_inline_document(cell.inline_content, start, InlineStyle::plain());
                 };
-                for (const auto& c : b.table_header) {
-                    rb.table_cells.push_back(build_cell(c));
-                }
-                for (const auto& row : b.table_rows) {
-                    for (const auto& c : row.cells) {
-                        rb.table_cells.push_back(build_cell(c));
-                    }
-                }
+                for (const auto& row : b.children) for (const auto& cell : row.children) rb.table_cells.push_back(build_cell(cell));
                 return with_content_range(std::move(rb));
             }
             case BK::ImageBlock: {
@@ -665,16 +578,16 @@ struct Builder {
                 rb.callout_kind = b.callout_kind;
                 if (b.callout_title) {
                     std::vector<InlineRenderItem> items;
-                    items = build_inlines(*b.callout_title, base_range().start.v, InlineStyle::plain());
+                    items = build_inline_document(*b.callout_title, base_range().start.v, InlineStyle::plain());
                     rb.callout_title = std::move(items);
                 }
-                for (const auto& ch : b.quote_children) rb.child_blocks.push_back(build_block(ch));
+                for (const auto& ch : b.children) rb.child_blocks.push_back(build_block(ch));
                 return with_content_range(std::move(rb));
             }
             case BK::FootnoteDefinition: {
                 auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::footnote());
                 rb.footnote_label = b.footnote_label;
-                for (const auto& ch : b.quote_children) rb.child_blocks.push_back(build_block(ch));
+                for (const auto& ch : b.children) rb.child_blocks.push_back(build_block(ch));
                 return with_content_range(std::move(rb));
             }
             case BK::Toc: {
@@ -719,8 +632,8 @@ inline RenderModel build_render_model(const EditorDocument& doc,
     bd.source = source;
     auto structure = build_source_structure(doc);
     for (const auto& span : structure.blocks) {
-        if (span.kind == SourceBlockKind::Semantic && span.document_block_index && *span.document_block_index < doc.blocks.size()) {
-            auto rendered = bd.build_block(doc.blocks[*span.document_block_index]);
+        if (span.kind == SourceBlockKind::Semantic && span.document_block_index && *span.document_block_index < doc.root.children.size()) {
+            auto rendered = bd.build_block(doc.root.children[*span.document_block_index]);
             auto start = (std::min)(rendered.source_range.start.v, source.size());
             auto end = (std::min)((std::max)(rendered.source_range.end.v, start), source.size());
             rendered.source_fingerprint = static_cast<std::uint64_t>(std::hash<std::u32string_view>{}(std::u32string_view(source).substr(start, end - start)));

@@ -611,6 +611,229 @@ struct Parser {
         return true;
     }
 
+    struct HtmlTag {
+        std::string name;
+        std::unordered_map<std::string, std::string> attributes;
+        std::size_t start = 0;
+        std::size_t end = 0;
+        bool closing = false;
+        bool self_closing = false;
+    };
+
+    static bool html_name_char(char32_t value) {
+        return (value >= U'a' && value <= U'z') || (value >= U'A' && value <= U'Z')
+            || (value >= U'0' && value <= U'9') || value == U'-' || value == U'_';
+    }
+
+    static std::string lower_ascii(std::string value) {
+        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+            return static_cast<char>(std::tolower(ch));
+        });
+        return value;
+    }
+
+    std::optional<HtmlTag> html_tag_at(std::size_t at, std::size_t parse_limit) const {
+        if (at >= parse_limit || src[at] != U'<') return std::nullopt;
+        HtmlTag tag;
+        tag.start = at;
+        auto cursor = at + 1;
+        if (cursor < parse_limit && src[cursor] == U'/') {
+            tag.closing = true;
+            ++cursor;
+        }
+        const auto name_start = cursor;
+        while (cursor < parse_limit && html_name_char(src[cursor])) ++cursor;
+        if (cursor == name_start) return std::nullopt;
+        tag.name = lower_ascii(cps_to_utf8(src.substr(name_start, cursor - name_start)));
+
+        while (cursor < parse_limit) {
+            while (cursor < parse_limit && (src[cursor] == U' ' || src[cursor] == U'\t')) ++cursor;
+            if (cursor >= parse_limit || src[cursor] == U'\n') return std::nullopt;
+            if (src[cursor] == U'>') {
+                tag.end = cursor + 1;
+                return tag;
+            }
+            if (src[cursor] == U'/' && cursor + 1 < parse_limit && src[cursor + 1] == U'>') {
+                tag.self_closing = true;
+                tag.end = cursor + 2;
+                return tag;
+            }
+            if (tag.closing) return std::nullopt;
+
+            const auto attribute_start = cursor;
+            while (cursor < parse_limit && html_name_char(src[cursor])) ++cursor;
+            if (cursor == attribute_start) return std::nullopt;
+            auto attribute = lower_ascii(cps_to_utf8(src.substr(attribute_start, cursor - attribute_start)));
+            while (cursor < parse_limit && (src[cursor] == U' ' || src[cursor] == U'\t')) ++cursor;
+
+            std::string value;
+            if (cursor < parse_limit && src[cursor] == U'=') {
+                ++cursor;
+                while (cursor < parse_limit && (src[cursor] == U' ' || src[cursor] == U'\t')) ++cursor;
+                if (cursor >= parse_limit) return std::nullopt;
+                if (src[cursor] == U'"' || src[cursor] == U'\'') {
+                    const auto quote = src[cursor++];
+                    const auto value_start = cursor;
+                    while (cursor < parse_limit && src[cursor] != quote && src[cursor] != U'\n') ++cursor;
+                    if (cursor >= parse_limit || src[cursor] != quote) return std::nullopt;
+                    value = cps_to_utf8(src.substr(value_start, cursor - value_start));
+                    ++cursor;
+                } else {
+                    const auto value_start = cursor;
+                    while (cursor < parse_limit && src[cursor] != U' ' && src[cursor] != U'\t'
+                        && src[cursor] != U'\n' && src[cursor] != U'>') ++cursor;
+                    value = cps_to_utf8(src.substr(value_start, cursor - value_start));
+                }
+            }
+            // Event handlers and CSS never enter derived semantic state. The
+            // exact spelling remains preserved by the CST source ranges.
+            if (!attribute.starts_with("on") && attribute != "style") {
+                tag.attributes[std::move(attribute)] = std::move(value);
+            }
+        }
+        return std::nullopt;
+    }
+
+    std::optional<std::pair<std::size_t, std::size_t>> html_closing_tag(
+        std::string_view name,
+        std::size_t from) const {
+        std::size_t depth = 1;
+        for (auto cursor = from; cursor < limit; ++cursor) {
+            if (src[cursor] != U'<') continue;
+            const auto tag = html_tag_at(cursor, limit);
+            if (!tag || tag->name != name) continue;
+            if (tag->closing) {
+                if (--depth == 0) return std::pair{cursor, tag->end};
+            } else if (!tag->self_closing) {
+                ++depth;
+            }
+            cursor = tag->end - 1;
+        }
+        return std::nullopt;
+    }
+
+    static bool safe_html_target(std::string_view value, bool image) {
+        std::size_t start = 0;
+        std::size_t end = value.size();
+        while (start < end && static_cast<unsigned char>(value[start]) <= 0x20) ++start;
+        while (end > start && static_cast<unsigned char>(value[end - 1]) <= 0x20) --end;
+        auto lower = lower_ascii(std::string(value.substr(start, end - start)));
+        const auto colon = lower.find(':');
+        const auto boundary = lower.find_first_of("/?#");
+        if (colon != std::string::npos && (boundary == std::string::npos || colon < boundary)) {
+            const auto scheme = lower.substr(0, colon);
+            if (scheme == "http" || scheme == "https" || (!image && scheme == "mailto")) return true;
+            return image && scheme == "data" && lower.starts_with("data:image/");
+        }
+        return true;
+    }
+
+    static std::optional<float> html_dimension(const HtmlTag& tag, std::string_view name) {
+        const auto found = tag.attributes.find(std::string(name));
+        if (found == tag.attributes.end()) return std::nullopt;
+        auto value = found->second;
+        while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) value.pop_back();
+        if (value.size() >= 2 && lower_ascii(value.substr(value.size() - 2)) == "px") value.resize(value.size() - 2);
+        try {
+            const auto parsed = std::stof(value);
+            if (!std::isfinite(parsed) || parsed <= 0.0f) return std::nullopt;
+            return (std::min)(parsed, 4096.0f);
+        } catch (...) {
+            return std::nullopt;
+        }
+    }
+
+    static bool safe_html_container(std::string_view name) {
+        return name == "strong" || name == "b" || name == "em" || name == "i"
+            || name == "cite" || name == "del" || name == "s" || name == "code"
+            || name == "a" || name == "span";
+    }
+
+    bool parse_html_element(InlineCstNodes& out, std::size_t& run_start) {
+        if (peek() != U'<') return false;
+        const auto start = pos;
+        const auto tag = html_tag_at(start, limit);
+        if (!tag || tag->closing) return false;
+        if (tag->name != "img" && tag->name != "br" && !safe_html_container(tag->name)) return false;
+
+        flush_text_to(out, run_start, start);
+        if (tag->name == "img") {
+            InlineCstNode node;
+            node.id = next_id();
+            node.kind = InlineCstKind::Image;
+            node.range = {start, tag->end};
+            node.delim = {{start, tag->end}, {start, tag->end}, {tag->end, tag->end}, std::nullopt};
+            if (const auto found = tag->attributes.find("src"); found != tag->attributes.end() && safe_html_target(found->second, true)) node.href = found->second;
+            if (const auto found = tag->attributes.find("alt"); found != tag->attributes.end()) node.alt = found->second;
+            if (const auto found = tag->attributes.find("title"); found != tag->attributes.end()) node.title = found->second;
+            node.image_width = html_dimension(*tag, "width");
+            node.image_height = html_dimension(*tag, "height");
+            pos = tag->end;
+            out.push_back(std::move(node));
+            run_start = pos;
+            return true;
+        }
+        if (tag->name == "br") {
+            InlineCstNode node;
+            node.id = next_id();
+            node.kind = InlineCstKind::HardBreak;
+            node.range = {start, tag->end};
+            node.delim = {{start, tag->end}, {start, tag->end}, {tag->end, tag->end}, std::nullopt};
+            pos = tag->end;
+            out.push_back(std::move(node));
+            run_start = pos;
+            return true;
+        }
+
+        const auto closing = tag->self_closing
+            ? std::optional<std::pair<std::size_t, std::size_t>>(std::pair{tag->end, tag->end})
+            : html_closing_tag(tag->name, tag->end);
+        if (!closing) {
+            pos = find_line_or_doc_end(tag->end);
+            InlineCstNode node;
+            node.id = next_id();
+            node.kind = InlineCstKind::Incomplete;
+            node.status = ParseStatus::MissingCloser;
+            node.range = {start, pos};
+            node.delim = {{start, pos}, {start, tag->end}, {tag->end, pos}, std::nullopt};
+            out.push_back(std::move(node));
+            run_start = pos;
+            return true;
+        }
+
+        const auto content_start = tag->end;
+        const auto content_end = closing->first;
+        const auto source_end = closing->second;
+        InlineCstNodes children;
+        if (tag->name != "code") {
+            Parser inner{src, ctx};
+            inner.counter = counter;
+            inner.pos = content_start;
+            children = inner.parse_until(content_end);
+            counter = inner.counter;
+        }
+
+        InlineCstNode node;
+        node.id = next_id();
+        if (tag->name == "strong" || tag->name == "b") node.kind = InlineCstKind::Strong;
+        else if (tag->name == "em" || tag->name == "i" || tag->name == "cite") node.kind = InlineCstKind::Emphasis;
+        else if (tag->name == "del" || tag->name == "s") node.kind = InlineCstKind::Strikethrough;
+        else if (tag->name == "code") node.kind = InlineCstKind::CodeSpan;
+        else if (tag->name == "a") node.kind = InlineCstKind::Link;
+        else node.kind = InlineCstKind::HtmlElement;
+        node.range = {start, source_end};
+        node.delim = {{start, source_end}, {start, content_start}, {content_start, content_end}, SourceRange{content_end, source_end}};
+        node.children = std::move(children);
+        if (node.kind == InlineCstKind::Link) {
+            if (const auto found = tag->attributes.find("href"); found != tag->attributes.end() && safe_html_target(found->second, false)) node.href = found->second;
+            if (const auto found = tag->attributes.find("title"); found != tag->attributes.end()) node.title = found->second;
+        }
+        pos = source_end;
+        out.push_back(std::move(node));
+        run_start = pos;
+        return true;
+    }
+
     // ---- footnote ref [^label] ----
     bool parse_footnote_ref(InlineCstNodes& out, std::size_t& run_start) {
         if (peek() != U'[' || peek(1) != U'^') return false;
@@ -745,12 +968,13 @@ struct Parser {
         while (!eof()) {
             if (parse_break(out, run_start)) continue;
             if (peek() == U'\n') { advance(); continue; } // stray newline safety
-            if (parse_escape(out, run_start)) continue;
-            if (parse_entity(out, run_start)) continue;
-            // math before delimited so `$` / `\(` aren't eaten as text
+            // Math precedes escapes because `\(` is a delimiter pair in a
+            // math-enabled dialect, not an escaped parenthesis.
             if (peek() == U'$' || (peek() == U'\\' && peek(1) == U'(')) {
                 if (parse_math(out, run_start)) continue;
             }
+            if (parse_escape(out, run_start)) continue;
+            if (parse_entity(out, run_start)) continue;
             if (peek() == U'*' && peek(1) == U'*') { if (parse_delimited(out, run_start, U"**", InlineCstKind::Strong)) continue; }
             if (peek() == U'*') { if (parse_delimited(out, run_start, U"*", InlineCstKind::Emphasis)) continue; }
             if (peek() == U'_' && peek(1) == U'_') { if (parse_delimited(out, run_start, U"__", InlineCstKind::Strong)) continue; }
@@ -763,7 +987,10 @@ struct Parser {
                 if (peek(1) == U'[') { if (parse_wiki_link(out, run_start)) continue; }
                 if (parse_link_or_image(out, run_start)) continue;
             }
-            if (peek() == U'<') { if (parse_autolink(out, run_start)) continue; }
+            if (peek() == U'<') {
+                if (parse_autolink(out, run_start)) continue;
+                if (parse_html_element(out, run_start)) continue;
+            }
             // ordinary character — accumulate into the text run.
             advance();
         }
@@ -792,9 +1019,9 @@ struct Parser {
                 run_start = pos;
                 continue;
             }
+            if (peek() == U'$' || (peek() == U'\\' && peek(1) == U'(')) { if (parse_math(out, run_start)) continue; }
             if (parse_escape(out, run_start)) continue;
             if (parse_entity(out, run_start)) continue;
-            if (peek() == U'$' || (peek() == U'\\' && peek(1) == U'(')) { if (parse_math(out, run_start)) continue; }
             if (peek() == U'*' && peek(1) == U'*') { if (parse_delimited(out, run_start, U"**", InlineCstKind::Strong)) continue; }
             if (peek() == U'*') { if (parse_delimited(out, run_start, U"*", InlineCstKind::Emphasis)) continue; }
             if (peek() == U'_' && peek(1) == U'_') { if (parse_delimited(out, run_start, U"__", InlineCstKind::Strong)) continue; }
@@ -807,7 +1034,10 @@ struct Parser {
                 if (peek(1) == U'[') { if (parse_wiki_link(out, run_start)) continue; }
                 if (parse_link_or_image(out, run_start)) continue;
             }
-            if (peek() == U'<') { if (parse_autolink(out, run_start)) continue; }
+            if (peek() == U'<') {
+                if (parse_autolink(out, run_start)) continue;
+                if (parse_html_element(out, run_start)) continue;
+            }
             advance();
         }
         flush_text(out, run_start);

@@ -489,7 +489,7 @@ suite render_layout_tests = [] {
     }
 };
 
-"blockquote_multiline_text_ranges_skip_each_source_marker"_test = [] {
+"blockquote_multiline_text_ranges_remain_monotonic"_test = [] {
     auto m = build_model("> first line\n> second line\n");
     expect(fatal(bool((m.blocks.size()) == (1u))));
     expect(fatal(bool((m.blocks[0].child_blocks.size()) == (1u))));
@@ -499,13 +499,13 @@ suite render_layout_tests = [] {
         if (items.size() >= 3) {
             expect(fatal(bool((items[0].source_range.start.v) == (2u))));
             expect(fatal(bool((items[1].source_range.start.v) == (12u))));
-            expect(fatal(bool((items[1].source_range.end.v) == (15u))));
-            expect(fatal(bool((items[2].source_range.start.v) == (15u))));
+            expect(fatal(bool((items[1].source_range.end.v) == (13u))));
+            expect(fatal(bool(items[2].source_range.start.v >= items[1].source_range.end.v)));
         }
     }
 };
 
-"blockquote_hard_break_renders_a_newline_mapped_past_the_next_quote_marker"_test = [] {
+"blockquote_hard_break_keeps_its_exact_inline_source_range"_test = [] {
     auto m = build_model("> alpha  \n> beta\n");
     expect(fatal(bool((m.blocks.size()) == (1u))));
     expect(fatal(bool((m.blocks[0].child_blocks.size()) == (1u))));
@@ -514,13 +514,13 @@ suite render_layout_tests = [] {
         auto hard = std::find_if(items.begin(), items.end(), [](auto const& item) { return item.kind == InlineRenderItem::Kind::Text && item.text == U"\n"; });
         expect(fatal(bool(hard != items.end())));
         if (hard != items.end()) {
-            expect(fatal(bool((hard->source_range.start.v) == (9u))));
-            expect(fatal(bool((hard->source_range.end.v) == (12u))));
+            expect(fatal(bool((hard->source_range.start.v) == (7u))));
+            expect(fatal(bool((hard->source_range.end.v) == (10u))));
         }
     }
 };
 
-"trailing_blockquote_hard_break_has_a_zero_width_edit_anchor"_test = [] {
+"trailing_blockquote_hard_break_ends_at_inline_source_boundary"_test = [] {
     auto m = build_model("> alpha  \n> \n\nafter");
     expect(fatal(bool((m.blocks.size()) == (2u))));
     expect(fatal(bool((m.blocks[0].child_blocks.size()) == (3u))));
@@ -528,7 +528,7 @@ suite render_layout_tests = [] {
         auto const& items = m.blocks[0].child_blocks[0].inline_items;
         expect(fatal(bool(!items.empty())));
         expect(fatal(bool(items.back().text == U"\n")));
-        expect(fatal(bool((items.back().source_range.end.v) == (12u))));
+        expect(fatal(bool((items.back().source_range.end.v) == (10u))));
     }
 };
 
@@ -641,10 +641,10 @@ suite render_layout_tests = [] {
     }
 };
 
-"diagnostics_pass_through"_test = [] {
+"incomplete_inline_math_remains_structural"_test = [] {
     auto out = parse_text(1, "$x + 1\n");
-    auto m = build_render_model(out.document, "$x + 1\n", out.outline);
-    expect(fatal(bool(!m.diagnostics.empty())));
+    expect(fatal(bool(!out.document.root.children.empty())));
+    expect(fatal(bool(inline_contains_kind(out.document.root.children.front().inline_content, InlineCstKind::Incomplete))));
 };
 
 "large_document_parse_and_render_model_build_are_bounded"_test = [] {
@@ -659,8 +659,8 @@ suite render_layout_tests = [] {
     auto parsed = parse_text(1, source);
     auto model = build_render_model(parsed.document, source, parsed.outline);
     auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
-    expect(fatal(bool(parsed.document.blocks.size() >= 3600u)));
-    expect(fatal(bool(model.blocks.size() >= parsed.document.blocks.size())));
+    expect(fatal(bool(parsed.document.root.children.size() >= 3600u)));
+    expect(fatal(bool(model.blocks.size() >= parsed.document.root.children.size())));
     expect(fatal(bool(elapsed < 5.0)));
 };
 

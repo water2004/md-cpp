@@ -14,66 +14,6 @@ struct SerializedDocument {
 
 namespace serializer_detail {
 
-inline std::u32string serialize_inlines(const InlineVec& nodes);
-
-inline std::u32string marker_or(const std::u32string& marker, std::u32string_view fallback) {
-    return marker.empty() ? std::u32string(fallback) : marker;
-}
-
-inline std::u32string serialize_inline(const InlineNode& node) {
-    switch (node.kind) {
-        case InlineKind::Text:
-        case InlineKind::UnsupportedMarkup:
-            return node.text;
-        case InlineKind::Emphasis:
-            return marker_or(node.opening_marker, U"*") + serialize_inlines(node.children) + marker_or(node.closing_marker, U"*");
-        case InlineKind::Strong:
-            return marker_or(node.opening_marker, U"**") + serialize_inlines(node.children) + marker_or(node.closing_marker, U"**");
-        case InlineKind::Strike:
-            return marker_or(node.opening_marker, U"~~") + serialize_inlines(node.children) + marker_or(node.closing_marker, U"~~");
-        case InlineKind::Span:
-            return serialize_inlines(node.children);
-        case InlineKind::InlineCode:
-            return marker_or(node.opening_marker, U"`") + node.text + marker_or(node.closing_marker, U"`");
-        case InlineKind::InlineMath: {
-            auto opening = node.math_delim == MathDelimiter::InlineParen ? std::u32string(U"\\(") : std::u32string(U"$");
-            auto closing = node.math_delim == MathDelimiter::InlineParen ? std::u32string(U"\\)") : std::u32string(U"$");
-            return marker_or(node.opening_marker, opening) + node.text + marker_or(node.closing_marker, closing);
-        }
-        case InlineKind::Link: {
-            auto result = U"[" + serialize_inlines(node.children) + U"](" + utf8_to_cps(node.href);
-            if (node.title) result += U" \"" + utf8_to_cps(*node.title) + U"\"";
-            result += U")";
-            return result;
-        }
-        case InlineKind::Image: {
-            auto result = U"![" + utf8_to_cps(node.alt) + U"](" + utf8_to_cps(node.href);
-            if (node.title) result += U" \"" + utf8_to_cps(*node.title) + U"\"";
-            result += U")";
-            return result;
-        }
-        case InlineKind::FootnoteRef:
-            return U"[^" + utf8_to_cps(node.label) + U"]";
-        case InlineKind::WikiLink:
-            return node.alias ? U"[[" + utf8_to_cps(node.target) + U"|" + utf8_to_cps(*node.alias) + U"]]"
-                              : U"[[" + utf8_to_cps(node.target) + U"]]";
-        case InlineKind::SoftBreak:
-            return U"\n";
-        case InlineKind::HardBreak:
-            return U"  \n";
-        case InlineKind::Extension:
-            return node.ext_text.empty() ? U"[ext:" + utf8_to_cps(node.ext_name) + U"]"
-                                         : U"[ext:" + utf8_to_cps(node.ext_name) + U":" + node.ext_text + U"]";
-    }
-    return {};
-}
-
-inline std::u32string serialize_inlines(const InlineVec& nodes) {
-    std::u32string result;
-    for (const auto& node : nodes) result += serialize_inline(node);
-    return result;
-}
-
 inline std::vector<std::u32string> lines(std::u32string_view value) {
     std::vector<std::u32string> result;
     std::size_t start = 0;
@@ -126,42 +66,34 @@ inline std::u32string serialize_indented_code(std::u32string_view value) {
 
 inline std::u32string serialize_list(const BlockNode& block) {
     std::u32string result;
-    const auto count = block.kind == BlockKind::TaskList ? block.task_items.size() : block.list_items.size();
+    const auto count = block.children.size();
     for (std::size_t index = 0; index < count; ++index) {
-        std::u32string marker;
-        const BlockVec* children = nullptr;
-        if (block.kind == BlockKind::TaskList) {
-            const auto& item = block.task_items[index];
-            marker = item.marker.empty() ? (item.checked ? U"- [x] " : U"- [ ] ") : item.marker;
-            children = &item.children;
-        } else {
-            const auto& item = block.list_items[index];
-            if (!item.marker.empty()) marker = item.marker;
-            else if (block.list_ordered) marker = utf8_to_cps(std::to_string(block.list_start + index)) + std::u32string(1, block.list_delimiter) + U" ";
-            else marker = U"- ";
-            children = &item.children;
-        }
-        auto body = serialize_list_item_blocks(*children);
+        const auto& item = block.children[index];
+        auto marker = item.marker;
+        if (marker.empty() && item.kind == BlockKind::TaskListItem) marker = item.checked ? U"- [x] " : U"- [ ] ";
+        else if (marker.empty() && block.list_ordered) marker = utf8_to_cps(std::to_string(block.list_start + index)) + std::u32string(1, block.list_delimiter) + U" ";
+        else if (marker.empty()) marker = U"- ";
+        auto body = serialize_list_item_blocks(item.children);
         result += marker + indent_continuation(body, marker.size());
         if (index + 1 < count) result += U"\n";
     }
     return result;
 }
 
-inline std::u32string serialize_table_row(const std::vector<TableCell>& cells) {
+inline std::u32string serialize_table_row(const BlockNode& row) {
     std::u32string result = U"|";
-    for (const auto& cell : cells) result += U" " + serialize_inlines(cell.children) + U" |";
+    for (const auto& cell : row.children) result += U" " + cell.inline_content.source + U" |";
     return result;
 }
 
 inline std::u32string serialize_block(const BlockNode& block) {
     switch (block.kind) {
         case BlockKind::Paragraph:
-            return serialize_inlines(block.children);
+            return block.inline_content.source;
         case BlockKind::Heading:
-            return std::u32string(block.level == 0 ? 1 : block.level, U'#') + U" " + serialize_inlines(block.children);
+            return std::u32string(block.level == 0 ? 1 : block.level, U'#') + U" " + block.inline_content.source;
         case BlockKind::BlockQuote: {
-            auto body = serialize_blocks(block.quote_children);
+            auto body = serialize_blocks(block.children);
             auto source_lines = lines(body);
             std::u32string result;
             for (std::size_t index = 0; index < source_lines.size(); ++index) {
@@ -184,15 +116,16 @@ inline std::u32string serialize_block(const BlockNode& block) {
             return U"$$\n" + block.tex + newline + U"$$";
         }
         case BlockKind::Table: {
-            std::u32string result = serialize_table_row(block.table_header) + U"\n|";
-            for (std::size_t index = 0; index < block.table_header.size(); ++index) {
+            if (block.children.empty()) return {};
+            std::u32string result = serialize_table_row(block.children.front()) + U"\n|";
+            for (std::size_t index = 0; index < block.children.front().children.size(); ++index) {
                 auto alignment = index < block.table_aligns.size() ? block.table_aligns[index] : TableAlignment::None;
                 if (alignment == TableAlignment::Left) result += U" :--- |";
                 else if (alignment == TableAlignment::Center) result += U" :---: |";
                 else if (alignment == TableAlignment::Right) result += U" ---: |";
                 else result += U" --- |";
             }
-            for (const auto& row : block.table_rows) result += U"\n" + serialize_table_row(row.cells);
+            for (std::size_t index = 1; index < block.children.size(); ++index) result += U"\n" + serialize_table_row(block.children[index]);
             return result;
         }
         case BlockKind::ImageBlock: {
@@ -202,15 +135,15 @@ inline std::u32string serialize_block(const BlockNode& block) {
         }
         case BlockKind::Callout: {
             std::u32string first = U"> [!" + utf8_to_cps(block.callout_kind) + U"]";
-            if (block.callout_title) first += U" " + serialize_inlines(*block.callout_title);
-            auto body = serialize_blocks(block.quote_children);
+            if (block.callout_title) first += U" " + block.callout_title->source;
+            auto body = serialize_blocks(block.children);
             if (body.empty()) return first;
             std::u32string result = first;
             for (const auto& line : lines(body)) result += U"\n" + (line.empty() ? std::u32string(U">") : U"> " + line);
             return result;
         }
         case BlockKind::FootnoteDefinition: {
-            auto body = serialize_blocks(block.quote_children);
+            auto body = serialize_blocks(block.children);
             return U"[^" + utf8_to_cps(block.footnote_label) + U"]: " + indent_continuation(body, block.footnote_label.size() + 4);
         }
         case BlockKind::Toc:
@@ -226,12 +159,21 @@ inline std::u32string serialize_block(const BlockNode& block) {
             return utf8_to_cps(block.raw);
         case BlockKind::Extension:
             return U"[ext:" + utf8_to_cps(block.ext_name) + U"]";
+        case BlockKind::Document:
+            return serialize_blocks(block.children);
+        case BlockKind::ListItem:
+        case BlockKind::TaskListItem:
+            return serialize_list_item_blocks(block.children);
+        case BlockKind::TableRow:
+            return serialize_table_row(block);
+        case BlockKind::TableCell:
+            return block.inline_content.source;
     }
     return {};
 }
 
 inline bool is_empty_paragraph(const BlockNode& block) {
-    return block.kind == BlockKind::Paragraph && block.children.empty();
+    return block.kind == BlockKind::Paragraph && block.inline_content.source.empty();
 }
 
 inline std::u32string_view block_separator(const BlockNode& previous, const BlockNode&) {
@@ -264,97 +206,9 @@ inline std::size_t find_serialized(
     return found == std::u32string::npos || found + value.size() > limit ? (std::min)(cursor, limit) : found;
 }
 
-inline std::size_t map_inlines(
-    const InlineVec& nodes,
-    const std::u32string& markdown,
-    std::size_t cursor,
-    std::size_t limit,
-    SourceMap& source_map);
-
-inline std::size_t map_inline(
-    const InlineNode& node,
-    const std::u32string& markdown,
-    std::size_t cursor,
-    std::size_t limit,
-    SourceMap& source_map) {
-    const bool container = node.kind == InlineKind::Emphasis || node.kind == InlineKind::Strong
-        || node.kind == InlineKind::Strike || node.kind == InlineKind::Span || node.kind == InlineKind::Link;
-    if (container) {
-        std::u32string opening;
-        std::u32string closing;
-        if (node.kind == InlineKind::Emphasis) {
-            opening = marker_or(node.opening_marker, U"*");
-            closing = marker_or(node.closing_marker, U"*");
-        } else if (node.kind == InlineKind::Strong) {
-            opening = marker_or(node.opening_marker, U"**");
-            closing = marker_or(node.closing_marker, U"**");
-        } else if (node.kind == InlineKind::Strike) {
-            opening = marker_or(node.opening_marker, U"~~");
-            closing = marker_or(node.closing_marker, U"~~");
-        } else if (node.kind == InlineKind::Link) {
-            opening = U"[";
-            closing = U"](" + utf8_to_cps(node.href);
-            if (node.title) closing += U" \"" + utf8_to_cps(*node.title) + U"\"";
-            closing += U")";
-        }
-        const auto source_start = opening.empty() ? cursor : find_serialized(markdown, opening, cursor, limit);
-        const auto content_start = (std::min)(source_start + opening.size(), limit);
-        const auto content_end = map_inlines(node.children, markdown, content_start, limit, source_map);
-        const auto closing_start = closing.empty() ? content_end : find_serialized(markdown, closing, content_end, limit);
-        const auto source_end = (std::min)(closing_start + closing.size(), limit);
-        NodeSourceRange range(node.id, char_range(source_start, source_end), char_range(content_start, closing_start));
-        if (!opening.empty()) range.marker_ranges.push_back(char_range(source_start, content_start));
-        if (!closing.empty()) range.marker_ranges.push_back(char_range(closing_start, source_end));
-        source_map.node_ranges.push_back(std::move(range));
-        return source_end;
-    }
-
-    const auto serialized = serialize_inline(node);
-    const auto source_start = find_serialized(markdown, serialized, cursor, limit);
-    const auto source_end = (std::min)(source_start + serialized.size(), limit);
-    auto content_start = source_start;
-    auto content_end = source_end;
-    std::vector<CharRange> markers;
-    if (node.kind == InlineKind::InlineCode || node.kind == InlineKind::InlineMath) {
-        std::u32string opening;
-        std::u32string closing;
-        if (node.kind == InlineKind::InlineCode) {
-            opening = marker_or(node.opening_marker, U"`");
-            closing = marker_or(node.closing_marker, U"`");
-        } else {
-            const auto fallback_opening = node.math_delim == MathDelimiter::InlineParen ? std::u32string(U"\\(") : std::u32string(U"$");
-            const auto fallback_closing = node.math_delim == MathDelimiter::InlineParen ? std::u32string(U"\\)") : std::u32string(U"$");
-            opening = marker_or(node.opening_marker, fallback_opening);
-            closing = marker_or(node.closing_marker, fallback_closing);
-        }
-        content_start = (std::min)(source_start + opening.size(), source_end);
-        content_end = source_end >= closing.size() ? source_end - closing.size() : content_start;
-        markers.push_back(char_range(source_start, content_start));
-        markers.push_back(char_range(content_end, source_end));
-    }
-    NodeSourceRange range(node.id, char_range(source_start, source_end), char_range(content_start, content_end));
-    range.marker_ranges = std::move(markers);
-    source_map.node_ranges.push_back(std::move(range));
-    return source_end;
-}
-
-inline std::size_t map_inlines(
-    const InlineVec& nodes,
-    const std::u32string& markdown,
-    std::size_t cursor,
-    std::size_t limit,
-    SourceMap& source_map) {
-    for (const auto& node : nodes) cursor = map_inline(node, markdown, cursor, limit, source_map);
-    return cursor;
-}
-
 inline std::u32string block_anchor(const BlockNode& block) {
-    if ((block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading) && !block.children.empty()) {
-        for (const auto& child : block.children) {
-            const auto value = serialize_inline(child);
-            if (!value.empty()) return value;
-        }
-    }
+    if ((block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading)
+        && !block.inline_content.source.empty()) return block.inline_content.source;
     if (block.kind == BlockKind::CodeBlock && !block.code_text.empty()) return block.code_text;
     if (block.kind == BlockKind::MathBlock && !block.tex.empty()) return block.tex;
     return serialize_block(block);
@@ -402,51 +256,40 @@ inline std::size_t map_list(
     std::size_t source_end,
     SourceMap& source_map) {
     auto cursor = source_start;
-    const auto count = block.kind == BlockKind::TaskList ? block.task_items.size() : block.list_items.size();
+    const auto count = block.children.size();
     for (std::size_t index = 0; index < count; ++index) {
-        std::u32string marker;
-        NodeId item_id;
-        const BlockVec* children = nullptr;
-        if (block.kind == BlockKind::TaskList) {
-            const auto& item = block.task_items[index];
-            marker = item.marker.empty() ? (item.checked ? U"- [x] " : U"- [ ] ") : item.marker;
-            item_id = item.id;
-            children = &item.children;
-        } else {
-            const auto& item = block.list_items[index];
-            if (!item.marker.empty()) marker = item.marker;
-            else if (block.list_ordered) marker = utf8_to_cps(std::to_string(block.list_start + index)) + std::u32string(1, block.list_delimiter) + U" ";
-            else marker = U"- ";
-            item_id = item.id;
-            children = &item.children;
-        }
-        const auto item_body = serialize_list_item_blocks(*children);
+        const auto& item = block.children[index];
+        auto marker = item.marker;
+        if (marker.empty() && item.kind == BlockKind::TaskListItem) marker = item.checked ? U"- [x] " : U"- [ ] ";
+        else if (marker.empty() && block.list_ordered) marker = utf8_to_cps(std::to_string(block.list_start + index)) + std::u32string(1, block.list_delimiter) + U" ";
+        else if (marker.empty()) marker = U"- ";
+        const auto item_body = serialize_list_item_blocks(item.children);
         const auto item_text = marker + indent_continuation(item_body, marker.size());
         const auto item_start = find_serialized(markdown, item_text, cursor, source_end);
         const auto item_end = (std::min)(item_start + item_text.size(), source_end);
         const auto content_start = (std::min)(item_start + marker.size(), item_end);
-        NodeSourceRange item_range(item_id, char_range(item_start, item_end), char_range(content_start, item_end));
+        NodeSourceRange item_range(item.id, char_range(item_start, item_end), char_range(content_start, item_end));
         item_range.marker_ranges.push_back(char_range(item_start, content_start));
         source_map.node_ranges.push_back(std::move(item_range));
-        map_blocks_in_bounds(*children, markdown, content_start, item_end, source_map);
+        map_blocks_in_bounds(item.children, markdown, content_start, item_end, source_map);
         cursor = item_end;
     }
     return cursor;
 }
 
 inline std::size_t map_table_cells(
-    const std::vector<TableCell>& cells,
+    const BlockNode& row,
     const std::u32string& markdown,
     std::size_t cursor,
     std::size_t limit,
     SourceMap& source_map) {
-    for (const auto& cell : cells) {
-        const auto content = serialize_inlines(cell.children);
+    for (const auto& cell : row.children) {
+        const auto& content = cell.inline_content.source;
         const auto boundary = cursor < limit && markdown[cursor] == U'|' ? cursor : (cursor > 0 ? cursor - 1 : cursor);
         const auto content_start = content.empty()
             ? (std::min)(boundary + 2, limit)
             : find_serialized(markdown, content, cursor, limit);
-        const auto content_end = map_inlines(cell.children, markdown, content_start, limit, source_map);
+        const auto content_end = (std::min)(content_start + content.size(), limit);
         const auto source_start = boundary;
         auto source_end = content_end;
         while (source_end < limit && markdown[source_end] != U'|') ++source_end;
@@ -503,23 +346,23 @@ inline std::size_t map_block(
     range.marker_ranges = std::move(markers);
     source_map.node_ranges.push_back(std::move(range));
 
-    if (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading) {
-        map_inlines(block.children, markdown, content_start, content_end, source_map);
-    } else if (block.kind == BlockKind::BlockQuote || block.kind == BlockKind::Callout || block.kind == BlockKind::FootnoteDefinition) {
-        map_blocks_in_bounds(block.quote_children, markdown, content_start, content_end, source_map);
+    if (block.kind == BlockKind::BlockQuote || block.kind == BlockKind::Callout || block.kind == BlockKind::FootnoteDefinition) {
+        map_blocks_in_bounds(block.children, markdown, content_start, content_end, source_map);
     } else if (block.kind == BlockKind::List || block.kind == BlockKind::TaskList) {
         map_list(block, markdown, source_start, source_end, source_map);
     } else if (block.kind == BlockKind::Table) {
-        auto cursor = map_table_cells(block.table_header, markdown, source_start, source_end, source_map);
+        if (block.children.empty()) return source_end;
+        auto cursor = map_table_cells(block.children.front(), markdown, source_start, source_end, source_map);
         auto separator_end = markdown.find(U'\n', cursor);
         if (separator_end != std::u32string::npos && separator_end < source_end) {
             separator_end = markdown.find(U'\n', separator_end + 1);
             cursor = separator_end == std::u32string::npos || separator_end >= source_end ? source_end : separator_end + 1;
         }
-        for (const auto& row : block.table_rows) {
+        for (std::size_t index = 1; index < block.children.size(); ++index) {
+            const auto& row = block.children[index];
             if (cursor < source_end && markdown[cursor] == U'\n') ++cursor;
             const auto row_start = cursor;
-            cursor = map_table_cells(row.cells, markdown, cursor, source_end, source_map);
+            cursor = map_table_cells(row, markdown, cursor, source_end, source_map);
             source_map.node_ranges.emplace_back(row.id, char_range(row_start, cursor), char_range(row_start, cursor));
         }
     }
@@ -529,19 +372,19 @@ inline std::size_t map_block(
 inline SourceMap build_source_map(const EditorDocument& document, const std::u32string& markdown) {
     SourceMap source_map;
     std::size_t cursor = 0;
-    for (std::size_t index = 0; index < document.blocks.size(); ++index) {
-        if (index > 0) cursor += block_separator(document.blocks[index - 1], document.blocks[index]).size();
+    for (std::size_t index = 0; index < document.root.children.size(); ++index) {
+        if (index > 0) cursor += block_separator(document.root.children[index - 1], document.root.children[index]).size();
         const auto boundary = cursor;
-        const auto serialized = serialize_block(document.blocks[index]);
+        const auto serialized = serialize_block(document.root.children[index]);
         const auto start = (std::min)(
-            index + 1 == document.blocks.size() && index > 0
-                && is_empty_paragraph(document.blocks[index]) && cursor > 0 ? cursor - 1 : cursor,
+            index + 1 == document.root.children.size() && index > 0
+                && is_empty_paragraph(document.root.children[index]) && cursor > 0 ? cursor - 1 : cursor,
             markdown.size());
         const auto end = (std::min)(start + serialized.size(), markdown.size());
-        map_block(document.blocks[index], markdown, start, end, source_map);
+        map_block(document.root.children[index], markdown, start, end, source_map);
         const auto physical_end = end < markdown.size() && markdown[end] == U'\n' ? end + 1 : end;
         for (auto& range : source_map.node_ranges) {
-            if (range.node_id == document.blocks[index].id) {
+            if (range.node_id == document.root.children[index].id) {
                 range.source_range.end = CharOffset(physical_end);
                 break;
             }
@@ -555,7 +398,7 @@ inline SourceMap build_source_map(const EditorDocument& document, const std::u32
 
 inline SerializedDocument serialize_document(const EditorDocument& document) {
     SerializedDocument result;
-    result.markdown = serializer_detail::serialize_blocks(document.blocks);
+    result.markdown = serializer_detail::serialize_blocks(document.root.children);
     if (document.trailing_newline && (result.markdown.empty() || result.markdown.back() != U'\n')) result.markdown.push_back(U'\n');
     result.source_map = serializer_detail::build_source_map(document, result.markdown);
     return result;

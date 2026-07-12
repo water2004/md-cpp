@@ -27,13 +27,13 @@ struct SourceStructure {
 
 inline SourceStructure build_source_structure(const EditorDocument& document) {
     SourceStructure structure;
-    structure.blocks.reserve(document.blocks.size());
-    for (std::size_t index = 0; index < document.blocks.size(); ++index) {
-        const auto& block = document.blocks[index];
+    structure.blocks.reserve(document.root.children.size());
+    for (std::size_t index = 0; index < document.root.children.size(); ++index) {
+        const auto& block = document.root.children[index];
         const auto* range = document.source_map.find_node_by_id(block.id);
         if (!range) continue;
         SourceBlockSpan span;
-        span.kind = block.kind == BlockKind::Paragraph && block.children.empty()
+        span.kind = block.kind == BlockKind::Paragraph && block.inline_content.source.empty()
             ? SourceBlockKind::Blank : SourceBlockKind::Semantic;
         span.source_range = range->source_range;
         span.content_range = range->content_range;

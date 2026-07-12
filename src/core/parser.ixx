@@ -10,8 +10,7 @@
 //     avoid the list-reparse-as-paragraph duplication bug
 //   * `$$` at line start is block math; a lone `$` immediately followed by
 //     `$` is NOT inline math — left to the block path
-//   * raw HTML becomes BlockNode/InlineNode::UnsupportedMarkup — no
-//     HtmlBlock / HtmlInline node type exists (acceptance gate)
+//   * unsafe raw HTML becomes BlockNode::UnsupportedMarkup
 //   * ` ```math ` fence becomes MathBlock{ FencedMath } (when enabled)
 //   * list / blockquote recursion uses parse_blocks with stop conditions
 //
@@ -27,9 +26,13 @@ import elmd.core.metadata;
 import elmd.core.symbols;
 import elmd.core.ast;
 import elmd.core.document;
+import elmd.core.document_projection;
 import elmd.core.outline;
 import elmd.core.slug;
 import elmd.core.utf;
+import elmd.core.inline_cst;
+import elmd.core.inline_document;
+import elmd.core.inline_parser;
 
 export namespace elmd {
 
@@ -163,6 +166,27 @@ public:
         definition.source_start = start;
         definition.source_end = line_end < cps.size() ? line_end + 1 : line_end;
         return definition;
+    }
+
+    InlineParseContext inline_parse_context() {
+        InlineParseContext context;
+        context.dialect = input->dialect;
+        context.allocate_id = [this] { return next_node_id(); };
+        context.resolve_link_label = [this](const std::string& label) -> std::optional<InlineLinkDef> {
+            const auto found = link_definitions.find(label);
+            if (found == link_definitions.end()) return std::nullopt;
+            return InlineLinkDef{found->second.href, found->second.title};
+        };
+        return context;
+    }
+
+    InlineDocument make_inline_document(std::size_t start, std::size_t end) {
+        start = (std::min)(start, cps.size());
+        end = (std::min)((std::max)(end, start), cps.size());
+        InlineDocument document;
+        document.source = cps.substr(start, end - start);
+        document.tree = parse_inline(document.source, inline_parse_context());
+        return document;
     }
 
     void scan_link_definitions() {
@@ -412,7 +436,7 @@ public:
             blank_ranges.emplace_back(start, cur());
         }
         const auto separator = !eof() && !blocks.empty()
-            && !(blocks.back().kind == BlockKind::Paragraph && blocks.back().children.empty());
+            && !(blocks.back().kind == BlockKind::Paragraph && blocks.back().inline_content.source.empty());
         for (std::size_t index = separator ? 1u : 0u; index < blank_ranges.size(); ++index) {
             BlockNode paragraph;
             paragraph.id = next_node_id();
@@ -534,10 +558,10 @@ public:
         } else {
             closing_start = line_end;
         }
-        auto parsed = parse_inline_sequence(content_end);
         pos = line_end;
         if (peek1() == '\n') advance();
-        std::u32string title = block_inline_text_content(parsed.inlines);
+        auto inline_content = make_inline_document(content_start, content_end);
+        std::u32string title = inline_visible_text(inline_content);
         std::string title_utf8 = cps_to_utf8(title);
         std::string slug = generate_slug(title_utf8, {});
         NodeId id = next_node_id();
@@ -546,785 +570,143 @@ public:
         if (closing_start < line_end) range.marker_ranges.push_back(CharRange(CharOffset(content_end), CharOffset(line_end)));
         source_ranges.push_back(std::move(range));
         headings.push_back({id, level, title_utf8, slug});
-        BlockNode b; b.id = id; b.kind = BlockKind::Heading; b.level = level; b.children = std::move(parsed.inlines); b.slug = slug;
+        BlockNode b; b.id = id; b.kind = BlockKind::Heading; b.level = level; b.inline_content = std::move(inline_content); b.slug = slug;
         return b;
     }
-    struct InlineParseResult {
-        InlineVec inlines;
-        std::size_t content_end = 0;
-    };
 
-    std::optional<InlineNode> try_parse_delimited_inline(InlineKind kind, std::u32string delimiter,
-                                                          std::optional<std::size_t> stop_at = std::nullopt) {
-        auto start = pos;
-        if (!delimiter_exists_before_newline(start + delimiter.size(),
-                                             std::vector<char32_t>(delimiter.begin(), delimiter.end()), stop_at)) return std::nullopt;
-        advance_n(delimiter.size());
-        auto content_start = pos;
-        auto children = parse_inlines_until(std::vector<char32_t>(delimiter.begin(), delimiter.end()), stop_at);
-        auto content_end = pos;
-        if (content_end + delimiter.size() > cps.size()) {
-            pos = start;
-            return std::nullopt;
-        }
-        advance_n(delimiter.size());
-        auto source_end = pos;
-        NodeId id = next_node_id();
-        NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(source_end)),
-                              CharRange(CharOffset(content_start), CharOffset(content_end)));
-        range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(content_start)));
-        range.marker_ranges.push_back(CharRange(CharOffset(content_end), CharOffset(source_end)));
-        source_ranges.push_back(std::move(range));
-        InlineNode node;
-        node.id = id;
-        node.kind = kind;
-        node.children = std::move(children);
-        node.opening_marker = delimiter;
-        node.closing_marker = std::move(delimiter);
-        return node;
+    // The block parser owns paragraph boundaries only. Inline syntax is
+    // parsed exactly once into the node-local lossless CST.
+    std::optional<BlockNode> try_parse_link_definition() {
+        const auto found = link_definitions_by_start.find(pos);
+        if (found == link_definitions_by_start.end()) return std::nullopt;
+        const auto start = pos;
+        const auto& definition = found->second;
+        pos = definition.source_end;
+        if (peek1() == U'\n') advance();
+        BlockNode block;
+        block.id = next_node_id();
+        block.kind = BlockKind::LinkDefinition;
+        block.raw = cps_to_utf8(std::u32string_view(cps).substr(start, definition.source_end - start));
+        push_range(block.id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(definition.source_end)));
+        return block;
     }
 
-    InlineParseResult parse_inline_sequence(std::optional<std::size_t> stop_at = std::nullopt) {
-        InlineParseResult result;
-        result.content_end = pos;
-        std::u32string buf;
-        auto flush = [&]() {
-            if (!buf.empty()) { result.inlines.push_back(InlineNode::text_node(next_node_id(), buf)); buf.clear(); }
-        };
-        while (!eof() && (!stop_at || pos < *stop_at)) {
-            if (peek1() == '\n') {
-                result.content_end = pos;
-                std::size_t newline_pos = pos;
-                bool hard_break = buf.size() >= 2 && buf[buf.size() - 1] == U' ' && buf[buf.size() - 2] == U' ';
-                if (hard_break) {
-                    buf.resize(buf.size() - 2);
-                    flush();
-                }
+    std::optional<BlockNode> parse_paragraph(std::optional<std::size_t> stop_at = std::nullopt) {
+        const auto start = pos;
+        auto content_end = pos;
+        const auto limit = (std::min)(cps.size(), stop_at.value_or(cps.size()));
+        while (pos < limit) {
+            if (peek1() != U'\n') {
                 advance();
-                if (hard_break) {
-                    NodeId id = next_node_id();
-                    NodeSourceRange range(id, CharRange(CharOffset(newline_pos - 2), CharOffset(newline_pos + 1)), CharRange(CharOffset(newline_pos), CharOffset(newline_pos + 1)));
-                    range.marker_ranges.push_back(CharRange(CharOffset(newline_pos - 2), CharOffset(newline_pos)));
-                    source_ranges.push_back(std::move(range));
-                    InlineNode hard;
-                    hard.id = id;
-                    hard.kind = InlineKind::HardBreak;
-                    result.inlines.push_back(std::move(hard));
-                    result.content_end = pos;
-                    if (eof() || peek1() == U'\n' || line_starts_interrupting_block()) break;
-                    continue;
-                }
-                if (eof() || peek1() == '\n') break;
-                if (line_starts_interrupting_block()) break;
-                flush();
-                NodeId id = next_node_id();
-                push_range(id, CharRange(CharOffset(newline_pos), CharOffset(newline_pos + 1)), CharRange(CharOffset(newline_pos), CharOffset(newline_pos + 1)));
-                InlineNode soft_break;
-                soft_break.id = id;
-                soft_break.kind = InlineKind::SoftBreak;
-                result.inlines.push_back(std::move(soft_break));
-                result.content_end = pos;
+                content_end = pos;
                 continue;
             }
-            if (peek1() == U'\\' && peek2() == U'(') {
-                if (auto n = try_parse_inline_paren_math(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
+            const auto newline = pos;
+            advance();
+            if (pos >= limit || peek1() == U'\n' || line_starts_interrupting_block()) {
+                const auto hard_break = (newline >= start + 2 && cps[newline - 1] == U' ' && cps[newline - 2] == U' ')
+                    || (newline > start && cps[newline - 1] == U'\\');
+                content_end = hard_break ? pos : newline;
+                break;
             }
-            if (peek1() == U'\\' && (!stop_at || pos + 1 < *stop_at)) {
-                if (ascii_punctuation(peek2())) {
-                    flush();
-                    auto start = pos;
-                    auto value = peek2();
-                    advance_n(2);
-                    NodeId id = next_node_id();
-                    NodeSourceRange range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(start + 1), cur()));
-                    range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(start + 1)));
-                    source_ranges.push_back(std::move(range));
-                    result.inlines.push_back(InlineNode::text_node(id, std::u32string(1, value)));
-                    result.content_end = pos;
-                    continue;
-                }
-            }
-            if (peek1() == U'&') {
-                auto limit = stop_at.value_or(cps.size());
-                if (auto entity = html_entity_at(pos, limit)) {
-                    flush();
-                    auto start = pos;
-                    pos = entity->second;
-                    NodeId id = next_node_id();
-                    push_range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(pos)));
-                    result.inlines.push_back(InlineNode::text_node(id, std::move(entity->first)));
-                    result.content_end = pos;
-                    continue;
-                }
-            }
-            // inline constructs — exact order
-            if (peek1() == '$') {
-                if (auto n = try_parse_inline_math(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
-            }
-            if (peek1() == '*' && peek2() == '*') {
-                if (auto n = try_parse_delimited_inline(InlineKind::Strong, U"**", stop_at)) {
-                    flush();
-                    result.inlines.push_back(std::move(*n));
-                    result.content_end = pos;
-                    continue;
-                } else {
-                    buf.push_back('*');
-                    buf.push_back('*');
-                    advance_n(2);
-                    result.content_end = pos;
-                    continue;
-                }
-            }
-            if (peek1() == '*' && peek2() != ' ' && peek2() != '*') {
-                if (auto n = try_parse_delimited_inline(InlineKind::Emphasis, U"*", stop_at)) {
-                    flush();
-                    result.inlines.push_back(std::move(*n));
-                    result.content_end = pos;
-                    continue;
-                } else {
-                    buf.push_back('*');
-                    advance();
-                    result.content_end = pos;
-                    continue;
-                }
-            }
-            if (peek1() == '_' && peek2() == '_' && peek2next_is_nonspace_underscore_()) {
-                if (auto n = try_parse_delimited_inline(InlineKind::Strong, U"__", stop_at)) {
-                    flush();
-                    result.inlines.push_back(std::move(*n));
-                    result.content_end = pos;
-                    continue;
-                } else {
-                    buf.push_back('_');
-                    buf.push_back('_');
-                    advance_n(2);
-                    result.content_end = pos;
-                    continue;
-                }
-            }
-            if (peek1() == '_' && peek2() != ' ' && peek2() != '_') {
-                if (auto n = try_parse_delimited_inline(InlineKind::Emphasis, U"_", stop_at)) {
-                    flush();
-                    result.inlines.push_back(std::move(*n));
-                    result.content_end = pos;
-                    continue;
-                } else {
-                    buf.push_back('_');
-                    advance();
-                    result.content_end = pos;
-                    continue;
-                }
-            }
-            if (peek1() == '~' && peek2() == '~' && peek2next2() != ' ') {
-                if (auto n = try_parse_delimited_inline(InlineKind::Strike, U"~~", stop_at)) {
-                    flush();
-                    result.inlines.push_back(std::move(*n));
-                    result.content_end = pos;
-                    continue;
-                } else {
-                    buf.push_back('~');
-                    buf.push_back('~');
-                    advance_n(2);
-                    result.content_end = pos;
-                    continue;
-                }
-            }
-            if (peek1() == '`') {
-                if (auto n = try_parse_inline_code(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
-            }
-            if (peek1() == '!' && peek2() == '[') {
-                if (auto n = try_parse_link_or_image(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
-            }
-            if (peek1() == '[') {
-                if (peek2() == '^') {
-                    if (auto n = try_parse_footnote_ref(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
-                }
-                if (peek(1) == '[') {
-                    if (auto n = try_parse_wiki_link(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
-                }
-                if (auto n = try_parse_link_or_image(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
-            }
-            if (peek1() == '<') {
-                if (auto n = try_parse_autolink(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
-                if (auto n = try_parse_raw_html_inline(stop_at)) { flush(); result.inlines.push_back(std::move(*n)); result.content_end = pos; continue; }
-            }
-            buf.push_back(peek1()); advance(); result.content_end = pos;
+            content_end = pos;
         }
-        flush();
-        return result;
-    }
+        if (content_end == start) return std::nullopt;
 
-    // ---- paragraph (inline state machine) ----
-    std::optional<BlockNode> parse_paragraph(std::optional<std::size_t> stop_at = std::nullopt) {
-        std::size_t start = pos;
-        auto parsed = parse_inline_sequence(stop_at);
-        if (parsed.inlines.empty()) return std::nullopt;
-        auto underline = peek_line_start() ? setext_underline_at(pos) : std::nullopt;
-        if (underline) {
+        if (const auto underline = peek_line_start() ? setext_underline_at(pos) : std::nullopt) {
             pos = underline->line_end;
             if (peek1() == U'\n') advance();
-            auto title = block_inline_text_content(parsed.inlines);
-            auto title_utf8 = cps_to_utf8(title);
+            auto inline_content = make_inline_document(start, content_end);
+            auto title_utf8 = cps_to_utf8(inline_visible_text(inline_content));
             auto slug = generate_slug(title_utf8, {});
-            NodeId id = next_node_id();
-            NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(parsed.content_end)));
-            range.marker_ranges.push_back(CharRange(CharOffset(parsed.content_end), CharOffset(underline->line_end)));
+            const auto id = next_node_id();
+            NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(content_end)));
+            range.marker_ranges.push_back(CharRange(CharOffset(content_end), CharOffset(underline->line_end)));
             source_ranges.push_back(std::move(range));
             headings.push_back({id, underline->level, title_utf8, slug});
             BlockNode heading;
             heading.id = id;
             heading.kind = BlockKind::Heading;
             heading.level = underline->level;
-            heading.children = std::move(parsed.inlines);
+            heading.inline_content = std::move(inline_content);
             heading.slug = std::move(slug);
             return heading;
         }
-        NodeId id = next_node_id();
-        push_range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(parsed.content_end)));
-        BlockNode b; b.id = id; b.kind = BlockKind::Paragraph; b.children = std::move(parsed.inlines);
-        return b;
-    }
 
-    bool peek2next_is_nonspace_underscore_() { char32_t c = peek(2); return c != ' ' && c != '_' && c != 0; }
-    char32_t peek2next2() { return peek2(); }
-
-    bool delimiter_exists_before_newline(std::size_t from, std::vector<char32_t> del, std::optional<std::size_t> stop_at = std::nullopt) const {
-        auto end = (std::min)(cps.size(), stop_at.value_or(cps.size()));
-        for (std::size_t i = from; i + del.size() <= end; ++i) {
-            if (cps[i] == '\n') return false;
-            bool matched = true;
-            for (std::size_t j = 0; j < del.size(); ++j) {
-                if (cps[i + j] != del[j]) { matched = false; break; }
-            }
-            if (matched) return true;
-        }
-        return false;
-    }
-
-    // parse_inlines_until(del) — collect text until a run of `del` chars.
-    // Delimiters DO NOT cross newlines.
-    InlineVec parse_inlines_until(std::vector<char32_t> del, std::optional<std::size_t> stop_at = std::nullopt) {
-        InlineVec out;
-        std::u32string buf;
-        auto flush = [&]() {
-            if (!buf.empty()) { out.push_back(InlineNode::text_node(next_node_id(), buf)); buf.clear(); }
-        };
-        while (!eof() && (!stop_at || pos < *stop_at)) {
-            if (peek1() == '\n') break;
-            bool matched = false;
-            if (pos + del.size() <= cps.size()) {
-                matched = true;
-                for (std::size_t i = 0; i < del.size(); ++i)
-                    if (cps[pos + i] != del[i]) { matched = false; break; }
-            }
-            if (matched) break;
-            if (peek1() == U'$') {
-                if (auto node = try_parse_inline_math(stop_at)) {
-                    flush();
-                    out.push_back(std::move(*node));
-                    continue;
-                }
-            }
-            if (peek1() == U'\\' && peek2() == U'(') {
-                if (auto node = try_parse_inline_paren_math(stop_at)) {
-                    flush();
-                    out.push_back(std::move(*node));
-                    continue;
-                }
-            }
-            if (peek1() == U'\\' && (!stop_at || pos + 1 < *stop_at) && ascii_punctuation(peek2())) {
-                flush();
-                auto start = pos;
-                auto value = peek2();
-                advance_n(2);
-                NodeId id = next_node_id();
-                NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start + 1), CharOffset(pos)));
-                range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(start + 1)));
-                source_ranges.push_back(std::move(range));
-                out.push_back(InlineNode::text_node(id, std::u32string(1, value)));
-                continue;
-            }
-            if (peek1() == U'&') {
-                auto limit = stop_at.value_or(cps.size());
-                if (auto entity = html_entity_at(pos, limit)) {
-                    flush();
-                    auto start = pos;
-                    pos = entity->second;
-                    NodeId id = next_node_id();
-                    push_range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(pos)));
-                    out.push_back(InlineNode::text_node(id, std::move(entity->first)));
-                    continue;
-                }
-            }
-            if (peek1() == U'*' && peek2() == U'*') {
-                if (auto node = try_parse_delimited_inline(InlineKind::Strong, U"**", stop_at)) {
-                    flush();
-                    out.push_back(std::move(*node));
-                    continue;
-                }
-            }
-            if (peek1() == U'*' && peek2() != U' ' && peek2() != U'*') {
-                if (auto node = try_parse_delimited_inline(InlineKind::Emphasis, U"*", stop_at)) {
-                    flush();
-                    out.push_back(std::move(*node));
-                    continue;
-                }
-            }
-            if (peek1() == U'_' && peek2() == U'_' && peek2next_is_nonspace_underscore_()) {
-                if (auto node = try_parse_delimited_inline(InlineKind::Strong, U"__", stop_at)) {
-                    flush();
-                    out.push_back(std::move(*node));
-                    continue;
-                }
-            }
-            if (peek1() == U'_' && peek2() != U' ' && peek2() != U'_') {
-                if (auto node = try_parse_delimited_inline(InlineKind::Emphasis, U"_", stop_at)) {
-                    flush();
-                    out.push_back(std::move(*node));
-                    continue;
-                }
-            }
-            if (peek1() == U'~' && peek2() == U'~' && peek2next2() != U' ') {
-                if (auto node = try_parse_delimited_inline(InlineKind::Strike, U"~~", stop_at)) {
-                    flush();
-                    out.push_back(std::move(*node));
-                    continue;
-                }
-            }
-            if (peek1() == U'`') {
-                if (auto node = try_parse_inline_code(stop_at)) { flush(); out.push_back(std::move(*node)); continue; }
-            }
-            if (peek1() == U'!' && peek2() == U'[') {
-                if (auto node = try_parse_link_or_image(stop_at)) { flush(); out.push_back(std::move(*node)); continue; }
-            }
-            if (peek1() == U'[') {
-                if (auto node = try_parse_link_or_image(stop_at)) { flush(); out.push_back(std::move(*node)); continue; }
-            }
-            if (peek1() == U'<') {
-                if (auto node = try_parse_autolink(stop_at)) { flush(); out.push_back(std::move(*node)); continue; }
-                if (auto node = try_parse_raw_html_inline(stop_at)) { flush(); out.push_back(std::move(*node)); continue; }
-            }
-            buf.push_back(peek1()); advance();
-        }
-        flush();
-        return out;
-    }
-
-    // ---- inline math `$...$` ----
-    std::optional<InlineNode> try_parse_inline_math(std::optional<std::size_t> stop_at = std::nullopt) {
-        if (!input->dialect.math.inline_dollar) return std::nullopt;
-        std::size_t start = pos;
-        advance(); // consume $
-        if (peek1() == '$') { pos = start; return std::nullopt; } // $$ belongs to block path
-        std::u32string tex;
-        while (!eof() && (!stop_at || pos < *stop_at) && peek1() != '$' && peek1() != '\n') { tex.push_back(peek1()); advance(); }
-        if (peek1() != '$') {
-            pos = start;
-            diagnostics.push_back(make_diagnostic(DiagnosticSeverity::Warning,
-                "Unclosed inline math delimiter `$`",
-                CharRange(CharOffset(start), cur()), DIAG_UNCLOSED_MATH_DOLLAR));
-            return std::nullopt;
-        }
-        advance();
-        NodeId id = next_node_id();
-        push_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(start + 1), CharOffset(cur().v - 1)));
-        InlineNode n; n.id = id; n.kind = InlineKind::InlineMath; n.text = std::move(tex); n.math_delim = MathDelimiter::InlineDollar;
-        return n;
-    }
-
-    std::optional<InlineNode> try_parse_inline_paren_math(std::optional<std::size_t> stop_at = std::nullopt) {
-        if (!input->dialect.math.inline_paren) return std::nullopt;
-        std::size_t start = pos;
-        advance_n(2);
-        std::u32string tex;
-        while (!eof() && (!stop_at || pos < *stop_at) && !(peek1() == '\\' && peek2() == ')' && (!stop_at || pos + 2 <= *stop_at)) && peek1() != '\n') {
-            tex.push_back(peek1());
-            advance();
-        }
-        if (!(peek1() == '\\' && peek2() == ')' && (!stop_at || pos + 2 <= *stop_at))) {
-            pos = start;
-            diagnostics.push_back(make_diagnostic(DiagnosticSeverity::Warning,
-                "Unclosed inline math delimiter \\(",
-                CharRange(CharOffset(start), cur()), DIAG_UNCLOSED_MATH_DOLLAR));
-            return std::nullopt;
-        }
-        advance_n(2);
-        NodeId id = next_node_id();
-        push_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(start + 2), CharOffset(cur().v - 2)));
-        InlineNode n; n.id = id; n.kind = InlineKind::InlineMath; n.text = std::move(tex); n.math_delim = MathDelimiter::InlineParen;
-        return n;
-    }
-
-    // ---- inline code ----
-    std::optional<InlineNode> try_parse_inline_code(std::optional<std::size_t> stop_at = std::nullopt) {
-        std::size_t start = pos;
-        std::size_t limit = stop_at.value_or(cps.size());
-        if (start > 0 && cps[start - 1] == U'`') return std::nullopt;
-        std::size_t count = 0;
-        while (pos < limit && peek1() == '`') { ++count; advance(); }
-        std::size_t content_start = pos;
-        std::size_t closing_start = std::u32string::npos;
-        std::size_t search = pos;
-        while (search < limit) {
-            if (cps[search] == U'\n' && search + 1 < cps.size() && cps[search + 1] == U'\n') break;
-            if (cps[search] != U'`') {
-                ++search;
-                continue;
-            }
-            std::size_t run_start = search;
-            while (search < limit && cps[search] == U'`') ++search;
-            if (search - run_start == count) {
-                closing_start = run_start;
-                break;
-            }
-        }
-        if (closing_start == std::u32string::npos) {
-            pos = start;
-            return std::nullopt;
-        }
-        std::u32string code;
-        code.reserve(closing_start - content_start);
-        for (std::size_t index = content_start; index < closing_start; ++index) {
-            code.push_back(cps[index] == U'\n' ? U' ' : cps[index]);
-        }
-        bool all_spaces = !code.empty();
-        for (char32_t ch : code) if (ch != U' ') all_spaces = false;
-        bool trim_spaces = code.size() >= 2 && code.front() == U' ' && code.back() == U' ' && !all_spaces;
-        std::size_t normalized_start = content_start + (trim_spaces ? 1 : 0);
-        std::size_t normalized_end = closing_start - (trim_spaces ? 1 : 0);
-        if (trim_spaces) code = code.substr(1, code.size() - 2);
-        pos = closing_start + count;
-        NodeId id = next_node_id();
-        NodeSourceRange range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(normalized_start), CharOffset(normalized_end)));
-        range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(content_start)));
-        range.marker_ranges.push_back(CharRange(CharOffset(closing_start), cur()));
-        source_ranges.push_back(std::move(range));
-        InlineNode n; n.id = id; n.kind = InlineKind::InlineCode; n.text = std::move(code);
-        return n;
-    }
-
-    // ---- link / image ----
-    std::optional<InlineNode> try_parse_link_or_image(std::optional<std::size_t> stop_at = std::nullopt) {
-        std::size_t start = pos;
-        std::size_t limit = stop_at.value_or(cps.size());
-        bool is_image = (peek1() == '!');
-        if (is_image) advance();
-        if (pos >= limit || peek1() != '[') { pos = start; return std::nullopt; }
-        advance();
-        auto text_start = pos;
-        std::size_t depth = 1;
-        while (!eof() && pos < limit && depth > 0 && peek1() != U'\n') {
-            if (peek1() == U'\\' && pos + 1 < limit) { advance_n(2); continue; }
-            if (peek1() == U'[') ++depth;
-            else if (peek1() == U']') --depth;
-            if (depth > 0) advance();
-        }
-        if (depth != 0 || pos >= limit || peek1() != ']') { pos = start; return std::nullopt; }
-        auto text_end = pos;
-        advance();
-        std::string href_s;
-        std::optional<std::string> title;
-        if (pos < limit && peek1() == U'(') {
-            advance();
-            while (pos < limit && (peek1() == U' ' || peek1() == U'\t')) advance();
-            std::u32string href;
-            if (pos < limit && peek1() == U'<') {
-                advance();
-                while (pos < limit && peek1() != U'>' && peek1() != U'\n') href.push_back(peek1()), advance();
-                if (pos >= limit || peek1() != U'>') { pos = start; return std::nullopt; }
-                advance();
-            } else {
-                std::size_t parentheses = 0;
-                while (pos < limit && peek1() != U'\n') {
-                    if (peek1() == U'\\' && pos + 1 < limit) { href.push_back(peek2()); advance_n(2); continue; }
-                    if (peek1() == U'(') { ++parentheses; href.push_back(peek1()); advance(); continue; }
-                    if (peek1() == U')') {
-                        if (parentheses == 0) break;
-                        --parentheses; href.push_back(peek1()); advance(); continue;
-                    }
-                    if ((peek1() == U' ' || peek1() == U'\t') && parentheses == 0) break;
-                    href.push_back(peek1()); advance();
-                }
-            }
-            while (pos < limit && (peek1() == U' ' || peek1() == U'\t')) advance();
-            if (pos < limit && (peek1() == U'"' || peek1() == U'\'' || peek1() == U'(')) {
-                auto opening = peek1();
-                auto closing = opening == U'(' ? U')' : opening;
-                advance();
-                std::u32string value;
-                while (pos < limit && peek1() != closing && peek1() != U'\n') value.push_back(peek1()), advance();
-                if (pos >= limit || peek1() != closing) { pos = start; return std::nullopt; }
-                advance();
-                while (pos < limit && (peek1() == U' ' || peek1() == U'\t')) advance();
-                title = cps_to_utf8(value);
-            }
-            if (pos >= limit || peek1() != U')') { pos = start; return std::nullopt; }
-            advance();
-            href_s = cps_to_utf8(href);
-        } else {
-            auto after_text = pos;
-            while (pos < limit && (peek1() == U' ' || peek1() == U'\t')) advance();
-            if (pos >= limit || peek1() != U'[') { pos = start; return std::nullopt; }
-            advance();
-            auto label_start = pos;
-            while (pos < limit && peek1() != U']' && peek1() != U'\n') advance();
-            if (pos >= limit || peek1() != U']') { pos = start; return std::nullopt; }
-            auto label_end = pos;
-            advance();
-            auto label = label_end == label_start
-                ? normalize_link_label(std::u32string_view(cps).substr(text_start, text_end - text_start))
-                : normalize_link_label(std::u32string_view(cps).substr(label_start, label_end - label_start));
-            auto found = link_definitions.find(label);
-            if (found == link_definitions.end()) { pos = start; return std::nullopt; }
-            href_s = found->second.href;
-            title = found->second.title;
-            (void)after_text;
-        }
-        auto source_end = pos;
-        auto raw_text = std::u32string(std::u32string_view(cps).substr(text_start, text_end - text_start));
-        InlineVec children;
-        if (!is_image) {
-            pos = text_start;
-            children = parse_inline_sequence(text_end).inlines;
-            pos = source_end;
-        }
-        NodeId id = next_node_id();
-        std::string text_s = cps_to_utf8(raw_text);
-        NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(text_start), CharOffset(text_end)));
-        range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(text_start)));
-        range.marker_ranges.push_back(CharRange(CharOffset(text_end), CharOffset(source_end)));
-        source_ranges.push_back(std::move(range));
-        if (is_image) {
-            images.push_back({id, href_s, text_s});
-            InlineNode n; n.id = id; n.kind = InlineKind::Image; n.href = href_s; n.alt = text_s; n.title = title;
-            return n;
-        } else {
-            links.push_back({id, href_s, text_s});
-            InlineNode n; n.id = id; n.kind = InlineKind::Link; n.href = href_s; n.title = title;
-            n.children = std::move(children);
-            return n;
-        }
-    }
-
-    std::optional<BlockNode> try_parse_link_definition() {
-        auto found = link_definitions_by_start.find(pos);
-        if (found == link_definitions_by_start.end()) return std::nullopt;
-        auto start = pos;
-        pos = found->second.source_end;
-        NodeId id = next_node_id();
-        push_range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(pos)));
-        BlockNode block;
-        block.id = id;
-        block.kind = BlockKind::LinkDefinition;
-        block.raw = cps_to_utf8(std::u32string_view(cps).substr(start, pos - start));
-        return block;
-    }
-
-    std::optional<InlineNode> try_parse_autolink(std::optional<std::size_t> stop_at = std::nullopt) {
-        auto start = pos;
-        auto limit = stop_at.value_or(cps.size());
-        if (pos >= limit || peek1() != U'<') return std::nullopt;
-        advance();
-        auto content_start = pos;
-        std::u32string value;
-        while (pos < limit && peek1() != U'>' && peek1() != U'\n' && peek1() != U' ' && peek1() != U'\t') value.push_back(peek1()), advance();
-        if (pos >= limit || peek1() != U'>' || value.empty()) { pos = start; return std::nullopt; }
-        auto text = cps_to_utf8(value);
-        auto lower = text;
-        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-        bool url = lower.starts_with("http://") || lower.starts_with("https://");
-        auto at = text.find('@');
-        bool email = at != std::string::npos && at > 0 && at + 1 < text.size() && text.find('@', at + 1) == std::string::npos;
-        if (!url && !email) { pos = start; return std::nullopt; }
-        advance();
-        NodeId id = next_node_id();
-        NodeId text_id = next_node_id();
-        NodeSourceRange range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(content_start), CharOffset(cur().v - 1)));
-        range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(content_start)));
-        range.marker_ranges.push_back(CharRange(CharOffset(cur().v - 1), cur()));
-        source_ranges.push_back(std::move(range));
-        push_range(text_id, CharRange(CharOffset(content_start), CharOffset(cur().v - 1)), CharRange(CharOffset(content_start), CharOffset(cur().v - 1)));
-        InlineNode node;
-        node.id = id;
-        node.kind = InlineKind::Link;
-        node.href = email ? "mailto:" + text : text;
-        node.children.push_back(InlineNode::text_node(text_id, std::move(value)));
-        links.push_back({id, node.href, text});
-        return node;
+        const auto id = next_node_id();
+        push_range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(content_end)));
+        BlockNode paragraph;
+        paragraph.id = id;
+        paragraph.kind = BlockKind::Paragraph;
+        paragraph.inline_content = make_inline_document(start, content_end);
+        return paragraph;
     }
 
     std::optional<BlockNode> try_parse_image_block() {
-        auto start = pos;
-        auto range_count = source_ranges.size();
-        auto link_count = links.size();
-        auto image_count = images.size();
-        auto counter = node_counter;
-        auto rollback = [&] {
-            pos = start;
-            source_ranges.resize(range_count);
-            links.resize(link_count);
-            images.resize(image_count);
-            node_counter = counter;
-        };
+        const auto start = pos;
         auto line_end = pos;
         while (line_end < cps.size() && cps[line_end] != U'\n') ++line_end;
-        std::optional<InlineNode> parsed;
-        if (peek1() == U'!' || peek1() == U'[') parsed = try_parse_link_or_image(line_end);
-        else if (peek1() == U'<') parsed = try_parse_raw_html_inline(line_end);
-        if (!parsed || pos != line_end) { rollback(); return std::nullopt; }
-        InlineNode const* image = nullptr;
-        std::optional<std::string> link;
-        if (parsed->kind == InlineKind::Image) {
-            image = &*parsed;
-        } else if (parsed->kind == InlineKind::Link && parsed->children.size() == 1 && parsed->children.front().kind == InlineKind::Image) {
-            image = &parsed->children.front();
-            link = parsed->href;
+        if (line_end == start) return std::nullopt;
+
+        if (peek1() == U'<') {
+            const auto tag = html_tag_at(start, line_end);
+            if (tag && !tag->closing && tag->name == "img" && tag->end == line_end) {
+                const auto source = tag->attributes.contains("src") ? tag->attributes.at("src") : std::string{};
+                if (!safe_link_target(source, true)) return std::nullopt;
+                auto dimension = [&](std::string_view name) -> std::optional<float> {
+                    const auto found = tag->attributes.find(std::string(name));
+                    if (found == tag->attributes.end()) return std::nullopt;
+                    auto value = found->second;
+                    if (value.ends_with("px")) value.resize(value.size() - 2);
+                    try {
+                        std::size_t consumed = 0;
+                        const auto parsed = std::stof(value, &consumed);
+                        if (consumed != value.size() || !std::isfinite(parsed) || parsed <= 0.0f) return std::nullopt;
+                        return parsed;
+                    } catch (...) {
+                        return std::nullopt;
+                    }
+                };
+                pos = line_end;
+                if (peek1() == U'\n') advance();
+                BlockNode block;
+                block.id = next_node_id();
+                block.kind = BlockKind::ImageBlock;
+                block.src = source;
+                block.image_alt = tag->attributes.contains("alt") ? tag->attributes.at("alt") : std::string{};
+                if (tag->attributes.contains("title")) block.image_title = tag->attributes.at("title");
+                block.image_width = dimension("width");
+                block.image_height = dimension("height");
+                push_range(block.id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(line_end)));
+                return block;
+            }
         }
-        if (!image) { rollback(); return std::nullopt; }
+
+        auto inline_document = make_inline_document(start, line_end);
+        if (inline_document.tree.nodes.size() != 1) return std::nullopt;
+        const auto& root = inline_document.tree.nodes.front();
+        const InlineCstNode* image = nullptr;
+        std::optional<std::string> link;
+        if (root.kind == InlineCstKind::Image) {
+            image = &root;
+        } else if (root.kind == InlineCstKind::Link && root.children.size() == 1
+            && root.children.front().kind == InlineCstKind::Image) {
+            image = &root.children.front();
+            link = root.href;
+        }
+        if (!image || image->status != ParseStatus::Complete) return std::nullopt;
+
+        pos = line_end;
         if (peek1() == U'\n') advance();
         BlockNode block;
-        block.id = parsed->id;
+        block.id = next_node_id();
         block.kind = BlockKind::ImageBlock;
         block.src = image->href;
         block.image_alt = image->alt;
         block.image_title = image->title;
         block.image_link = std::move(link);
-        block.image_width = image->image_width;
-        block.image_height = image->image_height;
-        if (!source_ranges.empty() && source_ranges.back().node_id == block.id) source_ranges.back().source_range.end = CharOffset(pos);
+        push_range(block.id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(line_end)));
         return block;
-    }
-
-    // ---- footnote ref ----
-    std::optional<InlineNode> try_parse_footnote_ref(std::optional<std::size_t> stop_at = std::nullopt) {
-        std::size_t start = pos;
-        auto limit = stop_at.value_or(cps.size());
-        if (!(peek1() == '[' && peek2() == '^')) return std::nullopt;
-        advance_n(2);
-        std::u32string label;
-        while (!eof() && pos < limit && peek1() != ']' && peek1() != '\n') { label.push_back(peek1()); advance(); }
-        if (pos >= limit || peek1() != ']') { pos = start; return std::nullopt; }
-        advance();
-        NodeId id = next_node_id();
-        push_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(start + 2), cur()));
-        InlineNode n; n.id = id; n.kind = InlineKind::FootnoteRef; n.label = cps_to_utf8(label);
-        return n;
-    }
-
-    // ---- wiki link ----
-    std::optional<InlineNode> try_parse_wiki_link(std::optional<std::size_t> stop_at = std::nullopt) {
-        std::size_t start = pos;
-        auto limit = stop_at.value_or(cps.size());
-        if (!(peek1() == '[' && peek2() == '[')) return std::nullopt;
-        advance_n(2);
-        std::u32string target;
-        std::optional<std::string> alias;
-        while (!eof() && pos < limit && peek1() != '\n') {
-            if (peek1() == ']' && peek2() == ']' && pos + 2 <= limit) { advance_n(2); break; }
-            if (peek1() == '|') {
-                advance();
-                std::u32string a;
-                while (!eof() && pos < limit && peek1() != '\n') {
-                    if (peek1() == ']' && peek2() == ']' && pos + 2 <= limit) { advance_n(2); break; }
-                    a.push_back(peek1()); advance();
-                }
-                alias = cps_to_utf8(a);
-                break;
-            }
-            target.push_back(peek1()); advance();
-        }
-        if (target.empty()) { pos = start; return std::nullopt; }
-        NodeId id = next_node_id();
-        push_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(start + 2), cur()));
-        InlineNode n; n.id = id; n.kind = InlineKind::WikiLink; n.target = cps_to_utf8(target); n.alias = alias;
-        return n;
-    }
-
-    std::optional<InlineNode> try_parse_raw_html_inline(std::optional<std::size_t> stop_at = std::nullopt) {
-        auto limit = stop_at.value_or(cps.size());
-        auto tag = html_tag_at(pos, limit);
-        if (!tag || tag->closing) return std::nullopt;
-        auto start = pos;
-        auto opening = std::u32string(std::u32string_view(cps).substr(start, tag->end - start));
-        static const std::unordered_set<std::string> blocked{ "script", "style", "iframe", "object", "embed" };
-        if (blocked.contains(tag->name)) {
-            auto end = tag->end;
-            if (auto closing = html_closing_tag(tag->name, tag->end, limit)) end = closing->second;
-            pos = end;
-            NodeId id = next_node_id();
-            push_range(id, CharRange(CharOffset(start), CharOffset(end)), CharRange(CharOffset(start), CharOffset(end)));
-            diagnostics.push_back(make_diagnostic(DiagnosticSeverity::Warning, "Unsafe HTML element is shown as text", CharRange(CharOffset(start), CharOffset(end)), DIAG_RAW_HTML_DISABLED));
-            InlineNode node;
-            node.id = id;
-            node.kind = InlineKind::UnsupportedMarkup;
-            node.text = std::u32string(std::u32string_view(cps).substr(start, end - start));
-            node.unsup_reason = UnsupportedMarkupReason::RawHtmlDisabled;
-            return node;
-        }
-        if (tag->name == "br") {
-            pos = tag->end;
-            NodeId id = next_node_id();
-            NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(pos), CharOffset(pos)));
-            range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(pos)));
-            source_ranges.push_back(std::move(range));
-            InlineNode node;
-            node.id = id;
-            node.kind = InlineKind::HardBreak;
-            node.opening_marker = std::move(opening);
-            return node;
-        }
-        if (tag->name == "img") {
-            pos = tag->end;
-            auto src = tag->attributes.contains("src") ? tag->attributes.at("src") : std::string{};
-            if (!safe_link_target(src, true)) src.clear();
-            NodeId id = next_node_id();
-            push_range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(pos)));
-            InlineNode node;
-            node.id = id;
-            node.kind = InlineKind::Image;
-            node.href = src;
-            if (tag->attributes.contains("alt")) node.alt = tag->attributes.at("alt");
-            if (tag->attributes.contains("title")) node.title = tag->attributes.at("title");
-            node.image_width = html_dimension(*tag, "width");
-            node.image_height = html_dimension(*tag, "height");
-            images.push_back({id, node.href, node.alt});
-            return node;
-        }
-        auto closing = html_closing_tag(tag->name, tag->end, limit);
-        if (!closing) return std::nullopt;
-        auto content_start = tag->end;
-        auto content_end = closing->first;
-        auto end = closing->second;
-        InlineNode node;
-        if (tag->name == "code") {
-            node.kind = InlineKind::InlineCode;
-            node.text = std::u32string(std::u32string_view(cps).substr(content_start, content_end - content_start));
-        } else {
-            pos = content_start;
-            node.children = parse_inline_sequence(content_end).inlines;
-            if (tag->name == "strong" || tag->name == "b") node.kind = InlineKind::Strong;
-            else if (tag->name == "em" || tag->name == "i" || tag->name == "cite") node.kind = InlineKind::Emphasis;
-            else if (tag->name == "del" || tag->name == "s") node.kind = InlineKind::Strike;
-            else if (tag->name == "a") node.kind = InlineKind::Link;
-            else node.kind = InlineKind::Span;
-        }
-        pos = end;
-        NodeId id = next_node_id();
-        node.id = id;
-        node.opening_marker = std::move(opening);
-        node.closing_marker = std::u32string(std::u32string_view(cps).substr(content_end, end - content_end));
-        if (node.kind == InlineKind::Link) {
-            auto href = tag->attributes.contains("href") ? tag->attributes.at("href") : std::string{};
-            if (!safe_link_target(href, false)) href.clear();
-            node.href = href;
-            if (tag->attributes.contains("title")) node.title = tag->attributes.at("title");
-            links.push_back({id, node.href, cps_to_utf8(std::u32string_view(cps).substr(content_start, content_end - content_start))});
-        }
-        NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(end)), CharRange(CharOffset(content_start), CharOffset(content_end)));
-        range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(content_start)));
-        range.marker_ranges.push_back(CharRange(CharOffset(content_end), CharOffset(end)));
-        source_ranges.push_back(std::move(range));
-        return node;
     }
 
     std::optional<BlockNode> try_parse_raw_html_block() {
@@ -1410,7 +792,7 @@ public:
         if (tag->name == "table") {
             BlockNode block;
             block.kind = BlockKind::Table;
-            std::vector<TableRow> rows;
+            BlockVec rows;
             std::vector<bool> row_headers;
             auto cursor = content_start;
             while (cursor < content_end) {
@@ -1418,8 +800,9 @@ public:
                 if (!row_tag || row_tag->closing || row_tag->name != "tr") { ++cursor; continue; }
                 auto row_closing = html_closing_tag("tr", row_tag->end, content_end);
                 if (!row_closing) break;
-                TableRow row;
+                BlockNode row;
                 row.id = next_node_id();
+                row.kind = BlockKind::TableRow;
                 bool row_header = false;
                 auto cell_cursor = row_tag->end;
                 while (cell_cursor < row_closing->first) {
@@ -1428,26 +811,23 @@ public:
                     auto cell_closing = html_closing_tag(cell_tag->name, cell_tag->end, row_closing->first);
                     if (!cell_closing) break;
                     row_header = row_header || cell_tag->name == "th";
-                    TableCell cell;
+                    BlockNode cell;
                     cell.id = next_node_id();
-                    auto text_id = next_node_id();
-                    cell.children.push_back(InlineNode::text_node(text_id, decode_text(cell_tag->end, cell_closing->first)));
-                    push_range(text_id, CharRange(CharOffset(cell_tag->end), CharOffset(cell_closing->first)), CharRange(CharOffset(cell_tag->end), CharOffset(cell_closing->first)));
+                    cell.kind = BlockKind::TableCell;
+                    cell.inline_content = make_inline_document(cell_tag->end, cell_closing->first);
                     push_range(cell.id, CharRange(CharOffset(cell_tag->start), CharOffset(cell_closing->second)), CharRange(CharOffset(cell_tag->end), CharOffset(cell_closing->first)));
-                    row.cells.push_back(std::move(cell));
+                    row.children.push_back(std::move(cell));
                     cell_cursor = cell_closing->second;
                 }
                 push_range(row.id, CharRange(CharOffset(row_tag->start), CharOffset(row_closing->second)), CharRange(CharOffset(row_tag->end), CharOffset(row_closing->first)));
-                if (!row.cells.empty()) { rows.push_back(std::move(row)); row_headers.push_back(row_header); }
+                row.table_header_row = row_header;
+                if (!row.children.empty()) { rows.push_back(std::move(row)); row_headers.push_back(row_header); }
                 cursor = row_closing->second;
             }
             if (rows.empty()) return std::nullopt;
             block.id = next_node_id();
-            block.table_header_row = !row_headers.empty() && row_headers.front();
-            block.table_header.reserve(rows.front().cells.size());
-            for (auto& cell : rows.front().cells) block.table_header.push_back(std::move(cell));
-            for (std::size_t index = 1; index < rows.size(); ++index) block.table_rows.push_back(std::move(rows[index]));
-            block.table_aligns.resize(block.table_header.size(), TableAlignment::None);
+            block.children = std::move(rows);
+            block.table_aligns.resize(block.children.front().children.size(), TableAlignment::None);
             NodeSourceRange range(block.id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(content_start), CharOffset(content_end)));
             range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(content_start)));
             range.marker_ranges.push_back(CharRange(CharOffset(content_end), CharOffset(source_end)));
@@ -1457,16 +837,14 @@ public:
         }
         pos = source_end;
         NodeId id = next_node_id();
-        auto text_id = next_node_id();
         NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(content_start), CharOffset(content_end)));
         range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(content_start)));
         range.marker_ranges.push_back(CharRange(CharOffset(content_end), CharOffset(source_end)));
         source_ranges.push_back(std::move(range));
-        push_range(text_id, CharRange(CharOffset(content_start), CharOffset(content_end)), CharRange(CharOffset(content_start), CharOffset(content_end)));
         BlockNode block;
         block.id = id;
         block.kind = BlockKind::Paragraph;
-        block.children.push_back(InlineNode::text_node(text_id, decode_text(content_start, content_end)));
+        block.inline_content = make_inline_document(content_start, content_end);
         block.opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
         block.closing_marker = std::u32string(std::u32string_view(cps).substr(content_end, source_end - content_end));
         return block;
@@ -1500,7 +878,7 @@ public:
         NodeId id = next_node_id();
         push_range(id, CharRange(CharOffset(start), CharOffset(end)), CharRange(CharOffset(content_start), CharOffset(end)));
         footnotes.push_back({id, cps_to_utf8(label)});
-        BlockNode b; b.id = id; b.kind = BlockKind::FootnoteDefinition; b.footnote_label = cps_to_utf8(label); b.quote_children = std::move(children);
+        BlockNode b; b.id = id; b.kind = BlockKind::FootnoteDefinition; b.footnote_label = cps_to_utf8(label); b.children = std::move(children);
         return b;
     }
 
@@ -1680,33 +1058,33 @@ public:
         if (!header_row) return fail();
         auto [separator_line, separator_length] = rest_of_line();
         auto alignments = parse_table_separator(separator_line);
-        if (!alignments || alignments->size() != header_row->cells.size()) return fail();
+        if (!alignments || alignments->size() != header_row->children.size()) return fail();
         advance_n(separator_length);
         if (peek1() == U'\n') advance();
-        std::vector<TableRow> rows;
+        BlockVec rows;
         while (!eof()) {
             std::size_t row_start = pos;
             auto [line, row_length] = rest_of_line();
             if (line.find(U'|') == std::u32string::npos) break;
-            auto row = parse_table_row(header_row->cells.size());
+            auto row = parse_table_row(header_row->children.size());
             if (!row) break;
-            while (row->cells.size() < header_row->cells.size()) {
-                TableCell cell;
+            while (row->children.size() < header_row->children.size()) {
+                BlockNode cell;
                 cell.id = next_node_id();
-                NodeId text_id = next_node_id();
-                cell.children.push_back(InlineNode::text_node(text_id, U""));
+                cell.kind = BlockKind::TableCell;
+                cell.inline_content = make_inline_document(row_start + row_length, row_start + row_length);
                 auto offset = CharOffset(row_start + row_length);
                 push_range(cell.id, CharRange(offset, offset), CharRange(offset, offset));
-                push_range(text_id, CharRange(offset, offset), CharRange(offset, offset));
-                row->cells.push_back(std::move(cell));
+                row->children.push_back(std::move(cell));
             }
             rows.push_back(std::move(*row));
         }
         NodeId id = next_node_id();
         push_range(id, CharRange(CharOffset(save), cur()), CharRange(CharOffset(save), cur()));
         BlockNode b; b.id = id; b.kind = BlockKind::Table;
-        b.table_header = std::move(header_row->cells);
-        b.table_rows = std::move(rows);
+        header_row->table_header_row = true;
+        b.children.push_back(std::move(*header_row));
+        b.children.insert(b.children.end(), std::make_move_iterator(rows.begin()), std::make_move_iterator(rows.end()));
         b.table_aligns = std::move(*alignments);
         return b;
     }
@@ -1727,12 +1105,12 @@ public:
         return segments;
     }
 
-    std::optional<TableRow> parse_table_row(std::size_t maximum_cells = (std::numeric_limits<std::size_t>::max)()) {
+    std::optional<BlockNode> parse_table_row(std::size_t maximum_cells = (std::numeric_limits<std::size_t>::max)()) {
         std::size_t row_start = pos;
         auto [line, length] = rest_of_line();
         auto segments = table_cell_segments(line);
         if (segments.empty()) return std::nullopt;
-        std::vector<TableCell> cells;
+        BlockVec cells;
         cells.reserve(segments.size());
         for (auto const& segment : segments) {
             if (cells.size() >= maximum_cells) break;
@@ -1750,18 +1128,10 @@ public:
             auto source_end = CharOffset(row_start + segment.second);
             auto text_start = CharOffset(row_start + content_start);
             auto text_end = CharOffset(row_start + content_end);
-            auto row_position = pos;
-            pos = text_start.v;
-            auto parsed = parse_inline_sequence(text_end.v);
-            pos = row_position;
-            TableCell cell;
+            BlockNode cell;
             cell.id = cell_id;
-            cell.children = std::move(parsed.inlines);
-            if (cell.children.empty()) {
-                NodeId text_id = next_node_id();
-                cell.children.push_back(InlineNode::text_node(text_id, U""));
-                push_range(text_id, CharRange(text_start, text_end), CharRange(text_start, text_end));
-            }
+            cell.kind = BlockKind::TableCell;
+            cell.inline_content = make_inline_document(text_start.v, text_end.v);
             push_range(cell_id, CharRange(source_start, source_end), CharRange(text_start, text_end));
             cells.push_back(std::move(cell));
         }
@@ -1769,7 +1139,7 @@ public:
         if (peek1() == U'\n') advance();
         NodeId row_id = next_node_id();
         push_range(row_id, CharRange(CharOffset(row_start), cur()), CharRange(CharOffset(row_start), CharOffset(row_start + length)));
-        TableRow r; r.id = row_id; r.cells = std::move(cells);
+        BlockNode r; r.id = row_id; r.kind = BlockKind::TableRow; r.children = std::move(cells);
         return r;
     }
 
@@ -1945,20 +1315,13 @@ public:
             NodeSourceRange item_range(item_id, CharRange(CharOffset(marker->start), CharOffset(item_end)), CharRange(CharOffset(marker->content_start), CharOffset(inner_end_source)));
             item_range.marker_ranges.push_back(CharRange(CharOffset(marker->start), CharOffset(marker->content_start)));
             source_ranges.push_back(std::move(item_range));
-            if (marker->task) {
-                TaskListItem item;
-                item.id = item_id;
-                item.checked = marker->checked;
-                item.marker = marker->text;
-                item.children = std::move(children);
-                result.task_items.push_back(std::move(item));
-            } else {
-                ListItem item;
-                item.id = item_id;
-                item.marker = marker->text;
-                item.children = std::move(children);
-                result.list_items.push_back(std::move(item));
-            }
+            BlockNode item;
+            item.id = item_id;
+            item.kind = marker->task ? BlockKind::TaskListItem : BlockKind::ListItem;
+            item.checked = marker->checked;
+            item.marker = marker->text;
+            item.children = std::move(children);
+            result.children.push_back(std::move(item));
             last_content = item_end;
             pos = item_end;
             if (pos >= cps.size()) break;
@@ -2045,10 +1408,10 @@ public:
         source_ranges.push_back(std::move(quote_range));
         if (callout) {
             callout->id = id;
-            callout->quote_children = std::move(children);
+            callout->children = std::move(children);
             return callout;
         }
-        BlockNode b; b.id = id; b.kind = BlockKind::BlockQuote; b.quote_children = std::move(children);
+        BlockNode b; b.id = id; b.kind = BlockKind::BlockQuote; b.children = std::move(children);
         return b;
     }
     std::optional<BlockNode> try_parse_callout_from_line(const std::u32string& line) {
@@ -2061,10 +1424,12 @@ public:
             std::u32string kind = substr_cps_(t, 2, kind_end - 2);
             std::u32string title_part = (kind_end + 1 < t.size()) ? substr_cps_(t, kind_end + 1, std::u32string::npos) : U"";
             title_part = trim_cps_(title_part);
-            std::optional<InlineVec> title;
+            std::optional<InlineDocument> title;
             if (!title_part.empty()) {
-                InlineVec tv; tv.push_back(InlineNode::text_node(next_node_id(), std::move(title_part)));
-                title = std::move(tv);
+                InlineDocument value;
+                value.source = std::move(title_part);
+                value.tree = parse_inline(value.source, inline_parse_context());
+                title = std::move(value);
             }
             // uppercase kind
             for (char32_t& c : kind) if (c >= 'a' && c <= 'z') c = static_cast<char32_t>(c - 'a' + 'A');
@@ -2176,65 +1541,50 @@ public:
 } // namespace detail
 
 inline std::size_t block_source_start(const EditorDocument& doc, std::size_t block_index) {
-    if (block_index >= doc.blocks.size()) return 0;
-    if (const auto* range = doc.source_map.find_node_by_id(doc.blocks[block_index].id)) return range->source_range.start.v;
+    if (block_index >= doc.root.children.size()) return 0;
+    if (const auto* range = doc.source_map.find_node_by_id(doc.root.children[block_index].id)) return range->source_range.start.v;
     return 0;
 }
 
 inline CharRange block_source_range(const EditorDocument& doc, std::size_t block_index) {
-    if (block_index >= doc.blocks.size()) return CharRange{};
-    if (const auto* range = doc.source_map.find_node_by_id(doc.blocks[block_index].id)) return range->source_range;
+    if (block_index >= doc.root.children.size()) return CharRange{};
+    if (const auto* range = doc.source_map.find_node_by_id(doc.root.children[block_index].id)) return range->source_range;
     return CharRange{};
 }
 
 inline std::optional<std::size_t> block_index_for_edit_offset(const EditorDocument& doc, std::size_t offset) {
-    for (std::size_t i = 0; i < doc.blocks.size(); ++i) {
+    for (std::size_t i = 0; i < doc.root.children.size(); ++i) {
         auto range = block_source_range(doc, i);
         if (offset < range.start.v) return i;
         if (range.start.v <= offset && offset <= range.end.v) return i;
     }
-    if (!doc.blocks.empty()) return doc.blocks.size() - 1;
+    if (!doc.root.children.empty()) return doc.root.children.size() - 1;
     return std::nullopt;
 }
 
 inline std::uint64_t max_node_id_in_block(const BlockNode& block) {
     std::uint64_t max_id = block.id.v;
-    auto scan_inline = [&](auto& self, const InlineNode& node) -> void {
+    auto scan_inline = [&](auto& self, const InlineCstNode& node) -> void {
         max_id = (std::max)(max_id, node.id.v);
         for (const auto& child : node.children) self(self, child);
     };
+    auto scan_inline_document = [&](const InlineDocument& document) {
+        for (const auto& node : document.tree.nodes) scan_inline(scan_inline, node);
+        for (const auto& token : document.tree.tokens) max_id = (std::max)(max_id, token.id.v);
+    };
     auto scan_block = [&](auto& self, const BlockNode& b) -> void {
         max_id = (std::max)(max_id, b.id.v);
-        for (const auto& child : b.children) scan_inline(scan_inline, child);
-        for (const auto& child : b.quote_children) self(self, child);
-        for (const auto& item : b.list_items) {
-            max_id = (std::max)(max_id, item.id.v);
-            for (const auto& child : item.children) self(self, child);
-        }
-        for (const auto& item : b.task_items) {
-            max_id = (std::max)(max_id, item.id.v);
-            for (const auto& child : item.children) self(self, child);
-        }
-        for (const auto& cell : b.table_header) {
-            max_id = (std::max)(max_id, cell.id.v);
-            for (const auto& child : cell.children) scan_inline(scan_inline, child);
-        }
-        for (const auto& row : b.table_rows) {
-            max_id = (std::max)(max_id, row.id.v);
-            for (const auto& cell : row.cells) {
-                max_id = (std::max)(max_id, cell.id.v);
-                for (const auto& child : cell.children) scan_inline(scan_inline, child);
-            }
-        }
-        if (b.callout_title) for (const auto& child : *b.callout_title) scan_inline(scan_inline, child);
+        if (b.kind == BlockKind::Paragraph || b.kind == BlockKind::Heading || b.kind == BlockKind::TableCell) scan_inline_document(b.inline_content);
+        for (const auto& child : b.children) self(self, child);
+        if (b.callout_title) scan_inline_document(*b.callout_title);
     };
     scan_block(scan_block, block);
     return max_id;
 }
 
 inline std::uint64_t next_node_counter_after(const EditorDocument& doc) {
-    std::uint64_t max_id = 0;
-    for (const auto& block : doc.blocks) max_id = (std::max)(max_id, max_node_id_in_block(block));
+    std::uint64_t max_id = doc.root.id.v;
+    for (const auto& block : doc.root.children) max_id = (std::max)(max_id, max_node_id_in_block(block));
     for (const auto& range : doc.source_map.node_ranges) max_id = (std::max)(max_id, range.node_id.v);
     return max_id + 1;
 }
@@ -2273,7 +1623,7 @@ inline std::optional<NodeSourceRange> shifted_range_for_node(const SourceMap& so
 }
 
 inline void append_old_block_ranges(SourceMap& target, const EditorDocument& old_doc, std::size_t begin, std::size_t end, std::ptrdiff_t delta) {
-    for (std::size_t i = begin; i < end && i < old_doc.blocks.size(); ++i) {
+    for (std::size_t i = begin; i < end && i < old_doc.root.children.size(); ++i) {
         auto block_range = block_source_range(old_doc, i);
         for (const auto& range : old_doc.source_map.node_ranges) {
             if (range.source_range.start.v >= block_range.start.v && range.source_range.end.v <= block_range.end.v) target.node_ranges.push_back(shifted_range(range, delta));
@@ -2313,12 +1663,13 @@ inline DocumentMetadata metadata_from_cps(const std::u32string& cps) {
 }
 
 inline ParseOutput finish_parse_output(std::uint64_t revision, EditorDocument document, DocumentSymbolIndex symbols) {
+    (void)symbols;
     document.revision = revision;
-    auto outline = build_outline_from_blocks(revision, document.blocks);
+    auto outline = build_outline_from_blocks(revision, document.root.children);
     ParseOutput out;
     out.revision = revision;
     out.document = std::move(document);
-    out.symbols = std::move(symbols);
+    out.symbols = build_document_symbol_index(out.document);
     out.outline = std::move(outline);
     out.diagnostics = out.document.diagnostics;
     return out;
@@ -2337,43 +1688,29 @@ inline ParseOutput parse(const ParseInput& input);
 
 inline bool block_contains_node_id(const BlockNode& block, NodeId id) {
     if (block.id == id) return true;
-    auto scan_inline = [&](auto& self, const InlineNode& node) -> bool {
+    auto scan_inline = [&](auto& self, const InlineCstNode& node) -> bool {
         if (node.id == id) return true;
         for (const auto& child : node.children) if (self(self, child)) return true;
         return false;
     };
+    auto scan_inline_document = [&](const InlineDocument& document) {
+        for (const auto& node : document.tree.nodes) if (scan_inline(scan_inline, node)) return true;
+        for (const auto& token : document.tree.tokens) if (token.id == id) return true;
+        return false;
+    };
     auto scan_block = [&](auto& self, const BlockNode& b) -> bool {
         if (b.id == id) return true;
-        for (const auto& child : b.children) if (scan_inline(scan_inline, child)) return true;
-        for (const auto& child : b.quote_children) if (self(self, child)) return true;
-        for (const auto& item : b.list_items) {
-            if (item.id == id) return true;
-            for (const auto& child : item.children) if (self(self, child)) return true;
-        }
-        for (const auto& item : b.task_items) {
-            if (item.id == id) return true;
-            for (const auto& child : item.children) if (self(self, child)) return true;
-        }
-        for (const auto& cell : b.table_header) {
-            if (cell.id == id) return true;
-            for (const auto& child : cell.children) if (scan_inline(scan_inline, child)) return true;
-        }
-        for (const auto& row : b.table_rows) {
-            if (row.id == id) return true;
-            for (const auto& cell : row.cells) {
-                if (cell.id == id) return true;
-                for (const auto& child : cell.children) if (scan_inline(scan_inline, child)) return true;
-            }
-        }
-        if (b.callout_title) for (const auto& child : *b.callout_title) if (scan_inline(scan_inline, child)) return true;
+        if ((b.kind == BlockKind::Paragraph || b.kind == BlockKind::Heading || b.kind == BlockKind::TableCell) && scan_inline_document(b.inline_content)) return true;
+        for (const auto& child : b.children) if (self(self, child)) return true;
+        if (b.callout_title && scan_inline_document(*b.callout_title)) return true;
         return false;
     };
     return scan_block(scan_block, block);
 }
 
 inline bool retained_blocks_contain_node_id(const EditorDocument& doc, std::size_t prefix_end, std::size_t suffix_begin, NodeId id) {
-    for (std::size_t i = 0; i < prefix_end && i < doc.blocks.size(); ++i) if (block_contains_node_id(doc.blocks[i], id)) return true;
-    for (std::size_t i = suffix_begin; i < doc.blocks.size(); ++i) if (block_contains_node_id(doc.blocks[i], id)) return true;
+    for (std::size_t i = 0; i < prefix_end && i < doc.root.children.size(); ++i) if (block_contains_node_id(doc.root.children[i], id)) return true;
+    for (std::size_t i = suffix_begin; i < doc.root.children.size(); ++i) if (block_contains_node_id(doc.root.children[i], id)) return true;
     return false;
 }
 
@@ -2390,7 +1727,7 @@ inline DocumentSymbolIndex retained_symbols(const DocumentSymbolIndex& old_symbo
 
 inline void refresh_metadata(EditorDocument& doc, const std::u32string& cps) {
     bool has_frontmatter = false;
-    for (const auto& block : doc.blocks) {
+    for (const auto& block : doc.root.children) {
         if (block.kind == BlockKind::Frontmatter) {
             doc.metadata = from_frontmatter(block.raw, block.fmt);
             has_frontmatter = true;
@@ -2401,7 +1738,7 @@ inline void refresh_metadata(EditorDocument& doc, const std::u32string& cps) {
 }
 
 inline ParseOutput parse_incremental(const ParseInput& input, const EditorDocument& old_document, const DocumentSymbolIndex& old_symbols, const std::string& old_text, const IncrementalParseEdit& edit) {
-    if (old_document.blocks.empty()) return parse(input);
+    if (old_document.root.children.empty()) return parse(input);
     std::u32string old_cps = utf8_to_cps(old_text);
     std::u32string new_cps = utf8_to_cps(input.text);
     std::ptrdiff_t delta = static_cast<std::ptrdiff_t>(edit.replacement.size()) - static_cast<std::ptrdiff_t>(edit.old_range.len());
@@ -2427,7 +1764,7 @@ inline ParseOutput parse_incremental(const ParseInput& input, const EditorDocume
         }
 
         if (!parser.eof()) {
-            for (std::size_t candidate = scan_old_start; candidate < old_document.blocks.size(); ++candidate) {
+            for (std::size_t candidate = scan_old_start; candidate < old_document.root.children.size(); ++candidate) {
                 auto old_range = block_source_range(old_document, candidate);
                 std::ptrdiff_t shifted_start = static_cast<std::ptrdiff_t>(old_range.start.v) + delta;
                 if (shifted_start != static_cast<std::ptrdiff_t>(parser.pos)) continue;
@@ -2441,16 +1778,18 @@ inline ParseOutput parse_incremental(const ParseInput& input, const EditorDocume
     }
 
     EditorDocument doc;
+    doc.root.id = old_document.root.id;
+    doc.dialect = input.dialect;
     doc.trailing_newline = !new_cps.empty() && new_cps.back() == U'\n';
     doc.revision = input.revision;
-    doc.blocks.reserve(scan_old_start + rebuilt_blocks.size() + (suffix_begin ? old_document.blocks.size() - *suffix_begin : 0));
-    for (std::size_t i = 0; i < scan_old_start; ++i) doc.blocks.push_back(old_document.blocks[i]);
-    for (auto& block : rebuilt_blocks) doc.blocks.push_back(std::move(block));
-    if (suffix_begin) for (std::size_t i = *suffix_begin; i < old_document.blocks.size(); ++i) doc.blocks.push_back(old_document.blocks[i]);
+    doc.root.children.reserve(scan_old_start + rebuilt_blocks.size() + (suffix_begin ? old_document.root.children.size() - *suffix_begin : 0));
+    for (std::size_t i = 0; i < scan_old_start; ++i) doc.root.children.push_back(old_document.root.children[i]);
+    for (auto& block : rebuilt_blocks) doc.root.children.push_back(std::move(block));
+    if (suffix_begin) for (std::size_t i = *suffix_begin; i < old_document.root.children.size(); ++i) doc.root.children.push_back(old_document.root.children[i]);
 
     append_old_block_ranges(doc.source_map, old_document, 0, scan_old_start, 0);
     for (auto& range : parser.source_ranges) doc.source_map.node_ranges.push_back(std::move(range));
-    if (suffix_begin) append_old_block_ranges(doc.source_map, old_document, *suffix_begin, old_document.blocks.size(), delta);
+    if (suffix_begin) append_old_block_ranges(doc.source_map, old_document, *suffix_begin, old_document.root.children.size(), delta);
 
     append_diagnostics(doc.diagnostics, old_document.diagnostics, 0, scan_new_start, 0);
     doc.diagnostics.insert(doc.diagnostics.end(), parser.diagnostics.begin(), parser.diagnostics.end());
@@ -2460,7 +1799,7 @@ inline ParseOutput parse_incremental(const ParseInput& input, const EditorDocume
     }
     refresh_metadata(doc, new_cps);
 
-    DocumentSymbolIndex symbols = retained_symbols(old_symbols, old_document, scan_old_start, suffix_begin.value_or(old_document.blocks.size()));
+    DocumentSymbolIndex symbols = retained_symbols(old_symbols, old_document, scan_old_start, suffix_begin.value_or(old_document.root.children.size()));
     DocumentSymbolIndex parsed_symbols;
     parsed_symbols.headings = std::move(parser.headings);
     parsed_symbols.footnotes = std::move(parser.footnotes);
@@ -2477,13 +1816,15 @@ inline ParseOutput parse(const ParseInput& input) {
     detail::Parser p(&input);
     auto blocks = p.parse_blocks(nullptr);
     EditorDocument doc;
+    doc.root.id = NodeId(p.node_counter++);
+    doc.dialect = input.dialect;
     doc.revision = input.revision;
-    doc.blocks = std::move(blocks);
+    doc.root.children = std::move(blocks);
     doc.trailing_newline = !p.cps.empty() && p.cps.back() == U'\n';
 
     // metadata: frontmatter first
     bool has_fm = false;
-    for (const auto& b : doc.blocks) {
+    for (const auto& b : doc.root.children) {
         if (b.kind == BlockKind::Frontmatter) {
             doc.metadata = from_frontmatter(b.raw, b.fmt);
             has_fm = true;
@@ -2517,12 +1858,12 @@ inline ParseOutput parse(const ParseInput& input) {
     sym.math_blocks = std::move(p.math_blocks);
     sym.code_blocks = std::move(p.code_blocks);
 
-    auto outline = build_outline_from_blocks(input.revision, doc.blocks);
+    auto outline = build_outline_from_blocks(input.revision, doc.root.children);
 
     ParseOutput out;
     out.revision = input.revision;
     out.document = std::move(doc);
-    out.symbols = std::move(sym);
+    out.symbols = build_document_symbol_index(out.document);
     out.outline = std::move(outline);
     out.diagnostics = out.document.diagnostics;
     return out;

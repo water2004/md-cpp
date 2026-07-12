@@ -35,7 +35,7 @@ struct InlineToken {
 enum class InlineCstKind {
     Text, Whitespace, SoftBreak, HardBreak, Escape, Entity, Delimiter, Raw,
     CodeSpan, InlineMath, Emphasis, Strong, Strikethrough,
-    Link, Image, Autolink,
+    Link, Image, Autolink, HtmlElement,
     FootnoteRef, WikiLink, Extension,
     Error,
     Incomplete,
@@ -66,6 +66,8 @@ struct InlineCstNode {
     std::optional<std::string> alias;
     MathDelimiter math_delim = MathDelimiter::InlineDollar;
     std::string ext_name;
+    std::optional<float> image_width;
+    std::optional<float> image_height;
 };
 
 using InlineCstNodes = std::vector<InlineCstNode>;

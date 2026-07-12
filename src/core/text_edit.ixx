@@ -42,6 +42,7 @@ struct TextSelection {
     bool is_caret() const { return anchor == active; }
     const TextPosition& head() const { return active; }
     const TextPosition& tail() const { return anchor; }
+    bool operator==(const TextSelection&) const = default;
 };
 
 // Replace range in exactly one editable content node's source.

@@ -4,6 +4,8 @@ import elmd.core.extension;
 import elmd.core.dialect;
 import elmd.core.editor;
 import elmd.core.ast;
+import elmd.core.inline_cst;
+import elmd.core.inline_document;
 
 using namespace elmd;
 using namespace boost::ut;
@@ -68,9 +70,8 @@ suite extension_tests = [] {
     MarkdownDialect disabled = default_dialect();
     disabled.math.inline_dollar = false;
     Editor withoutExtension("$x$", disabled);
-    expect(fatal(bool(withoutExtension.document().blocks.size() == 1u)));
-    expect(fatal(bool(withoutExtension.document().blocks.front().children.size() == 1u)));
-    expect(fatal(bool(withoutExtension.document().blocks.front().children.front().kind == InlineKind::Text)));
+    expect(fatal(bool(withoutExtension.document().root.children.size() == 1u)));
+    expect(fatal(bool(!inline_contains_kind(withoutExtension.document().root.children.front().inline_content, InlineCstKind::InlineMath))));
 
     ExtensionRegistry registry;
     struct EnableInlineMath : MarkdownExtensionBase {
@@ -79,9 +80,8 @@ suite extension_tests = [] {
     };
     registry.register_extension(std::make_shared<EnableInlineMath>());
     Editor withExtension("$x$", registry.configured_dialect(disabled));
-    expect(fatal(bool(withExtension.document().blocks.size() == 1u)));
-    expect(fatal(bool(withExtension.document().blocks.front().children.size() == 1u)));
-    expect(fatal(bool(withExtension.document().blocks.front().children.front().kind == InlineKind::InlineMath)));
+    expect(fatal(bool(withExtension.document().root.children.size() == 1u)));
+    expect(fatal(bool(inline_contains_kind(withExtension.document().root.children.front().inline_content, InlineCstKind::InlineMath))));
 };
 
 }; // suite extension_tests

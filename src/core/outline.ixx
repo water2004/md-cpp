@@ -93,18 +93,10 @@ inline Outline build_outline_from_blocks(std::uint64_t revision, const std::vect
     auto extract = [&](auto& self, const std::vector<BlockNode>& bs) -> void {
         for (const auto& b : bs) {
             if (b.kind == BlockKind::Heading) {
-                std::string title = cps_to_utf8(block_inline_text_content(b.children));
+                std::string title = cps_to_utf8(inline_visible_text(b.inline_content));
                 linear.emplace_back(b.id, b.level, title, TextRange<CharOffset>{}, std::string{});
-            } else if (b.kind == BlockKind::BlockQuote) {
-                self(self, b.quote_children);
-            } else if (b.kind == BlockKind::Callout) {
-                self(self, b.quote_children);
-            } else if (b.kind == BlockKind::FootnoteDefinition) {
-                self(self, b.quote_children);
-            } else if (b.kind == BlockKind::List) {
-                for (const auto& li : b.list_items) self(self, li.children);
-            } else if (b.kind == BlockKind::TaskList) {
-                for (const auto& ti : b.task_items) self(self, ti.children);
+            } else if (!b.children.empty()) {
+                self(self, b.children);
             }
         }
     };
