@@ -85,52 +85,27 @@ inline SourceBlockSpan terminal_blank_at(std::size_t offset) {
 }
 
 inline SourceStructure build_source_structure(const EditorDocument& document, std::u32string_view text) {
+    static_cast<void>(text);
     SourceStructure structure;
-    std::vector<SourceBlockSpan> semantic;
-    semantic.reserve(document.blocks.size());
+    structure.blocks.reserve(document.blocks.size());
     for (std::size_t index = 0; index < document.blocks.size(); ++index) {
         const auto& block = document.blocks[index];
         const auto* range = document.source_map.find_node_by_id(block.id);
         if (!range) continue;
         SourceBlockSpan span;
-        span.kind = SourceBlockKind::Semantic;
+        span.kind = block.kind == BlockKind::Paragraph && block.children.empty()
+            ? SourceBlockKind::Blank : SourceBlockKind::Semantic;
         span.source_range = range->source_range;
         span.content_range = range->content_range;
         span.document_block_index = index;
         span.node_id = block.id;
-        semantic.push_back(std::move(span));
-    }
-
-    if (semantic.empty()) {
-        auto lines = blank_lines_in_range(text, 0, text.size());
-        if (!lines.empty()) {
-            structure.separators.push_back(lines.front().source_range);
-            for (std::size_t index = 1; index < lines.size(); ++index) structure.blocks.push_back(std::move(lines[index]));
+        if (!structure.blocks.empty()) {
+            const auto previous_end = structure.blocks.back().source_range.end;
+            if (previous_end < span.source_range.start) {
+                structure.separators.emplace_back(previous_end, span.source_range.start);
+            }
         }
-        if (text.empty() || text.back() == U'\n') structure.blocks.push_back(terminal_blank_at(text.size()));
-        return structure;
-    }
-
-    auto append_gap_before_semantic = [&](std::size_t start, std::size_t end) {
-        auto lines = blank_lines_in_range(text, start, end);
-        if (lines.empty()) return;
-        structure.separators.push_back(lines.back().source_range);
-        lines.pop_back();
-        for (auto& line : lines) structure.blocks.push_back(std::move(line));
-    };
-
-    append_gap_before_semantic(0, semantic.front().source_range.start.v);
-    structure.blocks.push_back(semantic.front());
-    for (std::size_t index = 1; index < semantic.size(); ++index) {
-        append_gap_before_semantic(semantic[index - 1].source_range.end.v, semantic[index].source_range.start.v);
-        structure.blocks.push_back(semantic[index]);
-    }
-
-    auto trailing = blank_lines_in_range(text, semantic.back().source_range.end.v, text.size());
-    if (!trailing.empty()) {
-        structure.separators.push_back(trailing.front().source_range);
-        for (std::size_t index = 1; index < trailing.size(); ++index) structure.blocks.push_back(std::move(trailing[index]));
-        if (!text.empty() && text.back() == U'\n') structure.blocks.push_back(terminal_blank_at(text.size()));
+        structure.blocks.push_back(std::move(span));
     }
     return structure;
 }

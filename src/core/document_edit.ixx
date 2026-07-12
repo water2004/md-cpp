@@ -36,6 +36,17 @@ enum class DocumentTableEdit {
     MoveColumnTo,
 };
 
+enum class DocumentMove {
+    Left,
+    Right,
+    Up,
+    Down,
+    LineStart,
+    LineEnd,
+    DocumentStart,
+    DocumentEnd,
+};
+
 struct DocumentTransaction {
     EditorDocument before;
     EditorDocument after;
@@ -983,7 +994,7 @@ inline bool erase_adjacent_pair_in_blocks(BlockVec& blocks, NodeId id, std::size
 
 inline std::optional<std::size_t> editable_length_in_blocks(const BlockVec& blocks, NodeId id) {
     for (const auto& block : blocks) {
-        if (block.id == id && block.kind == BlockKind::Paragraph) return block_inline_text_content(block.children).size();
+        if (block.id == id && (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading)) return block_inline_text_content(block.children).size();
         if (block.id == id && block.kind == BlockKind::CodeBlock) return block.code_text.size();
         if (block.id == id && block.kind == BlockKind::MathBlock) return block.tex.size();
         if (block.kind == BlockKind::Table) {
@@ -995,6 +1006,126 @@ inline std::optional<std::size_t> editable_length_in_blocks(const BlockVec& bloc
         for (const auto& item : block.task_items) if (auto length = editable_length_in_blocks(item.children, id)) return length;
     }
     return std::nullopt;
+}
+
+struct EditableNode {
+    NodeId id{};
+    std::u32string text;
+};
+
+inline bool atomic_editable_kind(BlockKind kind) {
+    return kind == BlockKind::ImageBlock || kind == BlockKind::Toc || kind == BlockKind::Frontmatter
+        || kind == BlockKind::ThematicBreak || kind == BlockKind::LinkDefinition
+        || kind == BlockKind::UnsupportedMarkup || kind == BlockKind::Extension;
+}
+
+inline void collect_editable_nodes(const BlockVec& blocks, std::vector<EditableNode>& nodes) {
+    for (const auto& block : blocks) {
+        if (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading) {
+            nodes.push_back(EditableNode{block.id, block_inline_text_content(block.children)});
+        } else if (block.kind == BlockKind::CodeBlock) {
+            nodes.push_back(EditableNode{block.id, block.code_text});
+        } else if (block.kind == BlockKind::MathBlock) {
+            nodes.push_back(EditableNode{block.id, block.tex});
+        } else if (block.kind == BlockKind::Table) {
+            for (const auto& cell : block.table_header) nodes.push_back(EditableNode{cell.id, block_inline_text_content(cell.children)});
+            for (const auto& row : block.table_rows) {
+                for (const auto& cell : row.cells) nodes.push_back(EditableNode{cell.id, block_inline_text_content(cell.children)});
+            }
+        } else if (atomic_editable_kind(block.kind)) {
+            nodes.push_back(EditableNode{block.id, U"\uFFFC"});
+        }
+        collect_editable_nodes(block.quote_children, nodes);
+        for (const auto& item : block.list_items) collect_editable_nodes(item.children, nodes);
+        for (const auto& item : block.task_items) collect_editable_nodes(item.children, nodes);
+    }
+}
+
+inline bool enter_atomic_block(
+    BlockVec& blocks,
+    NodeId id,
+    std::size_t offset,
+    NodeAllocator& allocator,
+    DocumentPosition& after) {
+    for (std::size_t index = 0; index < blocks.size(); ++index) {
+        auto& block = blocks[index];
+        if (block.id == id && atomic_editable_kind(block.kind)) {
+            auto paragraph = empty_paragraph(allocator);
+            after = DocumentPosition{paragraph.id, 0, TextAffinity::Downstream};
+            const auto insertion = index + (offset == 0 ? 0 : 1);
+            blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(insertion), std::move(paragraph));
+            return true;
+        }
+        if (enter_atomic_block(block.quote_children, id, offset, allocator, after)) return true;
+        for (auto& item : block.list_items) if (enter_atomic_block(item.children, id, offset, allocator, after)) return true;
+        for (auto& item : block.task_items) if (enter_atomic_block(item.children, id, offset, allocator, after)) return true;
+    }
+    return false;
+}
+
+inline bool insert_soft_break_in_blocks(
+    BlockVec& blocks,
+    NodeId id,
+    std::size_t offset,
+    NodeAllocator& allocator) {
+    for (auto& block : blocks) {
+        if (block.id == id && (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading)) {
+            const auto length = block_inline_text_content(block.children).size();
+            if (offset > length) return false;
+            auto [left, right] = split_inlines(block.children, offset, allocator);
+            InlineNode soft_break;
+            soft_break.id = allocator.allocate();
+            soft_break.kind = InlineKind::SoftBreak;
+            left.push_back(std::move(soft_break));
+            left.insert(left.end(), std::make_move_iterator(right.begin()), std::make_move_iterator(right.end()));
+            block.children = std::move(left);
+            return true;
+        }
+        if (block.id == id && block.kind == BlockKind::CodeBlock) {
+            if (offset > block.code_text.size()) return false;
+            block.code_text.insert(offset, 1, U'\n');
+            return true;
+        }
+        if (block.id == id && block.kind == BlockKind::MathBlock) {
+            if (offset > block.tex.size()) return false;
+            block.tex.insert(offset, 1, U'\n');
+            return true;
+        }
+        if (block.kind == BlockKind::Table) {
+            for (auto& cell : block.table_header) {
+                if (cell.id != id) continue;
+                const auto length = block_inline_text_content(cell.children).size();
+                if (offset > length) return false;
+                auto [left, right] = split_inlines(cell.children, offset, allocator);
+                InlineNode soft_break;
+                soft_break.id = allocator.allocate();
+                soft_break.kind = InlineKind::SoftBreak;
+                left.push_back(std::move(soft_break));
+                left.insert(left.end(), std::make_move_iterator(right.begin()), std::make_move_iterator(right.end()));
+                cell.children = std::move(left);
+                return true;
+            }
+            for (auto& row : block.table_rows) {
+                for (auto& cell : row.cells) {
+                    if (cell.id != id) continue;
+                    const auto length = block_inline_text_content(cell.children).size();
+                    if (offset > length) return false;
+                    auto [left, right] = split_inlines(cell.children, offset, allocator);
+                    InlineNode soft_break;
+                    soft_break.id = allocator.allocate();
+                    soft_break.kind = InlineKind::SoftBreak;
+                    left.push_back(std::move(soft_break));
+                    left.insert(left.end(), std::make_move_iterator(right.begin()), std::make_move_iterator(right.end()));
+                    cell.children = std::move(left);
+                    return true;
+                }
+            }
+        }
+        if (insert_soft_break_in_blocks(block.quote_children, id, offset, allocator)) return true;
+        for (auto& item : block.list_items) if (insert_soft_break_in_blocks(item.children, id, offset, allocator)) return true;
+        for (auto& item : block.task_items) if (insert_soft_break_in_blocks(item.children, id, offset, allocator)) return true;
+    }
+    return false;
 }
 
 inline DocumentPosition merge_paragraphs(BlockNode& first, BlockNode& second) {
@@ -1438,6 +1569,27 @@ inline bool split_direct_paragraph(BlockVec& blocks, std::size_t index, std::siz
     return true;
 }
 
+inline bool insert_newline_in_verbatim_blocks(BlockVec& blocks, NodeId id, std::size_t offset, DocumentPosition& after) {
+    for (auto& block : blocks) {
+        if (block.id == id && block.kind == BlockKind::CodeBlock) {
+            if (offset > block.code_text.size()) return false;
+            block.code_text.insert(offset, 1, U'\n');
+            after = DocumentPosition{id, offset + 1, TextAffinity::Downstream};
+            return true;
+        }
+        if (block.id == id && block.kind == BlockKind::MathBlock) {
+            if (offset > block.tex.size()) return false;
+            block.tex.insert(offset, 1, U'\n');
+            after = DocumentPosition{id, offset + 1, TextAffinity::Downstream};
+            return true;
+        }
+        if (insert_newline_in_verbatim_blocks(block.quote_children, id, offset, after)) return true;
+        for (auto& item : block.list_items) if (insert_newline_in_verbatim_blocks(item.children, id, offset, after)) return true;
+        for (auto& item : block.task_items) if (insert_newline_in_verbatim_blocks(item.children, id, offset, after)) return true;
+    }
+    return false;
+}
+
 inline bool enter_quote(BlockVec& owner, std::size_t quote_index, NodeId id, std::size_t offset, NodeAllocator& allocator, DocumentPosition& after) {
     auto& quote = owner[quote_index];
     for (std::size_t child_index = 0; child_index < quote.quote_children.size(); ++child_index) {
@@ -1601,7 +1753,7 @@ inline bool enter_task_list(BlockVec& owner, std::size_t list_index, NodeId id, 
 inline bool split_paragraph_in_blocks(BlockVec& blocks, NodeId id, std::size_t offset, NodeAllocator& allocator, DocumentPosition& after) {
     for (std::size_t index = 0; index < blocks.size(); ++index) {
         auto& block = blocks[index];
-        if (block.id == id && block.kind == BlockKind::Paragraph) return split_direct_paragraph(blocks, index, offset, allocator, after);
+        if (block.id == id && (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading)) return split_direct_paragraph(blocks, index, offset, allocator, after);
         if (block.kind == BlockKind::BlockQuote || block.kind == BlockKind::Callout || block.kind == BlockKind::FootnoteDefinition) {
             if (enter_quote(blocks, index, id, offset, allocator, after)) return true;
         } else if (block.kind == BlockKind::List) {
@@ -1982,20 +2134,25 @@ inline bool insert_atomic_block_in_blocks(
 }
 
 struct TableLocation {
+    BlockVec* owner = nullptr;
+    std::size_t block_index = 0;
     BlockNode* table = nullptr;
     std::size_t row = 0;
     std::size_t column = 0;
 };
 
+inline std::vector<TableRow> logical_table_rows(const BlockNode& table);
+
 inline std::optional<TableLocation> find_table_location(BlockVec& blocks, NodeId cell_id) {
-    for (auto& block : blocks) {
+    for (std::size_t block_index = 0; block_index < blocks.size(); ++block_index) {
+        auto& block = blocks[block_index];
         if (block.kind == BlockKind::Table) {
             for (std::size_t column = 0; column < block.table_header.size(); ++column) {
-                if (block.table_header[column].id == cell_id) return TableLocation{&block, 0, column};
+                if (block.table_header[column].id == cell_id) return TableLocation{&blocks, block_index, &block, 0, column};
             }
             for (std::size_t row = 0; row < block.table_rows.size(); ++row) {
                 for (std::size_t column = 0; column < block.table_rows[row].cells.size(); ++column) {
-                    if (block.table_rows[row].cells[column].id == cell_id) return TableLocation{&block, row + 1, column};
+                    if (block.table_rows[row].cells[column].id == cell_id) return TableLocation{&blocks, block_index, &block, row + 1, column};
                 }
             }
         }
@@ -2004,6 +2161,25 @@ inline std::optional<TableLocation> find_table_location(BlockVec& blocks, NodeId
         for (auto& item : block.task_items) if (auto location = find_table_location(item.children, cell_id)) return location;
     }
     return std::nullopt;
+}
+
+inline bool enter_table(BlockVec& blocks, NodeId cell_id, NodeAllocator& allocator, DocumentPosition& after, bool& changed) {
+    auto location = find_table_location(blocks, cell_id);
+    if (!location) return false;
+    auto rows = logical_table_rows(*location->table);
+    if (location->row + 1 < rows.size()) {
+        const auto column = (std::min)(location->column, rows[location->row + 1].cells.size() - 1);
+        after = DocumentPosition{rows[location->row + 1].cells[column].id, 0, TextAffinity::Downstream};
+        changed = false;
+        return true;
+    }
+    auto paragraph = empty_paragraph(allocator);
+    after = DocumentPosition{paragraph.id, 0, TextAffinity::Downstream};
+    location->owner->insert(
+        location->owner->begin() + static_cast<std::ptrdiff_t>(location->block_index + 1),
+        std::move(paragraph));
+    changed = true;
+    return true;
 }
 
 inline TableCell empty_table_cell(NodeAllocator& allocator) {
@@ -2235,10 +2411,25 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
     EditorDocument after = document;
     document_edit_detail::NodeAllocator allocator(after);
     DocumentPosition target;
-    if (!document_edit_detail::split_paragraph_in_blocks(
-            after.blocks, selection.active.node_id, selection.active.offset, allocator, target)) return std::nullopt;
-    normalize_document(after);
-    ++after.revision;
+    bool changed = true;
+    bool handled = document_edit_detail::enter_table(after.blocks, selection.active.node_id, allocator, target, changed);
+    if (!handled) {
+        handled = document_edit_detail::insert_newline_in_verbatim_blocks(
+            after.blocks, selection.active.node_id, selection.active.offset, target);
+    }
+    if (!handled) {
+        handled = document_edit_detail::enter_atomic_block(
+            after.blocks, selection.active.node_id, selection.active.offset, allocator, target);
+    }
+    if (!handled) {
+        handled = document_edit_detail::split_paragraph_in_blocks(
+            after.blocks, selection.active.node_id, selection.active.offset, allocator, target);
+    }
+    if (!handled) return std::nullopt;
+    if (changed) {
+        normalize_document(after);
+        ++after.revision;
+    }
     DocumentTransaction transaction;
     transaction.before = document;
     transaction.after = std::move(after);
@@ -2668,6 +2859,138 @@ inline std::optional<DocumentTransaction> document_edit_table(
     transaction.selection_after = DocumentSelection::caret(*target);
     transaction.reason = changed ? DocumentTransactionReason::Structure : DocumentTransactionReason::Format;
     return transaction;
+}
+
+inline std::optional<DocumentTransaction> document_insert_soft_break(
+    const EditorDocument& document,
+    const DocumentSelection& selection) {
+    if (!selection.is_caret()) {
+        auto deletion = document_delete_selection(document, selection);
+        if (!deletion) return std::nullopt;
+        auto insertion = document_insert_soft_break(deletion->after, deletion->selection_after);
+        if (!insertion) return std::nullopt;
+        insertion->before = document;
+        insertion->selection_before = selection;
+        return insertion;
+    }
+    EditorDocument after = document;
+    document_edit_detail::NodeAllocator allocator(after);
+    if (!document_edit_detail::insert_soft_break_in_blocks(
+            after.blocks, selection.active.node_id, selection.active.offset, allocator)) return std::nullopt;
+    ++after.revision;
+    DocumentTransaction transaction;
+    transaction.before = document;
+    transaction.after = std::move(after);
+    transaction.selection_before = selection;
+    transaction.selection_after = DocumentSelection::caret(DocumentPosition{
+        selection.active.node_id, selection.active.offset + 1, TextAffinity::Downstream});
+    transaction.reason = DocumentTransactionReason::InsertText;
+    return transaction;
+}
+
+inline std::optional<DocumentSelection> document_move_selection(
+    const EditorDocument& document,
+    const DocumentSelection& selection,
+    DocumentMove movement,
+    bool extend_selection) {
+    std::vector<document_edit_detail::EditableNode> nodes;
+    document_edit_detail::collect_editable_nodes(document.blocks, nodes);
+    if (nodes.empty()) return std::nullopt;
+    auto find_index = [&](NodeId id) -> std::optional<std::size_t> {
+        auto found = std::find_if(nodes.begin(), nodes.end(), [&](const auto& node) { return node.id == id; });
+        if (found == nodes.end()) return std::nullopt;
+        return static_cast<std::size_t>(found - nodes.begin());
+    };
+    auto active_index = find_index(selection.active.node_id);
+    auto anchor_index = find_index(selection.anchor.node_id);
+    if (!active_index || !anchor_index) return std::nullopt;
+    auto ordered_before = [&](const DocumentPosition& left, const DocumentPosition& right) {
+        const auto left_index = *find_index(left.node_id);
+        const auto right_index = *find_index(right.node_id);
+        return left_index < right_index || (left_index == right_index && left.offset < right.offset);
+    };
+    DocumentPosition target = selection.active;
+    if (!extend_selection && !selection.is_caret()) {
+        if (movement == DocumentMove::Left || movement == DocumentMove::Up
+            || movement == DocumentMove::LineStart || movement == DocumentMove::DocumentStart) {
+            target = ordered_before(selection.anchor, selection.active) ? selection.anchor : selection.active;
+        } else {
+            target = ordered_before(selection.anchor, selection.active) ? selection.active : selection.anchor;
+        }
+        return DocumentSelection::caret(target);
+    }
+    const auto& current = nodes[*active_index].text;
+    target.offset = (std::min)(target.offset, current.size());
+    if (movement == DocumentMove::DocumentStart) {
+        target = DocumentPosition{nodes.front().id, 0, TextAffinity::Downstream};
+    } else if (movement == DocumentMove::DocumentEnd) {
+        target = DocumentPosition{nodes.back().id, nodes.back().text.size(), TextAffinity::Downstream};
+    } else if (movement == DocumentMove::Left) {
+        if (target.offset > 0) {
+            --target.offset;
+        } else if (*active_index > 0) {
+            const auto& previous = nodes[*active_index - 1];
+            target = DocumentPosition{previous.id, previous.text.size(), TextAffinity::Upstream};
+        }
+        target.affinity = TextAffinity::Upstream;
+    } else if (movement == DocumentMove::Right) {
+        if (target.offset < current.size()) {
+            ++target.offset;
+        } else if (*active_index + 1 < nodes.size()) {
+            target = DocumentPosition{nodes[*active_index + 1].id, 0, TextAffinity::Downstream};
+        }
+        target.affinity = TextAffinity::Downstream;
+    } else if (movement == DocumentMove::LineStart || movement == DocumentMove::LineEnd) {
+        const auto before = target.offset == 0 ? std::u32string::npos : current.rfind(U'\n', target.offset - 1);
+        const auto line_start = before == std::u32string::npos ? 0 : before + 1;
+        const auto after = current.find(U'\n', target.offset);
+        const auto line_end = after == std::u32string::npos ? current.size() : after;
+        target.offset = movement == DocumentMove::LineStart ? line_start : line_end;
+        target.affinity = movement == DocumentMove::LineStart ? TextAffinity::Upstream : TextAffinity::Downstream;
+    } else {
+        const auto before = target.offset == 0 ? std::u32string::npos : current.rfind(U'\n', target.offset - 1);
+        const auto line_start = before == std::u32string::npos ? 0 : before + 1;
+        const auto column = target.offset - line_start;
+        if (movement == DocumentMove::Up) {
+            if (line_start > 0) {
+                const auto previous_end = line_start - 1;
+                const auto previous_break = previous_end == 0 ? std::u32string::npos : current.rfind(U'\n', previous_end - 1);
+                const auto previous_start = previous_break == std::u32string::npos ? 0 : previous_break + 1;
+                target.offset = previous_start + (std::min)(column, previous_end - previous_start);
+            } else if (*active_index > 0) {
+                const auto& previous = nodes[*active_index - 1];
+                const auto previous_break = previous.text.rfind(U'\n');
+                const auto previous_start = previous_break == std::u32string::npos ? 0 : previous_break + 1;
+                target = DocumentPosition{previous.id, previous_start + (std::min)(column, previous.text.size() - previous_start), TextAffinity::Upstream};
+            }
+            target.affinity = TextAffinity::Upstream;
+        } else {
+            const auto line_end = current.find(U'\n', target.offset);
+            if (line_end != std::u32string::npos) {
+                const auto next_start = line_end + 1;
+                const auto next_break = current.find(U'\n', next_start);
+                const auto next_end = next_break == std::u32string::npos ? current.size() : next_break;
+                target.offset = next_start + (std::min)(column, next_end - next_start);
+            } else if (*active_index + 1 < nodes.size()) {
+                const auto& next = nodes[*active_index + 1];
+                const auto next_break = next.text.find(U'\n');
+                const auto next_end = next_break == std::u32string::npos ? next.text.size() : next_break;
+                target = DocumentPosition{next.id, (std::min)(column, next_end), TextAffinity::Downstream};
+            }
+            target.affinity = TextAffinity::Downstream;
+        }
+    }
+    if (target == selection.active) return std::nullopt;
+    return extend_selection ? DocumentSelection{selection.anchor, target} : DocumentSelection::caret(target);
+}
+
+inline std::optional<DocumentSelection> document_select_all(const EditorDocument& document) {
+    std::vector<document_edit_detail::EditableNode> nodes;
+    document_edit_detail::collect_editable_nodes(document.blocks, nodes);
+    if (nodes.empty()) return std::nullopt;
+    return DocumentSelection{
+        DocumentPosition{nodes.front().id, 0, TextAffinity::Downstream},
+        DocumentPosition{nodes.back().id, nodes.back().text.size(), TextAffinity::Downstream}};
 }
 
 inline std::optional<DocumentTransaction> document_delete_backward(

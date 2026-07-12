@@ -2,7 +2,6 @@
 #include "test_framework.h"
 import elmd.core.editor;
 import elmd.core.command;
-import elmd.core.semantic_edit;
 import elmd.core.parser;
 import elmd.core.selection;
 import elmd.core.transaction;
@@ -441,12 +440,14 @@ ELMD_TEST(test_insert_text_uses_document_transaction) {
 
 ELMD_TEST(test_delete_transaction) {
     Editor e("hello world");
-    auto text = e.text_cps();
-    Command dc; dc.kind = CommandKind::DeleteSelection;
-    Selection sel{CharOffset(5), CharOffset(11), TextAffinity::Downstream};
-    auto t = semantic_transaction(dc, text, e.document(), sel, 1);
-    if (t) { auto s = t->apply_to(text); ELMD_CHECK(cps_to_utf8(s) == "hello"); }
-    else ELMD_CHECK(false);
+    const auto paragraph_id = e.document().blocks.front().id;
+    e.set_document_selection(DocumentSelection{
+        DocumentPosition{paragraph_id, 5, TextAffinity::Downstream},
+        DocumentPosition{paragraph_id, 11, TextAffinity::Downstream}});
+    Command command; command.kind = CommandKind::DeleteSelection;
+    ELMD_CHECK(e.execute_command(command).has_value());
+    ELMD_CHECK_EQ(e.markdown_utf8(), std::string("hello"));
+    ELMD_CHECK(e.has_document_undo());
 }
 
 ELMD_TEST(test_toggle_strong_uses_document_transaction) {
@@ -908,7 +909,10 @@ ELMD_TEST(test_enter_inside_code_block_inserts_single_newline) {
     e.execute_command(c);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("```\nabc\n\n```\n"));
     ELMD_CHECK_EQ(e.selection().head().v, 8u);
-    ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
+    ELMD_CHECK(e.document().blocks[0].kind == BlockKind::CodeBlock);
+    ELMD_CHECK(e.document().blocks[1].kind == BlockKind::Paragraph);
+    ELMD_CHECK(e.document().blocks[1].children.empty());
 }
 
 ELMD_TEST(test_enter_inside_indented_code_block_preserves_indent) {
@@ -919,9 +923,11 @@ ELMD_TEST(test_enter_inside_indented_code_block_preserves_indent) {
     e.execute_command(command);
     ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("    abc\n    \n"));
     ELMD_CHECK_EQ(e.selection().head().v, 12u);
-    ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
+    ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
     ELMD_CHECK(e.document().blocks[0].kind == BlockKind::CodeBlock);
     ELMD_CHECK(e.document().blocks[0].code_indented);
+    ELMD_CHECK(e.document().blocks[1].kind == BlockKind::Paragraph);
+    ELMD_CHECK(e.document().blocks[1].children.empty());
 }
 
 ELMD_TEST(test_soft_break_in_plain_paragraph_inserts_single_newline) {

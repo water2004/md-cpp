@@ -16,6 +16,7 @@ struct EditorDocument {
     SourceMap source_map;
     DocumentMetadata metadata;
     std::vector<Diagnostic> diagnostics;
+    bool trailing_newline = false;
 
     static EditorDocument empty(std::uint64_t rev) {
         EditorDocument d; d.revision = rev; return d;

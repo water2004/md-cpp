@@ -220,9 +220,6 @@
     <ClCompile Include="..\core\serializer.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\semantic_edit.ixx">
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-    </ClCompile>
     <ClCompile Include="..\core\slug.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>

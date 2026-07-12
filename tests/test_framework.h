@@ -27,8 +27,9 @@ namespace elmdtest {
 inline int& fail_count() { static int s = 0; return s; }
 inline int& test_count() { static int s = 0; return s; }
 
-inline std::vector<void(*)()>& tests() { static std::vector<void(*)()> v; return v; }
-inline void register_test(void(*f)(), const char* /*name*/) { tests().push_back(f); }
+struct TestCase { void(*run)(); const char* name; };
+inline std::vector<TestCase>& tests() { static std::vector<TestCase> v; return v; }
+inline void register_test(void(*f)(), const char* name) { tests().push_back(TestCase{f, name}); }
 
 inline void record_fail(const char* file, int line, std::string msg) {
     ++fail_count();
@@ -37,9 +38,18 @@ inline void record_fail(const char* file, int line, std::string msg) {
 
 inline int run_all() {
     auto& v = tests();
-    for (auto* t : v) { ++test_count(); t(); }
+#pragma warning(push)
+#pragma warning(disable: 4996)
+    const auto* raw_filter = std::getenv("ELMD_TEST_FILTER");
+#pragma warning(pop)
+    const auto filter = raw_filter ? std::string_view(raw_filter) : std::string_view{};
+    for (const auto& test : v) {
+        if (!filter.empty() && !std::string_view(test.name).contains(filter)) continue;
+        ++test_count();
+        test.run();
+    }
     if (fail_count() == 0) {
-        std::printf("ALL %d TESTS PASSED\n", static_cast<int>(v.size()));
+        std::printf("ALL %d TESTS PASSED\n", test_count());
         return 0;
     }
     std::printf("%d/%d TESTS FAILED\n", fail_count(), static_cast<int>(v.size()));

@@ -407,8 +407,14 @@ public:
         std::vector<BlockNode> blocks;
         while (!eof()) {
             if (is_blank_line()) {
+                const auto start = cur();
                 while (peek1() == ' ' || peek1() == '\t') advance();
                 if (peek1() == '\n') advance();
+                BlockNode paragraph;
+                paragraph.id = next_node_id();
+                paragraph.kind = BlockKind::Paragraph;
+                push_range(paragraph.id, CharRange(start, cur()), CharRange(start, start));
+                blocks.push_back(std::move(paragraph));
                 continue;
             }
             if (stop) {
@@ -2421,6 +2427,7 @@ inline ParseOutput parse_incremental(const ParseInput& input, const EditorDocume
     }
 
     EditorDocument doc;
+    doc.trailing_newline = !new_cps.empty() && new_cps.back() == U'\n';
     doc.revision = input.revision;
     doc.blocks.reserve(scan_old_start + rebuilt_blocks.size() + (suffix_begin ? old_document.blocks.size() - *suffix_begin : 0));
     for (std::size_t i = 0; i < scan_old_start; ++i) doc.blocks.push_back(old_document.blocks[i]);
@@ -2455,9 +2462,18 @@ inline ParseOutput parse_incremental(const ParseInput& input, const EditorDocume
 inline ParseOutput parse(const ParseInput& input) {
     detail::Parser p(&input);
     auto blocks = p.parse_blocks(nullptr);
+    if (!p.cps.empty() && p.cps.back() == U'\n') {
+        BlockNode paragraph;
+        paragraph.id = p.next_node_id();
+        paragraph.kind = BlockKind::Paragraph;
+        const auto end = CharOffset(p.cps.size());
+        p.push_range(paragraph.id, CharRange(end, end), CharRange(end, end));
+        blocks.push_back(std::move(paragraph));
+    }
     EditorDocument doc;
     doc.revision = input.revision;
     doc.blocks = std::move(blocks);
+    doc.trailing_newline = !p.cps.empty() && p.cps.back() == U'\n';
 
     // metadata: frontmatter first
     bool has_fm = false;

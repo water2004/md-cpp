@@ -115,6 +115,15 @@ inline std::u32string indent_continuation(std::u32string_view value, std::size_t
     return result;
 }
 
+inline std::u32string serialize_indented_code(std::u32string_view value) {
+    std::u32string result = U"    ";
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        result.push_back(value[index]);
+        if (value[index] == U'\n' && index + 1 < value.size()) result += U"    ";
+    }
+    return result;
+}
+
 inline std::u32string serialize_list(const BlockNode& block) {
     std::u32string result;
     const auto count = block.kind == BlockKind::TaskList ? block.task_items.size() : block.list_items.size();
@@ -165,12 +174,14 @@ inline std::u32string serialize_block(const BlockNode& block) {
         case BlockKind::TaskList:
             return serialize_list(block);
         case BlockKind::CodeBlock:
-            if (block.code_indented) return U"    " + indent_continuation(block.code_text, 4);
-            return U"```" + (block.language ? utf8_to_cps(*block.language) : std::u32string{}) + U"\n" + block.code_text + U"\n```";
+            if (block.code_indented) return serialize_indented_code(block.code_text);
+            return U"```" + (block.language ? utf8_to_cps(*block.language) : std::u32string{}) + U"\n" + block.code_text
+                + (block.code_text.empty() || block.code_text.back() != U'\n' ? U"\n" : U"") + U"```";
         case BlockKind::MathBlock: {
-            if (block.math_delim == MathDelimiter::BlockBracket) return U"\\[\n" + block.tex + U"\n\\]";
-            if (block.math_delim == MathDelimiter::FencedMath) return U"```math\n" + block.tex + U"\n```";
-            return U"$$\n" + block.tex + U"\n$$";
+            const auto newline = block.tex.empty() || block.tex.back() != U'\n' ? U"\n" : U"";
+            if (block.math_delim == MathDelimiter::BlockBracket) return U"\\[\n" + block.tex + newline + U"\\]";
+            if (block.math_delim == MathDelimiter::FencedMath) return U"```math\n" + block.tex + newline + U"```";
+            return U"$$\n" + block.tex + newline + U"$$";
         }
         case BlockKind::Table: {
             std::u32string result = serialize_table_row(block.table_header) + U"\n|";
@@ -222,7 +233,11 @@ inline std::u32string serialize_block(const BlockNode& block) {
 inline std::u32string serialize_blocks(const BlockVec& blocks) {
     std::u32string result;
     for (std::size_t index = 0; index < blocks.size(); ++index) {
-        if (index > 0) result += U"\n\n";
+        if (index > 0) {
+            const auto previous_empty = blocks[index - 1].kind == BlockKind::Paragraph && blocks[index - 1].children.empty();
+            const auto current_empty = blocks[index].kind == BlockKind::Paragraph && blocks[index].children.empty();
+            result += previous_empty || current_empty ? U"\n" : U"\n\n";
+        }
         result += serialize_block(blocks[index]);
     }
     return result;
@@ -450,7 +465,15 @@ inline std::size_t map_block(
         content_start = marker_end;
     } else if (block.kind == BlockKind::CodeBlock) {
         if (block.code_indented) {
-            content_start = find_serialized(markdown, block.code_text, source_start, source_end);
+            auto line_start = source_start;
+            while (line_start < source_end) {
+                const auto marker_end = (std::min)(line_start + 4, source_end);
+                markers.push_back(char_range(line_start, marker_end));
+                auto newline = markdown.find(U'\n', marker_end);
+                if (newline == std::u32string::npos || newline >= source_end) break;
+                line_start = newline + 1;
+            }
+            content_start = markers.empty() ? source_start : markers.front().end.v;
         } else {
             const auto newline = markdown.find(U'\n', source_start);
             content_start = newline == std::u32string::npos || newline >= source_end ? source_end : newline + 1;
@@ -504,14 +527,6 @@ inline SourceMap build_source_map(const EditorDocument& document, const std::u32
         const auto start = find_serialized(markdown, serialized, cursor, markdown.size());
         const auto end = (std::min)(start + serialized.size(), markdown.size());
         map_block(document.blocks[index], markdown, start, end, source_map);
-        if (index + 1 < document.blocks.size()) {
-            for (auto& range : source_map.node_ranges) {
-                if (range.node_id == document.blocks[index].id) {
-                    range.source_range.end = CharOffset((std::min)(end + 1, markdown.size()));
-                    break;
-                }
-            }
-        }
         cursor = end;
         if (index + 1 < document.blocks.size()) cursor = (std::min)(cursor + 2, markdown.size());
     }
@@ -523,6 +538,7 @@ inline SourceMap build_source_map(const EditorDocument& document, const std::u32
 inline SerializedDocument serialize_document(const EditorDocument& document) {
     SerializedDocument result;
     result.markdown = serializer_detail::serialize_blocks(document.blocks);
+    if (document.trailing_newline && (result.markdown.empty() || result.markdown.back() != U'\n')) result.markdown.push_back(U'\n');
     result.source_map = serializer_detail::build_source_map(document, result.markdown);
     return result;
 }

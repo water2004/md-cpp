@@ -682,3 +682,56 @@ ELMD_TEST(test_delete_selection_across_task_items_moves_trailing_blocks) {
     ELMD_CHECK_EQ(task_list.task_items[0].children.size(), 2u);
     ELMD_CHECK(validate_document(transaction->after).empty());
 }
+
+ELMD_TEST(test_document_soft_break_inserts_inline_node) {
+    auto document = document_with({paragraph(1, 2, U"alphaomega")});
+    auto transaction = document_insert_soft_break(document, caret(1, 5));
+    ELMD_CHECK(transaction.has_value());
+    if (!transaction) return;
+    ELMD_CHECK_EQ(transaction->after.blocks[0].children.size(), 3u);
+    ELMD_CHECK(transaction->after.blocks[0].children[1].kind == InlineKind::SoftBreak);
+    ELMD_CHECK_EQ(serialize_markdown(transaction->after), std::string("alpha\nomega"));
+    ELMD_CHECK_EQ(transaction->selection_after.active.node_id, NodeId(1));
+    ELMD_CHECK_EQ(transaction->selection_after.active.offset, 6u);
+    ELMD_CHECK(validate_document(transaction->after).empty());
+}
+
+ELMD_TEST(test_document_horizontal_navigation_crosses_nodes) {
+    auto document = document_with({paragraph(1, 2, U"alpha"), paragraph(3, 4, U"beta")});
+    auto right = document_move_selection(document, caret(1, 5), DocumentMove::Right, false);
+    ELMD_CHECK(right.has_value());
+    if (!right) return;
+    ELMD_CHECK_EQ(right->active.node_id, NodeId(3));
+    ELMD_CHECK_EQ(right->active.offset, 0u);
+    auto left = document_move_selection(document, *right, DocumentMove::Left, false);
+    ELMD_CHECK(left.has_value());
+    if (!left) return;
+    ELMD_CHECK_EQ(left->active.node_id, NodeId(1));
+    ELMD_CHECK_EQ(left->active.offset, 5u);
+}
+
+ELMD_TEST(test_document_vertical_navigation_uses_node_local_lines) {
+    BlockNode code;
+    code.id = NodeId(1);
+    code.kind = BlockKind::CodeBlock;
+    code.code_text = U"abcd\nxy";
+    auto document = document_with({std::move(code)});
+    auto down = document_move_selection(document, caret(1, 3), DocumentMove::Down, false);
+    ELMD_CHECK(down.has_value());
+    if (!down) return;
+    ELMD_CHECK_EQ(down->active.offset, 7u);
+    auto up = document_move_selection(document, *down, DocumentMove::Up, false);
+    ELMD_CHECK(up.has_value());
+    if (up) ELMD_CHECK_EQ(up->active.offset, 2u);
+}
+
+ELMD_TEST(test_document_select_all_binds_first_and_last_nodes) {
+    auto document = document_with({paragraph(1, 2, U"alpha"), paragraph(3, 4, U"beta")});
+    auto selection = document_select_all(document);
+    ELMD_CHECK(selection.has_value());
+    if (!selection) return;
+    ELMD_CHECK_EQ(selection->anchor.node_id, NodeId(1));
+    ELMD_CHECK_EQ(selection->anchor.offset, 0u);
+    ELMD_CHECK_EQ(selection->active.node_id, NodeId(3));
+    ELMD_CHECK_EQ(selection->active.offset, 4u);
+}
