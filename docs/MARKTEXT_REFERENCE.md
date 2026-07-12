@@ -17,7 +17,7 @@ EditorDocument -> Renderer -> 界面
 EditorDocument -> Serializer -> Markdown
 ```
 
-Markdown 文本、SourceMap、RenderModel、LayoutTree 和屏幕坐标均为派生数据。
+Markdown 文本、RenderModel、LayoutTree 和屏幕坐标均为派生数据。文档不保存全文 SourceMap；渲染与命中测试使用 `TextPosition`/`TextSpan`。
 
 常规编辑交互不得依赖扫描 Markdown 行前缀、统计缩进或临时拼接 Markdown 字符串。Markdown 语法识别属于 Parser，Markdown 文本生成属于 Serializer，键盘交互属于 AST 结构变换。
 
@@ -131,11 +131,11 @@ Muya 将段落、列表、列表项和引用表示为可直接插入、移除、
 
 输入与投影不变量：
 
-* 普通输入和选区替换直接修改目标 inline 子树，不得创建全局源码替换事务；
-* 加粗、斜体、删除线、行内代码和行内公式的切换必须拆分、包装或解包 inline 子树；空选区创建可继续输入的空格式节点，不得通过替换序列化定界符定义命令语义；
-* 自动配对定界符在文档树中升级为 Emphasis、Strong、Strike、InlineCode、InlineMath、CodeBlock 或 MathBlock，不能依靠修改源码后重新解析；
+* 普通输入和选区替换创建块内 `TextEdit`，修改目标 `InlineDocument.source` 后只重解析该内容节点的 lossless CST；
+* 加粗、斜体、删除线、行内代码和行内公式通过块内源码编辑插入、删除或替换原有定界符，未触及的 marker 拼写保持不变；
+* 自动配对定界符也是块内源码编辑；其 CST 结构由当前内容节点的局部重解析识别，不直接改写语义 inline 节点；
 * 表格单元格输入、删除和跨单元格范围删除必须保留表格结构及未受影响的单元格节点身份；
-* serializer 在遍历权威文档树时同时生成 Markdown 和 SourceMap，投影阶段不得再次调用 parser 或按节点种类猜测 ID；
+* serializer 遍历权威块树生成 Markdown；inline 内容始终直接写出节点的 `InlineDocument.source`，不生成或恢复全文 SourceMap；
 * 未完成的定界符仍属于当前文档树中的可编辑内容，不得因派生投影而改变块类型；
 * 输入后的 Undo/Redo 恢复原文档树、稳定节点身份和原 Selection。
 
@@ -145,6 +145,6 @@ Muya 将段落、列表、列表项和引用表示为可直接插入、移除、
 * 引用和列表命令包装、解包或转换现有块子树，不得扫描或改写 Markdown 行前缀；
 * 列表种类转换保留列表项内容子树，任务复选框只修改对应 TaskListItem 状态；
 * 块级格式化后的 Selection 和 Undo/Redo 继续绑定原内容节点。
-* 链接与图片命令直接插入 inline 节点；代码块、数学块、目录和表格命令直接插入对应 block 节点，并由 serializer 生成 Markdown。
+* 链接与行内图片命令生成块内源码编辑并局部重解析 CST；代码块、数学块、目录和表格命令直接插入对应 block 节点，并由 serializer 生成 Markdown。
 * 表格导航绑定 TableCell 身份；行列插入、删除、移动和对齐直接变换 Table、TableRow 与 TableCell，空单元格不得用空格文本占位。
 * Callout 包装和解包现有块子树；脚注命令从 AST 中分配标签并同时创建 FootnoteRef 与 FootnoteDefinition，不得扫描序列化文本。

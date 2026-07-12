@@ -15,7 +15,7 @@
 9. 不存在新旧模型双轨
 10. 任务结束时旧模型和兼容层已彻底删除
 
-## 任务编号 (见 TaskList)
+## 已完成任务
 1. 设计并落地新核心类型模块 — inline_cst.ixx / inline_document.ixx / text_edit.ixx；改 ast.ixx
 2. 实现 lossless inline CST parser
 3. 重写 serializer 为 source-verbatim 无损
@@ -26,15 +26,13 @@
 8. 渲染 + 命中测试改用新模型
 9. 删除所有旧架构与兼容层
 10. 重写测试套件到新模型 + property tests
-11. WinUI 应用层迁移到新模型 (无法在此环境构建验证)
+11. WinUI 应用层迁移到新模型，并通过 Debug x64 MSBuild 验证
 
-## 执行顺序
-1 → 2 → 3 (并行可行: parser 与 serializer 都依赖 CST 类型) → 4 → 6 → 5 → 7 → 8 → 9 → 10 → 11
-实际推进时按依赖串行，每完成一阶段小批量 commit。
+全部阶段已按依赖完成。`document_edit.ixx` 现为薄 facade，具体职责拆分到 `document_edit_support.ixx`、`document_source_edit.ixx` 与 `document_structure_edit.ixx`。
 
 ## 环境约束
 - 核心构建+测试: `cmd /c build_test.bat 2>&1` (vcvars64 + ninja + elmd_tests)
-- WinUI 应用层: 无法在此环境构建 (需 MSBuild+WinUI SDK)；只保证签名/逻辑同步
+- WinUI 应用层: `setup.ps1` 恢复依赖后，以 MSBuild Debug x64 构建验证
 - 提交纪律: 小批量分步 commit，不一次性 dump
 
 ## 进度日志
@@ -43,8 +41,11 @@
 - 2026-07-12 基线提交 ecadd1b (AGENTS.md 新纲领)
 - 2026-07-12 测试框架迁移到仓库 fork 的 Boost.UT C++23 module (`third_party/ut`):
   - CMake: `cmake_minimum_required(VERSION 4.0)`、`file(GLOB)` 收集 `tests/*.cpp`，`elmd_tests` 链接 `Boost::ut_module`
-  - 测试 TU 顺序为 `import std;`、`import boost.ut;`、再 import 所需的 `elmd.core.*` modules
-  - `tests/runner.cpp` 将 `argc`/`argv` 传给 `boost::ut::cfg<>.run()`，支持 Boost.UT 过滤参数
+  - `tests/elmd_test.hpp` 使用 `import boost.ut;`；测试 TU 不再 `import std;`
+  - `tests/main.cpp` 将 `argc`/`argv` 传给 `boost::ut::cfg<>.run()`，支持 Boost.UT 过滤参数
   - fork 包含 MSVC module linkage 与命令行初始化修复；不得退回 `<boost/ut.hpp>` header-only 路径
   - 删除旧的 `tests/test_framework.h`
   - 验证: 全部核心测试套件在 module 路径下编译并通过
+- 2026-07-13 完成统一块树、局部 source/CST、单一 TextPosition、可逆操作 history、局部渲染与 WinUI/TSF UTF-16 边界迁移。
+- 删除 `SourceMap`、`source_structure`、`document_position`、`CharOffset`/`CharRange`、legacy selection/caret、全文增量重解析与旧 WinUI 全文映射路径。
+- 验证: 核心随机/无损/编辑/history/渲染测试通过；WinUI Debug x64 构建通过。
