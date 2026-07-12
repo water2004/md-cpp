@@ -44,7 +44,8 @@ namespace winrt::ElMd
         if (!session_ || !executeCommand_) return false;
         if (character == U'\r' || character == U'\n') return InsertNewline();
         if (character < 0x20 || character == 0x7f) return false;
-        auto start = session_->Selection().normalized_range().start.v;
+        auto selection = session_->Selection();
+        auto start = (std::min)(session_->AcpOffset(selection.anchor), session_->AcpOffset(selection.active));
         std::u32string text(1, character);
         if (!executeCommand_(elmd::Command::InsertText(text))) return false;
         if (textInput_) textInput_->RecordCharacterTextUpdate(start, std::move(text));
@@ -180,13 +181,14 @@ namespace winrt::ElMd
             {
                 ResetCaretGoal();
                 auto selection = session_->Selection();
-                auto upstream = selection.affinity == elmd::TextAffinity::Upstream;
-                if (auto offset = renderer_->VisualLineStart(selection.active.v, upstream))
+                auto upstream = selection.active.affinity == elmd::TextAffinity::Upstream;
+                if (auto position = renderer_->VisualLineStart(selection.active, upstream))
                 {
-                    session_->SetSelection(shift ? selection.anchor.v : *offset, *offset, elmd::TextAffinity::Downstream);
+                    position->affinity = elmd::TextAffinity::Downstream;
+                    session_->SetSelection(shift ? selection.anchor : *position, *position);
                     if (textInput_) textInput_->NotifySelectionChanged();
                     if (render_) render_();
-                    if (renderer_->ScrollToSourceOffset(*offset) && render_) render_();
+                    if (renderer_->ScrollToPosition(*position) && render_) render_();
                     return true;
                 }
                 command.kind = elmd::CommandKind::MoveLineStart;
@@ -197,13 +199,14 @@ namespace winrt::ElMd
             {
                 ResetCaretGoal();
                 auto selection = session_->Selection();
-                auto upstream = selection.affinity == elmd::TextAffinity::Upstream;
-                if (auto offset = renderer_->VisualLineEnd(selection.active.v, upstream))
+                auto upstream = selection.active.affinity == elmd::TextAffinity::Upstream;
+                if (auto position = renderer_->VisualLineEnd(selection.active, upstream))
                 {
-                    session_->SetSelection(shift ? selection.anchor.v : *offset, *offset, elmd::TextAffinity::Upstream);
+                    position->affinity = elmd::TextAffinity::Upstream;
+                    session_->SetSelection(shift ? selection.anchor : *position, *position);
                     if (textInput_) textInput_->NotifySelectionChanged();
                     if (render_) render_();
-                    if (renderer_->ScrollToSourceOffset(*offset) && render_) render_();
+                    if (renderer_->ScrollToPosition(*position) && render_) render_();
                     return true;
                 }
                 command.kind = elmd::CommandKind::MoveLineEnd;
@@ -252,18 +255,19 @@ namespace winrt::ElMd
     {
         if (!session_ || !renderer_) return false;
         auto selection = session_->Selection();
-        auto upstream = selection.affinity == elmd::TextAffinity::Upstream;
-        auto move = renderer_->MoveCaretVertically(selection.active.v, upstream, down, caretGoalX_);
+        auto upstream = selection.active.affinity == elmd::TextAffinity::Upstream;
+        auto move = renderer_->MoveCaretVertically(selection.active, upstream, down, caretGoalX_);
         if (!move)
         {
             ResetCaretGoal();
             return false;
         }
         auto affinity = move->upstream ? elmd::TextAffinity::Upstream : elmd::TextAffinity::Downstream;
-        session_->SetSelection(extend ? selection.anchor.v : move->offset, move->offset, affinity);
+        move->position.affinity = affinity;
+        session_->SetSelection(extend ? selection.anchor : move->position, move->position);
         if (textInput_) textInput_->NotifySelectionChanged();
         if (render_) render_();
-        if (renderer_->ScrollToSourceOffset(move->offset) && render_) render_();
+        if (renderer_->ScrollToPosition(move->position) && render_) render_();
         return true;
     }
 

@@ -8,6 +8,24 @@ import elmd.core.utf;
 
 namespace winrt::ElMd
 {
+    namespace
+    {
+        std::wstring BoundaryWide(std::u32string_view text)
+        {
+            std::wstring result;
+            for (auto codepoint : text)
+            {
+                if (codepoint <= 0xffff) result.push_back(static_cast<wchar_t>(codepoint));
+                else
+                {
+                    codepoint -= 0x10000;
+                    result.push_back(static_cast<wchar_t>(0xd800 + (codepoint >> 10)));
+                    result.push_back(static_cast<wchar_t>(0xdc00 + (codepoint & 0x3ff)));
+                }
+            }
+            return result;
+        }
+    }
     EditorSession::EditorSession() : core_(std::make_unique<detail::EditorSessionCore>())
     {
         RebuildCore();
@@ -81,17 +99,19 @@ namespace winrt::ElMd
             }
         }
 
-        text_ = winrt::to_hstring(core_->editor.text_utf8());
         revision_ = core_->editor.revision();
         RebuildRenderModel();
         return true;
     }
 
-    void EditorSession::SetSelection(std::size_t anchor, std::size_t active, elmd::TextAffinity affinity)
+    void EditorSession::SetSelection(elmd::TextPosition anchor, elmd::TextPosition active)
     {
-        auto anchorPosition = core_->editor.boundary_position(anchor, affinity);
-        auto activePosition = core_->editor.boundary_position(active, affinity);
-        if (anchorPosition && activePosition) core_->editor.set_selection({*anchorPosition, *activePosition});
+        core_->editor.set_selection({anchor, active});
+    }
+
+    void EditorSession::SetSelection(elmd::TextSelection selection)
+    {
+        core_->editor.set_selection(std::move(selection));
     }
 
     bool EditorSession::HasSelection() const
@@ -134,9 +154,14 @@ namespace winrt::ElMd
         return revision_;
     }
 
-    std::size_t EditorSession::TextLength() const
+    std::wstring EditorSession::BoundaryTextUtf16() const
     {
-        return core_->editor.boundary_text_cps().size();
+        return BoundaryWide(core_->editor.boundary_text_cps());
+    }
+
+    std::size_t EditorSession::AcpLength() const
+    {
+        return BoundaryTextUtf16().size();
     }
 
     std::u32string EditorSession::TextView() const
@@ -144,19 +169,35 @@ namespace winrt::ElMd
         return core_->editor.boundary_text_cps();
     }
 
+    std::optional<std::u32string> EditorSession::EditableSource(elmd::NodeId id) const
+    {
+        return core_->editor.editable_source(id);
+    }
+
     elmd::TextSelection EditorSession::Selection() const
     {
         return core_->editor.selection();
     }
 
-    std::size_t EditorSession::BoundaryOffset(elmd::TextPosition position) const
+    std::size_t EditorSession::AcpOffset(elmd::TextPosition position) const
     {
-        return core_->editor.boundary_offset(position).value_or(0);
+        auto codepointOffset = core_->editor.boundary_offset(position).value_or(0);
+        auto text = core_->editor.boundary_text_cps();
+        codepointOffset = (std::min)(codepointOffset, text.size());
+        return BoundaryWide(std::u32string_view(text).substr(0, codepointOffset)).size();
     }
 
-    elmd::TextPosition EditorSession::BoundaryPosition(std::size_t offset, elmd::TextAffinity affinity) const
+    elmd::TextPosition EditorSession::PositionFromAcp(std::size_t offset, elmd::TextAffinity affinity) const
     {
-        return core_->editor.boundary_position(offset, affinity).value_or(elmd::TextPosition{});
+        auto text = core_->editor.boundary_text_cps();
+        std::size_t codepointOffset = 0;
+        std::size_t utf16Offset = 0;
+        while (codepointOffset < text.size() && utf16Offset < offset)
+        {
+            utf16Offset += text[codepointOffset] > 0xffff ? 2 : 1;
+            ++codepointOffset;
+        }
+        return core_->editor.boundary_position(codepointOffset, affinity).value_or(elmd::TextPosition{});
     }
 
     elmd::RenderModel const& EditorSession::RenderModel() const
@@ -173,7 +214,6 @@ namespace winrt::ElMd
     {
         return detail::EditorRenderFrame{
             core_->renderModel,
-            core_->editor.text_cps(),
             core_->editor.selection(),
             core_->baseDirectory,
         };

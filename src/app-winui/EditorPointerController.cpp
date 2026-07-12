@@ -68,7 +68,7 @@ namespace winrt::ElMd
                 return;
             }
 
-            session_->SetSelection(action->sourceOffset, action->sourceOffset);
+            session_->SetSelection(action->sourcePosition, action->sourcePosition);
             if (textInput_) textInput_->NotifySelectionChanged();
             elmd::Command command;
             command.table_index = action->index;
@@ -99,7 +99,7 @@ namespace winrt::ElMd
         if (!hit) return;
         if ((args.KeyModifiers() & winrt::Windows::System::VirtualKeyModifiers::Control) == winrt::Windows::System::VirtualKeyModifiers::Control)
         {
-            if (auto link = LinkAtSourceOffset(*hit))
+            if (auto link = LinkAtPosition(*hit))
             {
                 if (openLink_) openLink_(std::move(*link));
                 args.Handled(true);
@@ -113,7 +113,8 @@ namespace winrt::ElMd
         }
         selecting_ = true;
         anchor_ = *hit;
-        session_->SetSelection(anchor_, anchor_, hitUpstream ? elmd::TextAffinity::Upstream : elmd::TextAffinity::Downstream);
+        anchor_.affinity = hitUpstream ? elmd::TextAffinity::Upstream : elmd::TextAffinity::Downstream;
+        session_->SetSelection(anchor_, anchor_);
         if (textInput_) textInput_->NotifySelectionChanged();
         surface_.CapturePointer(args.Pointer());
         if (render_) render_();
@@ -128,7 +129,7 @@ namespace winrt::ElMd
         if (!selecting_ && !tableDrag_)
         {
             auto hit = renderer_->HitTest(static_cast<float>(point.X), static_cast<float>(point.Y));
-            auto tooltip = hit ? TooltipAtSourceOffset(*hit) : std::nullopt;
+            auto tooltip = hit ? TooltipAtPosition(*hit) : std::nullopt;
             if (tooltip != hoverTooltip_)
             {
                 hoverTooltip_ = tooltip;
@@ -154,7 +155,8 @@ namespace winrt::ElMd
         bool hitUpstream = false;
         auto hit = renderer_->HitTest(static_cast<float>(point.X), static_cast<float>(point.Y), &hitUpstream);
         if (!hit) return;
-        session_->SetSelection(anchor_, *hit, hitUpstream ? elmd::TextAffinity::Upstream : elmd::TextAffinity::Downstream);
+        hit->affinity = hitUpstream ? elmd::TextAffinity::Upstream : elmd::TextAffinity::Downstream;
+        session_->SetSelection(anchor_, *hit);
         if (textInput_) textInput_->NotifySelectionChanged();
         if (render_) render_();
         args.Handled(true);
@@ -173,7 +175,7 @@ namespace winrt::ElMd
             surface_.ReleasePointerCapture(args.Pointer());
             if (dropIndex)
             {
-                session_->SetSelection(action.sourceOffset, action.sourceOffset);
+                session_->SetSelection(action.sourcePosition, action.sourcePosition);
                 if (textInput_) textInput_->NotifySelectionChanged();
                 elmd::Command command;
                 command.kind = action.kind == EditorSurfaceRenderer::TableActionKind::DragRow
@@ -221,11 +223,13 @@ namespace winrt::ElMd
         }
     }
 
-    bool EditorPointerController::SelectWordAt(std::size_t offset)
+    bool EditorPointerController::SelectWordAt(elmd::TextPosition position)
     {
         if (!session_) return false;
-        auto text = session_->TextView();
-        if (text.empty()) return false;
+        auto source = session_->EditableSource(position.container_id);
+        if (!source || source->empty()) return false;
+        auto const& text = *source;
+        auto offset = position.source_offset;
         auto isWordChar = [](char32_t ch)
         {
             return (ch >= U'a' && ch <= U'z') || (ch >= U'A' && ch <= U'Z') || (ch >= U'0' && ch <= U'9') || ch == U'_' || ch > 0x7f;
@@ -237,43 +241,51 @@ namespace winrt::ElMd
         while (start > 0 && isWordChar(text[start - 1])) --start;
         auto end = offset + 1;
         while (end < text.size() && isWordChar(text[end])) ++end;
-        session_->SetSelection(start, end);
+        session_->SetSelection(
+            {position.container_id, start, elmd::TextAffinity::Downstream},
+            {position.container_id, end, elmd::TextAffinity::Downstream});
         if (textInput_) textInput_->NotifySelectionChanged();
         return true;
     }
 
-    bool EditorPointerController::TryToggleTaskCheckboxAt(std::size_t offset)
+    bool EditorPointerController::TryToggleTaskCheckboxAt(elmd::TextPosition position)
     {
         if (!session_) return false;
-        auto text = session_->TextView();
-        auto lineStart = (std::min)(offset, text.size());
-        while (lineStart > 0 && text[lineStart - 1] != U'\n') --lineStart;
-        auto pos = lineStart;
-        while (pos < text.size() && (text[pos] == U' ' || text[pos] == U'\t')) ++pos;
-        if (pos + 5 >= text.size() || (text[pos] != U'-' && text[pos] != U'*' && text[pos] != U'+') || text[pos + 1] != U' ' || text[pos + 2] != U'[' || text[pos + 4] != U']' || text[pos + 5] != U' ') return false;
-        if (offset < pos || offset > pos + 5) return false;
-        session_->SetSelection(offset, offset);
+        bool taskMarker = false;
+        auto scan = [&](auto& self, auto const& blocks) -> void {
+            for (auto const& block : blocks) {
+                for (auto const& item : block.inline_items) {
+                    if (item.marker_role == elmd::MarkerRole::TaskCheckbox
+                        && item.source_span.container_id == position.container_id
+                        && item.source_span.source_range.covers(position.source_offset)) taskMarker = true;
+                }
+                self(self, block.child_blocks);
+            }
+        };
+        scan(scan, session_->RenderModel().blocks);
+        if (!taskMarker) return false;
+        session_->SetSelection(position, position);
         if (textInput_) textInput_->NotifySelectionChanged();
         elmd::Command command;
         command.kind = elmd::CommandKind::ToggleTaskCheckbox;
         return executeCommand_ && executeCommand_(command);
     }
 
-    std::optional<std::string> EditorPointerController::LinkAtSourceOffset(std::size_t offset) const
+    std::optional<std::string> EditorPointerController::LinkAtPosition(elmd::TextPosition position) const
     {
         if (!session_) return std::nullopt;
         auto scanItems = [&](auto& self, auto const& items) -> std::optional<std::string>
         {
             for (auto const& item : items)
             {
-                if (item.kind == elmd::InlineRenderItem::Kind::Link && item.source_range.start.v <= offset && offset <= item.source_range.end.v) return item.href;
+                if (item.kind == elmd::InlineRenderItem::Kind::Link && item.source_span.container_id == position.container_id && item.source_span.source_range.covers(position.source_offset)) return item.href;
                 if (!item.children.empty()) if (auto nested = self(self, item.children)) return nested;
             }
             return std::nullopt;
         };
         auto scanBlock = [&](auto& self, auto const& block) -> std::optional<std::string>
         {
-            if (block.kind == elmd::RenderBlockKind::Image && block.link && block.source_range.start.v <= offset && offset <= block.source_range.end.v) return *block.link;
+            if (block.kind == elmd::RenderBlockKind::Image && block.link && block.source_span.container_id == position.container_id) return *block.link;
             if (auto link = scanItems(scanItems, block.inline_items)) return link;
             if (block.callout_title) if (auto link = scanItems(scanItems, *block.callout_title)) return link;
             for (auto const& cell : block.table_cells) if (auto link = scanItems(scanItems, cell)) return link;
@@ -284,14 +296,14 @@ namespace winrt::ElMd
         return std::nullopt;
     }
 
-    std::optional<std::string> EditorPointerController::TooltipAtSourceOffset(std::size_t offset) const
+    std::optional<std::string> EditorPointerController::TooltipAtPosition(elmd::TextPosition position) const
     {
         if (!session_) return std::nullopt;
         auto scanItems = [&](auto& self, auto const& items) -> std::optional<std::string>
         {
             for (auto const& item : items)
             {
-                if (item.source_range.start.v <= offset && offset <= item.source_range.end.v)
+                if (item.source_span.container_id == position.container_id && item.source_span.source_range.covers(position.source_offset))
                 {
                     if (item.title && !item.title->empty()) return *item.title;
                     if (item.kind == elmd::InlineRenderItem::Kind::Link && !item.href.empty()) return item.href;
@@ -303,7 +315,7 @@ namespace winrt::ElMd
         };
         auto scanBlock = [&](auto& self, auto const& block) -> std::optional<std::string>
         {
-            if (block.kind == elmd::RenderBlockKind::Image && block.source_range.start.v <= offset && offset <= block.source_range.end.v)
+            if (block.kind == elmd::RenderBlockKind::Image && block.source_span.container_id == position.container_id)
             {
                 if (block.title && !block.title->empty()) return *block.title;
                 if (!block.alt.empty()) return block.alt;

@@ -29,8 +29,8 @@ namespace winrt::ElMd
         outline_ = nullptr;
         diagnostics_ = nullptr;
         render_ = {};
-        outlineOffsets_.clear();
-        diagnosticOffsets_.clear();
+        outlinePositions_.clear();
+        diagnosticPositions_.clear();
         outlineLabels_.clear();
         diagnosticLabels_.clear();
     }
@@ -45,12 +45,12 @@ namespace winrt::ElMd
     {
         if (!session_ || !renderer_ || !outline_ || !selectedItem) return;
         auto selectedText = winrt::unbox_value<winrt::hstring>(selectedItem);
-        for (uint32_t index = 0; index < outline_.Items().Size() && index < outlineOffsets_.size(); ++index)
+        for (uint32_t index = 0; index < outline_.Items().Size() && index < outlinePositions_.size(); ++index)
         {
             if (winrt::unbox_value<winrt::hstring>(outline_.Items().GetAt(index)) != selectedText) continue;
-            session_->SetSelection(outlineOffsets_[index], outlineOffsets_[index]);
+            session_->SetSelection(outlinePositions_[index], outlinePositions_[index]);
             if (textInput_) textInput_->NotifySelectionChanged();
-            renderer_->ScrollToSourceOffset(outlineOffsets_[index]);
+            renderer_->ScrollToPosition(outlinePositions_[index]);
             if (render_) render_();
             return;
         }
@@ -61,12 +61,13 @@ namespace winrt::ElMd
         if (!session_ || !renderer_ || !diagnostics_ || !selectedItem) return;
         auto selectedText = winrt::unbox_value<winrt::hstring>(selectedItem);
         if (selectedText == L"No diagnostics") return;
-        for (uint32_t index = 0; index < diagnostics_.Items().Size() && index < diagnosticOffsets_.size(); ++index)
+        for (uint32_t index = 0; index < diagnostics_.Items().Size() && index < diagnosticPositions_.size(); ++index)
         {
             if (winrt::unbox_value<winrt::hstring>(diagnostics_.Items().GetAt(index)) != selectedText) continue;
-            session_->SetSelection(diagnosticOffsets_[index], diagnosticOffsets_[index]);
+            if (!diagnosticPositions_[index]) return;
+            session_->SetSelection(*diagnosticPositions_[index], *diagnosticPositions_[index]);
             if (textInput_) textInput_->NotifySelectionChanged();
-            renderer_->ScrollToSourceOffset(diagnosticOffsets_[index]);
+            renderer_->ScrollToPosition(*diagnosticPositions_[index]);
             if (render_) render_();
             return;
         }
@@ -75,28 +76,18 @@ namespace winrt::ElMd
     void EditorSidebarController::RefreshOutline()
     {
         if (!session_ || !outline_) return;
-        std::vector<std::size_t> headingOffsets;
-        for (auto const& block : session_->RenderModel().blocks)
-        {
-            if (block.kind == elmd::RenderBlockKind::Text && block.block_style.margin_top >= 4.0f && block.content_range.end.v > block.content_range.start.v)
-            {
-                headingOffsets.push_back(block.content_range.start.v);
-            }
-        }
         std::vector<std::wstring> labels;
-        std::vector<std::size_t> offsets;
-        std::size_t headingIndex = 0;
+        std::vector<elmd::TextPosition> positions;
         for (auto const* item : session_->RenderModel().outline.flat_items())
         {
             std::wstring indent((std::max)(0, static_cast<int>(item->level) - 1) * 2, L' ');
             auto title = winrt::to_hstring(item->title_plain_text);
             labels.push_back(indent + std::wstring(title.c_str()));
-            offsets.push_back(headingIndex < headingOffsets.size() ? headingOffsets[headingIndex] : 0);
-            ++headingIndex;
+            positions.push_back(item->position);
         }
-        if (labels == outlineLabels_ && offsets == outlineOffsets_) return;
+        if (labels == outlineLabels_ && positions == outlinePositions_) return;
         outlineLabels_ = std::move(labels);
-        outlineOffsets_ = std::move(offsets);
+        outlinePositions_ = std::move(positions);
         outline_.Items().Clear();
         for (auto const& label : outlineLabels_) outline_.Items().Append(winrt::box_value(winrt::hstring(label)));
     }
@@ -105,25 +96,26 @@ namespace winrt::ElMd
     {
         if (!session_ || !diagnostics_) return;
         std::vector<std::wstring> labels;
-        std::vector<std::size_t> offsets;
+        std::vector<std::optional<elmd::TextPosition>> positions;
         for (auto const& diagnostic : session_->RenderModel().diagnostics)
         {
             auto severity = L"Warning";
             if (diagnostic.severity == elmd::RenderDiagnostic::Sev::Info) severity = L"Info";
             else if (diagnostic.severity == elmd::RenderDiagnostic::Sev::Error) severity = L"Error";
-            auto offset = diagnostic.source_range ? diagnostic.source_range->start.v : 0;
-            auto label = winrt::hstring(severity) + L" @ " + winrt::to_hstring(offset) + L": " + winrt::to_hstring(diagnostic.message);
+            auto label = winrt::hstring(severity) + L": " + winrt::to_hstring(diagnostic.message);
             labels.emplace_back(label.c_str());
-            offsets.push_back(offset);
+            positions.push_back(diagnostic.source_span
+                ? std::optional<elmd::TextPosition>{{diagnostic.source_span->container_id, diagnostic.source_span->source_range.start, elmd::TextAffinity::Downstream}}
+                : std::nullopt);
         }
         if (labels.empty())
         {
             labels.push_back(L"No diagnostics");
-            offsets.push_back(0);
+            positions.push_back(std::nullopt);
         }
-        if (labels == diagnosticLabels_ && offsets == diagnosticOffsets_) return;
+        if (labels == diagnosticLabels_ && positions == diagnosticPositions_) return;
         diagnosticLabels_ = std::move(labels);
-        diagnosticOffsets_ = std::move(offsets);
+        diagnosticPositions_ = std::move(positions);
         diagnostics_.Items().Clear();
         for (auto const& label : diagnosticLabels_) diagnostics_.Items().Append(winrt::box_value(winrt::hstring(label)));
     }

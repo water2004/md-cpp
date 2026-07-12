@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "EditorTextInputController.h"
+#include "EditorContentPreparation.h"
 
 import elmd.core.command;
 import elmd.core.utf;
@@ -30,7 +31,7 @@ namespace winrt::ElMd
         context_ = manager.CreateEditContext();
         context_.InputScope(winrt::Windows::UI::Text::Core::CoreTextInputScope::Text);
         context_.InputPaneDisplayPolicy(winrt::Windows::UI::Text::Core::CoreTextInputPaneDisplayPolicy::Automatic);
-        knownLength_ = session_->TextLength();
+        knownLength_ = session_->AcpLength();
         RegisterHandlers();
     }
 
@@ -71,7 +72,7 @@ namespace winrt::ElMd
     void EditorTextInputController::NotifyTextChanged(std::size_t oldLength)
     {
         if (!context_ || updating_ || !session_) return;
-        auto newLength = session_->TextLength();
+        auto newLength = session_->AcpLength();
         context_.NotifyTextChanged(
             winrt::Windows::UI::Text::Core::CoreTextRange{ 0, static_cast<int32_t>(oldLength) },
             static_cast<int32_t>(newLength),
@@ -103,7 +104,7 @@ namespace winrt::ElMd
     {
         if (!session_) return {};
         auto selection = session_->Selection();
-        return { static_cast<int32_t>(selection.anchor.v), static_cast<int32_t>(selection.active.v) };
+        return { static_cast<int32_t>(session_->AcpOffset(selection.anchor)), static_cast<int32_t>(session_->AcpOffset(selection.active)) };
     }
 
     void EditorTextInputController::RegisterHandlers()
@@ -113,7 +114,8 @@ namespace winrt::ElMd
             if (!session_) return;
             auto request = args.Request();
             auto range = request.Range();
-            auto text = session_->Text();
+            auto boundary = session_->BoundaryTextUtf16();
+            auto text = winrt::hstring(boundary);
             auto textLength = static_cast<int32_t>(text.size());
             auto start = (std::max)(0, (std::min)(range.StartCaretPosition, textLength));
             auto end = (std::max)(start, (std::min)(range.EndCaretPosition, textLength));
@@ -132,7 +134,7 @@ namespace winrt::ElMd
             {
                 auto request = args.Request();
                 auto selectionState = session_->Selection();
-                auto caretBounds = renderer_->CaretBounds(selectionState.active.v, selectionState.affinity == elmd::TextAffinity::Upstream);
+                auto caretBounds = renderer_->CaretBounds(selectionState.active, selectionState.active.affinity == elmd::TextAffinity::Upstream);
                 auto textRect = winrt::Windows::Foundation::Rect{ 0.0f, 0.0f, 1.0f, 24.0f };
                 auto controlRect = winrt::Windows::Foundation::Rect{ 0.0f, 0.0f, static_cast<float>(surface_.ActualWidth()), static_cast<float>(surface_.ActualHeight()) };
                 auto transform = surface_.TransformToVisual(nullptr);
@@ -165,10 +167,12 @@ namespace winrt::ElMd
         {
             if (!session_) return;
             auto selection = args.Selection();
-            auto length = session_->TextLength();
+            auto length = session_->AcpLength();
             auto start = static_cast<std::size_t>((std::max)(0, selection.StartCaretPosition));
             auto end = static_cast<std::size_t>((std::max)(0, selection.EndCaretPosition));
-            session_->SetSelection((std::min)(start, length), (std::min)(end, length));
+            session_->SetSelection(
+                session_->PositionFromAcp((std::min)(start, length)),
+                session_->PositionFromAcp((std::min)(end, length)));
             if (render_) render_();
             args.Result(winrt::Windows::UI::Text::Core::CoreTextSelectionUpdatingResult::Succeeded);
         });
@@ -181,14 +185,15 @@ namespace winrt::ElMd
                 return;
             }
             auto range = args.Range();
-            auto length = session_->TextLength();
+            auto length = session_->AcpLength();
             auto start = static_cast<std::size_t>((std::max)(0, range.StartCaretPosition));
             auto end = static_cast<std::size_t>((std::max)(0, range.EndCaretPosition));
             auto incoming = elmd::utf8_to_cps(winrt::to_string(args.Text()));
             auto isIncomingNewline = incoming == U"\r" || incoming == U"\n" || incoming == U"\r\n";
             auto selection = session_->Selection();
-            auto text = session_->TextView();
-            if (isIncomingNewline && start < text.size() && text[start] == U'\n' && selection.is_caret() && selection.active.v == start + 1)
+            auto text = session_->BoundaryTextUtf16();
+            auto activeAcp = session_->AcpOffset(selection.active);
+            if (isIncomingNewline && start < text.size() && text[start] == L'\n' && selection.is_caret() && activeAcp == start + 1)
             {
                 if (render_) render_();
                 context_.NotifySelectionChanged(CurrentSelection());
@@ -200,16 +205,18 @@ namespace winrt::ElMd
                 && start <= text.size()
                 && start == pendingCharacterStart_
                 && incoming == pendingCharacterText_
-                && start + pendingCharacterText_.size() <= text.size()
+                && start + ToWide(pendingCharacterText_).size() <= text.size()
                 && selection.is_caret()
-                && selection.active.v == start + pendingCharacterText_.size()
-                && std::equal(pendingCharacterText_.begin(), pendingCharacterText_.end(), text.begin() + start))
+                && activeAcp == start + ToWide(pendingCharacterText_).size()
+                && text.substr(start, ToWide(pendingCharacterText_).size()) == ToWide(pendingCharacterText_))
             {
                 ClearPendingCharacterTextUpdate();
                 auto newSelection = args.NewSelection();
                 auto newStart = static_cast<std::size_t>((std::max)(0, newSelection.StartCaretPosition));
                 auto newEnd = static_cast<std::size_t>((std::max)(0, newSelection.EndCaretPosition));
-                session_->SetSelection((std::min)(newStart, length), (std::min)(newEnd, length));
+                session_->SetSelection(
+                    session_->PositionFromAcp((std::min)(newStart, length)),
+                    session_->PositionFromAcp((std::min)(newEnd, length)));
                 if (render_) render_();
                 context_.NotifySelectionChanged(CurrentSelection());
                 knownLength_ = length;
@@ -217,7 +224,9 @@ namespace winrt::ElMd
                 return;
             }
             ClearPendingCharacterTextUpdate();
-            session_->SetSelection((std::min)(start, length), (std::min)(end, length));
+            session_->SetSelection(
+                session_->PositionFromAcp((std::min)(start, length)),
+                session_->PositionFromAcp((std::min)(end, length)));
             auto command = isIncomingNewline ? elmd::Command{} : elmd::Command::InsertText(incoming);
             if (isIncomingNewline) command.kind = elmd::CommandKind::InsertNewline;
             updating_ = true;
@@ -228,13 +237,15 @@ namespace winrt::ElMd
                 args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Failed);
                 return;
             }
-            auto newLength = session_->TextLength();
+            auto newLength = session_->AcpLength();
             if (!isIncomingNewline)
             {
                 auto newSelection = args.NewSelection();
                 auto newStart = static_cast<std::size_t>((std::max)(0, newSelection.StartCaretPosition));
                 auto newEnd = static_cast<std::size_t>((std::max)(0, newSelection.EndCaretPosition));
-                session_->SetSelection((std::min)(newStart, newLength), (std::min)(newEnd, newLength));
+                session_->SetSelection(
+                    session_->PositionFromAcp((std::min)(newStart, newLength)),
+                    session_->PositionFromAcp((std::min)(newEnd, newLength)));
             }
             if (render_) render_();
             context_.NotifySelectionChanged(CurrentSelection());

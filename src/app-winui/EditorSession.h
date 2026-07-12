@@ -31,7 +31,8 @@ namespace winrt::ElMd
         void SaveAs(winrt::Windows::Storage::StorageFile const& file);
         void SetText(winrt::hstring const& text);
         bool ExecuteCommand(elmd::Command const& command);
-        void SetSelection(std::size_t anchor, std::size_t active, elmd::TextAffinity affinity = elmd::TextAffinity::Downstream);
+        void SetSelection(elmd::TextPosition anchor, elmd::TextPosition active);
+        void SetSelection(elmd::TextSelection selection);
         bool HasSelection() const;
         std::string SelectedTextUtf8() const;
         bool HasFile() const;
@@ -40,11 +41,13 @@ namespace winrt::ElMd
         winrt::hstring DisplayName() const;
         winrt::hstring Path() const;
         uint64_t Revision() const;
-        std::size_t TextLength() const;
+        std::size_t AcpLength() const;
+        std::wstring BoundaryTextUtf16() const;
         std::u32string TextView() const;
+        std::optional<std::u32string> EditableSource(elmd::NodeId id) const;
         elmd::TextSelection Selection() const;
-        std::size_t BoundaryOffset(elmd::TextPosition position) const;
-        elmd::TextPosition BoundaryPosition(std::size_t offset, elmd::TextAffinity affinity = elmd::TextAffinity::Downstream) const;
+        std::size_t AcpOffset(elmd::TextPosition position) const;
+        elmd::TextPosition PositionFromAcp(std::size_t offset, elmd::TextAffinity affinity = elmd::TextAffinity::Downstream) const;
         elmd::RenderModel const& RenderModel() const;
         std::wstring const& BaseDirectory() const;
         detail::EditorRenderFrame RenderFrame() const;

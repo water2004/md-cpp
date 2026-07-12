@@ -32,8 +32,8 @@ namespace winrt::ElMd
         winrt::Microsoft::UI::Xaml::Controls::ListView outline_{ nullptr };
         winrt::Microsoft::UI::Xaml::Controls::ListView diagnostics_{ nullptr };
         Render render_;
-        std::vector<std::size_t> outlineOffsets_;
-        std::vector<std::size_t> diagnosticOffsets_;
+        std::vector<elmd::TextPosition> outlinePositions_;
+        std::vector<std::optional<elmd::TextPosition>> diagnosticPositions_;
         std::vector<std::wstring> outlineLabels_;
         std::vector<std::wstring> diagnosticLabels_;
     };

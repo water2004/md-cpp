@@ -91,9 +91,9 @@ namespace winrt::ElMd
         {
             if (auto item = state_->session->RenderModel().outline.find_item_by_slug(href.substr(1)))
             {
-                state_->session->SetSelection(item->source_range.start.v, item->source_range.start.v);
+                state_->session->SetSelection(item->position, item->position);
                 if (state_->textInput) state_->textInput->NotifySelectionChanged();
-                if (state_->renderer) state_->renderer->ScrollToSourceOffset(item->source_range.start.v);
+                if (state_->renderer) state_->renderer->ScrollToPosition(item->position);
                 if (state_->render) state_->render();
             }
             return;
@@ -156,7 +156,7 @@ namespace winrt::ElMd
             loaded.Open(file, text);
             co_await uiContext;
             if (!Active(state, generation)) co_return;
-            auto oldLength = state->session->TextLength();
+            auto oldLength = state->session->AcpLength();
             *state->session = std::move(loaded);
             if (state->renderer) state->renderer->SetScrollOffset(0.0f);
             if (state->textInput) state->textInput->NotifyTextChanged(oldLength);

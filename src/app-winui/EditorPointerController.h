@@ -30,10 +30,10 @@ namespace winrt::ElMd
         void DoubleTapped(winrt::Microsoft::UI::Xaml::Input::DoubleTappedRoutedEventArgs const& args);
 
     private:
-        bool SelectWordAt(std::size_t offset);
-        bool TryToggleTaskCheckboxAt(std::size_t offset);
-        std::optional<std::string> LinkAtSourceOffset(std::size_t offset) const;
-        std::optional<std::string> TooltipAtSourceOffset(std::size_t offset) const;
+        bool SelectWordAt(elmd::TextPosition position);
+        bool TryToggleTaskCheckboxAt(elmd::TextPosition position);
+        std::optional<std::string> LinkAtPosition(elmd::TextPosition position) const;
+        std::optional<std::string> TooltipAtPosition(elmd::TextPosition position) const;
 
         EditorSession* session_ = nullptr;
         EditorSurfaceRenderer* renderer_ = nullptr;
@@ -45,7 +45,7 @@ namespace winrt::ElMd
         ResetCaretGoal resetCaretGoal_;
         bool selecting_ = false;
         std::optional<std::string> hoverTooltip_;
-        std::size_t anchor_ = 0;
+        elmd::TextPosition anchor_;
         std::optional<EditorSurfaceRenderer::TableAction> tableDrag_;
         std::optional<std::size_t> tableDropIndex_;
     };
