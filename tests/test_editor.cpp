@@ -1,5 +1,9 @@
-import std;
-import boost.ut;
+#include <cstddef>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+#include "elmd_test.hpp"
 import elmd.core.ast;
 import elmd.core.block_tree;
 import elmd.core.command;
@@ -295,6 +299,43 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.theme() == Theme::Light)));
     expect(fatal(bool(editor.scale_factor() == 1.5f)));
     expect(fatal(bool(editor.markdown_utf8() == source)));
+};
+
+"all_editable_block_contexts_share_the_source_edit_history_pipeline"_test = [] {
+    const std::vector<std::string> cases{
+        "abc",
+        "# abc",
+        "- abc",
+        "- [ ] abc",
+        "> abc",
+        "| abc |\n| --- |",
+        "> [!NOTE]\n> abc",
+        "[^1]: abc",
+    };
+    for (auto const& markdown : cases) {
+        Editor editor(markdown);
+        auto const id = first_text(editor).id;
+        editor.set_selection(TextSelection::caret({id, 1, TextAffinity::Downstream}));
+        const auto before = editor.markdown_utf8();
+        expect(fatal(bool(editor.execute_document_insert_text(editor.selection(), U"X").has_value())));
+        auto edited = *editor.editable_source(id);
+        expect(fatal(bool(edited == U"aXbc")));
+        auto const* owner = find_block(editor.document().root, id);
+        expect(fatal(bool(owner != nullptr)));
+        if (owner) expect(fatal(bool(flatten_tokens(owner->inline_content.tree, owner->inline_content.source) == owner->inline_content.source)));
+        expect(fatal(bool(editor.selection().active.container_id == id)));
+        expect(fatal(bool(editor.selection().active.source_offset == 2u)));
+
+        const auto saved = editor.markdown_utf8();
+        Editor reloaded(saved);
+        expect(fatal(bool(first_text(reloaded).inline_content.source == U"aXbc")));
+
+        expect(fatal(bool(editor.undo())));
+        expect(fatal(bool(editor.markdown_utf8() == before)));
+        expect(fatal(bool(*editor.editable_source(id) == U"abc")));
+        expect(fatal(bool(editor.redo())));
+        expect(fatal(bool(*editor.editable_source(id) == U"aXbc")));
+    }
 };
 
 }; // suite editor_tests

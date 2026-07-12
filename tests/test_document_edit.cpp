@@ -1,5 +1,12 @@
-import std;
-import boost.ut;
+#include <algorithm>
+#include <cstddef>
+#include <random>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "elmd_test.hpp"
 import elmd.core.ast;
 import elmd.core.block_tree;
 import elmd.core.document;

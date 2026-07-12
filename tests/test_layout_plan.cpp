@@ -1,5 +1,8 @@
-import std;
-import boost.ut;
+#include <cstdint>
+#include <limits>
+#include <vector>
+
+#include "elmd_test.hpp"
 import elmd.core.ids;
 import elmd.core.layout_plan;
 

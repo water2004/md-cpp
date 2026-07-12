@@ -1,5 +1,14 @@
-import std;
-import boost.ut;
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <random>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "elmd_test.hpp"
 import elmd.core.dialect;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;

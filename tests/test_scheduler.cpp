@@ -1,5 +1,4 @@
-import std;
-import boost.ut;
+#include "elmd_test.hpp"
 import elmd.core.scheduler;
 
 using namespace elmd;

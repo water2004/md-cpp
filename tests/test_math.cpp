@@ -1,5 +1,4 @@
-import std;
-import boost.ut;
+#include "elmd_test.hpp"
 import elmd.core.types;
 import elmd.core.theme;
 import elmd.core.utf;

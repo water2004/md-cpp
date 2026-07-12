@@ -1,5 +1,7 @@
-import std;
-import boost.ut;
+#include <string>
+#include <vector>
+
+#include "elmd_test.hpp"
 import elmd.core.slug;
 import elmd.core.outline;
 import elmd.core.ast;
