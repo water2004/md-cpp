@@ -151,9 +151,6 @@
     <ClCompile Include="..\core\ast.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\buffer.ixx">
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-    </ClCompile>
     <ClCompile Include="..\core\caret.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>

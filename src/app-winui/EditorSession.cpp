@@ -47,7 +47,7 @@ namespace winrt::ElMd
 
     void EditorSession::RebuildRenderModel()
     {
-        core_->renderModel = elmd::build_render_model(core_->editor.document(), core_->editor.buffer().text_utf8(), core_->editor.outline());
+        core_->renderModel = elmd::build_render_model(core_->editor.document(), core_->editor.text_utf8(), core_->editor.outline());
     }
 
     bool EditorSession::ExecuteCommand(elmd::Command const& command)
@@ -82,7 +82,7 @@ namespace winrt::ElMd
             }
         }
 
-        text_ = winrt::to_hstring(core_->editor.buffer().text_utf8());
+        text_ = winrt::to_hstring(core_->editor.text_utf8());
         revision_ = core_->editor.revision();
         RebuildRenderModel();
         return true;
@@ -106,7 +106,7 @@ namespace winrt::ElMd
     std::string EditorSession::SelectedTextUtf8() const
     {
         auto range = core_->editor.selection().normalized_range();
-        return elmd::cps_to_utf8(core_->editor.buffer().text_range(range));
+        return elmd::cps_to_utf8(core_->editor.text_range(range));
     }
 
     bool EditorSession::HasFile() const
@@ -141,12 +141,12 @@ namespace winrt::ElMd
 
     std::size_t EditorSession::TextLength() const
     {
-        return core_->editor.buffer().text_cps().size();
+        return core_->editor.text_cps().size();
     }
 
     std::u32string_view EditorSession::TextView() const
     {
-        return core_->editor.buffer().text_cps();
+        return core_->editor.text_cps();
     }
 
     elmd::Selection EditorSession::Selection() const
@@ -168,7 +168,7 @@ namespace winrt::ElMd
     {
         return detail::EditorRenderFrame{
             core_->renderModel,
-            core_->editor.buffer().text_cps(),
+            core_->editor.text_cps(),
             core_->editor.selection(),
             core_->baseDirectory,
         };

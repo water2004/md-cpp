@@ -6,7 +6,6 @@ export module elmd.core.editor;
 import std;
 import elmd.core.types;
 import elmd.core.theme;
-import elmd.core.buffer;
 import elmd.core.selection;
 import elmd.core.command;
 import elmd.core.input;
@@ -27,17 +26,23 @@ export namespace elmd {
 class Editor {
 public:
     Editor() { rebuild_document_full_(); }
-    explicit Editor(std::string text, MarkdownDialect dialect = default_dialect()) : dialect_(std::move(dialect)) { buffer_ = TextBuffer::from_text(std::move(text)); rebuild_document_full_(); }
+    explicit Editor(std::string text, MarkdownDialect dialect = default_dialect())
+        : markdown_projection_(utf8_to_cps(text)), dialect_(std::move(dialect)) { rebuild_document_full_(); }
 
-    const TextBuffer& buffer() const { return buffer_; }
     const EditorDocument& document() const { return document_; }
     const DocumentSymbolIndex& symbols() const { return symbols_; }
     const Outline& outline() const { return outline_; }
-    std::u32string text_cps() const { return std::u32string(buffer_.text_cps()); }
-    std::u32string markdown_cps() const { return serialize_markdown_cps(document_); }
-    std::string markdown_utf8() const { return serialize_markdown(document_); }
+    const std::u32string& text_cps() const { return markdown_projection_; }
+    std::u32string text_range(CharRange range) const {
+        const auto start = (std::min)(range.start.v, markdown_projection_.size());
+        const auto end = (std::min)((std::max)(range.end.v, start), markdown_projection_.size());
+        return markdown_projection_.substr(start, end - start);
+    }
+    std::string text_utf8() const { return cps_to_utf8(markdown_projection_); }
+    std::u32string markdown_cps() const { return markdown_projection_; }
+    std::string markdown_utf8() const { return cps_to_utf8(markdown_projection_); }
     Selection selection() const { return selection_; }
-    std::uint64_t revision() const { return buffer_.revision(); }
+    std::uint64_t revision() const { return revision_; }
     void set_selection(Selection s) {
         auto anchor = document_position_from_source_offset(document_, s.anchor);
         auto active = document_position_from_source_offset(document_, s.active);
@@ -455,7 +460,8 @@ public:
     void set_caret(CharOffset p) { set_selection(Selection::caret(p)); }
 
 private:
-    TextBuffer buffer_;
+    std::u32string markdown_projection_;
+    std::uint64_t revision_ = 1;
     EditorDocument document_;
     DocumentSymbolIndex symbols_;
     Outline outline_;
@@ -467,7 +473,7 @@ private:
     MarkdownDialect dialect_ = default_dialect();
 
     void rebuild_document_full_() {
-        auto parsed = parse_text(buffer_.revision(), buffer_.text_utf8(), dialect_);
+        auto parsed = parse_text(revision_, cps_to_utf8(markdown_projection_), dialect_);
         document_ = std::move(parsed.document);
         symbols_ = std::move(parsed.symbols);
         outline_ = std::move(parsed.outline);
@@ -484,14 +490,9 @@ private:
 
     void refresh_projection_from_document_() {
         auto projection = project_document(document_, dialect_);
-        TextDelta delta;
-        delta.revision_before = buffer_.revision();
-        BufferTextEdit edit;
-        edit.range = CharRange(CharOffset(0), CharOffset(buffer_.text_cps().size()));
-        edit.replacement = projection.markdown;
-        delta.edits.push_back(std::move(edit));
-        buffer_.apply_delta(delta);
-        document_.revision = buffer_.revision();
+        markdown_projection_ = std::move(projection.markdown);
+        ++revision_;
+        document_.revision = revision_;
         document_.source_map = std::move(projection.source_map);
         document_.metadata = std::move(projection.metadata);
         document_.diagnostics = std::move(projection.diagnostics);

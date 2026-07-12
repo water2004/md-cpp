@@ -71,7 +71,7 @@ std::optional<TestTableProjection> table_projection(const Editor& editor) {
 
 ELMD_TEST(test_new_editor_empty) {
     Editor e;
-    ELMD_CHECK(e.buffer().is_empty());
+    ELMD_CHECK(e.text_cps().empty());
 }
 
 ELMD_TEST(test_document_projection_does_not_reparse_incomplete_markdown) {
@@ -178,19 +178,19 @@ ELMD_TEST(test_editor_document_enter_keeps_ast_authoritative_and_projects_markdo
 
     ELMD_CHECK(transaction);
     if (!transaction) return;
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alpha\n\nomega"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("alpha\n\nomega"));
     ELMD_CHECK_EQ(editor.document().blocks.size(), 2u);
     ELMD_CHECK_EQ(editor.document().blocks.front().id, original_id);
     ELMD_CHECK_EQ(editor.document_selection().active.node_id, editor.document().blocks[1].id);
     ELMD_CHECK(editor.document().source_map.find_node_by_id(editor.document().blocks[1].id) != nullptr);
 
     ELMD_CHECK(editor.undo_document());
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alphaomega"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("alphaomega"));
     ELMD_CHECK_EQ(editor.document().blocks.size(), 1u);
     ELMD_CHECK_EQ(editor.document().blocks.front().id, original_id);
 
     ELMD_CHECK(editor.redo_document());
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alpha\n\nomega"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("alpha\n\nomega"));
     ELMD_CHECK_EQ(editor.document().blocks.size(), 2u);
 }
 
@@ -203,13 +203,13 @@ ELMD_TEST(test_editor_newline_command_uses_document_transaction_for_top_level_pa
 
     auto result = editor.execute_command(newline);
     ELMD_CHECK(result);
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alpha\n\nomega"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("alpha\n\nomega"));
     ELMD_CHECK_EQ(editor.document().blocks.front().id, original_id);
     ELMD_CHECK(editor.has_document_undo());
 
     auto undone = editor.undo();
     ELMD_CHECK(undone);
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alphaomega"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("alphaomega"));
     ELMD_CHECK_EQ(editor.document().blocks.front().id, original_id);
 }
 
@@ -219,10 +219,10 @@ ELMD_TEST(test_editor_document_delete_projects_and_restores_node_selection) {
     auto transaction = editor.execute_document_delete_backward(DocumentSelection::caret(
         DocumentPosition{block_id, 5, TextAffinity::Downstream}));
     ELMD_CHECK(transaction);
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alphbeta"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("alphbeta"));
     ELMD_CHECK_EQ(editor.document().blocks.front().id, block_id);
     ELMD_CHECK(editor.undo_document());
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alphabeta"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("alphabeta"));
     ELMD_CHECK_EQ(editor.document_selection().active.offset, 5u);
 }
 
@@ -295,7 +295,7 @@ ELMD_TEST(test_editor_enter_at_paragraph_end_projects_empty_node_caret_anchor) {
     auto transaction = editor.execute_command(newline);
 
     ELMD_CHECK(transaction);
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alpha\n\n"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("alpha\n\n"));
     ELMD_CHECK_EQ(editor.document().blocks.size(), 2u);
     ELMD_CHECK_EQ(editor.document().blocks.front().id, first_id);
     ELMD_CHECK(editor.document().source_map.find_node_by_id(editor.document().blocks[1].id) != nullptr);
@@ -312,11 +312,11 @@ ELMD_TEST(test_editor_document_range_delete_restores_ast_and_selection_on_undo) 
     auto transaction = editor.execute_document_delete_selection(selection);
 
     ELMD_CHECK(transaction);
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alga"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("alga"));
     ELMD_CHECK_EQ(editor.document().blocks.size(), 1u);
     ELMD_CHECK_EQ(editor.document().blocks[0].id, first_id);
     ELMD_CHECK(editor.undo_document());
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alpha\n\nomega"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("alpha\n\nomega"));
     ELMD_CHECK_EQ(editor.document().blocks.size(), 2u);
     {
         ELMD_CHECK_EQ(editor.document_selection().anchor.node_id, first_id);
@@ -340,15 +340,15 @@ ELMD_TEST(test_document_position_projection_skips_inline_markers) {
 ELMD_TEST(test_editor_insert_text) {
     Editor e;
     e.execute_command(Command::InsertText(U"hello"));
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("hello"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("hello"));
 }
 
 ELMD_TEST(test_editor_incremental_unclosed_bracket_math) {
     Editor e;
     ELMD_CHECK(e.execute_command(Command::InsertText(U"\\")));
     ELMD_CHECK(e.execute_command(Command::InsertText(U"[")));
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("\\["));
-    auto model = build_render_model(e.document(), e.buffer().text_utf8(), e.outline());
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("\\["));
+    auto model = build_render_model(e.document(), e.text_utf8(), e.outline());
     ELMD_CHECK_EQ(model.blocks.size(), 1u);
     ELMD_CHECK(model.blocks[0].kind == RenderBlockKind::Text);
     ELMD_CHECK(e.document().blocks[0].kind == BlockKind::Paragraph);
@@ -359,7 +359,7 @@ ELMD_TEST(test_editor_incremental_inline_math_keeps_exact_source_mapping) {
     for (char32_t ch : std::u32string_view(U"$y=x$")) {
         ELMD_CHECK(e.execute_command(Command::InsertText(std::u32string(1, ch))));
     }
-    auto model = build_render_model(e.document(), e.buffer().text_utf8(), e.outline());
+    auto model = build_render_model(e.document(), e.text_utf8(), e.outline());
     ELMD_CHECK_EQ(model.blocks.size(), 1u);
     auto item = std::find_if(model.blocks[0].inline_items.begin(), model.blocks[0].inline_items.end(), [](auto const& candidate) {
         return candidate.kind == InlineRenderItem::Kind::Math;
@@ -400,11 +400,11 @@ ELMD_TEST(test_editor_undo_redo) {
     Editor e;
     e.execute_command(Command::InsertText(U"hello"));
     e.execute_command(Command::InsertText(U" world"));
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("hello world"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("hello world"));
     e.undo();
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("hello"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("hello"));
     e.redo();
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("hello world"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("hello world"));
 }
 
 ELMD_TEST(test_revision_monotonic_across_undo_redo) {
@@ -416,7 +416,7 @@ ELMD_TEST(test_revision_monotonic_across_undo_redo) {
     e.execute_command(Command::InsertText(U"cd"));
     ELMD_CHECK_EQ(e.revision(), 3u); // ->3
     e.undo();
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("ab"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("ab"));
     ELMD_CHECK(e.revision() == 4u); // unchanged (always++)
     e.redo();
     ELMD_CHECK(e.revision() == 5u);
@@ -427,7 +427,7 @@ ELMD_TEST(test_editor_toggle_strong) {
     e.set_selection(Selection{CharOffset(0), CharOffset(4), TextAffinity::Downstream});
     Command c; c.kind = CommandKind::ToggleStrong;
     e.execute_command(c);
-    ELMD_CHECK(e.buffer().text_utf8() == "**bold**");
+    ELMD_CHECK(e.text_utf8() == "**bold**");
 }
 
 ELMD_TEST(test_editor_delete_backward) {
@@ -435,7 +435,7 @@ ELMD_TEST(test_editor_delete_backward) {
     e.set_caret(CharOffset(5));
     Command c; c.kind = CommandKind::DeleteBackward;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("hell"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("hell"));
     ELMD_CHECK(e.selection().affinity == TextAffinity::Upstream);
 }
 
@@ -443,7 +443,7 @@ ELMD_TEST(test_editor_insert_text_cursor_moves) {
     Editor e("123");
     e.set_caret(CharOffset(1));
     e.execute_command(Command::InsertText(U" "));
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("1 23"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("1 23"));
     ELMD_CHECK_EQ(e.selection().head().v, 2u);
 }
 
@@ -452,14 +452,14 @@ ELMD_TEST(test_editor_insert_math_inline) {
     e.set_selection(Selection{CharOffset(0), CharOffset(2), TextAffinity::Downstream});
     Command c; c.kind = CommandKind::InsertMathInline;
     e.execute_command(c);
-    ELMD_CHECK(e.buffer().text_utf8() == "$x2$");
+    ELMD_CHECK(e.text_utf8() == "$x2$");
 }
 
 ELMD_TEST(test_editor_insert_math_block) {
     Editor e;
     Command c; c.kind = CommandKind::InsertMathBlock;
     e.execute_command(c);
-    auto s = e.buffer().text_utf8();
+    auto s = e.text_utf8();
     ELMD_CHECK(s.find("$$") != std::string::npos);
 }
 
@@ -489,11 +489,11 @@ ELMD_TEST(test_insert_text_uses_document_transaction) {
     const auto paragraph_id = e.document().blocks.front().id;
     auto transaction = e.execute_command(Command::InsertText(U" world"));
     ELMD_CHECK(transaction);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("hello world"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("hello world"));
     ELMD_CHECK_EQ(e.document().blocks.front().id, paragraph_id);
     ELMD_CHECK(e.has_document_undo());
     e.undo();
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("hello"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("hello"));
 }
 
 ELMD_TEST(test_delete_transaction) {
@@ -533,11 +533,11 @@ ELMD_TEST(test_toggle_strong_uses_document_transaction) {
     Command command; command.kind = CommandKind::ToggleStrong;
     auto transaction = e.execute_command(command);
     ELMD_CHECK(transaction);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("**hello**"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("**hello**"));
     ELMD_CHECK_EQ(e.document().blocks.front().id, paragraph_id);
     ELMD_CHECK(e.document().blocks.front().children.front().kind == InlineKind::Strong);
     e.undo();
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("hello"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("hello"));
 }
 
 ELMD_TEST(test_inline_format_commands_wrap_and_unwrap_inline_subtrees) {
@@ -548,11 +548,11 @@ ELMD_TEST(test_inline_format_commands_wrap_and_unwrap_inline_subtrees) {
         DocumentPosition{paragraph_id, 4, TextAffinity::Downstream}});
     Command command; command.kind = CommandKind::ToggleEmphasis;
     emphasis.execute_command(command);
-    ELMD_CHECK_EQ(emphasis.buffer().text_utf8(), std::string("a*lph*a"));
+    ELMD_CHECK_EQ(emphasis.text_utf8(), std::string("a*lph*a"));
     ELMD_CHECK_EQ(emphasis.document().blocks.front().id, paragraph_id);
     ELMD_CHECK(emphasis.document().blocks.front().children[1].kind == InlineKind::Emphasis);
     emphasis.execute_command(command);
-    ELMD_CHECK_EQ(emphasis.buffer().text_utf8(), std::string("alpha"));
+    ELMD_CHECK_EQ(emphasis.text_utf8(), std::string("alpha"));
 
     Editor code("value");
     code.set_document_selection(DocumentSelection{
@@ -560,7 +560,7 @@ ELMD_TEST(test_inline_format_commands_wrap_and_unwrap_inline_subtrees) {
         DocumentPosition{code.document().blocks.front().id, 5, TextAffinity::Downstream}});
     command.kind = CommandKind::ToggleInlineCode;
     code.execute_command(command);
-    ELMD_CHECK_EQ(code.buffer().text_utf8(), std::string("`value`"));
+    ELMD_CHECK_EQ(code.text_utf8(), std::string("`value`"));
     ELMD_CHECK(code.document().blocks.front().children.front().kind == InlineKind::InlineCode);
 
     Editor math("x+y");
@@ -569,7 +569,7 @@ ELMD_TEST(test_inline_format_commands_wrap_and_unwrap_inline_subtrees) {
         DocumentPosition{math.document().blocks.front().id, 3, TextAffinity::Downstream}});
     command.kind = CommandKind::InsertMathInline;
     math.execute_command(command);
-    ELMD_CHECK_EQ(math.buffer().text_utf8(), std::string("$x+y$"));
+    ELMD_CHECK_EQ(math.text_utf8(), std::string("$x+y$"));
     ELMD_CHECK(math.document().blocks.front().children.front().kind == InlineKind::InlineMath);
 }
 
@@ -577,15 +577,15 @@ ELMD_TEST(test_typing_into_empty_format_node_stays_before_closing_marker) {
     Editor editor;
     Command strong; strong.kind = CommandKind::ToggleStrong;
     editor.execute_command(strong);
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("****"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("****"));
     editor.execute_command(Command::InsertText(U"x"));
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("**x**"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("**x**"));
     ELMD_CHECK_EQ(editor.selection().head().v, 3u);
     ELMD_CHECK(editor.document().blocks.front().children.front().kind == InlineKind::Strong);
     editor.undo();
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("****"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("****"));
     editor.undo();
-    ELMD_CHECK(editor.buffer().text_utf8().empty());
+    ELMD_CHECK(editor.text_utf8().empty());
 }
 
 ELMD_TEST(test_inline_format_inside_table_cell_is_ast_native) {
@@ -596,10 +596,10 @@ ELMD_TEST(test_inline_format_inside_table_cell_is_ast_native) {
         DocumentPosition{cell_id, 1, TextAffinity::Downstream}});
     Command strong; strong.kind = CommandKind::ToggleStrong;
     editor.execute_command(strong);
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("| H |\n| --- |\n| **X** |"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("| H |\n| --- |\n| **X** |"));
     ELMD_CHECK(editor.document().blocks.front().table_rows.front().cells.front().children.front().kind == InlineKind::Strong);
     editor.undo();
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("| H |\n| --- |\n| X |"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("| H |\n| --- |\n| X |"));
     ELMD_CHECK_EQ(editor.document().blocks.front().table_rows.front().cells.front().id, cell_id);
 }
 
@@ -607,7 +607,7 @@ ELMD_TEST(test_insert_table_contains_header) {
     Editor e;
     Command c; c.kind = CommandKind::InsertTable; c.rows = 2; c.cols = 3;
     e.execute_command(c);
-    auto s = e.buffer().text_utf8();
+    auto s = e.text_utf8();
     ELMD_CHECK(s.find("| Header |") != std::string::npos);
 }
 
@@ -624,7 +624,7 @@ ELMD_TEST(test_table_insert_row_below) {
     e.set_caret(CharOffset(27));
     Command c; c.kind = CommandKind::InsertTableRowBelow;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A | B |\n| --- | --- |\n| C | D |\n|  |  |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| A | B |\n| --- | --- |\n| C | D |\n|  |  |"));
 }
 
 ELMD_TEST(test_table_delete_column) {
@@ -632,7 +632,7 @@ ELMD_TEST(test_table_delete_column) {
     e.set_caret(CharOffset(6));
     Command c; c.kind = CommandKind::DeleteTableColumn;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A |\n| --- |\n| C |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| A |\n| --- |\n| C |"));
 }
 
 ELMD_TEST(test_table_move_column_left) {
@@ -640,7 +640,7 @@ ELMD_TEST(test_table_move_column_left) {
     e.set_caret(CharOffset(6));
     Command c; c.kind = CommandKind::MoveTableColumnLeft;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| B | A |\n| --- | --- |\n| D | C |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| B | A |\n| --- | --- |\n| D | C |"));
 }
 
 ELMD_TEST(test_table_column_alignment_is_preserved_by_structural_edits) {
@@ -648,11 +648,11 @@ ELMD_TEST(test_table_column_alignment_is_preserved_by_structural_edits) {
     e.set_caret(CharOffset(6));
     Command align; align.kind = CommandKind::SetTableColumnAlignment; align.table_alignment = TableAlignment::Right;
     e.execute_command(align);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A | B |\n| --- | ---: |\n| 1 | 2 |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| A | B |\n| --- | ---: |\n| 1 | 2 |"));
     ELMD_CHECK_EQ(e.selection().head().v, 6u);
     Command move; move.kind = CommandKind::MoveTableColumnLeft;
     e.execute_command(move);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| B | A |\n| ---: | --- |\n| 2 | 1 |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| B | A |\n| ---: | --- |\n| 2 | 1 |"));
 }
 
 ELMD_TEST(test_normalize_table_canonicalizes_widths_without_losing_alignment) {
@@ -660,7 +660,7 @@ ELMD_TEST(test_normalize_table_canonicalizes_widths_without_losing_alignment) {
     e.set_caret(CharOffset(2));
     Command c; c.kind = CommandKind::NormalizeTable;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| Long | B |\n| :--- | ---: |\n| 1 | 2 |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| Long | B |\n| :--- | ---: |\n| 1 | 2 |"));
 }
 
 ELMD_TEST(test_table_insert_row_and_column_at_visual_boundaries) {
@@ -668,10 +668,10 @@ ELMD_TEST(test_table_insert_row_and_column_at_visual_boundaries) {
     e.set_caret(CharOffset(2));
     Command row; row.kind = CommandKind::InsertTableRowAt; row.table_index = 1;
     e.execute_command(row);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A | B |\n| --- | --- |\n|  |  |\n| 1 | 2 |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| A | B |\n| --- | --- |\n|  |  |\n| 1 | 2 |"));
     Command column; column.kind = CommandKind::InsertTableColumnAt; column.table_index = 1;
     e.execute_command(column);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A |  | B |\n| --- | --- | --- |\n|  |  |  |\n| 1 |  | 2 |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| A |  | B |\n| --- | --- | --- |\n|  |  |  |\n| 1 |  | 2 |"));
 }
 
 ELMD_TEST(test_table_drag_moves_row_and_column_atomically) {
@@ -679,11 +679,11 @@ ELMD_TEST(test_table_drag_moves_row_and_column_atomically) {
     e.set_caret(CharOffset(29));
     Command row; row.kind = CommandKind::MoveTableRowTo; row.table_index = 0;
     e.execute_command(row);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| 1 | 2 |\n| --- | --- |\n| A | B |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| 1 | 2 |\n| --- | --- |\n| A | B |"));
     e.set_caret(CharOffset(8));
     Command column; column.kind = CommandKind::MoveTableColumnTo; column.table_index = 0;
     e.execute_command(column);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| 2 | 1 |\n| --- | --- |\n| B | A |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| 2 | 1 |\n| --- | --- |\n| B | A |"));
 }
 
 ELMD_TEST(test_table_structure_commands_preserve_ast_nodes_and_document_history) {
@@ -716,7 +716,7 @@ ELMD_TEST(test_typing_into_empty_table_cell_updates_source_and_ast) {
     auto emptyCellOffset = table->rows[2].cells[0].content_range.start;
     e.set_caret(emptyCellOffset);
     e.execute_command(Command::InsertText(U"x"));
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| A | B |\n| --- | --- |\n| x | 2 |\n"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| A | B |\n| --- | --- |\n| x | 2 |\n"));
     ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
     ELMD_CHECK(e.document().blocks[0].kind == BlockKind::Table);
     auto const& row = e.document().blocks[0].table_rows[0];
@@ -734,7 +734,7 @@ ELMD_TEST(test_enter_at_end_of_table_exits_after_closing_pipe) {
     Command command;
     command.kind = CommandKind::InsertNewline;
     e.execute_command(command);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| H1 | H2 |\n| --- | --- |\n| A | B |\n\n"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| H1 | H2 |\n| --- | --- |\n| A | B |\n\n"));
     ELMD_CHECK_EQ(e.selection().head().v, e.text_cps().size());
 }
 
@@ -747,7 +747,7 @@ ELMD_TEST(test_enter_at_end_of_table_reuses_trailing_newline) {
     Command command;
     command.kind = CommandKind::InsertNewline;
     e.execute_command(command);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| H |\n| --- |\n| A |\n\n"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| H |\n| --- |\n| A |\n\n"));
     ELMD_CHECK_EQ(e.selection().head().v, e.text_cps().size());
 }
 
@@ -756,12 +756,12 @@ ELMD_TEST(test_enter_in_table_moves_to_same_column_of_next_row) {
     auto table = table_projection(e);
     ELMD_CHECK(table.has_value());
     if (!table) return;
-    auto source_before = e.buffer().text_utf8();
+    auto source_before = e.text_utf8();
     e.set_caret(table->rows[2].cells[1].content_range.end);
     Command command;
     command.kind = CommandKind::InsertNewline;
     e.execute_command(command);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), source_before);
+    ELMD_CHECK_EQ(e.text_utf8(), source_before);
     ELMD_CHECK_EQ(e.selection().head().v, table->rows[3].cells[1].content_range.start.v);
 }
 
@@ -770,12 +770,12 @@ ELMD_TEST(test_enter_in_table_header_skips_separator_row) {
     auto table = table_projection(e);
     ELMD_CHECK(table.has_value());
     if (!table) return;
-    auto source_before = e.buffer().text_utf8();
+    auto source_before = e.text_utf8();
     e.set_caret(table->rows[0].cells[0].content_range.start);
     Command command;
     command.kind = CommandKind::InsertNewline;
     e.execute_command(command);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), source_before);
+    ELMD_CHECK_EQ(e.text_utf8(), source_before);
     ELMD_CHECK_EQ(e.selection().head().v, table->rows[2].cells[0].content_range.start.v);
 }
 
@@ -788,7 +788,7 @@ ELMD_TEST(test_enter_in_any_cell_of_last_table_row_exits_table) {
     Command command;
     command.kind = CommandKind::InsertNewline;
     e.execute_command(command);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| H1 | H2 |\n| --- | --- |\n| A1 | A2 |\n\n"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| H1 | H2 |\n| --- | --- |\n| A1 | A2 |\n\n"));
     ELMD_CHECK_EQ(e.selection().head().v, e.text_cps().size());
 }
 
@@ -811,16 +811,16 @@ ELMD_TEST(test_backspace_and_delete_do_not_remove_empty_table_padding_or_pipe) {
     ELMD_CHECK(table.has_value());
     if (!table) return;
     auto offset = table->rows.back().cells.front().content_range.start;
-    auto source = e.buffer().text_utf8();
+    auto source = e.text_utf8();
     e.set_caret(offset);
     Command backward;
     backward.kind = CommandKind::DeleteBackward;
     ELMD_CHECK(!e.execute_command(backward));
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), source);
+    ELMD_CHECK_EQ(e.text_utf8(), source);
     Command forward;
     forward.kind = CommandKind::DeleteForward;
     ELMD_CHECK(!e.execute_command(forward));
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), source);
+    ELMD_CHECK_EQ(e.text_utf8(), source);
 }
 
 ELMD_TEST(test_table_character_delete_stays_inside_cell_content) {
@@ -833,7 +833,7 @@ ELMD_TEST(test_table_character_delete_stays_inside_cell_content) {
     Command backward;
     backward.kind = CommandKind::DeleteBackward;
     e.execute_command(backward);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| H |\n| --- |\n| AB |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| H |\n| --- |\n| AB |"));
     table = table_projection(e);
     ELMD_CHECK(table.has_value());
     if (!table) return;
@@ -841,7 +841,7 @@ ELMD_TEST(test_table_character_delete_stays_inside_cell_content) {
     Command forward;
     forward.kind = CommandKind::DeleteForward;
     e.execute_command(forward);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| H |\n| --- |\n| B |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| H |\n| --- |\n| B |"));
     ELMD_CHECK(e.document().blocks[0].kind == BlockKind::Table);
 }
 
@@ -854,7 +854,7 @@ ELMD_TEST(test_deleting_last_table_cell_character_keeps_empty_caret_stable) {
     Command command;
     command.kind = CommandKind::DeleteBackward;
     e.execute_command(command);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| H |\n| --- |\n|  |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| H |\n| --- |\n|  |"));
     table = table_projection(e);
     ELMD_CHECK(table.has_value());
     if (!table) return;
@@ -869,12 +869,12 @@ ELMD_TEST(test_delete_from_adjacent_paragraph_does_not_consume_table_boundary) {
     auto table = table_projection(e);
     ELMD_CHECK(table.has_value());
     if (!table) return;
-    auto source = e.buffer().text_utf8();
+    auto source = e.text_utf8();
     e.set_caret(CharOffset(table->range.end.v));
     Command command;
     command.kind = CommandKind::DeleteBackward;
     ELMD_CHECK(!e.execute_command(command));
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), source);
+    ELMD_CHECK_EQ(e.text_utf8(), source);
     ELMD_CHECK(e.document().blocks[0].kind == BlockKind::Table);
 }
 
@@ -891,7 +891,7 @@ ELMD_TEST(test_table_cross_cell_selection_delete_preserves_structure) {
     Command command;
     command.kind = CommandKind::DeleteSelection;
     e.execute_command(command);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("| H1 | H2 |\n| --- | --- |\n|  |  |"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("| H1 | H2 |\n| --- | --- |\n|  |  |"));
     ELMD_CHECK(e.document().blocks[0].kind == BlockKind::Table);
 }
 
@@ -899,7 +899,7 @@ ELMD_TEST(test_insert_toc_contains_marker) {
     Editor e;
     Command c; c.kind = CommandKind::InsertToc;
     e.execute_command(c);
-    ELMD_CHECK(e.buffer().text_utf8().find("[TOC]") != std::string::npos);
+    ELMD_CHECK(e.text_utf8().find("[TOC]") != std::string::npos);
 }
 
 ELMD_TEST(test_enter_in_plain_paragraph_inserts_semantic_block_break) {
@@ -907,7 +907,7 @@ ELMD_TEST(test_enter_in_plain_paragraph_inserts_semantic_block_break) {
     e.set_caret(CharOffset(5));
     Command c; c.kind = CommandKind::InsertNewline;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha\n\nomega"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("alpha\n\nomega"));
     ELMD_CHECK_EQ(e.selection().head().v, 7u);
     ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
     auto structure = build_source_structure(e.document(), e.text_cps());
@@ -921,7 +921,7 @@ ELMD_TEST(test_enter_at_block_end_reuses_existing_separator_and_creates_one_blan
     e.set_caret(CharOffset(3));
     Command c; c.kind = CommandKind::InsertNewline;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("# H\n\n\n## Next"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("# H\n\n\n## Next"));
     ELMD_CHECK_EQ(e.selection().head().v, 4u);
     ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
     auto structure = build_source_structure(e.document(), e.text_cps());
@@ -938,7 +938,7 @@ ELMD_TEST(test_repeated_enter_between_early_blocks_keeps_incremental_ranges_in_s
         Command c; c.kind = CommandKind::InsertNewline;
         e.execute_command(c);
         ELMD_CHECK_EQ(e.selection().head().v, 9u + count);
-        auto full = parse_text(e.revision(), e.buffer().text_utf8());
+        auto full = parse_text(e.revision(), e.text_utf8());
         ELMD_CHECK_EQ(e.document().blocks.size(), full.document.blocks.size());
         for (std::size_t index = 0; index < e.document().blocks.size() && index < full.document.blocks.size(); ++index) {
             ELMD_CHECK(e.document().blocks[index].kind == full.document.blocks[index].kind);
@@ -965,7 +965,7 @@ ELMD_TEST(test_backspace_before_opening_fence_only_removes_preceding_block_separ
     e.set_caret(CharOffset(8));
     Command c; c.kind = CommandKind::DeleteBackward;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("before\n```cpp\n```\n"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("before\n```cpp\n```\n"));
     ELMD_CHECK_EQ(e.selection().head().v, 7u);
     ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
     ELMD_CHECK(e.document().blocks[0].kind == BlockKind::Paragraph);
@@ -983,7 +983,7 @@ ELMD_TEST(test_enter_inside_code_block_inserts_single_newline) {
     e.set_caret(CharOffset(7));
     Command c; c.kind = CommandKind::InsertNewline;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("```\nabc\n\n```\n"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("```\nabc\n\n```\n"));
     ELMD_CHECK_EQ(e.selection().head().v, 8u);
     ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
     ELMD_CHECK(e.document().blocks[0].kind == BlockKind::CodeBlock);
@@ -997,7 +997,7 @@ ELMD_TEST(test_enter_inside_indented_code_block_preserves_indent) {
     Command command;
     command.kind = CommandKind::InsertNewline;
     e.execute_command(command);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("    abc\n    \n"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("    abc\n    \n"));
     ELMD_CHECK_EQ(e.selection().head().v, 12u);
     ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
     ELMD_CHECK(e.document().blocks[0].kind == BlockKind::CodeBlock);
@@ -1011,7 +1011,7 @@ ELMD_TEST(test_soft_break_in_plain_paragraph_inserts_single_newline) {
     e.set_caret(CharOffset(5));
     Command c; c.kind = CommandKind::InsertSoftBreak;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha\nomega"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("alpha\nomega"));
     ELMD_CHECK_EQ(e.selection().head().v, 6u);
     ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
 }
@@ -1021,7 +1021,7 @@ ELMD_TEST(test_enter_on_empty_paragraph_inserts_one_empty_sibling) {
     e.set_caret(CharOffset(7));
     Command c; c.kind = CommandKind::InsertNewline;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha\n\n\n"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("alpha\n\n\n"));
     ELMD_CHECK_EQ(e.selection().head().v, 8u);
     ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
     auto structure = build_source_structure(e.document(), e.text_cps());
@@ -1035,7 +1035,7 @@ ELMD_TEST(test_backspace_on_empty_block_deletes_semantic_block) {
     e.set_caret(CharOffset(7));
     Command c; c.kind = CommandKind::DeleteBackward;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha\n"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("alpha\n"));
     ELMD_CHECK_EQ(e.selection().head().v, 6u);
     ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
 }
@@ -1045,7 +1045,7 @@ ELMD_TEST(test_backspace_on_consecutive_empty_block_deletes_block_span) {
     e.set_caret(CharOffset(9));
     Command c; c.kind = CommandKind::DeleteBackward;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha\n\n\n"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("alpha\n\n\n"));
     ELMD_CHECK_EQ(e.selection().head().v, 8u);
     ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
     auto structure = build_source_structure(e.document(), e.text_cps());
@@ -1057,7 +1057,7 @@ ELMD_TEST(test_enter_continues_unordered_list) {
     e.set_caret(CharOffset(7));
     Command c; c.kind = CommandKind::InsertNewline;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- alpha\n- "));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("- alpha\n- "));
     ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
     ELMD_CHECK_EQ(e.document().blocks[0].list_items.size(), 2u);
     {
@@ -1071,7 +1071,7 @@ ELMD_TEST(test_enter_continues_ordered_list) {
     e.set_caret(CharOffset(8));
     Command c; c.kind = CommandKind::InsertNewline;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("9. alpha\n10. "));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("9. alpha\n10. "));
     ELMD_CHECK(e.document().blocks[0].list_ordered);
     ELMD_CHECK_EQ(e.document().blocks[0].list_items.size(), 2u);
     ELMD_CHECK(e.document().blocks[0].list_items[1].marker.empty());
@@ -1083,7 +1083,7 @@ ELMD_TEST(test_enter_continues_task_list_unchecked) {
     e.set_caret(CharOffset(11));
     Command c; c.kind = CommandKind::InsertNewline;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- [x] alpha\n- [ ] "));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("- [x] alpha\n- [ ] "));
     ELMD_CHECK_EQ(e.document().blocks[0].task_items.size(), 2u);
     ELMD_CHECK(e.document().blocks[0].task_items[0].checked);
     ELMD_CHECK(!e.document().blocks[0].task_items[1].checked);
@@ -1214,10 +1214,10 @@ ELMD_TEST(test_backspace_at_first_quote_content_start_removes_exactly_one_level)
     e.set_caret(CharOffset(4));
     Command backspace; backspace.kind = CommandKind::DeleteBackward;
     e.execute_command(backspace);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("> alpha"));
     ELMD_CHECK_EQ(e.document_selection().active.offset, 0u);
     e.execute_command(backspace);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("alpha"));
     ELMD_CHECK_EQ(e.document().blocks[0].kind, BlockKind::Paragraph);
     ELMD_CHECK_EQ(e.document_selection().active.node_id, e.document().blocks[0].id);
 }
@@ -1227,7 +1227,7 @@ ELMD_TEST(test_backspace_at_following_quote_line_start_joins_the_same_depth_firs
     e.set_caret(CharOffset(14));
     Command backspace; backspace.kind = CommandKind::DeleteBackward;
     e.execute_command(backspace);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > firstsecond"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("> > firstsecond"));
     ELMD_CHECK_EQ(e.document_selection().active.offset, 5u);
     ELMD_CHECK_EQ(e.document().blocks[0].quote_children[0].quote_children.size(), 1u);
 }
@@ -1237,7 +1237,7 @@ ELMD_TEST(test_backspace_join_removes_the_preceding_hard_break_marker) {
     e.set_caret(CharOffset(16));
     Command backspace; backspace.kind = CommandKind::DeleteBackward;
     e.execute_command(backspace);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > firstsecond"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("> > firstsecond"));
     ELMD_CHECK_EQ(e.document_selection().active.offset, 5u);
 }
 
@@ -1246,7 +1246,7 @@ ELMD_TEST(test_backspace_inside_nested_quote_content_never_touches_quote_markers
     e.set_caret(CharOffset(18));
     Command backspace; backspace.kind = CommandKind::DeleteBackward;
     e.execute_command(backspace);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> > abcdefghijklmopqrstuvwxyz"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("> > abcdefghijklmopqrstuvwxyz"));
     ELMD_CHECK_EQ(e.document_selection().active.offset, 13u);
 }
 
@@ -1288,7 +1288,7 @@ ELMD_TEST(test_backspace_removes_an_empty_blockquote_prefix_atomically) {
     e.set_caret(CharOffset(12));
     Command backspace; backspace.kind = CommandKind::DeleteBackward;
     e.execute_command(backspace);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha\n\nafter"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("> alpha\n\nafter"));
     ELMD_CHECK_EQ(e.selection().head().v, 7u);
 }
 
@@ -1297,7 +1297,7 @@ ELMD_TEST(test_enter_on_empty_indented_code_line_exits_the_code_block) {
     e.set_caret(CharOffset(14));
     Command newline; newline.kind = CommandKind::InsertNewline;
     e.execute_command(newline);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("    alpha\n\n\nafter"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("    alpha\n\n\nafter"));
     ELMD_CHECK_EQ(e.selection().head().v, 10u);
     ELMD_CHECK_EQ(e.document().blocks.size(), 2u);
     ELMD_CHECK(e.document().blocks[0].kind == BlockKind::CodeBlock);
@@ -1309,7 +1309,7 @@ ELMD_TEST(test_backspace_on_empty_indented_code_line_exits_the_code_block) {
     e.set_caret(CharOffset(14));
     Command backspace; backspace.kind = CommandKind::DeleteBackward;
     e.execute_command(backspace);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("    alpha\n\nafter"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("    alpha\n\nafter"));
     ELMD_CHECK_EQ(e.document_selection().active.node_id, e.document().blocks[1].id);
     ELMD_CHECK_EQ(e.document_selection().active.offset, 0u);
     ELMD_CHECK(e.document_selection().active.affinity == TextAffinity::Upstream);
@@ -1333,7 +1333,7 @@ ELMD_TEST(test_enter_on_empty_list_exits_list) {
     e.set_caret(CharOffset(2));
     Command c; c.kind = CommandKind::InsertNewline;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string(""));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string(""));
     ELMD_CHECK_EQ(e.selection().head().v, 0u);
 }
 
@@ -1342,10 +1342,10 @@ ELMD_TEST(test_toggle_unordered_list) {
     e.set_caret(CharOffset(5));
     Command c; c.kind = CommandKind::ToggleUnorderedList;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- alpha"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("- alpha"));
     ELMD_CHECK_EQ(e.selection().head().v, 7u);
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("alpha"));
     ELMD_CHECK_EQ(e.selection().head().v, 5u);
 }
 
@@ -1354,7 +1354,7 @@ ELMD_TEST(test_toggle_ordered_list_replaces_unordered_marker) {
     e.set_caret(CharOffset(7));
     Command c; c.kind = CommandKind::ToggleOrderedList;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("1. alpha"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("1. alpha"));
     ELMD_CHECK_EQ(e.selection().head().v, 8u);
 }
 
@@ -1363,7 +1363,7 @@ ELMD_TEST(test_toggle_task_list_replaces_ordered_marker) {
     e.set_caret(CharOffset(8));
     Command c; c.kind = CommandKind::ToggleTaskList;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- [ ] alpha"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("- [ ] alpha"));
     ELMD_CHECK_EQ(e.selection().head().v, 11u);
 }
 
@@ -1372,9 +1372,9 @@ ELMD_TEST(test_toggle_task_checkbox) {
     e.set_caret(CharOffset(3));
     Command c; c.kind = CommandKind::ToggleTaskCheckbox;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- [x] alpha"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("- [x] alpha"));
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- [ ] alpha"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("- [ ] alpha"));
 }
 
 ELMD_TEST(test_toggle_ordered_list_across_selected_lines) {
@@ -1382,7 +1382,7 @@ ELMD_TEST(test_toggle_ordered_list_across_selected_lines) {
     e.set_selection(Selection{CharOffset(0), CharOffset(16), TextAffinity::Downstream});
     Command c; c.kind = CommandKind::ToggleOrderedList;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("1. alpha\n2. beta\n3. gamma"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("1. alpha\n2. beta\n3. gamma"));
     ELMD_CHECK_EQ(e.document().blocks.size(), 1u);
     ELMD_CHECK(e.document().blocks[0].list_ordered);
     ELMD_CHECK_EQ(e.document().blocks[0].list_items.size(), 3u);
@@ -1393,21 +1393,21 @@ ELMD_TEST(test_toggle_task_list_across_selected_lines_and_remove) {
     e.set_selection(Selection{CharOffset(0), CharOffset(10), TextAffinity::Downstream});
     Command c; c.kind = CommandKind::ToggleTaskList;
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("- [ ] alpha\n- [ ] beta"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("- [ ] alpha\n- [ ] beta"));
     e.execute_command(c);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha\nbeta"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("alpha\nbeta"));
 }
 
 ELMD_TEST(test_empty_inline_format_commands_insert_editable_pairs) {
     Editor e;
     Command strong; strong.kind = CommandKind::ToggleStrong;
     e.execute_command(strong);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("****"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("****"));
     ELMD_CHECK_EQ(e.selection().head().v, 2u);
     Editor math;
     Command inlineMath; inlineMath.kind = CommandKind::InsertMathInline;
     math.execute_command(inlineMath);
-    ELMD_CHECK_EQ(math.buffer().text_utf8(), std::string("$$"));
+    ELMD_CHECK_EQ(math.text_utf8(), std::string("$$"));
     ELMD_CHECK_EQ(math.selection().head().v, 1u);
 }
 
@@ -1415,23 +1415,23 @@ ELMD_TEST(test_editor_auto_pairing_uses_document_tree_transactions) {
     Editor emphasis;
     auto firstEmphasis = emphasis.execute_command(Command::InsertText(U"*"));
     ELMD_CHECK(firstEmphasis);
-    ELMD_CHECK_EQ(emphasis.buffer().text_utf8(), std::string("**"));
+    ELMD_CHECK_EQ(emphasis.text_utf8(), std::string("**"));
     ELMD_CHECK_EQ(emphasis.selection().head().v, 1u);
     auto secondEmphasis = emphasis.execute_command(Command::InsertText(U"*"));
     ELMD_CHECK(secondEmphasis);
-    ELMD_CHECK_EQ(emphasis.buffer().text_utf8(), std::string("****"));
+    ELMD_CHECK_EQ(emphasis.text_utf8(), std::string("****"));
     ELMD_CHECK_EQ(emphasis.selection().head().v, 2u);
 
     Editor strike;
     strike.execute_command(Command::InsertText(U"~"));
     strike.execute_command(Command::InsertText(U"~"));
-    ELMD_CHECK_EQ(strike.buffer().text_utf8(), std::string("~~~~"));
+    ELMD_CHECK_EQ(strike.text_utf8(), std::string("~~~~"));
     ELMD_CHECK_EQ(strike.selection().head().v, 2u);
 
     Editor math;
     math.execute_command(Command::InsertText(U"$"));
     math.execute_command(Command::InsertText(U"$"));
-    ELMD_CHECK_EQ(math.buffer().text_utf8(), std::string("$$\n\n$$"));
+    ELMD_CHECK_EQ(math.text_utf8(), std::string("$$\n\n$$"));
     ELMD_CHECK_EQ(math.selection().head().v, 3u);
     ELMD_CHECK(!math.document().blocks.empty());
     ELMD_CHECK(math.document().blocks.front().kind == BlockKind::MathBlock);
@@ -1440,7 +1440,7 @@ ELMD_TEST(test_editor_auto_pairing_uses_document_tree_transactions) {
     fence.execute_command(Command::InsertText(U"`"));
     fence.execute_command(Command::InsertText(U"`"));
     fence.execute_command(Command::InsertText(U"`"));
-    ELMD_CHECK_EQ(fence.buffer().text_utf8(), std::string("```\n\n```"));
+    ELMD_CHECK_EQ(fence.text_utf8(), std::string("```\n\n```"));
     ELMD_CHECK_EQ(fence.selection().head().v, 4u);
     ELMD_CHECK(!fence.document().blocks.empty());
     ELMD_CHECK(fence.document().blocks.front().kind == BlockKind::CodeBlock);
@@ -1450,7 +1450,7 @@ ELMD_TEST(test_editor_auto_pairing_uses_document_tree_transactions) {
     Command backspace;
     backspace.kind = CommandKind::DeleteBackward;
     deletion.execute_command(backspace);
-    ELMD_CHECK(deletion.buffer().text_utf8().empty());
+    ELMD_CHECK(deletion.text_utf8().empty());
     ELMD_CHECK_EQ(deletion.selection().head().v, 0u);
 }
 
@@ -1459,7 +1459,7 @@ ELMD_TEST(test_typing_inside_auto_pair_promotes_ast_inline_node) {
     emphasis.execute_command(Command::InsertText(U"*"));
     const auto paragraph_id = emphasis.document().blocks.front().id;
     emphasis.execute_command(Command::InsertText(U"value"));
-    ELMD_CHECK_EQ(emphasis.buffer().text_utf8(), std::string("*value*"));
+    ELMD_CHECK_EQ(emphasis.text_utf8(), std::string("*value*"));
     ELMD_CHECK_EQ(emphasis.document().blocks.front().id, paragraph_id);
     ELMD_CHECK_EQ(emphasis.document().blocks.front().children.size(), 1u);
     ELMD_CHECK(emphasis.document().blocks.front().children.front().kind == InlineKind::Emphasis);
@@ -1474,7 +1474,7 @@ ELMD_TEST(test_typing_inside_auto_pair_promotes_ast_inline_node) {
     strong.execute_command(Command::InsertText(U"*"));
     strong.execute_command(Command::InsertText(U"*"));
     strong.execute_command(Command::InsertText(U"bold"));
-    ELMD_CHECK_EQ(strong.buffer().text_utf8(), std::string("**bold**"));
+    ELMD_CHECK_EQ(strong.text_utf8(), std::string("**bold**"));
     ELMD_CHECK(strong.document().blocks.front().children.front().kind == InlineKind::Strong);
 }
 
@@ -1487,7 +1487,7 @@ ELMD_TEST(test_insert_text_replaces_cross_node_selection_in_document_tree) {
         DocumentPosition{second_id, 3, TextAffinity::Downstream}});
     auto transaction = editor.execute_command(Command::InsertText(U"X"));
     ELMD_CHECK(transaction);
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alXga"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("alXga"));
     ELMD_CHECK_EQ(editor.document().blocks.size(), 1u);
     ELMD_CHECK_EQ(editor.document().blocks.front().id, first_id);
     {
@@ -1495,7 +1495,7 @@ ELMD_TEST(test_insert_text_replaces_cross_node_selection_in_document_tree) {
         ELMD_CHECK_EQ(editor.document_selection().active.offset, 3u);
     }
     editor.undo();
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("alpha\n\nomega"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("alpha\n\nomega"));
     ELMD_CHECK_EQ(editor.document().blocks[0].id, first_id);
     ELMD_CHECK_EQ(editor.document().blocks[1].id, second_id);
     ELMD_CHECK(!editor.document_selection().is_caret());
@@ -1506,15 +1506,15 @@ ELMD_TEST(test_table_text_input_and_delete_share_document_history) {
     const auto cell_id = editor.document().blocks.front().table_rows.front().cells.front().id;
     editor.set_document_selection(DocumentSelection::caret(DocumentPosition{cell_id, 1, TextAffinity::Downstream}));
     editor.execute_command(Command::InsertText(U"Y"));
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("| H |\n| --- |\n| XY |"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("| H |\n| --- |\n| XY |"));
     Command backspace;
     backspace.kind = CommandKind::DeleteBackward;
     editor.execute_command(backspace);
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("| H |\n| --- |\n| X |"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("| H |\n| --- |\n| X |"));
     editor.undo();
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("| H |\n| --- |\n| XY |"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("| H |\n| --- |\n| XY |"));
     editor.undo();
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("| H |\n| --- |\n| X |"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("| H |\n| --- |\n| X |"));
     ELMD_CHECK_EQ(editor.document().blocks.front().table_rows.front().cells.front().id, cell_id);
 }
 
@@ -1523,7 +1523,7 @@ ELMD_TEST(test_inline_format_command_removes_surrounding_markers) {
     e.set_selection(Selection{CharOffset(2), CharOffset(6), TextAffinity::Downstream});
     Command command; command.kind = CommandKind::ToggleStrong;
     e.execute_command(command);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("bold"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("bold"));
     ELMD_CHECK_EQ(e.selection().normalized_range().start.v, 0u);
     ELMD_CHECK_EQ(e.selection().normalized_range().end.v, 4u);
 }
@@ -1533,9 +1533,9 @@ ELMD_TEST(test_toggle_blockquote_across_selected_lines) {
     e.set_selection(Selection{CharOffset(0), CharOffset(10), TextAffinity::Downstream});
     Command command; command.kind = CommandKind::ToggleBlockQuote;
     e.execute_command(command);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> alpha\n> beta"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("> alpha\n> beta"));
     e.execute_command(command);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha\nbeta"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("alpha\nbeta"));
 }
 
 ELMD_TEST(test_clear_heading_preserves_text) {
@@ -1543,7 +1543,7 @@ ELMD_TEST(test_clear_heading_preserves_text) {
     e.set_caret(CharOffset(9));
     Command command; command.kind = CommandKind::ClearHeading;
     e.execute_command(command);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("title"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("title"));
 }
 
 ELMD_TEST(test_heading_command_mutates_document_node_and_history) {
@@ -1555,7 +1555,7 @@ ELMD_TEST(test_heading_command_mutates_document_node_and_history) {
     ELMD_CHECK(editor.execute_command(command));
     ELMD_CHECK(editor.document().blocks.front().kind == BlockKind::Heading);
     ELMD_CHECK_EQ(editor.document().blocks.front().id, paragraph_id);
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("### title"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("### title"));
     ELMD_CHECK(editor.has_document_undo());
     editor.undo();
     ELMD_CHECK(editor.document().blocks.front().kind == BlockKind::Paragraph);
@@ -1608,7 +1608,7 @@ ELMD_TEST(test_insert_image_uses_selection_as_alt_text) {
     e.set_selection(Selection{CharOffset(0), CharOffset(7), TextAffinity::Downstream});
     Command command; command.kind = CommandKind::InsertImage; command.path = U"chart.png";
     e.execute_command(command);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("![diagram](chart.png)"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("![diagram](chart.png)"));
 }
 
 ELMD_TEST(test_link_and_image_commands_mutate_inline_tree) {
@@ -1619,11 +1619,11 @@ ELMD_TEST(test_link_and_image_commands_mutate_inline_tree) {
         DocumentPosition{paragraph_id, 5, TextAffinity::Downstream}});
     Command link_command; link_command.kind = CommandKind::InsertLink; link_command.href = U"https://example.test";
     link.execute_command(link_command);
-    ELMD_CHECK_EQ(link.buffer().text_utf8(), std::string("[label](https://example.test)"));
+    ELMD_CHECK_EQ(link.text_utf8(), std::string("[label](https://example.test)"));
     ELMD_CHECK(link.document().blocks.front().children.front().kind == InlineKind::Link);
     ELMD_CHECK_EQ(link.document().blocks.front().id, paragraph_id);
     link.undo();
-    ELMD_CHECK_EQ(link.buffer().text_utf8(), std::string("label"));
+    ELMD_CHECK_EQ(link.text_utf8(), std::string("label"));
 
     Editor image("diagram");
     image.set_document_selection(DocumentSelection{
@@ -1641,7 +1641,7 @@ ELMD_TEST(test_insert_footnote_adds_unique_definition) {
     e.set_caret(CharOffset(5));
     Command command; command.kind = CommandKind::InsertFootnote;
     e.execute_command(command);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha[^2]\n\n[^1]: old\n\n[^2]: "));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("alpha[^2]\n\n[^1]: old\n\n[^2]: "));
     ELMD_CHECK(std::any_of(e.document().blocks.begin(), e.document().blocks.end(), [](auto const& block) { return block.kind == BlockKind::FootnoteDefinition; }));
     ELMD_CHECK(e.document().blocks.front().children.back().kind == InlineKind::FootnoteRef);
     ELMD_CHECK_EQ(e.document().blocks.front().children.back().label, std::string("2"));
@@ -1654,11 +1654,11 @@ ELMD_TEST(test_toggle_callout_wraps_and_unwraps_selected_lines) {
     e.set_selection(Selection{CharOffset(0), CharOffset(10), TextAffinity::Downstream});
     Command command; command.kind = CommandKind::ToggleCallout; command.callout_kind = U"warning";
     e.execute_command(command);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("> [!WARNING]\n> alpha\n> beta"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("> [!WARNING]\n> alpha\n> beta"));
     ELMD_CHECK(std::any_of(e.document().blocks.begin(), e.document().blocks.end(), [](auto const& block) { return block.kind == BlockKind::Callout; }));
     e.set_caret(CharOffset(20));
     e.execute_command(command);
-    ELMD_CHECK_EQ(e.buffer().text_utf8(), std::string("alpha\nbeta"));
+    ELMD_CHECK_EQ(e.text_utf8(), std::string("alpha\nbeta"));
 }
 
 ELMD_TEST(test_callout_command_preserves_content_node_identity) {
@@ -1684,7 +1684,7 @@ ELMD_TEST(test_large_document_incremental_edit_keeps_distant_blocks) {
     auto position = source.find("Paragraph 750") + std::string("Paragraph 750").size();
     editor.set_caret(CharOffset(position));
     editor.execute_command(Command::InsertText(U" updated"));
-    auto result = editor.buffer().text_utf8();
+    auto result = editor.text_utf8();
     ELMD_CHECK(result.find("Paragraph 750 updated") != std::string::npos);
     ELMD_CHECK(result.find("## Section 1499") != std::string::npos);
     ELMD_CHECK(editor.outline().flat_items().size() == 1500u);
@@ -1706,15 +1706,15 @@ ELMD_TEST(test_enter_after_thematic_break_creates_blank_lines_without_duplicate_
         ELMD_CHECK_EQ(range->source_range.end.v, 3u);
     };
     editor.execute_command(enter);
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("---\n"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("---\n"));
     ELMD_CHECK_EQ(editor.selection().head().v, 4u);
     check_structure(1);
     editor.execute_command(enter);
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("---\n\n"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("---\n\n"));
     ELMD_CHECK_EQ(editor.selection().head().v, 5u);
     check_structure(2);
     editor.execute_command(enter);
-    ELMD_CHECK_EQ(editor.buffer().text_utf8(), std::string("---\n\n\n"));
+    ELMD_CHECK_EQ(editor.text_utf8(), std::string("---\n\n\n"));
     ELMD_CHECK_EQ(editor.selection().head().v, 6u);
     check_structure(3);
     auto breaks = std::count_if(editor.document().blocks.begin(), editor.document().blocks.end(), [](auto const& block) {
