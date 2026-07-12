@@ -37,7 +37,7 @@ struct Parser {
     explicit Parser(std::u32string_view s, const InlineParseContext& c)
         : src(s), limit(s.size()), ctx(c), counter(c.next_id.v) {}
 
-    NodeId next_id() { return NodeId(counter++); }
+    NodeId next_id() { return ctx.allocate_id ? ctx.allocate_id() : NodeId(counter++); }
     std::size_t size() const { return limit; }
     bool eof() const { return pos >= limit; }
     char32_t peek(std::size_t k = 0) const { return pos + k < limit ? src[pos + k] : char32_t{0}; }

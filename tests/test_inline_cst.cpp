@@ -4,6 +4,7 @@ import elmd.core.dialect;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
 import elmd.core.inline_parser;
+import elmd.core.inline_source_edit;
 import elmd.core.selection;
 import elmd.core.text_edit;
 import elmd.core.utf;
@@ -159,6 +160,50 @@ suite inline_cst_tests = [] {
     reparse_inline_document(document, test_context());
     expect(document.serialize() == U"[title](<url>)");
     expect(flatten_tokens(document.tree, document.source) == document.source);
+};
+
+"source edit reparses one document and reconciles untouched ids"_test = [] {
+    InlineDocument document{U"left **middle** right", {}};
+    auto initial = test_context();
+    initial.next_id = NodeId{100};
+    reparse_inline_document(document, initial);
+    expect(document.tree.nodes.size() == 3_u);
+    if (document.tree.nodes.size() != 3) return;
+
+    const auto left_id = document.tree.nodes.front().id;
+    const auto edited_id = document.tree.nodes[1].id;
+    const auto right_id = document.tree.nodes.back().id;
+    std::uint64_t allocated = 10000;
+    auto reparsing = test_context();
+    reparsing.allocate_id = [&] { return NodeId{allocated++}; };
+
+    const TextEdit edit{NodeId{7}, {8, 8}, U"X"};
+    const auto applied = apply_inline_source_edit(NodeId{7}, document, edit, reparsing);
+    expect(document.source == U"left **mXiddle** right");
+    expect(document.tree.nodes.size() == 3_u);
+    if (document.tree.nodes.size() == 3) {
+        expect(document.tree.nodes.front().id == left_id);
+        expect(document.tree.nodes[1].id != edited_id);
+        expect(document.tree.nodes.back().id == right_id);
+        expect(document.tree.nodes.back().range == SourceRange{16, 22});
+    }
+    expect(applied.inverse.container_id == NodeId{7});
+    expect(applied.inverse.range == SourceRange{8, 9});
+    expect(applied.inverse.replacement.empty());
+    expect(is_lossless(document.source));
+};
+
+"source edit rejects the wrong owner"_test = [] {
+    InlineDocument document{U"abc", {}};
+    reparse_inline_document(document, test_context());
+    bool rejected = false;
+    try {
+        apply_inline_source_edit(NodeId{1}, document, TextEdit{NodeId{2}, {0, 0}, U"x"}, test_context());
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    expect(rejected);
+    expect(document.source == U"abc");
 };
 
 }; // suite inline_cst_tests

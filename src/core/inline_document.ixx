@@ -28,6 +28,7 @@ struct InlineLinkDef {
 struct InlineParseContext {
     MarkdownDialect dialect{};
     NodeId next_id{1};
+    std::function<NodeId()> allocate_id;
     std::function<std::optional<InlineLinkDef>(const std::string&)> resolve_link_label;
 };
 
