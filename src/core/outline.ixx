@@ -1,11 +1,11 @@
 // elmd.core.outline — Outline + build_outline_from_blocks (stack hierarchy).
 export module elmd.core.outline;
 import std;
-import elmd.core.types;
 import elmd.core.ids;
 import elmd.core.ast;
 import elmd.core.slug;
 import elmd.core.utf;
+import elmd.core.text_edit;
 
 export namespace elmd {
 
@@ -13,13 +13,13 @@ struct OutlineItem {
     NodeId id{};
     std::uint8_t level = 0;
     std::string title_plain_text;
-    TextRange<CharOffset> source_range;
+    TextPosition position;
     std::string slug;
     std::vector<OutlineItem> children;
 
     OutlineItem() = default;
-    OutlineItem(NodeId id_, std::uint8_t lvl, std::string t, TextRange<CharOffset> sr, std::string sl)
-        : id(id_), level(lvl), title_plain_text(std::move(t)), source_range(sr), slug(std::move(sl)) {}
+    OutlineItem(NodeId id_, std::uint8_t lvl, std::string t, std::string sl)
+        : id(id_), level(lvl), title_plain_text(std::move(t)), position{id_, 0, TextAffinity::Downstream}, slug(std::move(sl)) {}
 };
 
 struct Outline {
@@ -28,10 +28,10 @@ struct Outline {
 
     static Outline empty(std::uint64_t rev) { Outline o; o.revision = rev; return o; }
 
-    const OutlineItem* find_active_item(CharOffset off) const {
+    const OutlineItem* find_active_item(TextPosition position) const {
         const OutlineItem* found = nullptr;
         for (const auto& it : items) {
-            if (search_item_(it, off, found)) break;
+            if (search_item_(it, position.container_id, found)) break;
         }
         return found;
     }
@@ -61,12 +61,12 @@ private:
         out.push_back(&it);
         for (const auto& c : it.children) push_flat_(c, out);
     }
-    static bool search_item_(const OutlineItem& it, CharOffset off, const OutlineItem*& found) {
+    static bool search_item_(const OutlineItem& it, NodeId container_id, const OutlineItem*& found) {
         // returns true if we should STOP searching siblings (deepest match found in this subtree)
-        bool any_in = it.source_range.contains(off);
+        bool any_in = it.id == container_id;
         bool deeper = false;
         for (const auto& c : it.children) {
-            if (search_item_(c, off, found)) { deeper = true; break; }
+            if (search_item_(c, container_id, found)) { deeper = true; break; }
         }
         if (deeper) return true;
         if (any_in) { found = &it; return true; }
@@ -94,7 +94,7 @@ inline Outline build_outline_from_blocks(std::uint64_t revision, const std::vect
         for (const auto& b : bs) {
             if (b.kind == BlockKind::Heading) {
                 std::string title = cps_to_utf8(inline_visible_text(b.inline_content));
-                linear.emplace_back(b.id, b.level, title, TextRange<CharOffset>{}, std::string{});
+                linear.emplace_back(b.id, b.level, title, std::string{});
             } else if (!b.children.empty()) {
                 self(self, b.children);
             }

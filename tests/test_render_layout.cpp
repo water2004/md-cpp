@@ -15,7 +15,7 @@ using namespace boost::ut;
 
 static RenderModel build_model(const std::string& src) {
     auto out = parse_text(1, src);
-    return build_render_model(out.document, src, out.outline);
+    return build_render_model(out.document, out.outline);
 }
 
 
@@ -24,7 +24,7 @@ suite render_layout_tests = [] {
 "test_empty_document_yields_editable_blank_model"_test = [] {
     EditorDocument doc = EditorDocument::empty(1);
     Outline o = Outline::empty(1);
-    auto m = build_render_model(doc, "", o);
+    auto m = build_render_model(doc, o);
     expect(fatal(bool((m.blocks.size()) == (1u))));
     expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Blank)));
     expect(fatal(bool((m.revision) == (1ull))));
@@ -141,19 +141,14 @@ suite render_layout_tests = [] {
     expect(fatal(bool(m.blocks[0].line_count >= 1)));
 };
 
-"builds_indented_code_block_with_source_markers"_test = [] {
+"builds_indented_code_block_with_local_code_source"_test = [] {
     auto m = build_model("    alpha\n    beta\n");
     expect(fatal(bool((m.blocks.size()) == (1u))));
     expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Code)));
     expect(fatal(bool(m.blocks[0].code_indented)));
     expect(fatal(bool((m.blocks[0].code_text) == (std::u32string(U"alpha\nbeta\n")))));
-    expect(fatal(bool((m.blocks[0].code_marker_ranges.size()) == (2u))));
-    if (m.blocks[0].code_marker_ranges.size() >= 2) {
-        expect(fatal(bool((m.blocks[0].code_marker_ranges[0].start.v) == (0u))));
-        expect(fatal(bool((m.blocks[0].code_marker_ranges[0].end.v) == (4u))));
-        expect(fatal(bool((m.blocks[0].code_marker_ranges[1].start.v) == (10u))));
-        expect(fatal(bool((m.blocks[0].code_marker_ranges[1].end.v) == (14u))));
-    }
+    expect(fatal(bool((m.blocks[0].source_span.source_range.start) == (0u))));
+    expect(fatal(bool((m.blocks[0].source_span.source_range.end) == (m.blocks[0].code_text.size()))));
 };
 
 "list_render_model_retains_nested_code_block_identity"_test = [] {
@@ -179,7 +174,7 @@ suite render_layout_tests = [] {
     if (code != list.child_blocks.end()) {
         expect(fatal(bool(code->code_indented)));
         expect(fatal(bool((code->code_text) == (std::u32string(U"<html>\n  <head>\n    <title>Test</title>\n  </head>\n")))));
-        expect(fatal(bool((code->code_marker_ranges.size()) == (4u))));
+        expect(fatal(bool((code->source_span.source_range.end) == (code->code_text.size()))));
     }
     bool styled_code = false;
     for (auto const& item : list.inline_items) {
@@ -223,14 +218,14 @@ suite render_layout_tests = [] {
     expect(fatal(bool((model.blocks.size()) == (1u))));
     expect(fatal(bool(model.blocks[0].kind == RenderBlockKind::ThematicBreak)));
     expect(fatal(bool(model.blocks[0].inline_items.empty())));
-    expect(fatal(bool((model.blocks[0].source_range.start.v) == (0u))));
-    expect(fatal(bool((model.blocks[0].source_range.end.v) == (3u))));
-    expect(fatal(bool((model.blocks[0].content_range.end.v) == (3u))));
+    expect(fatal(bool((model.blocks[0].source_span.source_range.start) == (0u))));
+    expect(fatal(bool(model.blocks[0].source_span.source_range.empty())));
+    expect(fatal(bool(model.blocks[0].content_span.source_range.empty())));
     StubMeasurer measurer(8.0f);
     auto layout = layout_blocks(model.blocks, 800.0f, 1.0f, measurer, std::nullopt, LogicalPoint(0, 0), Outline::empty(1));
     expect(fatal(bool((layout.blocks.size()) == (1u))));
     expect(fatal(bool(layout.blocks[0].kind.kind == LayoutBlockKind::ThematicBreak)));
-    expect(fatal(bool((layout.blocks[0].source_range.end.v) == (3u))));
+    expect(fatal(bool(layout.blocks[0].source_span.source_range.empty())));
 };
 
 "builds_inline_math"_test = [] {
@@ -245,10 +240,10 @@ suite render_layout_tests = [] {
 "inline_math_only_line_preserves_full_visual_source_range"_test = [] {
     auto m = build_model("$11111$");
     expect(fatal(bool((m.blocks.size()) == (1u))));
-    expect(fatal(bool((m.blocks[0].source_range.start.v) == (0u))));
-    expect(fatal(bool((m.blocks[0].source_range.end.v) == (7u))));
-    expect(fatal(bool((m.blocks[0].content_range.start.v) == (0u))));
-    expect(fatal(bool((m.blocks[0].content_range.end.v) == (7u))));
+    expect(fatal(bool((m.blocks[0].source_span.source_range.start) == (0u))));
+    expect(fatal(bool((m.blocks[0].source_span.source_range.end) == (7u))));
+    expect(fatal(bool((m.blocks[0].content_span.source_range.start) == (0u))));
+    expect(fatal(bool((m.blocks[0].content_span.source_range.end) == (7u))));
     expect(fatal(bool((m.blocks[0].inline_items.size()) == (1u))));
     expect(fatal(bool(m.blocks[0].inline_items[0].kind == InlineRenderItem::Kind::Math)));
     expect(fatal(bool((m.blocks[0].inline_items[0].source_span.source_range.start) == (0u))));
@@ -258,12 +253,12 @@ suite render_layout_tests = [] {
 "inline_math_at_either_text_edge_preserves_paragraph_end"_test = [] {
     auto leading = build_model("$x$ tail");
     expect(fatal(bool((leading.blocks.size()) == (1u))));
-    expect(fatal(bool((leading.blocks[0].content_range.start.v) == (0u))));
-    expect(fatal(bool((leading.blocks[0].content_range.end.v) == (8u))));
+    expect(fatal(bool((leading.blocks[0].content_span.source_range.start) == (0u))));
+    expect(fatal(bool((leading.blocks[0].content_span.source_range.end) == (8u))));
     auto trailing = build_model("lead $x$");
     expect(fatal(bool((trailing.blocks.size()) == (1u))));
-    expect(fatal(bool((trailing.blocks[0].content_range.start.v) == (0u))));
-    expect(fatal(bool((trailing.blocks[0].content_range.end.v) == (8u))));
+    expect(fatal(bool((trailing.blocks[0].content_span.source_range.start) == (0u))));
+    expect(fatal(bool((trailing.blocks[0].content_span.source_range.end) == (8u))));
 };
 
 "builds_paren_inline_math_with_exact_source_range"_test = [] {
@@ -291,8 +286,8 @@ suite render_layout_tests = [] {
     expect(fatal(bool(m.blocks[0].table_header_row)));
     expect(fatal(bool((m.blocks[0].row_count) == (2u))));
     expect(fatal(bool((m.blocks[0].column_count) == (2u))));
-    expect(fatal(bool((m.blocks[0].table_cell_ranges.size()) == (4u))));
-    for (auto const& range : m.blocks[0].table_cell_ranges) expect(fatal(bool(range.end.v >= range.start.v)));
+    expect(fatal(bool((m.blocks[0].table_cell_spans.size()) == (4u))));
+    for (auto const& range : m.blocks[0].table_cell_spans) expect(fatal(bool(range.source_range.end >= range.source_range.start)));
 };
 
 "builds_ordered_list_with_source_markers_and_line_breaks"_test = [] {
@@ -469,12 +464,11 @@ suite render_layout_tests = [] {
     if (!m.blocks[0].child_blocks.empty()) {
         auto const& fragment = m.blocks[0].child_blocks[0];
         expect(fatal(bool((fragment.quote_depth) == (1u))));
-        expect(fatal(bool((fragment.content_range.start.v) == (4u))));
-        expect(fatal(bool((fragment.content_range.end.v) == (49u))));
+        expect(fatal(bool((fragment.content_span.source_range.start) == (0u))));
         expect(fatal(bool(!fragment.inline_items.empty())));
         if (!fragment.inline_items.empty()) {
             expect(fatal(bool((fragment.inline_items.front().source_span.source_range.start) == (0u))));
-            expect(fatal(bool(fragment.inline_items.back().source_span.source_range.end <= 49u)));
+            expect(fatal(bool(fragment.content_span.source_range.end == fragment.inline_items.back().source_span.source_range.end)));
         }
     }
 };
@@ -549,10 +543,12 @@ suite render_layout_tests = [] {
 
     auto nestedBlank = build_model("> > alpha  \n> > ");
     expect(fatal(bool((nestedBlank.blocks.size()) == (1u))));
-    expect(fatal(bool((nestedBlank.blocks[0].child_blocks.size()) == (1u))));
-    if (!nestedBlank.blocks[0].child_blocks.empty()) {
+    expect(fatal(bool((nestedBlank.blocks[0].child_blocks.size()) == (2u))));
+    if (nestedBlank.blocks[0].child_blocks.size() >= 2) {
         expect(fatal(bool(nestedBlank.blocks[0].child_blocks[0].kind == RenderBlockKind::Text)));
         expect(fatal(bool((nestedBlank.blocks[0].child_blocks[0].quote_depth) == (1u))));
+        expect(fatal(bool(nestedBlank.blocks[0].child_blocks[1].kind == RenderBlockKind::Blank)));
+        expect(fatal(bool((nestedBlank.blocks[0].child_blocks[1].quote_depth) == (1u))));
     }
 };
 
@@ -592,8 +588,7 @@ suite render_layout_tests = [] {
     auto empty_after_break = build_model("Hello\n\n");
     expect(fatal(bool((empty_after_break.blocks.size()) == (2u))));
     expect(fatal(bool(empty_after_break.blocks[1].kind == RenderBlockKind::Blank)));
-    expect(fatal(bool((empty_after_break.blocks[1].content_range.start.v) == (6u))));
-    expect(fatal(bool((empty_after_break.blocks[1].content_range.end.v) == (6u))));
+    expect(fatal(bool(empty_after_break.blocks[1].content_span.source_range.empty())));
 
     auto one_blank_between = build_model("Hello\n\n\nWorld");
     expect(fatal(bool((one_blank_between.blocks.size()) == (3u))));
@@ -663,7 +658,7 @@ suite render_layout_tests = [] {
     }
     auto started = std::chrono::steady_clock::now();
     auto parsed = parse_text(1, source);
-    auto model = build_render_model(parsed.document, source, parsed.outline);
+    auto model = build_render_model(parsed.document, parsed.outline);
     auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
     expect(fatal(bool(parsed.document.root.children.size() >= 3600u)));
     expect(fatal(bool(model.blocks.size() >= parsed.document.root.children.size())));
@@ -709,7 +704,7 @@ suite render_layout_tests = [] {
 "hit_test_returns_block_local_position"_test = [] {
     StubMeasurer ms(6.0f);
     LayoutTree tree;
-    LayoutBlock b(NodeId(0), CharRange(CharOffset(10), CharOffset(15)), {LayoutBlockKind::Paragraph}, BlockStyle::paragraph());
+    LayoutBlock b(NodeId(0), TextSpan{NodeId(0), {10, 15}}, {LayoutBlockKind::Paragraph}, BlockStyle::paragraph());
     const auto owner = NodeId{77};
     TextLineLayout ll{TextSpan{owner, {10, 15}}};
     ll.rect = LogicalRect(0, 0, 100, 20);
@@ -755,7 +750,7 @@ suite render_layout_tests = [] {
 "selection_geometry_runs"_test = [] {
     StubMeasurer ms;
     LayoutTree t;
-    LayoutBlock b(NodeId(0), CharRange(CharOffset(0), CharOffset(5)), {LayoutBlockKind::Paragraph}, BlockStyle::paragraph());
+    LayoutBlock b(NodeId(0), TextSpan{NodeId(0), {0, 5}}, {LayoutBlockKind::Paragraph}, BlockStyle::paragraph());
     const auto owner = NodeId{88};
     TextLineLayout ll{TextSpan{owner, {0, 5}}};
     ll.rect = LogicalRect(0, 0, 100, 20); ll.baseline = 16;
@@ -774,7 +769,7 @@ suite render_layout_tests = [] {
 "caret_geometry_at_position"_test = [] {
     StubMeasurer ms;
     LayoutTree t;
-    LayoutBlock b(NodeId(0), CharRange(CharOffset(0), CharOffset(5)), {LayoutBlockKind::Paragraph}, BlockStyle::paragraph());
+    LayoutBlock b(NodeId(0), TextSpan{NodeId(0), {0, 5}}, {LayoutBlockKind::Paragraph}, BlockStyle::paragraph());
     const auto owner = NodeId{99};
     TextLineLayout ll{TextSpan{owner, {0, 5}}};
     ll.rect = LogicalRect(0, 0, 100, 20); ll.baseline = 16;

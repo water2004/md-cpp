@@ -47,7 +47,7 @@ namespace winrt::ElMd
 
     void EditorSession::RebuildRenderModel()
     {
-        core_->renderModel = elmd::build_render_model(core_->editor.document(), core_->editor.text_utf8(), core_->editor.outline());
+        core_->renderModel = elmd::build_render_model(core_->editor.document(), core_->editor.outline());
     }
 
     bool EditorSession::ExecuteCommand(elmd::Command const& command)

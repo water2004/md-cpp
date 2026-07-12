@@ -1,7 +1,5 @@
-// elmd.core.render_builder — build_render_model(doc, source_text, outline).
-// Walks the AST and produces a RenderModel, extracting markers (`**`/`*`/`~~`
-// etc.) with the source-range accumulation method. Faithful port of the Rust
-// builder — the layout later re-derives visibility from the live caret.
+// elmd.core.render_builder — derive a local-coordinate RenderModel directly
+// from the authoritative block tree and each node's lossless inline source.
 export module elmd.core.render_builder;
 import std;
 import elmd.core.types;
@@ -11,8 +9,6 @@ import elmd.core.ast;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
 import elmd.core.text_edit;
-import elmd.core.source_map;
-import elmd.core.source_structure;
 import elmd.core.document;
 import elmd.core.outline;
 import elmd.core.diagnostics;
@@ -26,11 +22,30 @@ inline RenderDiagnostic convert_diagnostic(const Diagnostic& d) {
     r.severity = (d.severity == DiagnosticSeverity::Hint)   ? RenderDiagnostic::Sev::Info
                : (d.severity == DiagnosticSeverity::Error)   ? RenderDiagnostic::Sev::Error
                : RenderDiagnostic::Sev::Warning;
-    r.message = d.message; r.source_range = d.source_range;
+    r.message = d.message;
     return r;
 }
 
-inline RenderBlock render_block_base(BlockKind k, NodeId id, TextRange<CharOffset> sr, BlockStyle bs) {
+inline std::size_t block_local_length(const BlockNode& block) {
+    switch (block.kind) {
+        case BlockKind::Paragraph:
+        case BlockKind::Heading:
+        case BlockKind::TableCell:
+            return block.inline_content.source.size();
+        case BlockKind::CodeBlock:
+            return block.code_text.size();
+        case BlockKind::MathBlock:
+            return block.tex.size();
+        case BlockKind::Frontmatter:
+        case BlockKind::UnsupportedMarkup:
+        case BlockKind::LinkDefinition:
+            return utf8_to_cps(block.raw).size();
+        default:
+            return 0;
+    }
+}
+
+inline RenderBlock render_block_base(BlockKind k, NodeId id, std::size_t length, BlockStyle bs) {
     RenderBlock b; b.kind = [&](BlockKind)->RenderBlockKind {
         switch (k) {
             case BlockKind::Paragraph: case BlockKind::Heading:
@@ -52,8 +67,8 @@ inline RenderBlock render_block_base(BlockKind k, NodeId id, TextRange<CharOffse
         }
         return RenderBlockKind::Text;
     }(k);
-    b.id = id; b.source_range = sr; b.block_style = bs;
-    b.content_range = sr;
+    b.id = id; b.source_span = {id, {0, length}}; b.block_style = bs;
+    b.content_span = b.source_span;
     return b;
 }
 
@@ -65,20 +80,9 @@ inline void push_marker(std::vector<InlineRenderItem>& out, NodeId owner, std::s
     m.text = std::move(text); m.display_text = std::move(display_text); m.marker_role = role;
     m.marker_style = MarkerStyle{true, {}}; m.visibility = MarkerVisibility::Always;
     out.push_back(std::move(m));
-    cursor += out.back().text.size();
 }
 
 struct Builder {
-    const SourceMap* sm = nullptr;
-    std::u32string_view source;
-    TextRange<CharOffset> node_source_range(NodeId id) const {
-        if (const auto* range = sm ? sm->find_node_by_id(id) : nullptr) return range->source_range;
-        return {};
-    }
-    TextRange<CharOffset> node_content_range(NodeId id) const {
-        if (const auto* range = sm ? sm->find_node_by_id(id) : nullptr) return range->content_range;
-        return {};
-    }
     void append_block_break(std::vector<InlineRenderItem>& out, NodeId owner, std::size_t source_offset = 0) {
         std::size_t cursor = source_offset;
         push_marker(out, owner, cursor, U"\n", MarkerRole::Structural);
@@ -98,9 +102,7 @@ struct Builder {
             for (std::size_t index = 0; index < items.size(); ++index) {
                 auto const& item = items[index];
                 const auto owner = item.children.empty() ? item.id : item.children.front().id;
-                auto item_source = node_source_range(item.id);
-                auto item_content = node_content_range(item.id);
-                std::size_t cursor = item_source.start.v;
+                std::size_t cursor = 0;
                 auto marker = item.marker;
                 if (marker.empty()) {
                     if (tasks) marker = item.checked ? U"- [x] " : U"- [ ] ";
@@ -118,8 +120,7 @@ struct Builder {
                 }
                 bool first_child = true;
                 for (auto const& child : item.children) {
-                    auto child_source = node_source_range(child.id);
-                    if (!first_child) append_block_break(out, child.id);
+                    if (!first_child) append_block_break(out, child.id, block_local_length(child));
                     auto marker_columns = tasks ? std::size_t{6}
                         : list.list_ordered ? std::to_string(list.list_start + index).size() + 2
                         : std::size_t{2};
@@ -127,15 +128,14 @@ struct Builder {
                     first_child = false;
                 }
                 if (index + 1 < items.size()) {
-                    auto newline = item_source.end.v > item_content.end.v && item_source.end.v > 0 ? item_source.end.v - 1 : item_source.end.v;
-                    append_block_break(out, owner);
+                    const auto offset = item.children.empty() ? std::size_t{0} : block_local_length(item.children.back());
+                    append_block_break(out, owner, offset);
                 }
             }
         };
         append_items(list.children, list.kind == BlockKind::TaskList);
     }
     void append_nested_block(std::vector<InlineRenderItem>& out, const BlockNode& block, std::size_t depth, std::size_t indent_columns) {
-        auto content = node_content_range(block.id);
         switch (block.kind) {
             case BlockKind::Paragraph:
             case BlockKind::Heading: {
@@ -152,25 +152,9 @@ struct Builder {
             case BlockKind::BlockQuote:
             case BlockKind::Callout:
             case BlockKind::FootnoteDefinition: {
-                if (block.kind == BlockKind::BlockQuote) {
-                    if (const auto* range = sm ? sm->find_node_by_id(block.id) : nullptr; range && !range->marker_ranges.empty()) {
-                        auto marker_range = range->marker_ranges.front();
-                        auto start = (std::min)(marker_range.start.v, source.size());
-                        auto end = (std::min)((std::max)(marker_range.end.v, start), source.size());
-                        InlineRenderItem marker;
-                        marker.kind = InlineRenderItem::Kind::Marker;
-                        marker.source_span = {block.id, {0, 0}};
-                        marker.text = std::u32string(source.substr(start, end - start));
-                        marker.display_text = std::u32string(indent_columns, U' ');
-                        marker.marker_role = MarkerRole::Structural;
-                        marker.visibility = MarkerVisibility::Always;
-                        out.push_back(std::move(marker));
-                    }
-                }
                 bool first = true;
                 for (auto const& child : block.children) {
-                    auto child_source = node_source_range(child.id);
-                    if (!first) append_block_break(out, child.id);
+                    if (!first) append_block_break(out, child.id, block_local_length(child));
                     append_nested_block(out, child, depth + 1, indent_columns);
                     first = false;
                 }
@@ -209,13 +193,12 @@ struct Builder {
             }
             case BlockKind::Table: {
                 auto append_cell = [&](BlockNode const& cell) {
-                    auto cell_content = node_content_range(cell.id);
                     auto items = build_inline_document(cell.inline_content, cell.id, InlineStyle::plain());
                     out.insert(out.end(), std::make_move_iterator(items.begin()), std::make_move_iterator(items.end()));
                 };
                 bool first_cell = true;
                 for (const auto& row : block.children) for (const auto& cell : row.children) {
-                    if (!first_cell) append_block_break(out, cell.id);
+                    if (!first_cell) append_block_break(out, cell.id, 0);
                     append_cell(cell);
                     first_cell = false;
                 }
@@ -427,23 +410,18 @@ struct Builder {
 
     RenderBlock build_block(const BlockNode& b) {
         using BK = BlockKind;
-        auto base_range = [&]() -> TextRange<CharOffset> {
-            if (const auto* r = sm ? sm->find_node_by_id(b.id) : nullptr) return r->source_range;
-            return CharRange(CharOffset(0), CharOffset(0));
-        };
-        auto content_range = [&]() -> TextRange<CharOffset> {
-            if (const auto* r = sm ? sm->find_node_by_id(b.id) : nullptr) return r->content_range;
-            return base_range();
-        };
-        auto with_content_range = [&](RenderBlock rb) {
-            rb.content_range = content_range();
-            return rb;
+        auto base = [&](BlockStyle style) {
+            return render_block_base(b.kind, b.id, block_local_length(b), std::move(style));
         };
         switch (b.kind) {
             case BK::Paragraph: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::paragraph());
+                auto rb = base(BlockStyle::paragraph());
+                if (b.inline_content.source.empty() && b.opening_marker.empty() && b.closing_marker.empty()) {
+                    rb.kind = RenderBlockKind::Blank;
+                    return rb;
+                }
                 InlineStyle s = InlineStyle::plain();
-                auto cursor = base_range().start.v;
+                std::size_t cursor = 0;
                 if (!b.opening_marker.empty()) { cursor = 0; push_marker(rb.inline_items, b.id, cursor, b.opening_marker); rb.inline_items.back().marker_owner = b.id; }
                 auto items = build_inline_document(b.inline_content, b.id, s);
                 for (auto& item : items) rb.inline_items.push_back(std::move(item));
@@ -452,41 +430,35 @@ struct Builder {
                     push_marker(rb.inline_items, b.id, cursor, b.closing_marker);
                     rb.inline_items.back().marker_owner = b.id;
                 }
-                return with_content_range(std::move(rb));
+                return rb;
             }
             case BK::Heading: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::heading(b.level));
+                auto rb = base(BlockStyle::heading(b.level));
                 InlineStyle s = InlineStyle::plain(); s.heading_level = b.level;
-                std::size_t cs = base_range().start.v;
-                auto range = sm ? sm->find_node_by_id(b.id) : nullptr;
-                if (range) cs = range->content_range.start.v;
-                if (range) {
-                    for (auto const& markerRange : range->marker_ranges) {
-                        auto start = (std::min)(markerRange.start.v, source.size());
-                        auto end = (std::min)((std::max)(markerRange.end.v, start), source.size());
-                        InlineRenderItem marker;
-                        marker.kind = InlineRenderItem::Kind::Marker;
-                        const auto offset = markerRange.end <= range->content_range.start
-                            ? std::size_t{0} : b.inline_content.source.size();
-                        marker.source_span = {b.id, {offset, offset}};
-                        marker.text = std::u32string(source.substr(start, end - start));
-                        marker.style = s;
-                        marker.marker_role = MarkerRole::Heading;
-                        marker.marker_owner = b.id;
-                        marker.marker_style = MarkerStyle{true, {}};
-                        marker.visibility = MarkerVisibility::WhenBlockFocused;
-                        rb.inline_items.push_back(std::move(marker));
-                    }
-                }
+                auto append_heading_marker = [&](std::u32string const& text, std::size_t offset) {
+                    if (text.empty()) return;
+                    InlineRenderItem marker;
+                    marker.kind = InlineRenderItem::Kind::Marker;
+                    marker.source_span = {b.id, {offset, offset}};
+                    marker.text = text;
+                    marker.style = s;
+                    marker.marker_role = MarkerRole::Heading;
+                    marker.marker_owner = b.id;
+                    marker.marker_style = MarkerStyle{true, {}};
+                    marker.visibility = MarkerVisibility::WhenBlockFocused;
+                    rb.inline_items.push_back(std::move(marker));
+                };
+                append_heading_marker(b.opening_marker, 0);
                 auto items = build_inline_document(b.inline_content, b.id, s);
                 for (auto& it : items) rb.inline_items.push_back(std::move(it));
+                append_heading_marker(b.closing_marker, b.inline_content.source.size());
                 std::stable_sort(rb.inline_items.begin(), rb.inline_items.end(), [](auto const& left, auto const& right) {
                     return left.source_span.source_range.start < right.source_span.source_range.start;
                 });
-                return with_content_range(std::move(rb));
+                return rb;
             }
             case BK::BlockQuote: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::blockquote());
+                auto rb = base(BlockStyle::blockquote());
                 std::function<void(const BlockNode&, std::size_t)> append_quote;
                 append_quote = [&](const BlockNode& quote, std::size_t depth) {
                     for (const auto& child : quote.children) {
@@ -498,87 +470,67 @@ struct Builder {
                         rendered.quote_depth = depth;
                         rb.child_blocks.push_back(std::move(rendered));
                     }
-                    const auto* range = sm ? sm->find_node_by_id(quote.id) : nullptr;
-                    if (!range || range->marker_ranges.empty() || range->marker_ranges.back().end != range->content_range.end) return;
-                    bool covered = false;
-                    if (!rb.child_blocks.empty()) {
-                        auto const& last = rb.child_blocks.back();
-                        covered = last.quote_depth == depth && !last.inline_items.empty() && last.inline_items.back().kind == InlineRenderItem::Kind::Text && last.inline_items.back().text == U"\n";
-                    }
-                    if (covered) return;
-                    RenderBlock blank;
-                    blank.kind = RenderBlockKind::Blank;
-                    blank.id = NodeId(0x9000000000000000ull | ((range->content_range.end.v + depth) & 0x0fffffffffffffffull));
-                    blank.source_range = CharRange(range->content_range.end, range->content_range.end);
-                    blank.content_range = blank.source_range;
-                    blank.block_style = BlockStyle::paragraph();
-                    blank.quote_depth = depth;
-                    rb.child_blocks.push_back(std::move(blank));
                 };
                 append_quote(b, 0);
-                return with_content_range(std::move(rb));
+                return rb;
             }
             case BK::List: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::list());
+                auto rb = base(BlockStyle::list());
                 append_list_contents(rb.inline_items, b, 0);
                 for (std::size_t index = 0; index < b.children.size(); ++index) {
                     auto const& item = b.children[index];
                     auto indent = list_marker_columns(b, index);
                     for (auto const& child : item.children) collect_nested_blocks(rb, child, 1, indent);
                 }
-                return with_content_range(std::move(rb));
+                return rb;
             }
             case BK::TaskList: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::list());
+                auto rb = base(BlockStyle::list());
                 append_list_contents(rb.inline_items, b, 0);
                 for (std::size_t index = 0; index < b.children.size(); ++index) {
                     auto const& item = b.children[index];
                     auto indent = list_marker_columns(b, index);
                     for (auto const& child : item.children) collect_nested_blocks(rb, child, 1, indent);
                 }
-                return with_content_range(std::move(rb));
+                return rb;
             }
             case BK::CodeBlock: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::code());
+                auto rb = base(BlockStyle::code());
                 rb.language = b.language;
                 rb.code_text = b.code_text;
                 rb.code_indented = b.code_indented;
-                if (b.code_indented) {
-                    if (const auto* range = sm ? sm->find_node_by_id(b.id) : nullptr) rb.code_marker_ranges = range->marker_ranges;
-                }
+                rb.opening_marker = b.opening_marker;
+                rb.closing_marker = b.closing_marker;
                 std::size_t n = 1; for (char32_t c : b.code_text) if (c == '\n') ++n;
                 rb.line_count = n;
-                return with_content_range(std::move(rb));
+                return rb;
             }
             case BK::MathBlock: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::math());
+                auto rb = base(BlockStyle::math());
                 rb.tex = b.tex; rb.math_delim = b.math_delim;
-                return with_content_range(std::move(rb));
+                return rb;
             }
             case BK::Table: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::table());
+                auto rb = base(BlockStyle::table());
                 rb.table_aligns = b.table_aligns;
                 rb.table_header_row = !b.children.empty() && b.children.front().table_header_row;
                 rb.column_count = b.children.empty() ? 0 : b.children.front().children.size();
                 rb.row_count = b.children.size();
                 auto build_cell = [&](const BlockNode& cell) {
-                    std::size_t start = base_range().start.v;
-                    auto cell_range = base_range();
-                    if (const auto* range = sm ? sm->find_node_by_id(cell.id) : nullptr) { start = range->content_range.start.v; cell_range = range->content_range; }
-                    rb.table_cell_ranges.push_back(cell_range);
+                    rb.table_cell_spans.push_back({cell.id, {0, cell.inline_content.source.size()}});
                     return build_inline_document(cell.inline_content, cell.id, InlineStyle::plain());
                 };
                 for (const auto& row : b.children) for (const auto& cell : row.children) rb.table_cells.push_back(build_cell(cell));
-                return with_content_range(std::move(rb));
+                return rb;
             }
             case BK::ImageBlock: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::image());
+                auto rb = base(BlockStyle::image());
                 rb.alt = b.image_alt; rb.src = b.src; rb.title = b.image_title; rb.link = b.image_link;
                 rb.image_width = b.image_width; rb.image_height = b.image_height;
-                return with_content_range(std::move(rb));
+                return rb;
             }
             case BK::Callout: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::callout(b.callout_kind));
+                auto rb = base(BlockStyle::callout(b.callout_kind));
                 rb.callout_kind = b.callout_kind;
                 if (b.callout_title) {
                     std::vector<InlineRenderItem> items;
@@ -586,74 +538,52 @@ struct Builder {
                     rb.callout_title = std::move(items);
                 }
                 for (const auto& ch : b.children) rb.child_blocks.push_back(build_block(ch));
-                return with_content_range(std::move(rb));
+                return rb;
             }
             case BK::FootnoteDefinition: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::footnote());
+                auto rb = base(BlockStyle::footnote());
                 rb.footnote_label = b.footnote_label;
                 for (const auto& ch : b.children) rb.child_blocks.push_back(build_block(ch));
-                return with_content_range(std::move(rb));
+                return rb;
             }
             case BK::Toc: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::toc());
-                return with_content_range(std::move(rb));
+                return base(BlockStyle::toc());
             }
             case BK::Frontmatter: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::frontmatter());
+                auto rb = base(BlockStyle::frontmatter());
                 rb.raw = b.raw;
-                return with_content_range(std::move(rb));
+                return rb;
             }
             case BK::ThematicBreak: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::thematic_break());
-                return with_content_range(std::move(rb));
+                return base(BlockStyle::thematic_break());
             }
             case BK::LinkDefinition: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::paragraph());
-                return with_content_range(std::move(rb));
+                return base(BlockStyle::paragraph());
             }
             case BK::UnsupportedMarkup: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::unsupported());
+                auto rb = base(BlockStyle::unsupported());
                 rb.raw = b.raw;
                 rb.reason_text = unsupported_reason_message(b.unsup_reason);
-                return with_content_range(std::move(rb));
+                return rb;
             }
             case BK::Extension: {
-                auto rb = render_block_base(b.kind, b.id, base_range(), BlockStyle::extension());
+                auto rb = base(BlockStyle::extension());
                 rb.extension_name = b.ext_name;
-                return with_content_range(std::move(rb));
+                return rb;
             }
         }
-        return render_block_base(b.kind, b.id, base_range(), BlockStyle::paragraph());
+        return base(BlockStyle::paragraph());
     }
 };
 
-inline RenderModel build_render_model(const EditorDocument& doc,
-                                      const std::string& source_text,
-                                      const Outline& outline) {
-    Builder bd; bd.sm = &doc.source_map;
+inline RenderModel build_render_model(const EditorDocument& doc, const Outline& outline) {
+    Builder bd;
     std::vector<RenderBlock> blocks;
-    auto source = utf8_to_cps(source_text);
-    bd.source = source;
-    auto structure = build_source_structure(doc);
-    for (const auto& span : structure.blocks) {
-        if (span.kind == SourceBlockKind::Semantic && span.document_block_index && *span.document_block_index < doc.root.children.size()) {
-            auto rendered = bd.build_block(doc.root.children[*span.document_block_index]);
-            auto start = (std::min)(rendered.source_range.start.v, source.size());
-            auto end = (std::min)((std::max)(rendered.source_range.end.v, start), source.size());
-            rendered.source_fingerprint = static_cast<std::uint64_t>(std::hash<std::u32string_view>{}(std::u32string_view(source).substr(start, end - start)));
-            blocks.push_back(std::move(rendered));
-            continue;
-        }
-        RenderBlock blank;
-        blank.kind = RenderBlockKind::Blank;
-        blank.id = NodeId(0x8000000000000000ull | (span.content_range.start.v & 0x7fffffffffffffffull));
-        blank.source_range = span.source_range;
-        blank.content_range = span.content_range;
-        auto start = (std::min)(span.source_range.start.v, source.size());
-        auto end = (std::min)((std::max)(span.source_range.end.v, start), source.size());
-        blank.source_fingerprint = static_cast<std::uint64_t>(std::hash<std::u32string_view>{}(std::u32string_view(source).substr(start, end - start)));
-        blank.block_style = BlockStyle::paragraph();
-        blocks.push_back(std::move(blank));
+    blocks.reserve(doc.root.children.size());
+    for (const auto& block : doc.root.children) {
+        auto rendered = bd.build_block(block);
+        rendered.source_fingerprint = block.id.v;
+        blocks.push_back(std::move(rendered));
     }
     std::vector<RenderDiagnostic> diags;
     for (const auto& d : doc.diagnostics) diags.push_back(convert_diagnostic(d));

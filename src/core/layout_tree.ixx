@@ -49,15 +49,15 @@ struct TextLineLayout {
     explicit TextLineLayout(TextSpan span) : source_span(span) {}
 };
 
-struct MathLayout { NodeId id; TextRange<CharOffset> source_range; LogicalRect rect; std::u32string tex; };
+struct MathLayout { NodeId id; TextSpan source_span; LogicalRect rect; std::u32string tex; };
 
-struct ImageLayout { NodeId id; TextRange<CharOffset> source_range; LogicalRect rect; std::string src; std::string alt; };
+struct ImageLayout { NodeId id; TextSpan source_span; LogicalRect rect; std::string src; std::string alt; };
 
 struct TableLayoutColumn { float width; TableAlignment alignment; };
 struct TableLayoutCell { TextSpan source_span; LogicalRect rect; std::vector<LayoutItem> content; };
 struct TableLayoutRow { LogicalRect rect; std::vector<TableLayoutCell> cells; bool is_header{}; };
 struct TableLayout {
-    NodeId id; TextRange<CharOffset> source_range; LogicalRect rect;
+    NodeId id; TextSpan source_span; LogicalRect rect;
     std::vector<TableLayoutRow> rows; std::vector<TableLayoutColumn> columns;
 };
 
@@ -79,15 +79,15 @@ struct LayoutBlockKindVal { LayoutBlockKind kind; std::uint8_t level{}; std::str
 
 struct LayoutBlock {
     NodeId id{};
-    TextRange<CharOffset> source_range;
+    TextSpan source_span;
     LogicalRect rect;
     std::optional<float> baseline;
     LayoutBlockKindVal kind;
     std::vector<LayoutItem> children;
     BlockStyle style;
     LayoutBlock() = default;
-    LayoutBlock(NodeId id_, TextRange<CharOffset> sr, LayoutBlockKindVal k, BlockStyle s)
-        : id(id_), source_range(sr), kind(k), style(std::move(s)) {}
+    LayoutBlock(NodeId id_, TextSpan span, LayoutBlockKindVal k, BlockStyle s)
+        : id(id_), source_span(span), kind(k), style(std::move(s)) {}
 };
 
 struct LayoutTree {

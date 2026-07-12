@@ -21,7 +21,6 @@ import elmd.core.types;
 import elmd.core.ids;
 import elmd.core.dialect;
 import elmd.core.diagnostics;
-import elmd.core.source_map;
 import elmd.core.metadata;
 import elmd.core.symbols;
 import elmd.core.ast;
@@ -41,7 +40,6 @@ struct ParseInput {
     std::uint64_t revision = 1;
     std::string text;                       // UTF-8 source
     MarkdownDialect dialect = default_dialect();
-    std::vector<TextRange<CharOffset>> changed_ranges;  // reserved for incremental
 
     ParseInput() = default;
     ParseInput(std::uint64_t rev, std::string t, MarkdownDialect d = default_dialect())
@@ -56,15 +54,23 @@ struct ParseOutput {
     std::vector<Diagnostic> diagnostics;
 };
 
-struct IncrementalParseEdit {
-    CharRange old_range;
-    std::u32string replacement;
-};
-
 // ---------------------------------------------------------------------------
 //                              the Parser
 // ---------------------------------------------------------------------------
 namespace detail {
+
+// Parse-time physical ranges are transient recognizer bookkeeping only. They
+// are never stored in EditorDocument and never become an editing coordinate.
+struct ParserSourceRange {
+    NodeId node_id{};
+    CharRange source_range;
+    CharRange content_range;
+    std::vector<CharRange> marker_ranges;
+
+    ParserSourceRange() = default;
+    ParserSourceRange(NodeId id, CharRange source, CharRange content)
+        : node_id(id), source_range(source), content_range(content) {}
+};
 
 class Parser {
 public:
@@ -96,7 +102,7 @@ public:
     std::vector<ImageSymbol> images;
     std::vector<MathSymbol> math_blocks;
     std::vector<CodeBlockSymbol> code_blocks;
-    std::vector<NodeSourceRange> source_ranges;
+    std::vector<ParserSourceRange> source_ranges;
     std::unordered_map<std::string, LinkDefinition> link_definitions;
     std::unordered_map<std::size_t, LinkDefinition> link_definitions_by_start;
 
@@ -424,7 +430,7 @@ public:
     }
     // Push a source range. idempotent.
     void push_range(NodeId id, CharRange sr, CharRange cr) {
-        NodeSourceRange r(id, sr, cr);
+        ParserSourceRange r(id, sr, cr);
         source_ranges.push_back(r);
     }
     // ---- block dispatch ----
@@ -566,12 +572,14 @@ public:
         std::string title_utf8 = cps_to_utf8(title);
         std::string slug = generate_slug(title_utf8, {});
         NodeId id = next_node_id();
-        NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(content_start), CharOffset(content_end)));
+        ParserSourceRange range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(content_start), CharOffset(content_end)));
         range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(content_start)));
         if (closing_start < line_end) range.marker_ranges.push_back(CharRange(CharOffset(content_end), CharOffset(line_end)));
         source_ranges.push_back(std::move(range));
         headings.push_back({id, level, title_utf8, slug});
         BlockNode b; b.id = id; b.kind = BlockKind::Heading; b.level = level; b.inline_content = std::move(inline_content); b.slug = slug;
+        b.opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
+        if (closing_start < line_end) b.closing_marker = std::u32string(std::u32string_view(cps).substr(content_end, line_end - content_end));
         return b;
     }
 
@@ -621,7 +629,7 @@ public:
             auto title_utf8 = cps_to_utf8(inline_visible_text(inline_content));
             auto slug = generate_slug(title_utf8, {});
             const auto id = next_node_id();
-            NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(content_end)));
+            ParserSourceRange range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(start), CharOffset(content_end)));
             range.marker_ranges.push_back(CharRange(CharOffset(content_end), CharOffset(underline->line_end)));
             source_ranges.push_back(std::move(range));
             headings.push_back({id, underline->level, title_utf8, slug});
@@ -631,6 +639,7 @@ public:
             heading.level = underline->level;
             heading.inline_content = std::move(inline_content);
             heading.slug = std::move(slug);
+            heading.closing_marker = std::u32string(std::u32string_view(cps).substr(content_end, underline->line_end - content_end));
             return heading;
         }
 
@@ -780,7 +789,7 @@ public:
             }
             pos = source_end;
             NodeId id = next_node_id();
-            NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(code_start), CharOffset(code_end)));
+            ParserSourceRange range(id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(code_start), CharOffset(code_end)));
             range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(code_start)));
             range.marker_ranges.push_back(CharRange(CharOffset(code_end), CharOffset(source_end)));
             source_ranges.push_back(std::move(range));
@@ -829,7 +838,7 @@ public:
             block.id = next_node_id();
             block.children = std::move(rows);
             block.table_aligns.resize(block.children.front().children.size(), TableAlignment::None);
-            NodeSourceRange range(block.id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(content_start), CharOffset(content_end)));
+            ParserSourceRange range(block.id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(content_start), CharOffset(content_end)));
             range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(content_start)));
             range.marker_ranges.push_back(CharRange(CharOffset(content_end), CharOffset(source_end)));
             source_ranges.push_back(std::move(range));
@@ -838,7 +847,7 @@ public:
         }
         pos = source_end;
         NodeId id = next_node_id();
-        NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(content_start), CharOffset(content_end)));
+        ParserSourceRange range(id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(content_start), CharOffset(content_end)));
         range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(content_start)));
         range.marker_ranges.push_back(CharRange(CharOffset(content_end), CharOffset(source_end)));
         source_ranges.push_back(std::move(range));
@@ -938,7 +947,7 @@ public:
             pos = line_end < cps.size() ? line_end + 1 : line_end;
         }
         NodeId id = next_node_id();
-        NodeSourceRange range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(content_start), CharOffset(content_end)));
+        ParserSourceRange range(id, CharRange(CharOffset(start), CharOffset(pos)), CharRange(CharOffset(content_start), CharOffset(content_end)));
         range.marker_ranges = std::move(markers);
         auto line_count = range.marker_ranges.size();
         source_ranges.push_back(std::move(range));
@@ -993,7 +1002,7 @@ public:
         }
         if (content_end < content_start) content_end = pos;
         NodeId id = next_node_id();
-        NodeSourceRange node_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(content_start), CharOffset(content_end)));
+        ParserSourceRange node_range(id, CharRange(CharOffset(start), cur()), CharRange(CharOffset(content_start), CharOffset(content_end)));
         node_range.marker_ranges.push_back(CharRange(CharOffset(start), CharOffset(content_start)));
         if (closing_marker) node_range.marker_ranges.push_back(*closing_marker);
         source_ranges.push_back(std::move(node_range));
@@ -1005,6 +1014,8 @@ public:
             return b;
         }
         BlockNode b; b.id = id; b.kind = BlockKind::CodeBlock; b.language = lang; b.code_text = std::move(text);
+        b.opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
+        if (closing_marker) b.closing_marker = std::u32string(std::u32string_view(cps).substr(closing_marker->start.v, closing_marker->end.v - closing_marker->start.v));
         return b;
     }
 
@@ -1313,7 +1324,7 @@ public:
             images.insert(images.end(), std::make_move_iterator(nested.images.begin()), std::make_move_iterator(nested.images.end()));
             math_blocks.insert(math_blocks.end(), std::make_move_iterator(nested.math_blocks.begin()), std::make_move_iterator(nested.math_blocks.end()));
             code_blocks.insert(code_blocks.end(), std::make_move_iterator(nested.code_blocks.begin()), std::make_move_iterator(nested.code_blocks.end()));
-            NodeSourceRange item_range(item_id, CharRange(CharOffset(marker->start), CharOffset(item_end)), CharRange(CharOffset(marker->content_start), CharOffset(inner_end_source)));
+            ParserSourceRange item_range(item_id, CharRange(CharOffset(marker->start), CharOffset(item_end)), CharRange(CharOffset(marker->content_start), CharOffset(inner_end_source)));
             item_range.marker_ranges.push_back(CharRange(CharOffset(marker->start), CharOffset(marker->content_start)));
             source_ranges.push_back(std::move(item_range));
             BlockNode item;
@@ -1340,11 +1351,13 @@ public:
         std::size_t content_start = start;
         std::size_t content_end = start;
         bool first = true;
+        bool last_line_empty = false;
         while (pos < cps.size() && peek_line_start() && peek1() == U'>') {
             auto marker_start = pos;
             advance();
             if (peek1() == U' ') advance();
             auto line_content_start = pos;
+            last_line_empty = peek1() == U'\n' || eof();
             if (first) content_start = line_content_start;
             first = false;
             marker_ranges.push_back(CharRange(CharOffset(marker_start), CharOffset(line_content_start)));
@@ -1392,6 +1405,11 @@ public:
                 CharRange(CharOffset(content_start), CharOffset(content_start)),
                 CharRange(CharOffset(content_start), CharOffset(content_start)));
             children.push_back(std::move(paragraph));
+        } else if (last_line_empty) {
+            BlockNode paragraph;
+            paragraph.id = next_node_id();
+            paragraph.kind = BlockKind::Paragraph;
+            children.push_back(std::move(paragraph));
         }
         for (auto& diagnostic : nested.diagnostics) {
             if (diagnostic.source_range) diagnostic.source_range = CharRange(remap(diagnostic.source_range->start), remap(diagnostic.source_range->end));
@@ -1404,7 +1422,7 @@ public:
         math_blocks.insert(math_blocks.end(), std::make_move_iterator(nested.math_blocks.begin()), std::make_move_iterator(nested.math_blocks.end()));
         code_blocks.insert(code_blocks.end(), std::make_move_iterator(nested.code_blocks.begin()), std::make_move_iterator(nested.code_blocks.end()));
         NodeId id = next_node_id();
-        NodeSourceRange quote_range(id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(content_start), CharOffset(content_end)));
+        ParserSourceRange quote_range(id, CharRange(CharOffset(start), CharOffset(source_end)), CharRange(CharOffset(content_start), CharOffset(content_end)));
         quote_range.marker_ranges = std::move(marker_ranges);
         source_ranges.push_back(std::move(quote_range));
         if (callout) {
@@ -1541,277 +1559,6 @@ public:
 
 } // namespace detail
 
-inline std::size_t block_source_start(const EditorDocument& doc, std::size_t block_index) {
-    if (block_index >= doc.root.children.size()) return 0;
-    if (const auto* range = doc.source_map.find_node_by_id(doc.root.children[block_index].id)) return range->source_range.start.v;
-    return 0;
-}
-
-inline CharRange block_source_range(const EditorDocument& doc, std::size_t block_index) {
-    if (block_index >= doc.root.children.size()) return CharRange{};
-    if (const auto* range = doc.source_map.find_node_by_id(doc.root.children[block_index].id)) return range->source_range;
-    return CharRange{};
-}
-
-inline std::optional<std::size_t> block_index_for_edit_offset(const EditorDocument& doc, std::size_t offset) {
-    for (std::size_t i = 0; i < doc.root.children.size(); ++i) {
-        auto range = block_source_range(doc, i);
-        if (offset < range.start.v) return i;
-        if (range.start.v <= offset && offset <= range.end.v) return i;
-    }
-    if (!doc.root.children.empty()) return doc.root.children.size() - 1;
-    return std::nullopt;
-}
-
-inline std::uint64_t max_node_id_in_block(const BlockNode& block) {
-    std::uint64_t max_id = block.id.v;
-    auto scan_inline = [&](auto& self, const InlineCstNode& node) -> void {
-        max_id = (std::max)(max_id, node.id.v);
-        for (const auto& child : node.children) self(self, child);
-    };
-    auto scan_inline_document = [&](const InlineDocument& document) {
-        for (const auto& node : document.tree.nodes) scan_inline(scan_inline, node);
-        for (const auto& token : document.tree.tokens) max_id = (std::max)(max_id, token.id.v);
-    };
-    auto scan_block = [&](auto& self, const BlockNode& b) -> void {
-        max_id = (std::max)(max_id, b.id.v);
-        if (b.kind == BlockKind::Paragraph || b.kind == BlockKind::Heading || b.kind == BlockKind::TableCell) scan_inline_document(b.inline_content);
-        for (const auto& child : b.children) self(self, child);
-        if (b.callout_title) scan_inline_document(*b.callout_title);
-    };
-    scan_block(scan_block, block);
-    return max_id;
-}
-
-inline std::uint64_t next_node_counter_after(const EditorDocument& doc) {
-    std::uint64_t max_id = doc.root.id.v;
-    for (const auto& block : doc.root.children) max_id = (std::max)(max_id, max_node_id_in_block(block));
-    for (const auto& range : doc.source_map.node_ranges) max_id = (std::max)(max_id, range.node_id.v);
-    return max_id + 1;
-}
-
-inline std::u32string slice_cps(std::u32string_view text, CharRange range) {
-    std::size_t start = (std::min)(range.start.v, text.size());
-    std::size_t end = (std::min)((std::max)(range.end.v, start), text.size());
-    return std::u32string(text.substr(start, end - start));
-}
-
-inline bool shifted_old_block_matches_new_text(const std::u32string& old_cps, const std::u32string& new_cps, const EditorDocument& old_doc, std::size_t old_block_index, std::ptrdiff_t delta) {
-    auto old_range = block_source_range(old_doc, old_block_index);
-    if (old_range.is_empty()) return false;
-    std::ptrdiff_t shifted_start = static_cast<std::ptrdiff_t>(old_range.start.v) + delta;
-    std::ptrdiff_t shifted_end = static_cast<std::ptrdiff_t>(old_range.end.v) + delta;
-    if (shifted_start < 0 || shifted_end < shifted_start) return false;
-    CharRange new_range(CharOffset(static_cast<std::size_t>(shifted_start)), CharOffset(static_cast<std::size_t>(shifted_end)));
-    if (new_range.end.v > new_cps.size()) return false;
-    return slice_cps(old_cps, old_range) == slice_cps(new_cps, new_range);
-}
-
-inline NodeSourceRange shifted_range(NodeSourceRange range, std::ptrdiff_t delta) {
-    auto shift_offset = [&](CharOffset offset) {
-        std::ptrdiff_t shifted = static_cast<std::ptrdiff_t>(offset.v) + delta;
-        return CharOffset(static_cast<std::size_t>((std::max)(std::ptrdiff_t{0}, shifted)));
-    };
-    range.source_range = CharRange(shift_offset(range.source_range.start), shift_offset(range.source_range.end));
-    range.content_range = CharRange(shift_offset(range.content_range.start), shift_offset(range.content_range.end));
-    for (auto& marker : range.marker_ranges) marker = CharRange(shift_offset(marker.start), shift_offset(marker.end));
-    return range;
-}
-
-inline std::optional<NodeSourceRange> shifted_range_for_node(const SourceMap& source_map, NodeId id, std::ptrdiff_t delta) {
-    if (const auto* range = source_map.find_node_by_id(id)) return shifted_range(*range, delta);
-    return std::nullopt;
-}
-
-inline void append_old_block_ranges(SourceMap& target, const EditorDocument& old_doc, std::size_t begin, std::size_t end, std::ptrdiff_t delta) {
-    for (std::size_t i = begin; i < end && i < old_doc.root.children.size(); ++i) {
-        auto block_range = block_source_range(old_doc, i);
-        for (const auto& range : old_doc.source_map.node_ranges) {
-            if (range.source_range.start.v >= block_range.start.v && range.source_range.end.v <= block_range.end.v) target.node_ranges.push_back(shifted_range(range, delta));
-        }
-    }
-}
-
-inline void append_diagnostics(std::vector<Diagnostic>& target, const std::vector<Diagnostic>& source, std::size_t begin, std::size_t end, std::ptrdiff_t delta) {
-    for (auto diagnostic : source) {
-        if (!diagnostic.source_range) continue;
-        auto range = *diagnostic.source_range;
-        if (range.start.v < begin || range.start.v >= end) continue;
-        auto shifted = shifted_range(NodeSourceRange({}, range, range), delta).source_range;
-        diagnostic.source_range = shifted;
-        target.push_back(std::move(diagnostic));
-    }
-}
-
-inline DocumentMetadata metadata_from_cps(const std::u32string& cps) {
-    DocumentMetadata metadata;
-    std::size_t line_count = 0;
-    std::size_t word_count = 0;
-    std::u32string word;
-    auto flush = [&]() {
-        if (!word.empty()) { ++word_count; word.clear(); }
-    };
-    for (char32_t ch : cps) {
-        if (ch == U'\n') ++line_count;
-        if (ch == U' ' || ch == U'\t' || ch == U'\n' || ch == U'\r') flush();
-        else word.push_back(ch);
-    }
-    flush();
-    metadata.char_count = cps.size();
-    metadata.line_count = line_count + 1;
-    metadata.word_count = word_count;
-    return metadata;
-}
-
-inline ParseOutput finish_parse_output(std::uint64_t revision, EditorDocument document, DocumentSymbolIndex symbols) {
-    (void)symbols;
-    document.revision = revision;
-    auto outline = build_outline_from_blocks(revision, document.root.children);
-    ParseOutput out;
-    out.revision = revision;
-    out.document = std::move(document);
-    out.symbols = build_document_symbol_index(out.document);
-    out.outline = std::move(outline);
-    out.diagnostics = out.document.diagnostics;
-    return out;
-}
-
-inline void append_symbols(DocumentSymbolIndex& target, const DocumentSymbolIndex& source) {
-    target.headings.insert(target.headings.end(), source.headings.begin(), source.headings.end());
-    target.footnotes.insert(target.footnotes.end(), source.footnotes.begin(), source.footnotes.end());
-    target.links.insert(target.links.end(), source.links.begin(), source.links.end());
-    target.images.insert(target.images.end(), source.images.begin(), source.images.end());
-    target.math_blocks.insert(target.math_blocks.end(), source.math_blocks.begin(), source.math_blocks.end());
-    target.code_blocks.insert(target.code_blocks.end(), source.code_blocks.begin(), source.code_blocks.end());
-}
-
-inline ParseOutput parse(const ParseInput& input);
-
-inline bool block_contains_node_id(const BlockNode& block, NodeId id) {
-    if (block.id == id) return true;
-    auto scan_inline = [&](auto& self, const InlineCstNode& node) -> bool {
-        if (node.id == id) return true;
-        for (const auto& child : node.children) if (self(self, child)) return true;
-        return false;
-    };
-    auto scan_inline_document = [&](const InlineDocument& document) {
-        for (const auto& node : document.tree.nodes) if (scan_inline(scan_inline, node)) return true;
-        for (const auto& token : document.tree.tokens) if (token.id == id) return true;
-        return false;
-    };
-    auto scan_block = [&](auto& self, const BlockNode& b) -> bool {
-        if (b.id == id) return true;
-        if ((b.kind == BlockKind::Paragraph || b.kind == BlockKind::Heading || b.kind == BlockKind::TableCell) && scan_inline_document(b.inline_content)) return true;
-        for (const auto& child : b.children) if (self(self, child)) return true;
-        if (b.callout_title && scan_inline_document(*b.callout_title)) return true;
-        return false;
-    };
-    return scan_block(scan_block, block);
-}
-
-inline bool retained_blocks_contain_node_id(const EditorDocument& doc, std::size_t prefix_end, std::size_t suffix_begin, NodeId id) {
-    for (std::size_t i = 0; i < prefix_end && i < doc.root.children.size(); ++i) if (block_contains_node_id(doc.root.children[i], id)) return true;
-    for (std::size_t i = suffix_begin; i < doc.root.children.size(); ++i) if (block_contains_node_id(doc.root.children[i], id)) return true;
-    return false;
-}
-
-inline DocumentSymbolIndex retained_symbols(const DocumentSymbolIndex& old_symbols, const EditorDocument& old_doc, std::size_t prefix_end, std::size_t suffix_begin) {
-    DocumentSymbolIndex symbols;
-    for (const auto& item : old_symbols.headings) if (retained_blocks_contain_node_id(old_doc, prefix_end, suffix_begin, item.node_id)) symbols.headings.push_back(item);
-    for (const auto& item : old_symbols.footnotes) if (retained_blocks_contain_node_id(old_doc, prefix_end, suffix_begin, item.node_id)) symbols.footnotes.push_back(item);
-    for (const auto& item : old_symbols.links) if (retained_blocks_contain_node_id(old_doc, prefix_end, suffix_begin, item.node_id)) symbols.links.push_back(item);
-    for (const auto& item : old_symbols.images) if (retained_blocks_contain_node_id(old_doc, prefix_end, suffix_begin, item.node_id)) symbols.images.push_back(item);
-    for (const auto& item : old_symbols.math_blocks) if (retained_blocks_contain_node_id(old_doc, prefix_end, suffix_begin, item.node_id)) symbols.math_blocks.push_back(item);
-    for (const auto& item : old_symbols.code_blocks) if (retained_blocks_contain_node_id(old_doc, prefix_end, suffix_begin, item.node_id)) symbols.code_blocks.push_back(item);
-    return symbols;
-}
-
-inline void refresh_metadata(EditorDocument& doc, const std::u32string& cps) {
-    bool has_frontmatter = false;
-    for (const auto& block : doc.root.children) {
-        if (block.kind == BlockKind::Frontmatter) {
-            doc.metadata = from_frontmatter(block.raw, block.fmt);
-            has_frontmatter = true;
-            break;
-        }
-    }
-    if (!has_frontmatter) doc.metadata = metadata_from_cps(cps);
-}
-
-inline ParseOutput parse_incremental(const ParseInput& input, const EditorDocument& old_document, const DocumentSymbolIndex& old_symbols, const std::string& old_text, const IncrementalParseEdit& edit) {
-    if (old_document.root.children.empty()) return parse(input);
-    std::u32string old_cps = utf8_to_cps(old_text);
-    std::u32string new_cps = utf8_to_cps(input.text);
-    std::ptrdiff_t delta = static_cast<std::ptrdiff_t>(edit.replacement.size()) - static_cast<std::ptrdiff_t>(edit.old_range.len());
-    auto edited_block = block_index_for_edit_offset(old_document, edit.old_range.start.v);
-    if (!edited_block) return parse(input);
-    std::size_t scan_old_start = *edited_block == 0 ? 0 : *edited_block - 1;
-    std::size_t scan_new_start = block_source_start(old_document, scan_old_start);
-    if (scan_new_start > new_cps.size()) return parse(input);
-
-    detail::Parser parser(&input);
-    parser.pos = scan_new_start;
-    parser.node_counter = next_node_counter_after(old_document);
-
-    std::vector<BlockNode> rebuilt_blocks;
-    std::optional<std::size_t> suffix_begin;
-    while (!parser.eof()) {
-        if (parser.is_blank_line()) {
-            parser.parse_blank_lines(rebuilt_blocks);
-        } else if (auto block = parser.parse_block()) {
-            rebuilt_blocks.push_back(std::move(*block));
-        } else {
-            parser.advance();
-        }
-
-        if (!parser.eof()) {
-            for (std::size_t candidate = scan_old_start; candidate < old_document.root.children.size(); ++candidate) {
-                auto old_range = block_source_range(old_document, candidate);
-                std::ptrdiff_t shifted_start = static_cast<std::ptrdiff_t>(old_range.start.v) + delta;
-                if (shifted_start != static_cast<std::ptrdiff_t>(parser.pos)) continue;
-                if (shifted_old_block_matches_new_text(old_cps, new_cps, old_document, candidate, delta)) {
-                    suffix_begin = candidate;
-                    break;
-                }
-            }
-        }
-        if (suffix_begin) break;
-    }
-
-    EditorDocument doc;
-    doc.root.id = old_document.root.id;
-    doc.dialect = input.dialect;
-    doc.trailing_newline = !new_cps.empty() && new_cps.back() == U'\n';
-    doc.revision = input.revision;
-    doc.root.children.reserve(scan_old_start + rebuilt_blocks.size() + (suffix_begin ? old_document.root.children.size() - *suffix_begin : 0));
-    for (std::size_t i = 0; i < scan_old_start; ++i) doc.root.children.push_back(old_document.root.children[i]);
-    for (auto& block : rebuilt_blocks) doc.root.children.push_back(std::move(block));
-    if (suffix_begin) for (std::size_t i = *suffix_begin; i < old_document.root.children.size(); ++i) doc.root.children.push_back(old_document.root.children[i]);
-
-    append_old_block_ranges(doc.source_map, old_document, 0, scan_old_start, 0);
-    for (auto& range : parser.source_ranges) doc.source_map.node_ranges.push_back(std::move(range));
-    if (suffix_begin) append_old_block_ranges(doc.source_map, old_document, *suffix_begin, old_document.root.children.size(), delta);
-
-    append_diagnostics(doc.diagnostics, old_document.diagnostics, 0, scan_new_start, 0);
-    doc.diagnostics.insert(doc.diagnostics.end(), parser.diagnostics.begin(), parser.diagnostics.end());
-    if (suffix_begin) {
-        auto suffix_start = block_source_range(old_document, *suffix_begin).start.v;
-        append_diagnostics(doc.diagnostics, old_document.diagnostics, suffix_start, old_cps.size() + 1, delta);
-    }
-    refresh_metadata(doc, new_cps);
-
-    DocumentSymbolIndex symbols = retained_symbols(old_symbols, old_document, scan_old_start, suffix_begin.value_or(old_document.root.children.size()));
-    DocumentSymbolIndex parsed_symbols;
-    parsed_symbols.headings = std::move(parser.headings);
-    parsed_symbols.footnotes = std::move(parser.footnotes);
-    parsed_symbols.links = std::move(parser.links);
-    parsed_symbols.images = std::move(parser.images);
-    parsed_symbols.math_blocks = std::move(parser.math_blocks);
-    parsed_symbols.code_blocks = std::move(parser.code_blocks);
-    append_symbols(symbols, parsed_symbols);
-    return finish_parse_output(input.revision, std::move(doc), std::move(symbols));
-}
-
 // Public entry point.
 inline ParseOutput parse(const ParseInput& input) {
     record_full_document_parse();
@@ -1849,7 +1596,6 @@ inline ParseOutput parse(const ParseInput& input) {
         doc.metadata.word_count = wc;
     }
 
-    doc.source_map.node_ranges = std::move(p.source_ranges);
     doc.diagnostics = std::move(p.diagnostics);
     // symbols
     DocumentSymbolIndex sym;

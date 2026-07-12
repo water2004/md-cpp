@@ -9,7 +9,6 @@ import elmd.core.inline_document;
 import elmd.core.metadata;
 import elmd.core.outline;
 import elmd.core.serializer;
-import elmd.core.source_map;
 import elmd.core.symbols;
 import elmd.core.utf;
 
@@ -17,7 +16,6 @@ export namespace elmd {
 
 struct DocumentProjection {
     std::u32string markdown;
-    SourceMap source_map;
     DocumentMetadata metadata;
     std::vector<Diagnostic> diagnostics;
     DocumentSymbolIndex symbols;
@@ -74,10 +72,8 @@ inline DocumentSymbolIndex build_document_symbol_index(const EditorDocument& doc
 }
 
 inline DocumentProjection project_document(const EditorDocument& document) {
-    auto serialized = serialize_document(document);
     DocumentProjection projection;
-    projection.markdown = std::move(serialized.markdown);
-    projection.source_map = std::move(serialized.source_map);
+    projection.markdown = serialize_markdown_cps(document);
     projection.metadata = document.metadata;
     projection.diagnostics = document.diagnostics;
     projection.symbols = build_document_symbol_index(document);

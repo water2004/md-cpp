@@ -4,7 +4,6 @@ import std;
 import elmd.core.types;
 import elmd.core.ids;
 import elmd.core.ast;
-import elmd.core.source_map;
 import elmd.core.metadata;
 import elmd.core.diagnostics;
 import elmd.core.dialect;
@@ -20,7 +19,6 @@ struct EditorDocument {
         node.kind = BlockKind::Document;
         return node;
     }();
-    SourceMap source_map;
     DocumentMetadata metadata;
     std::vector<Diagnostic> diagnostics;
     bool trailing_newline = false;
@@ -32,10 +30,6 @@ struct EditorDocument {
         paragraph.id = NodeId(2);
         paragraph.kind = BlockKind::Paragraph;
         d.root.children.push_back(paragraph);
-        d.source_map.node_ranges.emplace_back(
-            paragraph.id,
-            CharRange(CharOffset(0), CharOffset(0)),
-            CharRange(CharOffset(0), CharOffset(0)));
         return d;
     }
 };

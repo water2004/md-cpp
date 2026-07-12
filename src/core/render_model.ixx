@@ -147,8 +147,10 @@ struct RenderBlock {
     RenderBlockKind kind = RenderBlockKind::Text;
     NodeId id{};
     std::uint64_t source_fingerprint = 0;
-    TextRange<CharOffset> source_range;
-    TextRange<CharOffset> content_range;
+    // Block-local editable span. Container-only blocks use an empty span owned
+    // by the container; their visible descendants carry their own spans.
+    TextSpan source_span;
+    TextSpan content_span;
     BlockStyle block_style;
 
     // TextBlock
@@ -158,14 +160,15 @@ struct RenderBlock {
     std::u32string code_text;
     std::size_t line_count = 0;
     bool code_indented = false;
-    std::vector<TextRange<CharOffset>> code_marker_ranges;
+    std::u32string opening_marker;
+    std::u32string closing_marker;
     // MathBlock
     std::u32string tex;
     MathDelimiter math_delim = MathDelimiter::BlockDollar;
     std::shared_ptr<RenderedMath> math_rendered;       // None in v1
     // Table
     std::vector<std::vector<InlineRenderItem>> table_cells;
-    std::vector<TextRange<CharOffset>> table_cell_ranges;
+    std::vector<TextSpan> table_cell_spans;
     std::vector<TableAlignment> table_aligns;
     std::size_t column_count = 0, row_count = 0;
     bool table_header_row = true;
@@ -195,7 +198,7 @@ struct RenderDiagnostic {
     enum class Sev { Info, Warning, Error };
     Sev severity = Sev::Warning;
     std::string message;
-    std::optional<TextRange<CharOffset>> source_range;
+    std::optional<TextSpan> source_span;
 };
 
 struct RenderModel {

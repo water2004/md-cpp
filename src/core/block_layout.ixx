@@ -82,7 +82,7 @@ inline std::pair<LayoutBlock, float> layout_text_block(const RenderBlock& rb, fl
 
     std::size_t total_lines = runs.empty() ? 1 : runs.size();
     float block_height = margin_top + style.margin_bottom * scale + pad_top + total_lines * line_height + style.padding_bottom * scale;
-    LayoutBlock lb(rb.id, rb.source_range, {LayoutBlockKind::Paragraph}, style);
+    LayoutBlock lb(rb.id, rb.source_span, {LayoutBlockKind::Paragraph}, style);
     lb.rect = LogicalRect(origin.x, y + margin_top, viewport_width, block_height - margin_top - style.margin_bottom * scale);
     for (std::size_t i = 0; i < runs.size(); ++i) {
         float line_y = y + margin_top + pad_top + i * line_height;
@@ -107,7 +107,7 @@ inline std::pair<LayoutBlock, float> layout_text_block(const RenderBlock& rb, fl
 
 inline std::pair<LayoutBlock, float> layout_blank_block(const RenderBlock& rb, float y, float viewport_width, float scale, LogicalPoint origin) {
     float line_height = 24.0f * scale;
-    LayoutBlock block(rb.id, rb.source_range, {LayoutBlockKind::Blank}, rb.block_style);
+    LayoutBlock block(rb.id, rb.source_span, {LayoutBlockKind::Blank}, rb.block_style);
     block.rect = LogicalRect(origin.x, y, viewport_width, line_height);
     TextLineLayout line{TextSpan{rb.id, {0, 0}}};
     line.rect = block.rect;
@@ -128,7 +128,7 @@ inline std::pair<LayoutBlock, float> layout_quote_block(const RenderBlock& rb, f
     auto padding_bottom = rb.block_style.padding_bottom * scale;
     auto depth_inset = (rb.block_style.padding_left + 6.0f) * scale;
     auto cursor = y + padding_top;
-    LayoutBlock result(rb.id, rb.source_range, {LayoutBlockKind::Quote}, rb.block_style);
+    LayoutBlock result(rb.id, rb.source_span, {LayoutBlockKind::Quote}, rb.block_style);
     for (std::size_t index = 0; index < rb.child_blocks.size(); ++index) {
         auto const& child = rb.child_blocks[index];
         if (index > 0) cursor += 8.0f * scale;
@@ -154,7 +154,7 @@ inline std::pair<LayoutBlock, float> layout_quote_block(const RenderBlock& rb, f
 
 inline std::pair<LayoutBlock, float> layout_thematic_break(const RenderBlock& rb, float y, float viewport_width, float scale, LogicalPoint origin) {
     auto height = 48.0f * scale;
-    LayoutBlock block(rb.id, rb.source_range, {LayoutBlockKind::ThematicBreak}, rb.block_style);
+    LayoutBlock block(rb.id, rb.source_span, {LayoutBlockKind::ThematicBreak}, rb.block_style);
     block.rect = LogicalRect(origin.x, y, viewport_width, height);
     return {std::move(block), height};
 }
@@ -170,7 +170,7 @@ inline std::pair<LayoutBlock, float> layout_code_block(const RenderBlock& rb, fl
         if (c == '\n') { lines.push_back(acc); acc.clear(); }
         else acc.push_back(c);
     }
-    LayoutBlock lb(rb.id, rb.source_range, {LayoutBlockKind::CodeBlock}, style);
+    LayoutBlock lb(rb.id, rb.source_span, {LayoutBlockKind::CodeBlock}, style);
     for (std::size_t i = 0; i < lines.size(); ++i) {
         auto shape = measurer.measure(lines[i], font_size, InlineStyle::plain());
         TextLineLayout ll{{}};
@@ -243,10 +243,10 @@ inline std::pair<LayoutBlock, float> layout_table_block(const RenderBlock& rb, f
         total_width = available;
     }
 
-    LayoutBlock block(rb.id, rb.source_range, {LayoutBlockKind::Table}, style);
+    LayoutBlock block(rb.id, rb.source_span, {LayoutBlockKind::Table}, style);
     TableLayout table;
     table.id = rb.id;
-    table.source_range = rb.source_range;
+    table.source_span = rb.source_span;
     table.rect = LogicalRect(origin.x + style.padding_left * scale, y + margin_top, total_width, rows * line_height);
     for (std::size_t column = 0; column < columns; ++column) {
         TableLayoutColumn layout_column;
@@ -319,7 +319,7 @@ inline std::pair<LayoutBlock, float> layout_math_block(const RenderBlock& rb, fl
         else acc.push_back(c);
     }
     if (lines.empty()) lines.push_back(U"");
-    LayoutBlock lb(rb.id, rb.source_range, {LayoutBlockKind::MathBlock}, style);
+    LayoutBlock lb(rb.id, rb.source_span, {LayoutBlockKind::MathBlock}, style);
     for (std::size_t i = 0; i < lines.size(); ++i) {
         auto shape = measurer.measure(lines[i], font_size, InlineStyle::plain());
         TextLineLayout ll{{}};
@@ -343,7 +343,7 @@ inline std::pair<LayoutBlock, float> layout_toc_block(const RenderBlock& rb, flo
     float item_height = font_size * 1.5f;
     const auto& style = rb.block_style;
     auto flat = outline.flat_items();
-    LayoutBlock lb(rb.id, rb.source_range, {LayoutBlockKind::Toc}, style);
+    LayoutBlock lb(rb.id, rb.source_span, {LayoutBlockKind::Toc}, style);
     float h = style.margin_top * scale + flat.size() * item_height + style.margin_bottom * scale;
     lb.rect = LogicalRect(0.0f, y + style.margin_top * scale, viewport_width, h - style.margin_top * scale - style.margin_bottom * scale);
     for (std::size_t i = 0; i < flat.size(); ++i) {
@@ -371,7 +371,7 @@ inline std::pair<LayoutBlock, float> layout_unsupported(const RenderBlock& rb, f
     std::vector<std::u32string> lines;
     std::u32string acc; auto cps = utf8_to_cps(rb.raw);
     for (char32_t c : cps + U"\n") { if (c == '\n') { lines.push_back(acc); acc.clear(); } else acc.push_back(c); }
-    LayoutBlock lb(rb.id, rb.source_range, {LayoutBlockKind::UnsupportedMarkup}, style);
+    LayoutBlock lb(rb.id, rb.source_span, {LayoutBlockKind::UnsupportedMarkup}, style);
     for (std::size_t i = 0; i < lines.size(); ++i) {
         auto shape = measurer.measure(lines[i], font_size, InlineStyle::plain());
         TextLineLayout ll{{}};
@@ -429,7 +429,7 @@ case RenderBlockKind::Toc:
                 pr = layout_unsupported(rb, y, viewport_width, scale, measurer);
                 break;
             default: {
-                LayoutBlock lb(rb.id, rb.source_range, {LayoutBlockKind::Paragraph}, rb.block_style);
+                LayoutBlock lb(rb.id, rb.source_span, {LayoutBlockKind::Paragraph}, rb.block_style);
                 float h = rb.block_style.margin_top * scale + rb.block_style.margin_bottom * scale;
                 lb.rect = LogicalRect(origin.x, y + rb.block_style.margin_top * scale, viewport_width, h);
                 pr = {std::move(lb), h};

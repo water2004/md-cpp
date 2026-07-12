@@ -270,19 +270,6 @@ suite parser_tests = [] {
     }
 };
 
-"incremental_parse_preserves_untouched_suffix_identity"_test = [] {
-    const std::string old_text = "one\n\ntwo\n\nthree";
-    const auto old = parse_text(1, old_text);
-    const std::string new_text = "one\n\ntwo\n\n\nthree";
-    const auto parsed = parse_incremental(
-        ParseInput(2, new_text), old.document, old.symbols, old_text,
-        IncrementalParseEdit{CharRange(CharOffset(8), CharOffset(8)), U"\n"});
-    expect(fatal(bool(parsed.document.root.children.size() == 4u)));
-    expect(fatal(bool(parsed.document.root.children.back().id == old.document.root.children.back().id)));
-    expect(fatal(bool(parsed.document.root.children[2].kind == BlockKind::Paragraph)));
-    expect(fatal(bool(parsed.document.root.children[2].inline_content.source.empty())));
-};
-
 "save_reload_is_character_exact_for_unchanged_content"_test = [] {
     const std::string source =
         "# __heading__\n\n"

@@ -232,12 +232,6 @@
     <ClCompile Include="..\core\slug.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\source_map.ixx">
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\core\source_structure.ixx">
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-    </ClCompile>
     <ClCompile Include="..\core\symbols.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
