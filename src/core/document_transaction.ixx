@@ -49,6 +49,8 @@ inline BlockNode payload_shell(const BlockNode& source) {
     auto shell = source;
     shell.children.clear();
     shell.inline_content = {};
+    shell.code_text.clear();
+    shell.tex.clear();
     return shell;
 }
 
@@ -57,8 +59,8 @@ inline bool payload_equal(const BlockNode& left, const BlockNode& right) {
         && left.slug == right.slug && left.marker == right.marker && left.checked == right.checked
         && left.list_ordered == right.list_ordered && left.list_start == right.list_start
         && left.list_delimiter == right.list_delimiter && left.language == right.language
-        && left.code_text == right.code_text && left.code_indented == right.code_indented
-        && left.tex == right.tex && left.math_delim == right.math_delim
+        && left.code_indented == right.code_indented
+        && left.math_delim == right.math_delim
         && left.table_aligns == right.table_aligns && left.table_header_row == right.table_header_row
         && left.src == right.src && left.image_alt == right.image_alt
         && left.image_title == right.image_title && left.image_link == right.image_link
@@ -187,6 +189,14 @@ inline void append_content_differences(
                 after_node.id,
                 before_inline->source,
                 after_inline->source));
+        }
+        const auto* before_raw = editable_raw_block_source(*before_node);
+        const auto* after_raw = editable_raw_block_source(after_node);
+        if (before_raw && after_raw && *before_raw != *after_raw) {
+            operations.emplace_back(text_difference(
+                after_node.id,
+                *before_raw,
+                *after_raw));
         }
     }
     for (const auto& child : after_node.children) {

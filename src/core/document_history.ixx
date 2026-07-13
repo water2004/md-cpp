@@ -39,14 +39,23 @@ inline const InlineDocument* inline_owner(const BlockNode& root, NodeId id) {
 inline void apply_payload(BlockNode& target, const BlockNode& shell) {
     auto children = std::move(target.children);
     std::optional<InlineDocument> preserved_inline;
+    std::optional<std::u32string> preserved_raw_source;
     if (auto* document = editable_inline_document(target)) {
         preserved_inline = std::move(*document);
+    }
+    if (auto* source = editable_raw_block_source(target)) {
+        preserved_raw_source = std::move(*source);
     }
     target = shell;
     target.children = std::move(children);
     if (preserved_inline) {
         if (auto* document = editable_inline_document(target)) {
             *document = std::move(*preserved_inline);
+        }
+    }
+    if (preserved_raw_source) {
+        if (auto* source = editable_raw_block_source(target)) {
+            *source = std::move(*preserved_raw_source);
         }
     }
 }

@@ -649,10 +649,10 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> split_list_item(
     return result;
 }
 
-inline std::optional<TextPosition> open_fenced_block(
+inline std::optional<document_edit_detail::RecordedBlockEdit> open_fenced_block(
     EditorDocument& document,
     TextPosition position,
-    document_edit_detail::NodeAllocator&) {
+    document_edit_detail::NodeAllocator& allocator) {
     auto path = block_path(document.root, position.container_id);
     if (!path || path->empty()) return std::nullopt;
     auto* block = block_at_path(document.root, *path);
@@ -661,6 +661,22 @@ inline std::optional<TextPosition> open_fenced_block(
     auto fence = recognize_fence(block->inline_content.source);
     if (!fence) return std::nullopt;
 
+    document_edit_detail::RecordedBlockEdit result;
+    result.target = TextPosition{position.container_id, 0, TextAffinity::Downstream};
+    auto source_edit = document_edit_detail::edit_inline(
+        document,
+        block->id,
+        {0, block->inline_content.source.size()},
+        {},
+        allocator);
+    if (!source_edit) return std::nullopt;
+    document_edit_detail::append_source_operation(result.operations, std::move(*source_edit));
+    block = find_block(document.root, position.container_id);
+    if (!block) return std::nullopt;
+
+    DocumentTreeEdit update;
+    update.kind = DocumentTreeEditKind::UpdatePayload;
+    update.before = document_transaction_detail::payload_shell(*block);
     BlockNode replacement;
     replacement.id = block->id;
     replacement.opening_marker = fence->exact + U"\n";
@@ -673,10 +689,12 @@ inline std::optional<TextPosition> open_fenced_block(
         if (!info.empty()) replacement.language = std::move(info);
     }
     *block = std::move(replacement);
-    return TextPosition{position.container_id, 0, TextAffinity::Downstream};
+    update.after = document_transaction_detail::payload_shell(*block);
+    result.operations.emplace_back(std::move(update));
+    return result;
 }
 
-inline std::optional<TextPosition> close_fenced_code(
+inline std::optional<document_edit_detail::RecordedBlockEdit> close_fenced_code(
     EditorDocument& document,
     TextPosition position,
     document_edit_detail::NodeAllocator& allocator) {
@@ -691,8 +709,26 @@ inline std::optional<TextPosition> close_fenced_code(
     auto line = std::u32string_view(block->code_text).substr(line_start);
     if (!closing_fence_line(line, fence->first, fence->second)) return std::nullopt;
 
-    block->closing_marker = std::u32string(line);
-    block->code_text.erase(line_start > 0 ? line_start - 1 : line_start);
+    document_edit_detail::RecordedBlockEdit result;
+    const auto closing_marker = std::u32string(line);
+    const auto erase_start = line_start > 0 ? line_start - 1 : line_start;
+    auto source_edit = document_edit_detail::edit_block_source(
+        document,
+        block->id,
+        {erase_start, block->code_text.size()},
+        {},
+        allocator);
+    if (!source_edit) return std::nullopt;
+    document_edit_detail::append_source_operation(result.operations, std::move(*source_edit));
+    block = find_block(document.root, position.container_id);
+    if (!block) return std::nullopt;
+
+    DocumentTreeEdit update;
+    update.kind = DocumentTreeEditKind::UpdatePayload;
+    update.before = document_transaction_detail::payload_shell(*block);
+    block->closing_marker = closing_marker;
+    update.after = document_transaction_detail::payload_shell(*block);
+    result.operations.emplace_back(std::move(update));
     auto parent_path = *path;
     const auto index = parent_path.back();
     parent_path.pop_back();
@@ -700,8 +736,15 @@ inline std::optional<TextPosition> close_fenced_code(
     if (!parent) return std::nullopt;
     auto paragraph = document_edit_detail::empty_paragraph(allocator, document);
     const auto target = TextPosition{paragraph.id, 0, TextAffinity::Downstream};
+    DocumentTreeEdit insert;
+    insert.kind = DocumentTreeEditKind::Insert;
+    insert.parent_id = parent->id;
+    insert.index = index + 1;
+    insert.after = paragraph;
+    result.operations.emplace_back(std::move(insert));
     insert_block(*parent, index + 1, std::move(paragraph));
-    return target;
+    result.target = target;
+    return result;
 }
 
 inline std::optional<TextPosition> remove_heading_prefix(
@@ -928,8 +971,8 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> apply_after_text_i
     TextPosition& target,
     document_edit_detail::NodeAllocator& allocator) {
     if (auto closed = detail::close_fenced_code(document, target, allocator)) {
-        target = *closed;
-        return document_edit_detail::RecordedBlockEdit{target, {}};
+        target = closed->target;
+        return closed;
     }
     if (auto task = detail::upgrade_task_item(document, target, allocator)) {
         target = task->target;
@@ -948,10 +991,10 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> handle_enter(
     TextPosition position,
     document_edit_detail::NodeAllocator& allocator) {
     if (auto opened = detail::open_fenced_block(document, position, allocator)) {
-        return document_edit_detail::RecordedBlockEdit{*opened, {}};
+        return opened;
     }
     if (auto closed = detail::close_fenced_code(document, position, allocator)) {
-        return document_edit_detail::RecordedBlockEdit{*closed, {}};
+        return closed;
     }
     if (auto exited = detail::exit_empty_list_item(document, position, allocator)) {
         return document_edit_detail::RecordedBlockEdit{*exited, {}};

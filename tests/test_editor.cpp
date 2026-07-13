@@ -421,6 +421,53 @@ suite editor_tests = [] {
     expect(fatal(bool(middle.selection() == middle_after)));
 };
 
+"typed_fences_use_source_payload_and_tree_operations"_test = [] {
+    Editor editor;
+    expect(fatal(bool(editor.execute_document_insert_text(
+        editor.selection(), U"```cpp").has_value())));
+    const auto opening_before_markdown = editor.markdown_utf8();
+    const auto opening_before = editor.selection();
+    reset_core_operation_counters();
+    auto opened = editor.execute_document_enter(editor.selection());
+    expect(fatal(bool(opened.has_value())));
+    if (!opened) return;
+    auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_parses == 0u)));
+    expect(fatal(bool(counters.full_document_serializations == 0u)));
+    expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
+    expect(fatal(bool(editor.document().root.children.front().kind == BlockKind::CodeBlock)));
+    expect(fatal(bool(editor.document().root.children.front().opening_marker == U"```cpp\n")));
+    const auto opened_markdown = editor.markdown_utf8();
+    const auto opened_selection = editor.selection();
+
+    expect(fatal(bool(editor.undo())));
+    expect(fatal(bool(editor.markdown_utf8() == opening_before_markdown)));
+    expect(fatal(bool(editor.selection() == opening_before)));
+    expect(fatal(bool(editor.redo())));
+    expect(fatal(bool(editor.markdown_utf8() == opened_markdown)));
+    expect(fatal(bool(editor.selection() == opened_selection)));
+
+    reset_core_operation_counters();
+    auto closed = editor.execute_document_insert_text(editor.selection(), U"```");
+    expect(fatal(bool(closed.has_value())));
+    if (!closed) return;
+    counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_parses == 0u)));
+    expect(fatal(bool(counters.full_document_serializations == 0u)));
+    expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
+    expect(fatal(bool(editor.document().root.children.size() == 2u)));
+    expect(fatal(bool(editor.document().root.children.front().closing_marker == U"```")));
+    expect(fatal(bool(editor.document().root.children.back().kind == BlockKind::Paragraph)));
+    const auto closed_markdown = editor.markdown_utf8();
+    const auto closed_selection = editor.selection();
+    expect(fatal(bool(editor.undo())));
+    expect(fatal(bool(editor.markdown_utf8() == opened_markdown)));
+    expect(fatal(bool(editor.selection() == opened_selection)));
+    expect(fatal(bool(editor.redo())));
+    expect(fatal(bool(editor.markdown_utf8() == closed_markdown)));
+    expect(fatal(bool(editor.selection() == closed_selection)));
+};
+
 "code_and_math_blocks_use_local_source_edit_history"_test = [] {
     const std::vector<std::string> cases{
         "```cpp\nab\n```",
