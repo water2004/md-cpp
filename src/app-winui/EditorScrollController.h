@@ -31,13 +31,11 @@ namespace winrt::ElMd
         winrt::Microsoft::UI::Xaml::Controls::ColumnDefinition column{ nullptr };
         std::function<void()> render;
         winrt::event_token valueChangedToken{};
-        std::chrono::steady_clock::time_point lastFrame{};
         std::shared_ptr<FrameDispatchState> frameDispatch;
         std::jthread frameThread;
         HANDLE frameRequestEvent = nullptr;
         HANDLE schedulerStopEvent = nullptr;
         std::uint64_t animationGeneration = 0;
-        float frameIntervalEstimate = 1.0f / 120.0f;
         bool attached = false;
         bool rendering = false;
         bool synchronizing = false;

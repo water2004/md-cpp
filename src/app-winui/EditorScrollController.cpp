@@ -90,10 +90,6 @@ namespace winrt::ElMd
             RequestFrame();
             return;
         }
-        // The latency handle may already be signalled when an animation starts.
-        // Treat the first presentation as a real frame instead of advancing by an
-        // almost-zero interval and visibly accelerating on the following frame.
-        lastFrame = {};
         rendering = true;
         animationGeneration = frameDispatch
             ? frameDispatch->generation.fetch_add(1, std::memory_order_acq_rel) + 1
@@ -151,18 +147,20 @@ namespace winrt::ElMd
                 lastRequestId = frameId;
                 if (WaitForMultipleObjects(2, frameHandles, FALSE, INFINITE) != WAIT_OBJECT_0 + 1) break;
                 if (!state->attached.load(std::memory_order_acquire)) break;
-                auto queued = state->dispatcher.TryEnqueue([state, generation, frameId]
-                {
-                    auto expected = frameId;
-                    state->outstandingFrameId.compare_exchange_strong(
-                        expected,
-                        0,
-                        std::memory_order_acq_rel);
-                    if (!state->attached.load(std::memory_order_acquire)
-                        || state->generation.load(std::memory_order_acquire) != generation
-                        || !state->owner) return;
-                    state->owner->OnFrame(generation);
-                });
+                auto queued = state->dispatcher.TryEnqueue(
+                    winrt::Microsoft::UI::Dispatching::DispatcherQueuePriority::High,
+                    [state, generation, frameId]
+                    {
+                        auto expected = frameId;
+                        state->outstandingFrameId.compare_exchange_strong(
+                            expected,
+                            0,
+                            std::memory_order_acq_rel);
+                        if (!state->attached.load(std::memory_order_acquire)
+                            || state->generation.load(std::memory_order_acquire) != generation
+                            || !state->owner) return;
+                        state->owner->OnFrame(generation);
+                    });
                 if (!queued)
                 {
                     auto expected = frameId;
@@ -224,17 +222,10 @@ namespace winrt::ElMd
         {
             return;
         }
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed = lastFrame.time_since_epoch().count() == 0
-            ? frameIntervalEstimate
-            : std::chrono::duration<float>(now - lastFrame).count();
-        if (lastFrame.time_since_epoch().count() != 0 && elapsed >= 0.002f && elapsed <= 0.05f)
-        {
-            constexpr float estimateResponse = 0.125f;
-            frameIntervalEstimate += (elapsed - frameIntervalEstimate) * estimateResponse;
-        }
-        lastFrame = now;
-        auto active = renderer->AdvanceScrollAnimation((std::min)(elapsed, 0.05f));
+        // A callback represents one presentation opportunity. Advancing by a
+        // fixed step prevents UI-dispatch delays from becoming visible jumps.
+        constexpr float animationStepSeconds = 1.0f / 120.0f;
+        auto active = renderer->AdvanceScrollAnimation(animationStepSeconds);
         if (render) render();
         if (active) RequestFrame();
         else Stop();
