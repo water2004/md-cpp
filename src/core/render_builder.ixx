@@ -172,9 +172,7 @@ struct Builder {
                     if (!first) append_block_break(out, child.id, block_local_length(child));
                     if (block.kind == BlockKind::BlockQuote) {
                         auto owner = first_editable_owner(child).value_or(child.id);
-                        append_generated_indent(out, owner, 0, indent_columns);
-                        std::size_t cursor = 0;
-                        push_marker(out, owner, cursor, {}, MarkerRole::Structural, U"│ ");
+                        append_generated_indent(out, owner, 0, indent_columns + 2);
                     }
                     append_nested_block(out, child, depth + 1, indent_columns);
                     first = false;
