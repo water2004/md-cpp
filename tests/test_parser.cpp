@@ -201,6 +201,23 @@ suite parser_tests = [] {
     expect(fatal(bool(first_block(parsed.document.root.children, BlockKind::ThematicBreak) != nullptr)));
 };
 
+"math_blocks_preserve_exact_local_source_and_fences"_test = [] {
+    for (const auto& source : {
+             std::string{"$$\n  x + y  \n$$"},
+             std::string{"\\[ x + y \\]"},
+             std::string{"```math\n  x + y  \n```"},
+             std::string{"$$\n  unclosed  "},
+         }) {
+        const auto parsed = parse_text(1, source);
+        expect(fatal(bool(parsed.document.root.children.size() == 1u))) << source;
+        if (parsed.document.root.children.size() != 1) continue;
+        const auto& block = parsed.document.root.children.front();
+        expect(fatal(bool(block.kind == BlockKind::MathBlock))) << source;
+        expect(fatal(bool(!block.opening_marker.empty()))) << source;
+        expect(fatal(bool(serialize_markdown(parsed.document) == source))) << source;
+    }
+};
+
 "nested_containers_retain_editable_inline_documents"_test = [] {
     const auto parsed = parse_text(1,
         "> # *heading*\n"

@@ -517,7 +517,7 @@ suite document_edit_tests = [] {
     auto math = parse_document("$$\na+b\n$$");
     auto math_break = document_enter(math, TextSelection::caret({math.root.children.front().id, 1, TextAffinity::Downstream}));
     expect(fatal(bool(math_break.has_value())));
-    if (math_break) expect(fatal(bool(math_break->after.root.children.front().tex == U"a\n+b")));
+    if (math_break) expect(fatal(bool(math_break->after.root.children.front().tex == U"a\n+b\n")));
 
     auto table = parse_document("| ab |\n| --- |");
     auto& cell = table.root.children.front().children.front().children.front();

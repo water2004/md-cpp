@@ -1236,10 +1236,11 @@ suite render_layout_tests = [] {
     expect(fatal(bool(math_tree.blocks.size() == 1u)));
     if (!math_tree.blocks.empty()) {
         auto const& lines = math_tree.blocks.front().children;
-        expect(fatal(bool(lines.size() == 2u)));
-        if (lines.size() == 2u) {
+        expect(fatal(bool(lines.size() == 3u)));
+        if (lines.size() == 3u) {
             expect(fatal(bool(lines[0].line.source_span.source_range == SourceRange{0, 1})));
             expect(fatal(bool(lines[1].line.source_span.source_range == SourceRange{2, 3})));
+            expect(fatal(bool(lines[2].line.source_span.source_range == SourceRange{4, 4})));
         }
     }
 };

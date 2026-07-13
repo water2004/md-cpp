@@ -1016,6 +1016,8 @@ public:
         if (lang && *lang == "math" && input->dialect.math.fenced_math) {
             math_blocks.push_back({id, first_three_lines_utf8_(text)});
             BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.tex = std::move(text); b.math_delim = MathDelimiter::FencedMath;
+            b.opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
+            if (closing_marker) b.closing_marker = std::u32string(std::u32string_view(cps).substr(closing_marker->start, closing_marker->end - closing_marker->start));
             return b;
         }
         BlockNode b; b.id = id; b.kind = BlockKind::CodeBlock; b.language = lang; b.code_text = std::move(text);
@@ -1032,29 +1034,44 @@ public:
         if (!dollar && !bracket) return std::nullopt;
         advance_n(2);
         if (peek1() == '\n') advance();
+        const auto content_start = pos;
         std::u32string tex;
         while (!eof()) {
             bool closed = dollar ? (peek1() == '$' && peek2() == '$') : (peek1() == '\\' && peek2() == ']');
             if (closed) {
+                const auto closing_start = pos;
                 advance_n(2);
+                const auto closing_end = pos;
                 if (peek1() == '\n') advance();
                 NodeId id = next_node_id();
-                push_range(id, PhysicalRange(std::size_t(start), cur()), PhysicalRange(std::size_t(start), cur()));
+                ParserSourceRange range(
+                    id,
+                    PhysicalRange(std::size_t(start), cur()),
+                    PhysicalRange(std::size_t(content_start), std::size_t(closing_start)));
+                range.marker_ranges.push_back(PhysicalRange(std::size_t(start), std::size_t(content_start)));
+                range.marker_ranges.push_back(PhysicalRange(std::size_t(closing_start), std::size_t(closing_end)));
+                source_ranges.push_back(std::move(range));
                 math_blocks.push_back({id, first_three_lines_utf8_(tex)});
-                auto trimmed = trim_math_cps_(tex);
-                BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.tex = trimmed; b.math_delim = dollar ? MathDelimiter::BlockDollar : MathDelimiter::BlockBracket;
+                BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.tex = std::move(tex); b.math_delim = dollar ? MathDelimiter::BlockDollar : MathDelimiter::BlockBracket;
+                b.opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
+                b.closing_marker = std::u32string(std::u32string_view(cps).substr(closing_start, closing_end - closing_start));
                 return b;
             }
             tex.push_back(peek1()); advance();
         }
         diagnostics.push_back(make_diagnostic(DiagnosticSeverity::Warning,
             dollar ? "Unclosed math block delimiter $$" : "Unclosed math block delimiter \\[",
-            std::nullopt, DIAG_UNCLOSED_MATH_DOLLAR));
-        pos = start + 2;
+           std::nullopt, DIAG_UNCLOSED_MATH_DOLLAR));
         NodeId id = next_node_id();
-        push_range(id, PhysicalRange(std::size_t(start), cur()), PhysicalRange(std::size_t(start), cur()));
+        ParserSourceRange range(
+            id,
+            PhysicalRange(std::size_t(start), cur()),
+            PhysicalRange(std::size_t(content_start), cur()));
+        range.marker_ranges.push_back(PhysicalRange(std::size_t(start), std::size_t(content_start)));
+        source_ranges.push_back(std::move(range));
         math_blocks.push_back({id, first_three_lines_utf8_(tex)});
         BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.tex = std::move(tex); b.math_delim = dollar ? MathDelimiter::BlockDollar : MathDelimiter::BlockBracket;
+        b.opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
         return b;
     }
 
@@ -1512,13 +1529,6 @@ public:
         return s.substr(a, b - a);
     }
 
-    static std::u32string trim_math_cps_(const std::u32string& s) {
-        std::size_t a = 0, b = s.size();
-        auto whitespace = [](char32_t c) { return c == U' ' || c == U'\t' || c == U'\r' || c == U'\n'; };
-        while (a < b && whitespace(s[a])) ++a;
-        while (b > a && whitespace(s[b - 1])) --b;
-        return s.substr(a, b - a);
-    }
     static std::string trim_utf8(const std::string& s) {
         std::size_t a = 0, b = s.size();
         while (a < b && (s[a] == ' ' || s[a] == '\t' || s[a] == '\r' || s[a] == '\n')) ++a;

@@ -109,6 +109,9 @@ inline std::u32string serialize_block(const BlockNode& block) {
             return U"```" + (block.language ? utf8_to_cps(*block.language) : std::u32string{}) + U"\n" + block.code_text
                 + (!block.code_text.empty() && block.code_text.back() != U'\n' ? U"\n" : U"") + U"```";
         case BlockKind::MathBlock: {
+            if (!block.opening_marker.empty()) {
+                return block.opening_marker + block.tex + block.closing_marker;
+            }
             const auto newline = block.tex.empty() || block.tex.back() != U'\n' ? U"\n" : U"";
             if (block.math_delim == MathDelimiter::BlockBracket) return U"\\[\n" + block.tex + newline + U"\\]";
             if (block.math_delim == MathDelimiter::FencedMath) return U"```math\n" + block.tex + newline + U"```";
