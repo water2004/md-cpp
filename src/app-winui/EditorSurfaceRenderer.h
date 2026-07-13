@@ -95,6 +95,10 @@ namespace winrt::ElMd
         std::optional<std::size_t> tableDropIndex;
         float scrollOffset = 0.0f;
         float scrollTarget = 0.0f;
+        std::chrono::steady_clock::time_point lastScrollInput{};
+        float scrollInputPeriodSeconds = 0.0f;
+        float lastScrollDelta = 0.0f;
+        std::uint32_t scrollInputRunLength = 0;
         float totalDocumentHeight = 0.0f;
         bool resizing = false;
         bool rendering = false;

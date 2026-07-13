@@ -784,6 +784,27 @@ namespace winrt::ElMd
     void EditorSurfaceRenderer::QueueScrollBy(float delta)
     {
         if (!std::isfinite(delta) || delta == 0.0f) return;
+        auto now = std::chrono::steady_clock::now();
+        auto inputPeriod = lastScrollInput.time_since_epoch().count() == 0
+            ? 0.0f
+            : std::chrono::duration<float>(now - lastScrollInput).count();
+        auto continuesRun = lastScrollDelta * delta > 0.0f
+            && inputPeriod >= 0.001f
+            && inputPeriod <= 0.12f;
+        if (continuesRun)
+        {
+            if (scrollInputRunLength <= 1) scrollInputPeriodSeconds = inputPeriod;
+            else scrollInputPeriodSeconds += (inputPeriod - scrollInputPeriodSeconds) * 0.25f;
+            ++scrollInputRunLength;
+        }
+        else
+        {
+            scrollInputPeriodSeconds = 0.0f;
+            scrollInputRunLength = 1;
+        }
+        lastScrollInput = now;
+        lastScrollDelta = delta;
+
         auto pendingDistance = scrollTarget - scrollOffset;
         if (pendingDistance * delta < 0.0f) scrollTarget = scrollOffset;
         scrollTarget = (std::clamp)(scrollTarget + delta, 0.0f, MaximumScrollOffset());
@@ -793,14 +814,40 @@ namespace winrt::ElMd
     {
         auto distance = scrollTarget - scrollOffset;
         if (std::fabs(distance) < 0.25f) { scrollOffset = scrollTarget; return false; }
-        constexpr float responseHalfLifeSeconds = 0.010f;
+        auto responseHalfLifeSeconds = 0.010f;
+        if (scrollInputRunLength >= 2 && scrollInputPeriodSeconds > 0.0f)
+        {
+            auto inputAge = std::chrono::duration<float>(
+                std::chrono::steady_clock::now() - lastScrollInput).count();
+            auto bridgeWindow = (std::max)(0.035f, scrollInputPeriodSeconds * 1.5f);
+            if (inputAge <= bridgeWindow)
+            {
+                responseHalfLifeSeconds = (std::clamp)(
+                    scrollInputPeriodSeconds,
+                    0.012f,
+                    0.040f);
+            }
+            else
+            {
+                scrollInputRunLength = 0;
+                scrollInputPeriodSeconds = 0.0f;
+            }
+        }
         auto elapsed = (std::max)(0.0f, elapsedSeconds);
         auto response = 1.0f - std::exp2(-elapsed / responseHalfLifeSeconds);
         scrollOffset += distance * response;
         return true;
     }
 
-    void EditorSurfaceRenderer::SetScrollOffset(float value) { scrollOffset = (std::clamp)(value, 0.0f, MaximumScrollOffset()); scrollTarget = scrollOffset; }
+    void EditorSurfaceRenderer::SetScrollOffset(float value)
+    {
+        scrollOffset = (std::clamp)(value, 0.0f, MaximumScrollOffset());
+        scrollTarget = scrollOffset;
+        lastScrollInput = {};
+        scrollInputPeriodSeconds = 0.0f;
+        lastScrollDelta = 0.0f;
+        scrollInputRunLength = 0;
+    }
     float EditorSurfaceRenderer::ScrollOffset() const { return scrollOffset; }
     float EditorSurfaceRenderer::MaximumScrollOffset() const { return (std::max)(0.0f, totalDocumentHeight - resources.surfaceHeightDip); }
     float EditorSurfaceRenderer::ViewportHeight() const { return resources.surfaceHeightDip; }
