@@ -279,10 +279,17 @@ suite editor_tests = [] {
     dialect.math.inline_dollar = false;
     Editor editor("$x$", dialect);
     expect(fatal(bool(!inline_contains_kind(first_text(editor).inline_content, InlineCstKind::InlineMath))));
+    editor.set_selection(caret(first_text(editor), 1));
+    expect(fatal(bool(editor.execute_document_insert_text(editor.selection(), U"y").has_value())));
+    expect(fatal(bool(editor.has_undo())));
+    const auto before_reload_revision = editor.revision();
     dialect.math.inline_dollar = true;
     editor.set_dialect(dialect);
     expect(fatal(bool(inline_contains_kind(first_text(editor).inline_content, InlineCstKind::InlineMath))));
     expect(fatal(bool(editor.selection().active.container_id == first_text(editor).id)));
+    expect(fatal(bool(editor.revision() == before_reload_revision + 1)));
+    expect(fatal(bool(!editor.has_undo())));
+    expect(fatal(bool(!editor.has_redo())));
 };
 
 "input_events_translate_to_commands_without_mutating_state"_test = [] {

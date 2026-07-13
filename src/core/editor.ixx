@@ -1,7 +1,5 @@
-// elmd.core.editor — Editor: ties buffer + selection + undo + command pipeline.
-// Faithful port of editor-core::editor, with the deadly `from_text` revision-
-// reset bug fixed from the start: undo/redo apply via apply_delta (revision++
-// always, never reset). HANDOFF invariant #2/#4/#6.
+// elmd.core.editor — owns the authoritative block tree, its single selection,
+// reversible operation history, and the command pipeline.
 export module elmd.core.editor;
 import std;
 import elmd.core.types;
@@ -88,7 +86,7 @@ public:
         const auto end = (std::max)(*anchor, *active);
         return text.substr(start, end - start);
     }
-    std::uint64_t revision() const { return revision_; }
+    std::uint64_t revision() const { return document_.revision; }
     void set_selection(TextSelection selection) {
         const auto anchor_length = document_edit_detail::editable_length(document_, selection.anchor.container_id);
         const auto active_length = document_edit_detail::editable_length(document_, selection.active.container_id);
@@ -103,8 +101,9 @@ public:
     MarkdownDialect const& dialect() const { return dialect_; }
     void set_dialect(MarkdownDialect dialect) {
         auto markdown = serialize_markdown(document_);
+        const auto next_revision = document_.revision + 1;
         dialect_ = std::move(dialect);
-        rebuild_document_full_(std::move(markdown));
+        rebuild_document_full_(std::move(markdown), next_revision);
     }
     bool has_undo() const { return document_history_.has_undo(); }
     bool has_redo() const { return document_history_.has_redo(); }
@@ -483,7 +482,6 @@ public:
     void set_caret(TextPosition position) { set_selection(TextSelection::caret(position)); }
 
 private:
-    std::uint64_t revision_ = 1;
     EditorDocument document_;
     DocumentSymbolIndex symbols_;
     Outline outline_;
@@ -493,11 +491,15 @@ private:
     float scale_factor_ = 1.0f;
     MarkdownDialect dialect_ = default_dialect();
 
-    void rebuild_document_full_(std::string markdown) {
-        auto parsed = parse_text(revision_, std::move(markdown), dialect_);
+    void rebuild_document_full_(
+        std::string markdown,
+        std::optional<std::uint64_t> requested_revision = std::nullopt) {
+        const auto revision = requested_revision.value_or(document_.revision);
+        auto parsed = parse_text(revision, std::move(markdown), dialect_);
         document_ = std::move(parsed.document);
         symbols_ = std::move(parsed.symbols);
         outline_ = std::move(parsed.outline);
+        document_history_.clear();
         if (document_.root.children.empty()) {
             normalize_document(document_);
         }
@@ -507,7 +509,6 @@ private:
     }
 
     void refresh_derived_from_document_() {
-        revision_ = document_.revision;
         symbols_ = build_document_symbol_index(document_);
         outline_ = build_outline_from_blocks(document_.revision, document_.root.children);
         outline_.revision = document_.revision;
