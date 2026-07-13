@@ -170,6 +170,91 @@ suite editor_tests = [] {
     }
 };
 
+"list_item_splits_record_item_inserts_independent_of_ancestors"_test = [] {
+    const std::vector<std::string> cases{
+        "- ab",
+        "1. ab",
+        "- [ ] ab",
+        "> - ab",
+    };
+    for (const auto& markdown : cases) {
+        Editor editor(markdown);
+        const auto owner_id = first_text(editor).id;
+        const auto before_selection = TextSelection::caret(
+            {owner_id, 1, TextAffinity::Downstream});
+        const auto before_markdown = editor.markdown_utf8();
+        editor.set_selection(before_selection);
+        reset_core_operation_counters();
+        auto transaction = editor.execute_document_enter(editor.selection());
+        expect(fatal(bool(transaction.has_value()))) << markdown;
+        if (!transaction) continue;
+        const auto counters = read_core_operation_counters();
+        expect(fatal(bool(counters.full_document_parses == 0u))) << markdown;
+        expect(fatal(bool(counters.full_document_serializations == 0u))) << markdown;
+        expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << markdown;
+        const BlockNode* list = nullptr;
+        walk_blocks(editor.document().root, [&](const BlockNode& block) {
+            if (!list && (block.kind == BlockKind::List || block.kind == BlockKind::TaskList)) {
+                list = &block;
+            }
+        });
+        expect(fatal(bool(list != nullptr))) << markdown;
+        expect(fatal(bool(list && list->children.size() == 2u))) << markdown;
+        const auto after_markdown = editor.markdown_utf8();
+        const auto after_selection = editor.selection();
+
+        expect(fatal(bool(editor.undo()))) << markdown;
+        expect(fatal(bool(editor.markdown_utf8() == before_markdown))) << markdown;
+        expect(fatal(bool(editor.selection() == before_selection))) << markdown;
+        expect(fatal(bool(editor.redo()))) << markdown;
+        expect(fatal(bool(editor.markdown_utf8() == after_markdown))) << markdown;
+        expect(fatal(bool(editor.selection() == after_selection))) << markdown;
+    }
+
+    Editor at_end("- ab");
+    const auto owner_id = first_text(at_end).id;
+    const auto before = TextSelection::caret({owner_id, 2, TextAffinity::Upstream});
+    at_end.set_selection(before);
+    reset_core_operation_counters();
+    auto transaction = at_end.execute_document_enter(at_end.selection());
+    expect(fatal(bool(transaction.has_value())));
+    if (!transaction) return;
+    const auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
+    const auto& list = at_end.document().root.children.front();
+    expect(fatal(bool(list.kind == BlockKind::List)));
+    expect(fatal(bool(list.children.size() == 2u)));
+    expect(fatal(bool(list.children.back().children.front().inline_content.source.empty())));
+    expect(fatal(bool(at_end.undo())));
+    expect(fatal(bool(at_end.markdown_utf8() == "- ab")));
+    expect(fatal(bool(at_end.selection() == before)));
+
+    Editor with_nested_block("- ab\n\n  > quote");
+    const auto nested_before_markdown = with_nested_block.markdown_utf8();
+    const auto nested_owner = first_text(with_nested_block).id;
+    const auto nested_before = TextSelection::caret(
+        {nested_owner, 2, TextAffinity::Upstream});
+    with_nested_block.set_selection(nested_before);
+    reset_core_operation_counters();
+    auto moved = with_nested_block.execute_document_enter(with_nested_block.selection());
+    expect(fatal(bool(moved.has_value())));
+    if (!moved) return;
+    const auto moved_counters = read_core_operation_counters();
+    expect(fatal(bool(moved_counters.full_tree_transaction_diffs == 0u)));
+    const auto& moved_list = with_nested_block.document().root.children.front();
+    expect(fatal(bool(moved_list.children.size() == 2u)));
+    expect(fatal(bool(moved_list.children.back().children.size() == 2u)));
+    expect(fatal(bool(moved_list.children.back().children.back().kind == BlockKind::BlockQuote)));
+    const auto nested_after_markdown = with_nested_block.markdown_utf8();
+    const auto nested_after = with_nested_block.selection();
+    expect(fatal(bool(with_nested_block.undo())));
+    expect(fatal(bool(with_nested_block.markdown_utf8() == nested_before_markdown)));
+    expect(fatal(bool(with_nested_block.selection() == nested_before)));
+    expect(fatal(bool(with_nested_block.redo())));
+    expect(fatal(bool(with_nested_block.markdown_utf8() == nested_after_markdown)));
+    expect(fatal(bool(with_nested_block.selection() == nested_after)));
+};
+
 "selection_replacement_composes_delete_and_insert_source_edits"_test = [] {
     Editor editor("alpha");
     const auto owner_id = first_text(editor).id;

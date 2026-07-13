@@ -394,7 +394,7 @@ inline std::optional<TextPosition> exit_empty_list_item(
     return target;
 }
 
-inline std::optional<TextPosition> split_list_item(
+inline std::optional<document_edit_detail::RecordedBlockEdit> split_list_item(
     EditorDocument& document,
     TextPosition position,
     document_edit_detail::NodeAllocator& allocator) {
@@ -407,17 +407,36 @@ inline std::optional<TextPosition> split_list_item(
     auto& leaf = item.children[context->child_index];
     if (!document_edit_detail::text_block(leaf.kind)) return std::nullopt;
     const auto offset = (std::min)(position.source_offset, leaf.inline_content.source.size());
+    document_edit_detail::RecordedBlockEdit result;
+
+    auto insert_item = [&](BlockNode inserted, std::size_t index) {
+        DocumentTreeEdit edit;
+        edit.kind = DocumentTreeEditKind::Insert;
+        edit.parent_id = list->id;
+        edit.index = index;
+        edit.after = inserted;
+        result.operations.emplace_back(std::move(edit));
+        result.target = document_edit_detail::first_editable_position(inserted)
+            .value_or(TextPosition{inserted.id, 0, TextAffinity::Downstream});
+        list->children.insert(
+            list->children.begin() + static_cast<std::ptrdiff_t>(index),
+            std::move(inserted));
+    };
 
     if (context->child_index == 0 && offset == 0) {
         auto inserted = empty_item(*list, item, context->item_index == 0 ? 0 : context->item_index - 1, document, allocator);
-        const auto target = TextPosition{inserted.children.front().id, 0, TextAffinity::Downstream};
         if (list->list_ordered) {
             inserted.marker = utf8_to_cps(std::to_string(list->list_start + context->item_index))
                 + std::u32string(1, list->list_delimiter) + U" ";
+            DocumentTreeEdit update;
+            update.kind = DocumentTreeEditKind::UpdatePayload;
+            update.before = document_transaction_detail::payload_shell(item);
             item.marker = next_item_marker(*list, item, context->item_index);
+            update.after = document_transaction_detail::payload_shell(item);
+            result.operations.emplace_back(std::move(update));
         }
-        list->children.insert(list->children.begin() + static_cast<std::ptrdiff_t>(context->item_index), std::move(inserted));
-        return target;
+        insert_item(std::move(inserted), context->item_index);
+        return result;
     }
 
     BlockNode next;
@@ -428,36 +447,56 @@ inline std::optional<TextPosition> split_list_item(
 
     if (offset == leaf.inline_content.source.size() && context->child_index + 1 == item.children.size()) {
         auto paragraph = document_edit_detail::empty_paragraph(allocator, document);
-        const auto target = TextPosition{paragraph.id, 0, TextAffinity::Downstream};
         next.children.push_back(std::move(paragraph));
-        list->children.insert(list->children.begin() + static_cast<std::ptrdiff_t>(context->item_index + 1), std::move(next));
-        return target;
+        insert_item(std::move(next), context->item_index + 1);
+        return result;
     }
 
-    TextPosition target;
+    const auto item_id = item.id;
+    std::size_t first_moved_child = context->child_index;
     if (offset == 0) {
-        target = {leaf.id, 0, TextAffinity::Downstream};
-        next.children.insert(next.children.end(),
-            std::make_move_iterator(item.children.begin() + static_cast<std::ptrdiff_t>(context->child_index)),
-            std::make_move_iterator(item.children.end()));
-        item.children.erase(item.children.begin() + static_cast<std::ptrdiff_t>(context->child_index), item.children.end());
+        result.target = {leaf.id, 0, TextAffinity::Downstream};
     } else {
         auto right_source = leaf.inline_content.source.substr(offset);
-        leaf.inline_content.source.erase(offset);
-        document_edit_detail::reparse(leaf.inline_content, document, allocator);
+        auto edit = document_edit_detail::edit_inline(
+            document,
+            leaf.id,
+            {offset, leaf.inline_content.source.size()},
+            {},
+            allocator);
+        if (!edit) return std::nullopt;
+        document_edit_detail::append_source_operation(result.operations, std::move(*edit));
         BlockNode right;
         right.id = allocator.allocate();
         right.kind = BlockKind::Paragraph;
         right.inline_content = document_edit_detail::make_inline(std::move(right_source), document, allocator);
-        target = {right.id, 0, TextAffinity::Downstream};
+        result.target = {right.id, 0, TextAffinity::Downstream};
         next.children.push_back(std::move(right));
-        next.children.insert(next.children.end(),
-            std::make_move_iterator(item.children.begin() + static_cast<std::ptrdiff_t>(context->child_index + 1)),
-            std::make_move_iterator(item.children.end()));
-        item.children.erase(item.children.begin() + static_cast<std::ptrdiff_t>(context->child_index + 1), item.children.end());
+        first_moved_child = context->child_index + 1;
     }
-    list->children.insert(list->children.begin() + static_cast<std::ptrdiff_t>(context->item_index + 1), std::move(next));
-    return target;
+
+    const auto next_id = next.id;
+    const auto initial_next_children = next.children.size();
+    insert_item(std::move(next), context->item_index + 1);
+    if (offset == 0) result.target = {position.container_id, 0, TextAffinity::Downstream};
+
+    auto* current_item = find_block(document.root, item_id);
+    auto* next_item = find_block(document.root, next_id);
+    if (!current_item || !next_item || first_moved_child > current_item->children.size()) return std::nullopt;
+    std::size_t target_index = initial_next_children;
+    while (first_moved_child < current_item->children.size()) {
+        DocumentTreeEdit move;
+        move.kind = DocumentTreeEditKind::Move;
+        move.parent_id = current_item->id;
+        move.index = first_moved_child;
+        move.other_parent_id = next_item->id;
+        move.other_index = target_index;
+        auto child = remove_block(*current_item, first_moved_child);
+        if (!child || !insert_block(*next_item, target_index, std::move(*child))) return std::nullopt;
+        result.operations.emplace_back(std::move(move));
+        ++target_index;
+    }
+    return result;
 }
 
 inline std::optional<TextPosition> open_fenced_block(
@@ -750,13 +789,19 @@ inline bool apply_after_text_insert(
     return marker && detail::replace_paragraph_with_container(document, *path, *marker, target, allocator);
 }
 
-inline std::optional<TextPosition> handle_enter(
+inline std::optional<document_edit_detail::RecordedBlockEdit> handle_enter(
     EditorDocument& document,
     TextPosition position,
     document_edit_detail::NodeAllocator& allocator) {
-    if (auto opened = detail::open_fenced_block(document, position, allocator)) return opened;
-    if (auto closed = detail::close_fenced_code(document, position, allocator)) return closed;
-    if (auto exited = detail::exit_empty_list_item(document, position, allocator)) return exited;
+    if (auto opened = detail::open_fenced_block(document, position, allocator)) {
+        return document_edit_detail::RecordedBlockEdit{*opened, {}};
+    }
+    if (auto closed = detail::close_fenced_code(document, position, allocator)) {
+        return document_edit_detail::RecordedBlockEdit{*closed, {}};
+    }
+    if (auto exited = detail::exit_empty_list_item(document, position, allocator)) {
+        return document_edit_detail::RecordedBlockEdit{*exited, {}};
+    }
     return detail::split_list_item(document, position, allocator);
 }
 

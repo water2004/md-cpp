@@ -84,7 +84,8 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
     } else if (auto exited_quote = document_edit_detail::exit_empty_block_quote(after, selection.active, allocator)) {
         target = *exited_quote;
     } else if (auto handled = document_input_rules::handle_enter(after, selection.active, allocator)) {
-        target = *handled;
+        target = handled->target;
+        operations = std::move(handled->operations);
     } else if (auto* block = find_block(after.root, selection.active.container_id);
                block && (block->kind == BlockKind::CodeBlock || block->kind == BlockKind::MathBlock)) {
         auto inserted = document_edit_detail::insert_text(after, selection.active, U"\n", allocator);
