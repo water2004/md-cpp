@@ -380,12 +380,17 @@
     <Import Project="packages\Microsoft.Windows.ImplementationLibrary.1.0.260126.7\build\native\Microsoft.Windows.ImplementationLibrary.targets" Condition="Exists('packages\Microsoft.Windows.ImplementationLibrary.1.0.260126.7\build\native\Microsoft.Windows.ImplementationLibrary.targets')" />
   </ImportGroup>
   <Target Name="BuildQuickJs" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <QuickJsRuntimeOptions Condition="'$(UseDebugLibraries)'=='true'">/MDd /D_DEBUG</QuickJsRuntimeOptions>
+      <QuickJsRuntimeOptions Condition="'$(UseDebugLibraries)'!='true'">/MD /DNDEBUG</QuickJsRuntimeOptions>
+      <QuickJsCompileOptions>/nologo $(QuickJsRuntimeOptions) /TC /std:c17 /D_CRT_SECURE_NO_WARNINGS /U__SIZEOF_INT128__ -Wno-microsoft-enum-forward-reference /clang:-mno-ms-bitfields</QuickJsCompileOptions>
+    </PropertyGroup>
     <MakeDir Directories="$(IntDir)quickjs" />
-    <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\clang-cl.exe&quot; /nologo /MD /DNDEBUG /TC /std:c17 /D_CRT_SECURE_NO_WARNINGS /U__SIZEOF_INT128__ -Wno-microsoft-enum-forward-reference /clang:-mno-ms-bitfields /c &quot;$(ProjectDir)third_party\quickjs\cutils.c&quot; /Fo&quot;$(IntDir)quickjs\cutils.obj&quot;" />
-    <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\clang-cl.exe&quot; /nologo /MD /DNDEBUG /TC /std:c17 /D_CRT_SECURE_NO_WARNINGS /U__SIZEOF_INT128__ -Wno-microsoft-enum-forward-reference /clang:-mno-ms-bitfields /c &quot;$(ProjectDir)third_party\quickjs\dtoa.c&quot; /Fo&quot;$(IntDir)quickjs\dtoa.obj&quot;" />
-    <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\clang-cl.exe&quot; /nologo /MD /DNDEBUG /TC /std:c17 /D_CRT_SECURE_NO_WARNINGS /U__SIZEOF_INT128__ -Wno-microsoft-enum-forward-reference /clang:-mno-ms-bitfields /c &quot;$(ProjectDir)third_party\quickjs\libregexp.c&quot; /Fo&quot;$(IntDir)quickjs\libregexp.obj&quot;" />
-    <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\clang-cl.exe&quot; /nologo /MD /DNDEBUG /TC /std:c17 /D_CRT_SECURE_NO_WARNINGS /U__SIZEOF_INT128__ -Wno-microsoft-enum-forward-reference /clang:-mno-ms-bitfields /c &quot;$(ProjectDir)third_party\quickjs\libunicode.c&quot; /Fo&quot;$(IntDir)quickjs\libunicode.obj&quot;" />
-    <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\clang-cl.exe&quot; /nologo /MD /DNDEBUG /TC /std:c17 /D_CRT_SECURE_NO_WARNINGS /U__SIZEOF_INT128__ -Wno-microsoft-enum-forward-reference /clang:-mno-ms-bitfields /c &quot;$(ProjectDir)third_party\quickjs\quickjs.c&quot; /Fo&quot;$(IntDir)quickjs\quickjs.obj&quot;" />
+    <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\clang-cl.exe&quot; $(QuickJsCompileOptions) /c &quot;$(ProjectDir)third_party\quickjs\cutils.c&quot; /Fo&quot;$(IntDir)quickjs\cutils.obj&quot;" />
+    <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\clang-cl.exe&quot; $(QuickJsCompileOptions) /c &quot;$(ProjectDir)third_party\quickjs\dtoa.c&quot; /Fo&quot;$(IntDir)quickjs\dtoa.obj&quot;" />
+    <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\clang-cl.exe&quot; $(QuickJsCompileOptions) /c &quot;$(ProjectDir)third_party\quickjs\libregexp.c&quot; /Fo&quot;$(IntDir)quickjs\libregexp.obj&quot;" />
+    <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\clang-cl.exe&quot; $(QuickJsCompileOptions) /c &quot;$(ProjectDir)third_party\quickjs\libunicode.c&quot; /Fo&quot;$(IntDir)quickjs\libunicode.obj&quot;" />
+    <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\clang-cl.exe&quot; $(QuickJsCompileOptions) /c &quot;$(ProjectDir)third_party\quickjs\quickjs.c&quot; /Fo&quot;$(IntDir)quickjs\quickjs.obj&quot;" />
     <Exec Command="&quot;$(VCInstallDir)Tools\Llvm\x64\bin\llvm-lib.exe&quot; /nologo /OUT:&quot;$(IntDir)quickjs\quickjs.lib&quot; &quot;$(IntDir)quickjs\cutils.obj&quot; &quot;$(IntDir)quickjs\dtoa.obj&quot; &quot;$(IntDir)quickjs\libregexp.obj&quot; &quot;$(IntDir)quickjs\libunicode.obj&quot; &quot;$(IntDir)quickjs\quickjs.obj&quot;" />
   </Target>
   <Target Name="CopySvgNormalizer" AfterTargets="Build">
