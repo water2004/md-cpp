@@ -513,6 +513,20 @@ suite document_edit_tests = [] {
         expect(fatal(bool(edited.source == U"a<br>b")));
         expect(fatal(bool(inline_contains_kind(edited, InlineCstKind::HardBreak))));
         expect(fatal(bool(serialize_markdown(cell_break->after).find("a<br>b") != std::string::npos)));
+
+        auto second_break = document_enter(cell_break->after, cell_break->selection_after);
+        expect(fatal(bool(second_break.has_value())));
+        if (second_break) {
+            auto const& with_empty_line = second_break->after.root.children.front().children.front().children.front().inline_content;
+            expect(fatal(bool(with_empty_line.source == U"a<br><br>b")));
+            auto removed = document_delete_backward(second_break->after, second_break->selection_after);
+            expect(fatal(bool(removed.has_value())));
+            if (removed) {
+                auto const& joined = removed->after.root.children.front().children.front().children.front().inline_content;
+                expect(fatal(bool(joined.source == U"a<br>b")));
+                expect(fatal(bool(removed->selection_after.active.source_offset == 5u)));
+            }
+        }
     }
 };
 

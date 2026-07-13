@@ -225,14 +225,18 @@ inline std::optional<DocumentTransaction> document_delete_backward(const EditorD
     if (selected_block && document_edit_detail::atomic_block(selected_block->kind)) {
         if (!document_edit_detail::remove_atomic(after.root.children, target.container_id, allocator, after, target)) return std::nullopt;
     } else if (target.source_offset > 0) {
-        const std::size_t start = target.source_offset - 1, end = target.source_offset;
-        if (document_edit_detail::find_inline_owner(after.root.children, target.container_id)) {
-            inline_edit = document_edit_detail::edit_inline(after, target.container_id, {start, end}, {}, allocator);
+        if (auto* owner = document_edit_detail::find_inline_owner(after.root.children, target.container_id)) {
+            auto range = inline_backward_delete_range(*owner, target.source_offset);
+            if (!range) return std::nullopt;
+            inline_edit = document_edit_detail::edit_inline(after, target.container_id, *range, {}, allocator);
             if (!inline_edit) return std::nullopt;
-        } else if (!document_edit_detail::erase_text(after, target.container_id, {start, end}, allocator)) {
+            target.source_offset = range->start;
+        } else if (!document_edit_detail::erase_text(
+                       after, target.container_id, {target.source_offset - 1, target.source_offset}, allocator)) {
             return std::nullopt;
+        } else {
+            --target.source_offset;
         }
-        target.source_offset = start;
     } else if (auto unprefixed = document_input_rules::handle_backspace_at_start(after, target, allocator)) {
         target = *unprefixed;
     } else if (!document_edit_detail::join_adjacent(after.root.children, target.container_id, true, after, allocator, target)) {
@@ -258,9 +262,10 @@ inline std::optional<DocumentTransaction> document_delete_forward(const EditorDo
     }
     const auto length = document_edit_detail::editable_length(after, target.container_id); if (!length) return std::nullopt;
     if (target.source_offset < *length) {
-        if (document_edit_detail::find_inline_owner(after.root.children, target.container_id)) {
-            inline_edit = document_edit_detail::edit_inline(
-                after, target.container_id, {target.source_offset, target.source_offset + 1}, {}, allocator);
+        if (auto* owner = document_edit_detail::find_inline_owner(after.root.children, target.container_id)) {
+            auto range = inline_forward_delete_range(*owner, target.source_offset);
+            if (!range) return std::nullopt;
+            inline_edit = document_edit_detail::edit_inline(after, target.container_id, *range, {}, allocator);
             if (!inline_edit) return std::nullopt;
         } else if (!document_edit_detail::erase_text(
                        after, target.container_id, {target.source_offset, target.source_offset + 1}, allocator)) {

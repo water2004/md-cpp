@@ -215,4 +215,18 @@ suite inline_cst_tests = [] {
     expect(document.source == U"abc");
 };
 
+"hard_breaks_are_single_visual_delete_units"_test = [] {
+    InlineDocument html{U"a<br>b", {}};
+    reparse_inline_document(html, test_context());
+    expect(inline_backward_delete_range(html, 5) == SourceRange{1, 5});
+    expect(inline_backward_delete_range(html, 3) == SourceRange{1, 5});
+    expect(inline_forward_delete_range(html, 1) == SourceRange{1, 5});
+    expect(inline_forward_delete_range(html, 3) == SourceRange{1, 5});
+
+    InlineDocument markdown{U"a  \nb", {}};
+    reparse_inline_document(markdown, test_context());
+    expect(inline_backward_delete_range(markdown, 4) == SourceRange{1, 4});
+    expect(inline_forward_delete_range(markdown, 1) == SourceRange{1, 4});
+};
+
 }; // suite inline_cst_tests

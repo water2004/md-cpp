@@ -16,6 +16,21 @@ struct AppliedInlineEdit {
 
 namespace inline_source_edit_detail {
 
+inline std::optional<SourceRange> adjacent_hard_break(
+    const InlineCstNodes& nodes,
+    std::size_t offset,
+    bool backward) {
+    for (const auto& node : nodes) {
+        if (auto nested = adjacent_hard_break(node.children, offset, backward)) return nested;
+        if (node.kind != InlineCstKind::HardBreak) continue;
+        const bool adjacent = backward
+            ? node.range.start < offset && offset <= node.range.end
+            : node.range.start <= offset && offset < node.range.end;
+        if (adjacent) return node.range;
+    }
+    return std::nullopt;
+}
+
 inline std::optional<SourceRange> translated_untouched_range(
     SourceRange range,
     const TextEdit& edit) {
@@ -90,6 +105,30 @@ inline void reconcile_tokens(
 }
 
 } // namespace inline_source_edit_detail
+
+inline std::optional<SourceRange> inline_backward_delete_range(
+    const InlineDocument& document,
+    std::size_t offset) {
+    offset = (std::min)(offset, document.source.size());
+    if (offset == 0) return std::nullopt;
+    if (auto hard_break = inline_source_edit_detail::adjacent_hard_break(
+            document.tree.nodes, offset, true)) {
+        return hard_break;
+    }
+    return SourceRange{offset - 1, offset};
+}
+
+inline std::optional<SourceRange> inline_forward_delete_range(
+    const InlineDocument& document,
+    std::size_t offset) {
+    offset = (std::min)(offset, document.source.size());
+    if (offset == document.source.size()) return std::nullopt;
+    if (auto hard_break = inline_source_edit_detail::adjacent_hard_break(
+            document.tree.nodes, offset, false)) {
+        return hard_break;
+    }
+    return SourceRange{offset, offset + 1};
+}
 
 inline AppliedInlineEdit apply_inline_source_edit(
     NodeId owner_id,
