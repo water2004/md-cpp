@@ -7,6 +7,7 @@ import elmd.core.ast;
 import elmd.core.block_tree;
 import elmd.core.document;
 import elmd.core.inline_document;
+import elmd.core.instrumentation;
 import elmd.core.text_edit;
 
 export namespace elmd {
@@ -212,6 +213,7 @@ inline DocumentTransaction make_document_transaction(
     transaction.selection_after = selection_after;
     transaction.revision_before = before.revision;
     transaction.reason = reason;
+    record_full_tree_transaction_diff();
     auto simulated = before.root;
     document_transaction_detail::reconcile_structure(
         simulated,
@@ -222,6 +224,23 @@ inline DocumentTransaction make_document_transaction(
         after.root,
         transaction.operations);
     transaction.after = std::move(after);
+    return transaction;
+}
+
+inline DocumentTransaction make_recorded_document_transaction(
+    EditorDocument after,
+    std::vector<DocumentOperation> operations,
+    TextSelection selection_before,
+    TextSelection selection_after,
+    std::uint64_t revision_before,
+    DocumentTransactionReason reason) {
+    DocumentTransaction transaction;
+    transaction.after = std::move(after);
+    transaction.operations = std::move(operations);
+    transaction.selection_before = selection_before;
+    transaction.selection_after = selection_after;
+    transaction.revision_before = revision_before;
+    transaction.reason = reason;
     return transaction;
 }
 

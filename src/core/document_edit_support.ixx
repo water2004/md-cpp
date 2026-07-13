@@ -155,19 +155,26 @@ inline void normalize_blocks(BlockVec& blocks, const EditorDocument& owner, Node
     }
 }
 
-inline bool edit_inline(
+inline std::optional<AppliedInlineEdit> edit_inline(
     EditorDocument& document,
     NodeId owner_id,
     SourceRange range,
     std::u32string replacement,
     NodeAllocator& allocator) {
     auto* inline_document = find_inline_owner(document.root.children, owner_id);
-    if (!inline_document || !range.valid_for(inline_document->source.size())) return false;
-    apply_inline_source_edit(owner_id, *inline_document, TextEdit{owner_id, range, std::move(replacement)}, parse_context(document, allocator));
-    return true;
+    if (!inline_document || !range.valid_for(inline_document->source.size())) return std::nullopt;
+    return apply_inline_source_edit(
+        owner_id,
+        *inline_document,
+        TextEdit{owner_id, range, std::move(replacement)},
+        parse_context(document, allocator));
 }
 
-struct InsertResult { std::size_t offset = 0; TextAffinity affinity = TextAffinity::Downstream; };
+struct InsertResult {
+    std::size_t offset = 0;
+    TextAffinity affinity = TextAffinity::Downstream;
+    std::optional<AppliedInlineEdit> inline_edit;
+};
 inline std::optional<InsertResult> insert_text(
     EditorDocument& document,
     TextPosition position,
@@ -177,8 +184,9 @@ inline std::optional<InsertResult> insert_text(
         const auto offset = (std::min)(position.source_offset, inline_document->source.size());
         std::u32string replacement(text);
         const auto caret = offset + replacement.size();
-        if (!edit_inline(document, position.container_id, {offset, offset}, std::move(replacement), allocator)) return std::nullopt;
-        return InsertResult{caret, TextAffinity::Downstream};
+        auto applied = edit_inline(document, position.container_id, {offset, offset}, std::move(replacement), allocator);
+        if (!applied) return std::nullopt;
+        return InsertResult{caret, TextAffinity::Downstream, std::move(applied)};
     }
     if (auto* block = elmd::find_block(document.root, position.container_id)) {
         auto* source = block->kind == BlockKind::CodeBlock ? &block->code_text
@@ -186,7 +194,7 @@ inline std::optional<InsertResult> insert_text(
         if (!source) return std::nullopt;
         const auto offset = (std::min)(position.source_offset, source->size());
         source->insert(offset, text);
-        return InsertResult{offset + text.size(), TextAffinity::Downstream};
+        return InsertResult{offset + text.size(), TextAffinity::Downstream, std::nullopt};
     }
     return std::nullopt;
 }
@@ -202,7 +210,7 @@ inline std::optional<std::size_t> editable_length(const EditorDocument& document
 }
 
 inline bool erase_text(EditorDocument& document, NodeId id, SourceRange range, NodeAllocator& allocator) {
-    if (find_inline_owner(document.root.children, id)) return edit_inline(document, id, range, {}, allocator);
+    if (find_inline_owner(document.root.children, id)) return edit_inline(document, id, range, {}, allocator).has_value();
     auto* block = elmd::find_block(document.root, id);
     if (!block) return false;
     auto* source = block->kind == BlockKind::CodeBlock ? &block->code_text
@@ -603,6 +611,27 @@ inline void validate_blocks(const BlockVec& blocks, std::unordered_set<std::uint
 
 inline DocumentTransaction transaction(EditorDocument before, EditorDocument after, TextSelection selection_before, TextSelection selection_after, DocumentTransactionReason reason) {
     return make_document_transaction(before, std::move(after), selection_before, selection_after, reason);
+}
+
+inline DocumentTransaction source_transaction(
+    EditorDocument after,
+    AppliedInlineEdit edit,
+    TextSelection selection_before,
+    TextSelection selection_after,
+    std::uint64_t revision_before,
+    DocumentTransactionReason reason) {
+    std::vector<DocumentOperation> operations;
+    operations.emplace_back(DocumentTextOperation{
+        std::move(edit.forward),
+        std::move(edit.inverse),
+    });
+    return make_recorded_document_transaction(
+        std::move(after),
+        std::move(operations),
+        selection_before,
+        selection_after,
+        revision_before,
+        reason);
 }
 
 } // namespace document_edit_detail

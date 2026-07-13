@@ -79,6 +79,7 @@ suite editor_tests = [] {
     const auto edit = read_core_operation_counters();
     expect(fatal(bool(edit.full_document_parses == 0u)));
     expect(fatal(bool(edit.full_document_serializations == 0u)));
+    expect(fatal(bool(edit.full_tree_transaction_diffs == 0u)));
     expect(fatal(bool(edit.inline_reparses == 1u)));
 
     reset_core_operation_counters();
@@ -86,7 +87,30 @@ suite editor_tests = [] {
     const auto undo = read_core_operation_counters();
     expect(fatal(bool(undo.full_document_parses == 0u)));
     expect(fatal(bool(undo.full_document_serializations == 0u)));
+    expect(fatal(bool(undo.full_tree_transaction_diffs == 0u)));
     expect(fatal(bool(undo.inline_reparses == 1u)));
+};
+
+"inline_delete_and_format_record_their_text_edits_directly"_test = [] {
+    Editor editor("alpha");
+    editor.set_selection(caret(first_text(editor), 2));
+    reset_core_operation_counters();
+    expect(fatal(bool(editor.execute_document_delete_backward(editor.selection()).has_value())));
+    const auto deletion = read_core_operation_counters();
+    expect(fatal(bool(deletion.full_document_parses == 0u)));
+    expect(fatal(bool(deletion.full_document_serializations == 0u)));
+    expect(fatal(bool(deletion.full_tree_transaction_diffs == 0u)));
+    expect(fatal(bool(deletion.inline_reparses == 1u)));
+
+    editor.set_selection(range(first_text(editor), 0, 2));
+    reset_core_operation_counters();
+    expect(fatal(bool(editor.execute_document_toggle_inline_format(
+        editor.selection(), InlineFormat::Strong).has_value())));
+    const auto formatting = read_core_operation_counters();
+    expect(fatal(bool(formatting.full_document_parses == 0u)));
+    expect(fatal(bool(formatting.full_document_serializations == 0u)));
+    expect(fatal(bool(formatting.full_tree_transaction_diffs == 0u)));
+    expect(fatal(bool(formatting.inline_reparses == 1u)));
 };
 
 "platform_boundary_offsets_are_derived_from_text_positions"_test = [] {

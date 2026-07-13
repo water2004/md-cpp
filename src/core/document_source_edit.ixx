@@ -38,6 +38,7 @@ inline std::optional<DocumentTransaction> document_insert_text(const EditorDocum
     if (text.empty()) return std::nullopt;
     auto working = document;
     auto current = selection;
+    const bool direct_source_edit = selection.is_caret();
     if (!selection.is_caret()) {
         auto deletion = document_delete_selection(document, selection);
         if (!deletion) return std::nullopt;
@@ -48,8 +49,17 @@ inline std::optional<DocumentTransaction> document_insert_text(const EditorDocum
     auto inserted = document_edit_detail::insert_text(working, current.active, text, allocator);
     if (!inserted) return std::nullopt;
     auto target = current.active; target.source_offset = inserted->offset; target.affinity = inserted->affinity;
-    document_input_rules::apply_after_text_insert(working, target, allocator);
+    const bool changed_structure = document_input_rules::apply_after_text_insert(working, target, allocator);
     ++working.revision;
+    if (direct_source_edit && inserted->inline_edit && !changed_structure) {
+        return document_edit_detail::source_transaction(
+            std::move(working),
+            std::move(*inserted->inline_edit),
+            selection,
+            TextSelection::caret(target),
+            document.revision,
+            DocumentTransactionReason::InsertText);
+    }
     return document_edit_detail::transaction(document, std::move(working), selection, TextSelection::caret(target), DocumentTransactionReason::InsertText);
 }
 
@@ -58,6 +68,7 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
     auto after = document;
     document_edit_detail::NodeAllocator allocator(after);
     TextPosition target;
+    std::optional<AppliedInlineEdit> inline_edit;
     if (auto exited = document_edit_detail::exit_empty_indented_code(after, selection.active, allocator)) {
         target = *exited;
     } else if (auto exited_quote = document_edit_detail::exit_empty_block_quote(after, selection.active, allocator)) {
@@ -73,12 +84,22 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
         target.affinity = inserted->affinity;
     } else if (block && block->kind == BlockKind::TableCell) {
         const auto offset = (std::min)(selection.active.source_offset, block->inline_content.source.size());
-        if (!document_edit_detail::edit_inline(after, block->id, {offset, offset}, U"<br>", allocator)) return std::nullopt;
+        inline_edit = document_edit_detail::edit_inline(after, block->id, {offset, offset}, U"<br>", allocator);
+        if (!inline_edit) return std::nullopt;
         target = {block->id, offset + 4, TextAffinity::Downstream};
     } else if (!document_edit_detail::split_direct(after.root.children, selection.active.container_id, selection.active.source_offset, after, allocator, target)) {
         return std::nullopt;
     }
     ++after.revision;
+    if (inline_edit) {
+        return document_edit_detail::source_transaction(
+            std::move(after),
+            std::move(*inline_edit),
+            selection,
+            TextSelection::caret(target),
+            document.revision,
+            DocumentTransactionReason::Structure);
+    }
     return document_edit_detail::transaction(document, std::move(after), selection, TextSelection::caret(target), DocumentTransactionReason::Structure);
 }
 
@@ -145,9 +166,11 @@ inline std::optional<DocumentTransaction> document_toggle_inline_format(const Ed
         result.anchor.source_offset += marker.size(); result.active.source_offset += marker.size();
         if (selection.is_caret()) result = TextSelection::caret(TextPosition{selection.active.container_id, start + marker.size(), TextAffinity::Downstream});
     }
-    if (!document_edit_detail::edit_inline(after, selection.active.container_id, edit_range, std::move(replacement), allocator)) return std::nullopt;
+    auto applied = document_edit_detail::edit_inline(after, selection.active.container_id, edit_range, std::move(replacement), allocator);
+    if (!applied) return std::nullopt;
     ++after.revision;
-    return document_edit_detail::transaction(document, std::move(after), selection, result, DocumentTransactionReason::Format);
+    return document_edit_detail::source_transaction(
+        std::move(after), std::move(*applied), selection, result, document.revision, DocumentTransactionReason::Format);
 }
 
 inline std::optional<DocumentTransaction> document_insert_link(const EditorDocument& document, const TextSelection& selection, std::string href, std::optional<std::string> title) {
@@ -160,10 +183,13 @@ inline std::optional<DocumentTransaction> document_insert_link(const EditorDocum
     std::u32string replacement = U"[" + label + U"](" + utf8_to_cps(href);
     if (title) replacement += U" \"" + utf8_to_cps(*title) + U"\"";
     replacement += U")";
-    if (!document_edit_detail::edit_inline(after, selection.active.container_id, {start, end}, std::move(replacement), allocator)) return std::nullopt;
+    auto applied = document_edit_detail::edit_inline(
+        after, selection.active.container_id, {start, end}, std::move(replacement), allocator);
+    if (!applied) return std::nullopt;
     ++after.revision;
     const auto target = TextPosition{selection.active.container_id, start + 1 + label.size(), TextAffinity::Downstream};
-    return document_edit_detail::transaction(document, std::move(after), selection, TextSelection::caret(target), DocumentTransactionReason::Format);
+    return document_edit_detail::source_transaction(
+        std::move(after), std::move(*applied), selection, TextSelection::caret(target), document.revision, DocumentTransactionReason::Format);
 }
 
 inline std::optional<DocumentTransaction> document_insert_image(const EditorDocument& document, const TextSelection& selection, std::string path, std::string alt) {
@@ -174,10 +200,17 @@ inline std::optional<DocumentTransaction> document_insert_image(const EditorDocu
     const auto end = (std::min)((std::max)(selection.anchor.source_offset, selection.active.source_offset), owner->source.size());
     auto label = alt.empty() ? owner->source.substr(start, end - start) : utf8_to_cps(alt);
     const auto replacement = U"![" + label + U"](" + utf8_to_cps(path.empty() ? "image.png" : path) + U")";
-    if (!document_edit_detail::edit_inline(after, selection.active.container_id, {start, end}, replacement, allocator)) return std::nullopt;
+    auto applied = document_edit_detail::edit_inline(
+        after, selection.active.container_id, {start, end}, replacement, allocator);
+    if (!applied) return std::nullopt;
     ++after.revision;
-    return document_edit_detail::transaction(document, std::move(after), selection,
-        TextSelection::caret({selection.active.container_id, start + 2 + label.size(), TextAffinity::Downstream}), DocumentTransactionReason::Format);
+    return document_edit_detail::source_transaction(
+        std::move(after),
+        std::move(*applied),
+        selection,
+        TextSelection::caret({selection.active.container_id, start + 2 + label.size(), TextAffinity::Downstream}),
+        document.revision,
+        DocumentTransactionReason::Format);
 }
 
 inline std::optional<DocumentTransaction> document_insert_soft_break(const EditorDocument& document, const TextSelection& selection) {
@@ -187,12 +220,18 @@ inline std::optional<DocumentTransaction> document_insert_soft_break(const Edito
 inline std::optional<DocumentTransaction> document_delete_backward(const EditorDocument& document, const TextSelection& selection) {
     if (!selection.is_caret()) return document_delete_selection(document, selection);
     auto after = document; auto target = selection.active; document_edit_detail::NodeAllocator allocator(after);
+    std::optional<AppliedInlineEdit> inline_edit;
     auto const* selected_block = find_block(after.root, target.container_id);
     if (selected_block && document_edit_detail::atomic_block(selected_block->kind)) {
         if (!document_edit_detail::remove_atomic(after.root.children, target.container_id, allocator, after, target)) return std::nullopt;
     } else if (target.source_offset > 0) {
         const std::size_t start = target.source_offset - 1, end = target.source_offset;
-        if (!document_edit_detail::erase_text(after, target.container_id, {start, end}, allocator)) return std::nullopt;
+        if (document_edit_detail::find_inline_owner(after.root.children, target.container_id)) {
+            inline_edit = document_edit_detail::edit_inline(after, target.container_id, {start, end}, {}, allocator);
+            if (!inline_edit) return std::nullopt;
+        } else if (!document_edit_detail::erase_text(after, target.container_id, {start, end}, allocator)) {
+            return std::nullopt;
+        }
         target.source_offset = start;
     } else if (auto unprefixed = document_input_rules::handle_backspace_at_start(after, target, allocator)) {
         target = *unprefixed;
@@ -200,12 +239,17 @@ inline std::optional<DocumentTransaction> document_delete_backward(const EditorD
         if (!document_edit_detail::remove_atomic(after.root.children, target.container_id, allocator, after, target)) return std::nullopt;
     }
     ++after.revision;
+    if (inline_edit) {
+        return document_edit_detail::source_transaction(
+            std::move(after), std::move(*inline_edit), selection, TextSelection::caret(target), document.revision, DocumentTransactionReason::Delete);
+    }
     return document_edit_detail::transaction(document, std::move(after), selection, TextSelection::caret(target), DocumentTransactionReason::Delete);
 }
 
 inline std::optional<DocumentTransaction> document_delete_forward(const EditorDocument& document, const TextSelection& selection) {
     if (!selection.is_caret()) return document_delete_selection(document, selection);
     auto after = document; auto target = selection.active; document_edit_detail::NodeAllocator allocator(after);
+    std::optional<AppliedInlineEdit> inline_edit;
     auto const* selected_block = find_block(after.root, target.container_id);
     if (selected_block && document_edit_detail::atomic_block(selected_block->kind)) {
         if (!document_edit_detail::remove_atomic(after.root.children, target.container_id, allocator, after, target)) return std::nullopt;
@@ -214,9 +258,20 @@ inline std::optional<DocumentTransaction> document_delete_forward(const EditorDo
     }
     const auto length = document_edit_detail::editable_length(after, target.container_id); if (!length) return std::nullopt;
     if (target.source_offset < *length) {
-        if (!document_edit_detail::erase_text(after, target.container_id, {target.source_offset, target.source_offset + 1}, allocator)) return std::nullopt;
+        if (document_edit_detail::find_inline_owner(after.root.children, target.container_id)) {
+            inline_edit = document_edit_detail::edit_inline(
+                after, target.container_id, {target.source_offset, target.source_offset + 1}, {}, allocator);
+            if (!inline_edit) return std::nullopt;
+        } else if (!document_edit_detail::erase_text(
+                       after, target.container_id, {target.source_offset, target.source_offset + 1}, allocator)) {
+            return std::nullopt;
+        }
     } else if (!document_edit_detail::join_adjacent(after.root.children, target.container_id, false, after, allocator, target)) return std::nullopt;
     ++after.revision;
+    if (inline_edit) {
+        return document_edit_detail::source_transaction(
+            std::move(after), std::move(*inline_edit), selection, TextSelection::caret(target), document.revision, DocumentTransactionReason::Delete);
+    }
     return document_edit_detail::transaction(document, std::move(after), selection, TextSelection::caret(target), DocumentTransactionReason::Delete);
 }
 
@@ -226,9 +281,20 @@ inline std::optional<DocumentTransaction> document_delete_selection(const Editor
     if (selection.anchor.container_id == selection.active.container_id) {
         const auto start = (std::min)(selection.anchor.source_offset, selection.active.source_offset);
         const auto end = (std::max)(selection.anchor.source_offset, selection.active.source_offset);
-        if (!document_edit_detail::erase_text(after, selection.active.container_id, {start, end}, allocator)) return std::nullopt;
+        std::optional<AppliedInlineEdit> inline_edit;
+        if (document_edit_detail::find_inline_owner(after.root.children, selection.active.container_id)) {
+            inline_edit = document_edit_detail::edit_inline(
+                after, selection.active.container_id, {start, end}, {}, allocator);
+            if (!inline_edit) return std::nullopt;
+        } else if (!document_edit_detail::erase_text(after, selection.active.container_id, {start, end}, allocator)) {
+            return std::nullopt;
+        }
         ++after.revision;
         const auto target = TextPosition{selection.active.container_id, start, TextAffinity::Downstream};
+        if (inline_edit) {
+            return document_edit_detail::source_transaction(
+                std::move(after), std::move(*inline_edit), selection, TextSelection::caret(target), document.revision, DocumentTransactionReason::Delete);
+        }
         return document_edit_detail::transaction(document, std::move(after), selection, TextSelection::caret(target), DocumentTransactionReason::Delete);
     }
 
