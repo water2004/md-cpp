@@ -39,10 +39,14 @@ inline std::optional<DocumentTransaction> document_insert_text(const EditorDocum
     if (text.empty()) return std::nullopt;
     auto working = document;
     auto current = selection;
-    const bool direct_source_edit = selection.is_caret();
+    std::vector<DocumentOperation> operations;
     if (!selection.is_caret()) {
         auto deletion = document_delete_selection(document, selection);
         if (!deletion) return std::nullopt;
+        operations.insert(
+            operations.end(),
+            std::make_move_iterator(deletion->operations.begin()),
+            std::make_move_iterator(deletion->operations.end()));
         working = std::move(deletion->after);
         current = deletion->selection_after;
     }
@@ -52,10 +56,14 @@ inline std::optional<DocumentTransaction> document_insert_text(const EditorDocum
     auto target = current.active; target.source_offset = inserted->offset; target.affinity = inserted->affinity;
     const bool changed_structure = document_input_rules::apply_after_text_insert(working, target, allocator);
     ++working.revision;
-    if (direct_source_edit && inserted->source_edit && !changed_structure) {
-        return document_edit_detail::source_transaction(
+    if (inserted->source_edit && !changed_structure) {
+        operations.emplace_back(DocumentTextOperation{
+            std::move(inserted->source_edit->forward),
+            std::move(inserted->source_edit->inverse),
+        });
+        return make_recorded_document_transaction(
             std::move(working),
-            std::move(*inserted->source_edit),
+            std::move(operations),
             selection,
             TextSelection::caret(target),
             document.revision,

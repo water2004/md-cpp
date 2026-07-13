@@ -119,6 +119,34 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.selection() == after_selection)));
 };
 
+"selection_replacement_composes_delete_and_insert_source_edits"_test = [] {
+    Editor editor("alpha");
+    const auto owner_id = first_text(editor).id;
+    const TextSelection before_selection{
+        {owner_id, 1, TextAffinity::Downstream},
+        {owner_id, 4, TextAffinity::Upstream}};
+    editor.set_selection(before_selection);
+    reset_core_operation_counters();
+    auto transaction = editor.execute_document_insert_text(editor.selection(), U"X");
+    expect(fatal(bool(transaction.has_value())));
+    if (!transaction) return;
+    const auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_parses == 0u)));
+    expect(fatal(bool(counters.full_document_serializations == 0u)));
+    expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
+    expect(fatal(bool(counters.inline_reparses == 2u)));
+    expect(fatal(bool(transaction->operations.size() == 2u)));
+    expect(fatal(bool(editor.markdown_utf8() == "aXa")));
+    const auto after_selection = editor.selection();
+
+    expect(fatal(bool(editor.undo())));
+    expect(fatal(bool(editor.markdown_utf8() == "alpha")));
+    expect(fatal(bool(editor.selection() == before_selection)));
+    expect(fatal(bool(editor.redo())));
+    expect(fatal(bool(editor.markdown_utf8() == "aXa")));
+    expect(fatal(bool(editor.selection() == after_selection)));
+};
+
 "code_and_math_blocks_use_local_source_edit_history"_test = [] {
     const std::vector<std::string> cases{
         "```cpp\nab\n```",
