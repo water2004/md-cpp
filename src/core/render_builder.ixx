@@ -17,6 +17,7 @@ import elmd.core.outline;
 import elmd.core.diagnostics;
 import elmd.core.utf;
 import elmd.core.render_model;
+import elmd.core.serializer;
 
 export namespace elmd {
 
@@ -47,6 +48,30 @@ inline std::size_t block_local_length(const BlockNode& block) {
         default:
             return 0;
     }
+}
+
+inline std::uint64_t render_source_fingerprint(const BlockNode& block) {
+    constexpr std::uint64_t offset_basis = 1469598103934665603ull;
+    constexpr std::uint64_t prime = 1099511628211ull;
+    auto hash = offset_basis;
+    auto append = [&](std::uint64_t value) {
+        for (std::size_t byte = 0; byte < sizeof(value); ++byte) {
+            hash ^= (value >> (byte * 8)) & 0xffu;
+            hash *= prime;
+        }
+    };
+    append(block.id.v);
+    append(static_cast<std::uint64_t>(block.kind));
+    for (const auto codepoint : serializer_detail::serialize_block(block)) {
+        append(static_cast<std::uint64_t>(codepoint));
+    }
+    append(static_cast<std::uint64_t>(block.unsup_reason));
+    if (block.image_width) append(std::bit_cast<std::uint32_t>(*block.image_width));
+    if (block.image_height) append(std::bit_cast<std::uint32_t>(*block.image_height));
+    if (block.image_link) {
+        for (const auto byte : *block.image_link) append(static_cast<unsigned char>(byte));
+    }
+    return hash;
 }
 
 inline RenderBlock render_block_base(BlockKind k, NodeId id, std::size_t length, BlockStyle bs) {
@@ -765,7 +790,7 @@ inline RenderModel build_render_model(const EditorDocument& doc, const Outline& 
     blocks.reserve(doc.root.children.size());
     for (const auto& block : doc.root.children) {
         auto rendered = bd.build_block(block);
-        rendered.source_fingerprint = block.id.v;
+        rendered.source_fingerprint = render_source_fingerprint(block);
         blocks.push_back(std::move(rendered));
     }
     std::vector<RenderDiagnostic> diags;

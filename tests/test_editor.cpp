@@ -948,6 +948,42 @@ suite editor_tests = [] {
     }
 };
 
+"render_fingerprints_follow_authoritative_source_through_nested_edits"_test = [] {
+    Editor raw("```cpp\nvalue\n```");
+    auto before = build_render_model(raw.document(), raw.outline());
+    const auto& raw_block = raw.document().root.children.front();
+    const auto content_offset = raw_block.block_source.tree.content_to_source.front();
+    raw.set_selection(TextSelection::caret({
+        raw_block.id,
+        content_offset,
+        TextAffinity::Downstream,
+    }));
+    expect(fatal(bool{raw.execute_command(Command::InsertText(U"X"))}));
+    auto after = build_render_model(raw.document(), raw.outline());
+    expect(fatal(bool(before.blocks.front().id == after.blocks.front().id)));
+    expect(fatal(bool(before.blocks.front().source_fingerprint
+        != after.blocks.front().source_fingerprint)));
+
+    Editor nested("> value");
+    before = build_render_model(nested.document(), nested.outline());
+    const BlockNode* paragraph = nullptr;
+    walk_blocks(nested.document().root, [&](const BlockNode& block) {
+        if (!paragraph && block.kind == BlockKind::Paragraph) paragraph = &block;
+    });
+    expect(fatal(bool(paragraph != nullptr)));
+    if (!paragraph) return;
+    nested.set_selection(TextSelection::caret({
+        paragraph->id,
+        paragraph->inline_content.source.size(),
+        TextAffinity::Downstream,
+    }));
+    expect(fatal(bool{nested.execute_command(Command::InsertText(U"!"))}));
+    after = build_render_model(nested.document(), nested.outline());
+    expect(fatal(bool(before.blocks.front().id == after.blocks.front().id)));
+    expect(fatal(bool(before.blocks.front().source_fingerprint
+        != after.blocks.front().source_fingerprint)));
+};
+
 "code_and_math_blocks_use_local_source_edit_history"_test = [] {
     const std::vector<std::string> cases{
         "```cpp\nab\n```",
