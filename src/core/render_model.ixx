@@ -181,9 +181,9 @@ struct RenderBlock {
     // Image block (block-level, alt-only)
     // Quote / Callout / Footnote
     std::vector<RenderBlock> child_blocks;
-    // Cumulative display indentation from the flow root. Tree depth is carried
-    // by child_blocks itself rather than a second, manually maintained counter.
-    std::size_t flow_indent_columns = 0;
+    // Display indentation introduced by the edge from the parent flow node to
+    // this node. Cumulative indentation is derived only by walking child_blocks.
+    std::size_t flow_local_indent_columns = 0;
     NodeId flow_anchor_owner_id{};
     std::string callout_kind;
     std::string footnote_label;

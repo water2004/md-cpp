@@ -56,6 +56,18 @@ static const RenderBlock* find_render_block(const RenderBlock& root, NodeId id) 
     return nullptr;
 }
 
+static std::optional<std::size_t> flow_indent_for(
+    const RenderBlock& root,
+    NodeId id,
+    std::size_t parent_indent = 0) {
+    const auto indent = parent_indent + root.flow_local_indent_columns;
+    if (root.id == id) return indent;
+    for (auto const& child : root.child_blocks) {
+        if (auto found = flow_indent_for(child, id, indent)) return found;
+    }
+    return std::nullopt;
+}
+
 static BlockNode make_render_block(BlockKind kind, std::uint64_t& next_id) {
     BlockNode block;
     block.id = NodeId{next_id++};
@@ -91,7 +103,7 @@ suite render_layout_tests = [] {
     auto quote = find_render_block(model.blocks.front(), RenderBlockKind::Quote);
     expect(fatal(bool(quote != nullptr)));
     if (quote) {
-        expect(fatal(bool(quote->flow_indent_columns == 2u)));
+        expect(fatal(bool(flow_indent_for(model.blocks.front(), quote->id) == 2u)));
         expect(fatal(bool(!quote->child_blocks.empty())));
         auto marker = std::find_if(model.blocks.front().inline_items.begin(), model.blocks.front().inline_items.end(), [&](auto const& item) {
             return item.marker_role == MarkerRole::ListBullet && item.source_span.container_id.v != 0;
@@ -290,6 +302,8 @@ suite render_layout_tests = [] {
     auto code = find_render_block(list, RenderBlockKind::Code);
     expect(fatal(bool(code != nullptr)));
     if (code) {
+        const auto code_indent = flow_indent_for(list, code->id);
+        expect(fatal(bool(code_indent.has_value())));
         expect(fatal(bool(code->code_indented)));
         expect(fatal(bool((code->code_text) == (std::u32string(U"<html>\n  <head>\n    <title>Test</title>\n  </head>\n")))));
         expect(fatal(bool((code->source_span.source_range.end) == (code->raw_source.size()))));
@@ -300,7 +314,7 @@ suite render_layout_tests = [] {
             if (item.marker_role == MarkerRole::Structural && !item.display_text.empty()
                 && std::all_of(item.display_text.begin(), item.display_text.end(), [](char32_t value) { return value == U' '; })) {
                 ++line_indents;
-                expect(fatal(bool(item.display_text.size() == code->flow_indent_columns + 2u)));
+                expect(fatal(bool(item.display_text.size() == code_indent.value_or(0) + 2u)));
             } else if (item.kind == InlineRenderItem::Kind::Text && item.style.code) {
                 flattened_code += item.text;
             }
@@ -398,7 +412,7 @@ suite render_layout_tests = [] {
     auto quote = find_render_block(list, RenderBlockKind::Quote);
     expect(fatal(bool(quote != nullptr)));
     if (quote) {
-        expect(fatal(bool((quote->flow_indent_columns) == (2u))));
+        expect(fatal(bool(flow_indent_for(list, quote->id) == 2u)));
         expect(fatal(bool(!quote->child_blocks.empty())));
         if (!quote->child_blocks.empty()) {
             auto const quoteContent = quote->child_blocks.front().source_span;
@@ -664,11 +678,11 @@ suite render_layout_tests = [] {
     if (m.blocks[0].child_blocks.size() >= 2) {
         expect(fatal(bool(m.blocks[0].child_blocks[0].kind == RenderBlockKind::Text)));
         expect(fatal(bool(m.blocks[0].child_blocks[1].kind == RenderBlockKind::Quote)));
-        expect(fatal(bool((m.blocks[0].child_blocks[0].flow_indent_columns) == (2u))));
-        expect(fatal(bool((m.blocks[0].child_blocks[1].flow_indent_columns) == (2u))));
+        expect(fatal(bool((m.blocks[0].child_blocks[0].flow_local_indent_columns) == (2u))));
+        expect(fatal(bool((m.blocks[0].child_blocks[1].flow_local_indent_columns) == (2u))));
         expect(fatal(bool((m.blocks[0].child_blocks[1].child_blocks.size()) == (1u))));
         if (!m.blocks[0].child_blocks[1].child_blocks.empty())
-            expect(fatal(bool((m.blocks[0].child_blocks[1].child_blocks[0].flow_indent_columns) == (4u))));
+            expect(fatal(bool((m.blocks[0].child_blocks[1].child_blocks[0].flow_local_indent_columns) == (2u))));
     }
 };
 
@@ -709,8 +723,8 @@ suite render_layout_tests = [] {
     expect(fatal(bool(rendered_code != nullptr)));
     if (!rendered_quote || !rendered_code) return;
     expect(fatal(bool(rendered_quote->kind == RenderBlockKind::Quote)));
-    expect(fatal(bool((rendered_quote->flow_indent_columns) == (2u))));
-    expect(fatal(bool((rendered_code->flow_indent_columns) == (7u))));
+    expect(fatal(bool(flow_indent_for(model.blocks[0], rendered_quote->id) == 2u)));
+    expect(fatal(bool(flow_indent_for(model.blocks[0], rendered_code->id) == 7u)));
 
     std::u32string flattened_code;
     std::size_t code_indents = 0;
@@ -764,11 +778,11 @@ suite render_layout_tests = [] {
     auto const* rendered_blank = find_render_block(model.blocks[0], blank_id);
     expect(fatal(bool(rendered_callout && rendered_footnote && rendered_quote && rendered_code && rendered_blank)));
     if (!rendered_callout || !rendered_footnote || !rendered_quote || !rendered_code || !rendered_blank) return;
-    expect(fatal(bool((rendered_callout->flow_indent_columns) == (6u))));
-    expect(fatal(bool((rendered_footnote->flow_indent_columns) == (8u))));
-    expect(fatal(bool((rendered_quote->flow_indent_columns) == (10u))));
-    expect(fatal(bool((rendered_code->flow_indent_columns) == (12u))));
-    expect(fatal(bool((rendered_blank->flow_indent_columns) == (12u))));
+    expect(fatal(bool(flow_indent_for(model.blocks[0], rendered_callout->id) == 6u)));
+    expect(fatal(bool(flow_indent_for(model.blocks[0], rendered_footnote->id) == 8u)));
+    expect(fatal(bool(flow_indent_for(model.blocks[0], rendered_quote->id) == 10u)));
+    expect(fatal(bool(flow_indent_for(model.blocks[0], rendered_code->id) == 12u)));
+    expect(fatal(bool(flow_indent_for(model.blocks[0], rendered_blank->id) == 12u)));
 
     auto blank_indent = std::find_if(model.blocks[0].inline_items.begin(), model.blocks[0].inline_items.end(), [&](auto const& item) {
         return item.source_span.container_id == blank_id
@@ -797,19 +811,77 @@ suite render_layout_tests = [] {
     if (model.blocks.empty()) return;
 
     auto const* cursor = &model.blocks[0];
+    std::size_t accumulated_indent = 0;
     for (std::size_t level = 0; level < depth; ++level) {
-        expect(fatal(bool((cursor->flow_indent_columns) == (level * 2u))));
+        accumulated_indent += cursor->flow_local_indent_columns;
+        expect(fatal(bool((accumulated_indent) == (level * 2u))));
         expect(fatal(bool((cursor->child_blocks.size()) == (1u))));
         if (cursor->child_blocks.empty()) return;
         cursor = &cursor->child_blocks[0];
     }
     expect(fatal(bool(cursor->id == leaf_id)));
-    expect(fatal(bool((cursor->flow_indent_columns) == (depth * 2u))));
+    accumulated_indent += cursor->flow_local_indent_columns;
+    expect(fatal(bool((accumulated_indent) == (depth * 2u))));
     auto leaf_indent = std::find_if(model.blocks[0].inline_items.begin(), model.blocks[0].inline_items.end(), [&](auto const& item) {
         return item.source_span.container_id == leaf_id
             && item.display_text == std::u32string(depth * 2u, U' ');
     });
     expect(fatal(bool(leaf_indent != model.blocks[0].inline_items.end())));
+};
+
+"recursive_flow_anchors_each_nested_container_to_its_own_subtree"_test = [] {
+    auto model = build_model("> outer\n> > middle\n> > > inner\n");
+    expect(fatal(bool(model.blocks.size() == 1u)));
+    if (model.blocks.empty()) return;
+
+    std::vector<const RenderBlock*> quotes;
+    auto collect = [&](auto& self, const RenderBlock& block) -> void {
+        if (block.kind == RenderBlockKind::Quote) quotes.push_back(&block);
+        for (auto const& child : block.child_blocks) self(self, child);
+    };
+    collect(collect, model.blocks.front());
+    expect(fatal(bool(quotes.size() == 3u)));
+    if (quotes.size() != 3u) return;
+
+    for (std::size_t index = 0; index < quotes.size(); ++index) {
+        auto const* leaf = first_render_leaf(*quotes[index]);
+        expect(fatal(bool(leaf != nullptr)));
+        if (!leaf) return;
+        expect(fatal(bool(quotes[index]->flow_anchor_owner_id == leaf->source_span.container_id)));
+        expect(fatal(bool(flow_indent_for(model.blocks.front(), quotes[index]->id) == index * 2u)));
+    }
+    expect(fatal(bool(quotes[0]->flow_anchor_owner_id != quotes[1]->flow_anchor_owner_id)));
+    expect(fatal(bool(quotes[1]->flow_anchor_owner_id != quotes[2]->flow_anchor_owner_id)));
+};
+
+"recursive_flow_anchors_each_list_item_and_nested_container_independently"_test = [] {
+    auto model = build_model("- first\n- second\n  > quoted\n- third\n");
+    expect(fatal(bool(model.blocks.size() == 1u)));
+    if (model.blocks.empty()) return;
+    auto const& list = model.blocks.front();
+    expect(fatal(bool(list.child_blocks.size() == 3u)));
+    if (list.child_blocks.size() != 3u) return;
+
+    std::vector<NodeId> item_anchors;
+    for (auto const& item : list.child_blocks) {
+        auto const* leaf = first_render_leaf(item);
+        expect(fatal(bool(leaf != nullptr)));
+        if (!leaf) return;
+        expect(fatal(bool(item.flow_anchor_owner_id == leaf->source_span.container_id)));
+        item_anchors.push_back(item.flow_anchor_owner_id);
+    }
+    expect(fatal(bool(item_anchors[0] != item_anchors[1])));
+    expect(fatal(bool(item_anchors[1] != item_anchors[2])));
+
+    auto const* quote = find_render_block(list, RenderBlockKind::Quote);
+    expect(fatal(bool(quote != nullptr)));
+    if (!quote) return;
+    auto const* quoted_leaf = first_render_leaf(*quote);
+    expect(fatal(bool(quoted_leaf != nullptr)));
+    if (!quoted_leaf) return;
+    expect(fatal(bool(quote->flow_anchor_owner_id == quoted_leaf->source_span.container_id)));
+    expect(fatal(bool(quote->flow_anchor_owner_id != item_anchors[0])));
+    expect(fatal(bool(flow_indent_for(list, quote->id) == 2u)));
 };
 
 "nested_quote_flow_tree_owns_its_visible_content"_test = [] {
@@ -819,11 +891,11 @@ suite render_layout_tests = [] {
     if (!m.blocks[0].child_blocks.empty()) {
         auto const& nested = m.blocks[0].child_blocks[0];
         expect(fatal(bool(nested.kind == RenderBlockKind::Quote)));
-        expect(fatal(bool((nested.flow_indent_columns) == (2u))));
+        expect(fatal(bool((nested.flow_local_indent_columns) == (2u))));
         expect(fatal(bool((nested.child_blocks.size()) == (1u))));
         if (!nested.child_blocks.empty()) {
             auto const& fragment = nested.child_blocks[0];
-            expect(fatal(bool((fragment.flow_indent_columns) == (4u))));
+            expect(fatal(bool((fragment.flow_local_indent_columns) == (2u))));
             expect(fatal(bool((fragment.content_span.source_range.start) == (0u))));
             expect(fatal(bool(!fragment.inline_items.empty())));
             if (!fragment.inline_items.empty()) {
@@ -998,9 +1070,9 @@ suite render_layout_tests = [] {
     expect(fatal(bool((outerBlank.blocks[0].child_blocks.size()) == (2u))));
     if (outerBlank.blocks[0].child_blocks.size() >= 2) {
         expect(fatal(bool(outerBlank.blocks[0].child_blocks[0].kind == RenderBlockKind::Quote)));
-        expect(fatal(bool((outerBlank.blocks[0].child_blocks[0].flow_indent_columns) == (2u))));
+        expect(fatal(bool((outerBlank.blocks[0].child_blocks[0].flow_local_indent_columns) == (2u))));
         expect(fatal(bool(outerBlank.blocks[0].child_blocks[1].kind == RenderBlockKind::Blank)));
-        expect(fatal(bool((outerBlank.blocks[0].child_blocks[1].flow_indent_columns) == (2u))));
+        expect(fatal(bool((outerBlank.blocks[0].child_blocks[1].flow_local_indent_columns) == (2u))));
     }
 
     auto nestedBlank = build_model("> > alpha  \n> > ");
@@ -1012,9 +1084,9 @@ suite render_layout_tests = [] {
         expect(fatal(bool((nested.child_blocks.size()) == (2u))));
         if (nested.child_blocks.size() >= 2) {
             expect(fatal(bool(nested.child_blocks[0].kind == RenderBlockKind::Text)));
-            expect(fatal(bool((nested.child_blocks[0].flow_indent_columns) == (4u))));
+            expect(fatal(bool((nested.child_blocks[0].flow_local_indent_columns) == (2u))));
             expect(fatal(bool(nested.child_blocks[1].kind == RenderBlockKind::Blank)));
-            expect(fatal(bool((nested.child_blocks[1].flow_indent_columns) == (4u))));
+            expect(fatal(bool((nested.child_blocks[1].flow_local_indent_columns) == (2u))));
         }
     }
 };

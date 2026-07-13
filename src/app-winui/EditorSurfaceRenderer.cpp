@@ -209,8 +209,16 @@ namespace winrt::ElMd
                     auto highlights = treeSitter.Highlight(*block.language, elmd::cps_to_utf8(block.code_text));
                     for (auto const& highlight : highlights)
                     {
-                        auto start = DisplayPositionForSource(display.displayToSource, {block.id, highlight.start, elmd::TextAffinity::Downstream});
-                        auto end = DisplayPositionForSource(display.displayToSource, {block.id, highlight.start + highlight.length, elmd::TextAffinity::Downstream});
+                        auto contentStart = (std::min)(static_cast<std::size_t>(highlight.start), block.code_text.size());
+                        auto contentEnd = (std::min)(contentStart + static_cast<std::size_t>(highlight.length), block.code_text.size());
+                        auto sourceStart = block.content_to_source.empty()
+                            ? contentStart
+                            : block.content_to_source[(std::min)(contentStart, block.content_to_source.size() - 1)];
+                        auto sourceEnd = block.content_to_source.empty()
+                            ? contentEnd
+                            : block.content_to_source[(std::min)(contentEnd, block.content_to_source.size() - 1)];
+                        auto start = DisplayPositionForSource(display.displayToSource, {block.id, sourceStart, elmd::TextAffinity::Downstream});
+                        auto end = DisplayPositionForSource(display.displayToSource, {block.id, sourceEnd, elmd::TextAffinity::Downstream});
                         if (end <= start) continue;
                         elmd::InlineStyle style = elmd::InlineStyle::plain();
                         style.code = true;
@@ -252,7 +260,7 @@ namespace winrt::ElMd
                 }
                 return first ? std::optional{std::pair{*first, last}} : std::nullopt;
             };
-            auto contentLeftFor = [&](elmd::RenderBlock const& nested, std::pair<std::size_t, std::size_t> range) -> std::optional<float>
+            auto contentLeftFor = [&](elmd::RenderBlock const& nested, std::pair<std::size_t, std::size_t> range, std::size_t indentColumns) -> std::optional<float>
             {
                 std::optional<std::size_t> anchorStart;
                 for (std::size_t index = 0; index < displayLimit; ++index)
@@ -264,7 +272,7 @@ namespace winrt::ElMd
                     }
                 }
                 if (!anchorStart) return std::nullopt;
-                auto contentColumn = (std::min)(*anchorStart + nested.flow_indent_columns, range.second);
+                auto contentColumn = (std::min)(*anchorStart + indentColumns, range.second);
                 FLOAT x = 0.0f;
                 FLOAT lineY = 0.0f;
                 DWRITE_HIT_TEST_METRICS hit{};
@@ -286,8 +294,9 @@ namespace winrt::ElMd
                 }
                 return true;
             };
-            auto draw = [&](auto& self, elmd::RenderBlock const& nested, bool root) -> void
+            auto draw = [&](auto& self, elmd::RenderBlock const& nested, bool root, std::size_t parentIndentColumns) -> void
             {
+                auto indentColumns = parentIndentColumns + nested.flow_local_indent_columns;
                 auto decorated = nested.kind == elmd::RenderBlockKind::Code
                     || nested.kind == elmd::RenderBlockKind::Quote
                     || nested.kind == elmd::RenderBlockKind::Callout
@@ -296,7 +305,7 @@ namespace winrt::ElMd
                 {
                     auto range = displayRange(nested);
                     if (range) {
-                        auto contentLeft = contentLeftFor(nested, *range);
+                        auto contentLeft = contentLeftFor(nested, *range, indentColumns);
                         float top = (std::numeric_limits<float>::max)();
                         float bottom = (std::numeric_limits<float>::lowest)();
                         if (contentLeft && accumulateRange(*range, top, bottom)) {
@@ -319,9 +328,9 @@ namespace winrt::ElMd
                         }
                     }
                 }
-                for (auto const& child : nested.child_blocks) self(self, child, false);
+                for (auto const& child : nested.child_blocks) self(self, child, false, indentColumns);
             };
-            draw(draw, parent, true);
+            draw(draw, parent, true, 0);
         };
 
         if (frame.renderModel.blocks.empty())
