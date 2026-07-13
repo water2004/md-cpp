@@ -175,20 +175,24 @@ inline std::pair<LayoutBlock, float> layout_code_block(const RenderBlock& rb, fl
     float line_height = font_size * 1.4f;
     const auto& style = rb.block_style;
     float pad = 12.0f * scale;
-    std::vector<std::u32string> lines;
-    std::u32string acc;
-    for (char32_t c : rb.code_text + U"\n") {
-        if (c == '\n') { lines.push_back(acc); acc.clear(); }
-        else acc.push_back(c);
+    std::vector<SourceRange> lines;
+    std::size_t line_start = 0;
+    while (true) {
+        const auto newline = rb.code_text.find(U'\n', line_start);
+        const auto line_end = newline == std::u32string::npos ? rb.code_text.size() : newline;
+        lines.push_back({line_start, line_end});
+        if (newline == std::u32string::npos) break;
+        line_start = newline + 1;
     }
     LayoutBlock lb(rb.id, rb.source_span, {LayoutBlockKind::CodeBlock}, style);
     for (std::size_t i = 0; i < lines.size(); ++i) {
-        auto shape = measurer.measure(lines[i], font_size, InlineStyle::plain());
-        TextLineLayout ll{{}};
+        const auto text = rb.code_text.substr(lines[i].start, lines[i].length());
+        auto shape = measurer.measure(text, font_size, InlineStyle::plain());
+        TextLineLayout ll{{rb.id, lines[i]}};
         ll.rect = LogicalRect(pad, y + style.margin_top * scale + pad + i * line_height, viewport_width - pad, line_height);
         ll.baseline = ll.rect.y + font_size;
         GlyphRunLayout r;
-        r.source_span = {rb.id, {0, lines[i].size()}}; r.text = lines[i]; r.glyphs = std::move(shape.glyphs);
+        r.source_span = {rb.id, lines[i]}; r.text = text; r.glyphs = std::move(shape.glyphs);
         r.style = InlineStyle::plain(); r.origin = LogicalPoint(pad, 0.0f);
         r.width = shape.width; r.height = line_height; r.marker_visibility = MarkerVisibility::Always;
         ll.runs.push_back(std::move(r));
@@ -323,21 +327,24 @@ inline std::pair<LayoutBlock, float> layout_math_block(const RenderBlock& rb, fl
     float line_height = font_size * 1.5f;
     const auto& style = rb.block_style;
     float pad = style.padding_top * scale;
-    std::vector<std::u32string> lines;
-    std::u32string acc;
-    for (char32_t c : rb.tex + U"\n") {
-        if (c == '\n') { lines.push_back(acc); acc.clear(); }
-        else acc.push_back(c);
+    std::vector<SourceRange> lines;
+    std::size_t line_start = 0;
+    while (true) {
+        const auto newline = rb.tex.find(U'\n', line_start);
+        const auto line_end = newline == std::u32string::npos ? rb.tex.size() : newline;
+        lines.push_back({line_start, line_end});
+        if (newline == std::u32string::npos) break;
+        line_start = newline + 1;
     }
-    if (lines.empty()) lines.push_back(U"");
     LayoutBlock lb(rb.id, rb.source_span, {LayoutBlockKind::MathBlock}, style);
     for (std::size_t i = 0; i < lines.size(); ++i) {
-        auto shape = measurer.measure(lines[i], font_size, InlineStyle::plain());
-        TextLineLayout ll{{}};
+        const auto text = rb.tex.substr(lines[i].start, lines[i].length());
+        auto shape = measurer.measure(text, font_size, InlineStyle::plain());
+        TextLineLayout ll{{rb.id, lines[i]}};
         ll.rect = LogicalRect(pad, y + style.margin_top * scale + pad + i * line_height, viewport_width - pad, line_height);
         ll.baseline = ll.rect.y + font_size;
         GlyphRunLayout r;
-        r.source_span = {rb.id, {0, lines[i].size()}}; r.text = lines[i]; r.glyphs = std::move(shape.glyphs);
+        r.source_span = {rb.id, lines[i]}; r.text = text; r.glyphs = std::move(shape.glyphs);
         r.style = InlineStyle::plain(); r.origin = LogicalPoint(pad, 0.0f);
         r.width = shape.width; r.height = line_height; r.marker_visibility = MarkerVisibility::Always;
         ll.runs.push_back(std::move(r));

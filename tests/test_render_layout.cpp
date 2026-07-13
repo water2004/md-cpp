@@ -1193,6 +1193,110 @@ suite render_layout_tests = [] {
     }
 };
 
+"multiline_code_and_math_layouts_keep_true_source_offsets"_test = [] {
+    StubMeasurer ms(6.0f);
+    auto code_model = build_model("```cpp\none\ntwo\n```");
+    auto code_tree = layout_blocks(
+        code_model.blocks,
+        800.0f,
+        1.0f,
+        ms,
+        std::nullopt,
+        LogicalPoint(0, 0),
+        Outline::empty(1));
+    expect(fatal(bool(code_tree.blocks.size() == 1u)));
+    if (!code_tree.blocks.empty()) {
+        auto const& lines = code_tree.blocks.front().children;
+        expect(fatal(bool(lines.size() == 3u)));
+        if (lines.size() == 3u) {
+            expect(fatal(bool(lines[0].line.source_span.source_range == SourceRange{0, 3})));
+            expect(fatal(bool(lines[1].line.source_span.source_range == SourceRange{4, 7})));
+            expect(fatal(bool(lines[2].line.source_span.source_range == SourceRange{8, 8})));
+            auto hit = hit_test_layout_tree(
+                code_tree,
+                LogicalPoint(20.0f, lines[1].line.rect.y + 1.0f));
+            expect(fatal(bool(hit.has_value())));
+            if (hit) {
+                expect(fatal(bool(hit->position.container_id == lines[1].line.source_span.container_id)));
+                expect(fatal(bool(hit->position.source_offset >= 4u)));
+                expect(fatal(bool(hit->position.source_offset <= 7u)));
+            }
+        }
+    }
+
+    auto math_model = build_model("$$\na\nb\n$$");
+    auto math_tree = layout_blocks(
+        math_model.blocks,
+        800.0f,
+        1.0f,
+        ms,
+        std::nullopt,
+        LogicalPoint(0, 0),
+        Outline::empty(1));
+    expect(fatal(bool(math_tree.blocks.size() == 1u)));
+    if (!math_tree.blocks.empty()) {
+        auto const& lines = math_tree.blocks.front().children;
+        expect(fatal(bool(lines.size() == 2u)));
+        if (lines.size() == 2u) {
+            expect(fatal(bool(lines[0].line.source_span.source_range == SourceRange{0, 1})));
+            expect(fatal(bool(lines[1].line.source_span.source_range == SourceRange{2, 3})));
+        }
+    }
+};
+
+"block_gap_and_table_hits_resolve_to_editable_owners"_test = [] {
+    LayoutTree gap_tree;
+    LayoutBlock outer(
+        NodeId{10},
+        TextSpan{NodeId{10}, {0, 0}},
+        {LayoutBlockKind::Quote},
+        BlockStyle::blockquote());
+    outer.rect = LogicalRect(0, 0, 100, 60);
+    const auto owner = NodeId{77};
+    TextLineLayout line{TextSpan{owner, {2, 6}}};
+    line.rect = LogicalRect(0, 20, 100, 20);
+    LayoutItem line_item;
+    line_item.kind = LayoutItem::Kind::Line;
+    line_item.line = std::move(line);
+    outer.children.push_back(std::move(line_item));
+    gap_tree.blocks.push_back(std::move(outer));
+
+    auto before = hit_test_layout_tree(gap_tree, LogicalPoint(5, 5));
+    auto after = hit_test_layout_tree(gap_tree, LogicalPoint(5, 55));
+    expect(fatal(bool(before.has_value())));
+    expect(fatal(bool(after.has_value())));
+    if (before) {
+        expect(fatal(bool(before->position.container_id == owner)));
+        expect(fatal(bool(before->position.source_offset == 2u)));
+    }
+    if (after) {
+        expect(fatal(bool(after->position.container_id == owner)));
+        expect(fatal(bool(after->position.source_offset == 6u)));
+    }
+
+    StubMeasurer ms(6.0f);
+    auto table_model = build_model("| A | B |\n| --- | --- |\n| 1 | 2 |");
+    auto table_tree = layout_blocks(
+        table_model.blocks,
+        800.0f,
+        1.0f,
+        ms,
+        std::nullopt,
+        LogicalPoint(0, 0),
+        Outline::empty(1));
+    expect(fatal(bool(!table_tree.blocks.empty())));
+    if (table_tree.blocks.empty() || table_tree.blocks.front().children.empty()) return;
+    auto const& table = table_tree.blocks.front().children.front().table;
+    expect(fatal(bool(!table.rows.empty() && !table.rows.front().cells.empty())));
+    if (table.rows.empty() || table.rows.front().cells.empty()) return;
+    auto const& cell = table.rows.front().cells.front();
+    auto hit = hit_test_layout_tree(
+        table_tree,
+        LogicalPoint(cell.rect.x + 10.0f, cell.rect.y + 1.0f));
+    expect(fatal(bool(hit.has_value())));
+    if (hit) expect(fatal(bool(hit->position.container_id == cell.source_span.container_id)));
+};
+
 "stub_measurer_per_char_advances"_test = [] {
     StubMeasurer ms(8.0f);
     auto s = ms.measure(U"abc", 16.0f, InlineStyle::plain());

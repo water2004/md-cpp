@@ -56,32 +56,95 @@ inline std::optional<HitTestResult> hit_test_line(const TextLineLayout& line, Lo
     return hr;
 }
 
-inline std::optional<HitTestResult> hit_test_block(const LayoutBlock& b, LogicalPoint point, std::optional<HitTestResult>& embedded_hit) {
+inline std::optional<HitTestResult> hit_test_block(const LayoutBlock& b, LogicalPoint point) {
     for (const auto& ch : b.children) {
         if (ch.kind == LayoutItem::Kind::Line && ch.line.rect.contains_point(point)) {
             return hit_test_line(ch.line, point, b.id);
         }
         if (ch.kind == LayoutItem::Kind::Embedded && ch.embedded.rect.contains_point(point)) {
-            embedded_hit = HitTestResult{TextPosition{ch.embedded.source_span.container_id,
+            return HitTestResult{TextPosition{ch.embedded.source_span.container_id,
                 ch.embedded.source_span.source_range.start, TextAffinity::Downstream}, HitKind::Embedded};
+        }
+        if (ch.kind == LayoutItem::Kind::Table && ch.table.rect.contains_point(point)) {
+            for (const auto& row : ch.table.rows) {
+                for (const auto& cell : row.cells) {
+                    if (!cell.rect.contains_point(point)) continue;
+                    for (const auto& content : cell.content) {
+                        if (content.kind == LayoutItem::Kind::Line && content.line.rect.contains_point(point)) {
+                            return hit_test_line(content.line, point, cell.source_span.container_id);
+                        }
+                    }
+                    return HitTestResult{TextPosition{
+                        cell.source_span.container_id,
+                        cell.source_span.source_range.start,
+                        TextAffinity::Downstream}, HitKind::BlockGap};
+                }
+            }
+        }
+        if (ch.kind == LayoutItem::Kind::BlockMath && ch.math.rect.contains_point(point)) {
+            return HitTestResult{TextPosition{
+                ch.math.source_span.container_id,
+                ch.math.source_span.source_range.start,
+                TextAffinity::Downstream}, HitKind::Embedded};
+        }
+        if (ch.kind == LayoutItem::Kind::Image && ch.image.rect.contains_point(point)) {
+            return HitTestResult{TextPosition{
+                ch.image.source_span.container_id,
+                ch.image.source_span.source_range.start,
+                TextAffinity::Downstream}, HitKind::Embedded};
         }
     }
     return std::nullopt;
 }
 
+inline std::optional<TextPosition> block_boundary_position(const LayoutBlock& block, bool at_end) {
+    std::vector<TextSpan> spans;
+    auto append = [&](TextSpan span) {
+        if (span.container_id.v != 0) spans.push_back(span);
+    };
+    for (const auto& child : block.children) {
+        if (child.kind == LayoutItem::Kind::Line) {
+            append(child.line.source_span);
+        } else if (child.kind == LayoutItem::Kind::Embedded) {
+            append(child.embedded.source_span);
+        } else if (child.kind == LayoutItem::Kind::Table) {
+            for (const auto& row : child.table.rows) {
+                for (const auto& cell : row.cells) append(cell.source_span);
+            }
+        } else if (child.kind == LayoutItem::Kind::BlockMath) {
+            append(child.math.source_span);
+        } else if (child.kind == LayoutItem::Kind::Image) {
+            append(child.image.source_span);
+        }
+    }
+    if (spans.empty()) append(block.source_span);
+    if (spans.empty()) return std::nullopt;
+    const auto& span = at_end ? spans.back() : spans.front();
+    return TextPosition{
+        span.container_id,
+        at_end ? span.source_range.end : span.source_range.start,
+        at_end ? TextAffinity::Upstream : TextAffinity::Downstream};
+}
+
 inline std::optional<HitTestResult> hit_test_layout_tree(const LayoutTree& tree, LogicalPoint point) {
-    std::optional<HitTestResult> embedded_hit;
     for (const auto& b : tree.blocks) {
         if (b.rect.contains_point(point)) {
-            auto r = hit_test_block(b, point, embedded_hit);
+            auto r = hit_test_block(b, point);
             if (r) return r;
-            return HitTestResult{TextPosition{b.id, 0, TextAffinity::Downstream}, HitKind::BlockGap};
+            auto boundary = block_boundary_position(
+                b,
+                point.y >= b.rect.y + b.rect.height * 0.5f);
+            if (boundary) return HitTestResult{*boundary, HitKind::BlockGap};
+            return std::nullopt;
         }
     }
     if (const auto* b = tree.block_at_y(point.y)) {
-        auto r = hit_test_block(*b, point, embedded_hit);
+        auto r = hit_test_block(*b, point);
         if (r) return r;
-        return HitTestResult{TextPosition{b->id, 0, TextAffinity::Downstream}, HitKind::BlockGap};
+        auto boundary = block_boundary_position(
+            *b,
+            point.y >= b->rect.y + b->rect.height * 0.5f);
+        if (boundary) return HitTestResult{*boundary, HitKind::BlockGap};
     }
     return std::nullopt;
 }
