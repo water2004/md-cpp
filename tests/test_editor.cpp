@@ -1167,6 +1167,101 @@ suite editor_tests = [] {
     verify(footnote, footnote_markdown, footnote_before, footnote_transaction, "footnote");
 };
 
+"container_toggles_move_existing_nodes_and_preserve_callout_titles"_test = [] {
+    auto verify = [](
+        Editor& editor,
+        const std::string& before_markdown,
+        TextSelection before,
+        const std::optional<DocumentTransaction>& transaction,
+        std::string_view label) {
+        expect(fatal(bool(transaction.has_value()))) << label;
+        if (!transaction) return;
+        const auto counters = read_core_operation_counters();
+        expect(fatal(bool(counters.full_document_parses == 0u))) << label;
+        expect(fatal(bool(counters.full_document_serializations == 0u))) << label;
+        expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << label;
+        expect(fatal(bool(!transaction->operations.empty()))) << label;
+        const auto after_markdown = editor.markdown_utf8();
+        const auto after = editor.selection();
+        expect(fatal(bool(editor.undo()))) << label;
+        expect(fatal(bool(editor.markdown_utf8() == before_markdown))) << label;
+        expect(fatal(bool(editor.selection() == before))) << label;
+        expect(fatal(bool(editor.redo()))) << label;
+        expect(fatal(bool(editor.markdown_utf8() == after_markdown))) << label;
+        expect(fatal(bool(editor.selection() == after))) << label;
+    };
+
+    Editor wrap_quote("one\n\ntwo");
+    TextSelection quote_range{
+        {wrap_quote.document().root.children.front().id, 0, TextAffinity::Downstream},
+        {wrap_quote.document().root.children.back().id, 3, TextAffinity::Upstream}};
+    const auto wrap_quote_markdown = wrap_quote.markdown_utf8();
+    wrap_quote.set_selection(quote_range);
+    reset_core_operation_counters();
+    auto wrapped_quote = wrap_quote.execute_document_toggle_block_quote(wrap_quote.selection());
+    verify(wrap_quote, wrap_quote_markdown, quote_range, wrapped_quote, "wrap quote");
+
+    Editor unwrap_quote("> one\n>\n> two");
+    const auto& quote = unwrap_quote.document().root.children.front();
+    TextSelection quoted_range{
+        {quote.children.front().id, 0, TextAffinity::Downstream},
+        {quote.children.back().id, 3, TextAffinity::Upstream}};
+    const auto unwrap_quote_markdown = unwrap_quote.markdown_utf8();
+    unwrap_quote.set_selection(quoted_range);
+    reset_core_operation_counters();
+    auto unwrapped_quote = unwrap_quote.execute_document_toggle_block_quote(unwrap_quote.selection());
+    verify(unwrap_quote, unwrap_quote_markdown, quoted_range, unwrapped_quote, "unwrap quote");
+
+    Command callout_command;
+    callout_command.callout_kind = U"NOTE";
+    Editor wrap_callout("one\n\ntwo");
+    TextSelection callout_range{
+        {wrap_callout.document().root.children.front().id, 0, TextAffinity::Downstream},
+        {wrap_callout.document().root.children.back().id, 3, TextAffinity::Upstream}};
+    const auto wrap_callout_markdown = wrap_callout.markdown_utf8();
+    wrap_callout.set_selection(callout_range);
+    reset_core_operation_counters();
+    auto wrapped_callout = wrap_callout.execute_document_toggle_callout(
+        wrap_callout.selection(), callout_command);
+    verify(wrap_callout, wrap_callout_markdown, callout_range, wrapped_callout, "wrap callout");
+
+    Editor unwrap_callout("> [!NOTE] title\n> body");
+    const auto callout_id = unwrap_callout.document().root.children.front().id;
+    const auto body_id = unwrap_callout.document().root.children.front().children.front().id;
+    const auto callout_before = TextSelection::caret({body_id, 0, TextAffinity::Downstream});
+    const auto unwrap_callout_markdown = unwrap_callout.markdown_utf8();
+    unwrap_callout.set_selection(callout_before);
+    reset_core_operation_counters();
+    auto unwrapped_callout = unwrap_callout.execute_document_toggle_callout(
+        unwrap_callout.selection(), callout_command);
+    expect(fatal(bool(find_block(unwrap_callout.document().root, callout_id) != nullptr)));
+    verify(
+        unwrap_callout,
+        unwrap_callout_markdown,
+        callout_before,
+        unwrapped_callout,
+        "unwrap titled callout");
+
+    Editor wrap_list("one\n\ntwo");
+    TextSelection list_range{
+        {wrap_list.document().root.children.front().id, 0, TextAffinity::Downstream},
+        {wrap_list.document().root.children.back().id, 3, TextAffinity::Upstream}};
+    const auto wrap_list_markdown = wrap_list.markdown_utf8();
+    wrap_list.set_selection(list_range);
+    reset_core_operation_counters();
+    auto wrapped_list = wrap_list.execute_document_toggle_list(wrap_list.selection(), false, false);
+    verify(wrap_list, wrap_list_markdown, list_range, wrapped_list, "wrap list");
+
+    Editor unwrap_list("- one\n- two");
+    const auto list_owner = unwrap_list.document().root.children.front().children.front().children.front().id;
+    const auto list_before = TextSelection::caret({list_owner, 0, TextAffinity::Downstream});
+    const auto unwrap_list_markdown = unwrap_list.markdown_utf8();
+    unwrap_list.set_selection(list_before);
+    reset_core_operation_counters();
+    auto unwrapped_list = unwrap_list.execute_document_toggle_list(unwrap_list.selection(), false, false);
+    verify(unwrap_list, unwrap_list_markdown, list_before, unwrapped_list, "unwrap list");
+};
+
 "table_navigation_changes_selection_without_creating_history"_test = [] {
     Editor editor("| A | B |\n| --- | --- |\n| 1 | 2 |");
     const auto& table = editor.document().root.children.front();
