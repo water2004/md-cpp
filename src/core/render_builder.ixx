@@ -112,6 +112,29 @@ struct Builder {
         marker.visibility = MarkerVisibility::Always;
         out.push_back(std::move(marker));
     }
+
+    void append_nested_code_contents(
+        std::vector<InlineRenderItem>& out,
+        const BlockNode& block,
+        std::size_t indent_columns) {
+        constexpr std::size_t content_padding_columns = 2;
+        if (block.code_text.empty()) {
+            append_generated_indent(out, block.id, 0, indent_columns + content_padding_columns);
+            return;
+        }
+        std::size_t line_start = 0;
+        while (line_start < block.code_text.size()) {
+            append_generated_indent(out, block.id, line_start, indent_columns + content_padding_columns);
+            auto newline = block.code_text.find(U'\n', line_start);
+            auto line_end = newline == std::u32string::npos ? block.code_text.size() : newline + 1;
+            auto item = InlineRenderItem::plain_text(
+                block.code_text.substr(line_start, line_end - line_start),
+                {block.id, {line_start, line_end}});
+            item.style.code = true;
+            out.push_back(std::move(item));
+            line_start = line_end;
+        }
+    }
     void append_list_contents(std::vector<InlineRenderItem>& out, const BlockNode& list, std::size_t depth, std::size_t indent_columns = 0) {
         auto append_items = [&](const BlockVec& items, bool tasks) {
             for (std::size_t index = 0; index < items.size(); ++index) {
@@ -180,10 +203,7 @@ struct Builder {
                 return;
             }
             case BlockKind::CodeBlock: {
-                append_generated_indent(out, block.id, 0, indent_columns);
-                auto item = InlineRenderItem::plain_text(block.code_text, {block.id, {0, block.code_text.size()}});
-                item.style.code = true;
-                out.push_back(std::move(item));
+                append_nested_code_contents(out, block, indent_columns);
                 return;
             }
             case BlockKind::MathBlock: {

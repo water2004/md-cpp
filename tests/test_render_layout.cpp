@@ -208,6 +208,26 @@ suite render_layout_tests = [] {
         expect(fatal(bool(code->code_indented)));
         expect(fatal(bool((code->code_text) == (std::u32string(U"<html>\n  <head>\n    <title>Test</title>\n  </head>\n")))));
         expect(fatal(bool((code->source_span.source_range.end) == (code->code_text.size()))));
+        expect(fatal(bool(code->container_marker_owner_id.v != 0u)));
+        auto owner_marker = std::find_if(list.inline_items.begin(), list.inline_items.end(), [&](auto const& item) {
+            return item.marker_role == MarkerRole::ListNumber
+                && item.source_span.container_id == code->container_marker_owner_id;
+        });
+        expect(fatal(bool(owner_marker != list.inline_items.end())));
+        std::size_t line_indents = 0;
+        std::u32string flattened_code;
+        for (auto const& item : list.inline_items) {
+            if (item.source_span.container_id != code->id) continue;
+            if (item.marker_role == MarkerRole::Structural && !item.display_text.empty()
+                && std::all_of(item.display_text.begin(), item.display_text.end(), [](char32_t value) { return value == U' '; })) {
+                ++line_indents;
+                expect(fatal(bool(item.display_text.size() == code->container_indent_columns + 2u)));
+            } else if (item.kind == InlineRenderItem::Kind::Text && item.style.code) {
+                flattened_code += item.text;
+            }
+        }
+        expect(fatal(bool(line_indents == 4u)));
+        expect(fatal(bool(flattened_code == code->code_text)));
     }
     bool styled_code = false;
     for (auto const& item : list.inline_items) {

@@ -69,6 +69,7 @@ namespace winrt::ElMd
             {
                 layout->SetFontFamilyName(styleSheet.code.family.c_str(), textRange);
                 layout->SetFontSize(styleSheet.code.size, textRange);
+                if (resources.codeBrush) layout->SetDrawingEffect(resources.codeBrush.Get(), textRange);
             }
             if (range.style.heading_level)
             {

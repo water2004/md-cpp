@@ -213,15 +213,15 @@ namespace winrt::ElMd
             }
         };
 
-        auto drawNestedQuotes = [&](IDWriteTextLayout* layout, D2D1_POINT_2F origin, elmd::RenderBlock const& parent, DisplayInlineText const& display)
+        auto drawNestedBlocks = [&](IDWriteTextLayout* layout, D2D1_POINT_2F origin, elmd::RenderBlock const& parent, DisplayInlineText const& display)
         {
             if (!layout || display.displayToSource.empty()) return;
+            auto displayLimit = (std::min)(display.displayToSource.size(), elmd::utf16_len(display.text));
             auto displayRange = [&](elmd::TextSpan span) -> std::optional<std::pair<std::size_t, std::size_t>>
             {
                 std::optional<std::size_t> first;
                 std::size_t last = 0;
-                auto limit = (std::min)(display.displayToSource.size(), elmd::utf16_len(display.text));
-                for (std::size_t index = 0; index < limit; ++index)
+                for (std::size_t index = 0; index < displayLimit; ++index)
                 {
                     auto const& position = display.displayToSource[index];
                     if (position.container_id != span.container_id
@@ -232,51 +232,67 @@ namespace winrt::ElMd
                 }
                 return first ? std::optional{std::pair{*first, last}} : std::nullopt;
             };
-            for (auto const& quote : parent.child_blocks)
+            auto contentLeftFor = [&](elmd::RenderBlock const& nested, std::size_t displayEnd) -> std::optional<float>
             {
-                if (quote.kind != elmd::RenderBlockKind::Quote || quote.child_blocks.empty()) continue;
+                std::optional<std::size_t> ownerStart;
+                for (std::size_t index = 0; index < displayLimit; ++index)
+                {
+                    if (display.displayToSource[index].container_id == nested.container_marker_owner_id)
+                    {
+                        ownerStart = index;
+                        break;
+                    }
+                }
+                if (!ownerStart) return std::nullopt;
+                auto contentColumn = (std::min)(*ownerStart + nested.container_indent_columns, displayEnd);
+                FLOAT x = 0.0f;
+                FLOAT lineY = 0.0f;
+                DWRITE_HIT_TEST_METRICS hit{};
+                if (FAILED(layout->HitTestTextPosition(static_cast<UINT32>(contentColumn), FALSE, &x, &lineY, &hit))) return std::nullopt;
+                return origin.x + x;
+            };
+            auto accumulateRange = [&](std::pair<std::size_t, std::size_t> range, float& top, float& bottom)
+            {
+                auto [displayStart, displayEnd] = range;
+                UINT32 count = 0;
+                auto result = layout->HitTestTextRange(static_cast<UINT32>(displayStart), static_cast<UINT32>(displayEnd - displayStart), origin.x, origin.y, nullptr, 0, &count);
+                if (result != E_NOT_SUFFICIENT_BUFFER || count == 0) return false;
+                std::vector<DWRITE_HIT_TEST_METRICS> metrics(count);
+                if (FAILED(layout->HitTestTextRange(static_cast<UINT32>(displayStart), static_cast<UINT32>(displayEnd - displayStart), origin.x, origin.y, metrics.data(), count, &count))) return false;
+                for (UINT32 index = 0; index < count; ++index)
+                {
+                    top = (std::min)(top, metrics[index].top);
+                    bottom = (std::max)(bottom, metrics[index].top + metrics[index].height);
+                }
+                return true;
+            };
+            for (auto const& nested : parent.child_blocks)
+            {
+                if (nested.kind == elmd::RenderBlockKind::Code)
+                {
+                    auto range = displayRange(nested.content_span);
+                    if (!range) continue;
+                    auto contentLeft = contentLeftFor(nested, range->second);
+                    float top = (std::numeric_limits<float>::max)();
+                    float bottom = (std::numeric_limits<float>::lowest)();
+                    if (!contentLeft || !accumulateRange(*range, top, bottom)) continue;
+                    auto left = (std::clamp)(*contentLeft, origin.x, documentRight);
+                    resources.d2dContext->FillRectangle(
+                        D2D1::RectF(left, top - 4.0f, documentRight, bottom + 4.0f),
+                        resources.panelBrush.Get());
+                    continue;
+                }
+                if (nested.kind != elmd::RenderBlockKind::Quote || nested.child_blocks.empty()) continue;
                 float top = (std::numeric_limits<float>::max)();
                 float bottom = (std::numeric_limits<float>::lowest)();
                 std::optional<float> contentLeft;
                 bool measured = false;
-                for (auto const& child : quote.child_blocks)
+                for (auto const& child : nested.child_blocks)
                 {
-                    auto span = child.content_span;
-                    if (span.container_id.v == 0) continue;
-                    auto range = displayRange(span);
+                    auto range = displayRange(child.content_span);
                     if (!range) continue;
-                    auto [displayStart, displayEnd] = *range;
-                    if (!contentLeft)
-                    {
-                        std::optional<std::size_t> ownerStart;
-                        auto limit = (std::min)(display.displayToSource.size(), elmd::utf16_len(display.text));
-                        for (std::size_t index = 0; index < limit; ++index)
-                        {
-                            if (display.displayToSource[index].container_id == quote.container_marker_owner_id)
-                            {
-                                ownerStart = index;
-                                break;
-                            }
-                        }
-                        if (!ownerStart) continue;
-                        auto contentColumn = (std::min)(*ownerStart + quote.container_indent_columns, displayEnd);
-                        FLOAT x = 0.0f;
-                        FLOAT lineY = 0.0f;
-                        DWRITE_HIT_TEST_METRICS hit{};
-                        if (SUCCEEDED(layout->HitTestTextPosition(static_cast<UINT32>(contentColumn), FALSE, &x, &lineY, &hit)))
-                            contentLeft = origin.x + x;
-                    }
-                    UINT32 count = 0;
-                    auto result = layout->HitTestTextRange(static_cast<UINT32>(displayStart), static_cast<UINT32>(displayEnd - displayStart), origin.x, origin.y, nullptr, 0, &count);
-                    if (result != E_NOT_SUFFICIENT_BUFFER || count == 0) continue;
-                    std::vector<DWRITE_HIT_TEST_METRICS> metrics(count);
-                    if (FAILED(layout->HitTestTextRange(static_cast<UINT32>(displayStart), static_cast<UINT32>(displayEnd - displayStart), origin.x, origin.y, metrics.data(), count, &count))) continue;
-                    for (UINT32 index = 0; index < count; ++index)
-                    {
-                        top = (std::min)(top, metrics[index].top);
-                        bottom = (std::max)(bottom, metrics[index].top + metrics[index].height);
-                        measured = true;
-                    }
+                    if (!contentLeft) contentLeft = contentLeftFor(nested, range->second);
+                    measured = accumulateRange(*range, top, bottom) || measured;
                 }
                 if (!measured || !contentLeft) continue;
                 auto left = (std::clamp)(*contentLeft, origin.x, documentRight);
@@ -346,7 +362,7 @@ namespace winrt::ElMd
             auto origin = D2D1::Point2F(documentLeft + block.block_style.padding_left, y + block.block_style.padding_top);
             auto rect = D2D1::RectF(documentLeft, y, documentRight, y + height);
             if (code || block.block_style.background) resources.d2dContext->FillRectangle(rect, resources.panelBrush.Get());
-            drawNestedQuotes(layout.Get(), origin, block, display);
+            drawNestedBlocks(layout.Get(), origin, block, display);
             drawSelection(layout.Get(), origin, display.displayToSource);
             if (layout) resources.d2dContext->DrawTextLayout(origin, layout.Get(), code ? resources.codeBrush.Get() : resources.textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
             inlineImages.Draw(layout.Get(), origin, images);
