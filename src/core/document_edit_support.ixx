@@ -1,4 +1,5 @@
 export module elmd.core.document_edit_support;
+export import elmd.core.document_transaction;
 import std;
 import elmd.core.ast;
 import elmd.core.block_tree;
@@ -7,12 +8,12 @@ import elmd.core.inline_cst;
 import elmd.core.inline_document;
 import elmd.core.inline_parser;
 import elmd.core.inline_source_edit;
+import elmd.core.ids;
 import elmd.core.text_edit;
 import elmd.core.utf;
 
 export namespace elmd {
 
-enum class DocumentTransactionReason { InsertText, Delete, Paste, Format, Structure };
 enum class InlineFormat { Emphasis, Strong, Strikethrough, Code, Math };
 enum class DocumentTableEdit {
     MoveCellNext, MoveCellPrevious,
@@ -21,14 +22,6 @@ enum class DocumentTableEdit {
     SetColumnAlignment, Normalize, InsertRowAt, InsertColumnAt, MoveRowTo, MoveColumnTo,
 };
 enum class DocumentMove { Left, Right, Up, Down, LineStart, LineEnd, DocumentStart, DocumentEnd };
-
-struct DocumentTransaction {
-    EditorDocument before;
-    EditorDocument after;
-    TextSelection selection_before;
-    TextSelection selection_after;
-    DocumentTransactionReason reason = DocumentTransactionReason::Structure;
-};
 
 struct DocumentInvariantError { NodeId node_id{}; std::string message; };
 
@@ -609,7 +602,7 @@ inline void validate_blocks(const BlockVec& blocks, std::unordered_set<std::uint
 }
 
 inline DocumentTransaction transaction(EditorDocument before, EditorDocument after, TextSelection selection_before, TextSelection selection_after, DocumentTransactionReason reason) {
-    return DocumentTransaction{std::move(before), std::move(after), selection_before, selection_after, reason};
+    return make_document_transaction(before, std::move(after), selection_before, selection_after, reason);
 }
 
 } // namespace document_edit_detail

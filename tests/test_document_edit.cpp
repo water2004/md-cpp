@@ -122,6 +122,55 @@ suite document_edit_tests = [] {
     expect_inline_lossless(inline_document);
 };
 
+"source_transactions_publish_reversible_text_operations"_test = [] {
+    auto document = parse_document("abc");
+    const auto& paragraph = first_editable(document);
+    auto transaction = document_insert_text(document, caret(paragraph, 1), U"X");
+    expect(fatal(bool(transaction.has_value())));
+    if (!transaction) return;
+    expect(fatal(bool(transaction->revision_before == document.revision)));
+    expect(fatal(bool(transaction->operations.size() == 1u)));
+    const auto* operation = transaction->operations.empty()
+        ? nullptr
+        : std::get_if<DocumentTextOperation>(&transaction->operations.front());
+    expect(fatal(bool(operation != nullptr)));
+    if (!operation) return;
+    expect(fatal(bool(operation->forward.container_id == paragraph.id)));
+    expect(fatal(bool(operation->forward.range == SourceRange{1, 1})));
+    expect(fatal(bool(operation->forward.replacement == U"X")));
+    expect(fatal(bool(operation->inverse.container_id == paragraph.id)));
+    expect(fatal(bool(operation->inverse.range == SourceRange{1, 2})));
+    expect(fatal(bool(operation->inverse.replacement.empty())));
+};
+
+"structural_transactions_publish_tree_and_source_operations"_test = [] {
+    auto document = parse_document("");
+    normalize_document(document);
+    const auto paragraph_id = first_editable(document).id;
+    const auto initial_selection = caret(first_editable(document));
+    auto [heading, selection] = type_text(
+        std::move(document), initial_selection, U"# ");
+    expect(fatal(bool(heading.root.children.front().kind == BlockKind::Heading)));
+    expect(fatal(bool(selection.active.container_id == paragraph_id)));
+
+    auto original = parse_document("");
+    normalize_document(original);
+    auto marker = document_insert_text(original, caret(first_editable(original)), U"# ");
+    expect(fatal(bool(marker.has_value())));
+    if (!marker) return;
+    const auto tree_count = std::ranges::count_if(marker->operations, [](const auto& operation) {
+        return std::holds_alternative<DocumentTreeEdit>(operation);
+    });
+    const auto text_count = std::ranges::count_if(marker->operations, [](const auto& operation) {
+        return std::holds_alternative<DocumentTextOperation>(operation);
+    });
+    expect(fatal(bool(tree_count == 1u)));
+    // The typed marker is consumed by the same command that promotes the
+    // paragraph, so the net source is unchanged and no redundant TextEdit is
+    // retained in history.
+    expect(fatal(bool(text_count == 0u)));
+};
+
 "typed_block_markers_apply_local_tree_rules"_test = [] {
     struct Case {
         std::u32string input;

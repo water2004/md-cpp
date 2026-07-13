@@ -180,6 +180,9 @@
     <ClCompile Include="..\core\document_structure_edit.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\core\document_transaction.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\core\document_history.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
