@@ -98,6 +98,18 @@ struct Builder {
         return std::nullopt;
     }
 
+    std::optional<TextPosition> last_editable_position(const BlockNode& block) const {
+        if (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading
+            || block.kind == BlockKind::TableCell || block.kind == BlockKind::CodeBlock
+            || block.kind == BlockKind::MathBlock) {
+            return TextPosition{block.id, block_local_length(block), TextAffinity::Upstream};
+        }
+        for (auto child = block.children.rbegin(); child != block.children.rend(); ++child) {
+            if (auto position = last_editable_position(*child)) return position;
+        }
+        return std::nullopt;
+    }
+
     void append_block_break(std::vector<InlineRenderItem>& out, NodeId owner, std::size_t source_offset = 0) {
         std::size_t cursor = source_offset;
         push_marker(out, owner, cursor, U"\n", MarkerRole::Structural);
@@ -139,7 +151,7 @@ struct Builder {
         auto append_items = [&](const BlockVec& items, bool tasks) {
             for (std::size_t index = 0; index < items.size(); ++index) {
                 auto const& item = items[index];
-                const auto owner = item.children.empty() ? item.id : item.children.front().id;
+                const auto owner = first_editable_owner(item).value_or(item.id);
                 std::size_t cursor = 0;
                 auto marker = item.marker;
                 if (marker.empty()) {
@@ -156,18 +168,22 @@ struct Builder {
                 } else {
                     push_marker(out, owner, cursor, marker, MarkerRole::ListBullet, std::u32string(indent_columns, U' ') + U"\u2022 ");
                 }
-                bool first_child = true;
-                for (auto const& child : item.children) {
-                    if (!first_child) append_block_break(out, child.id, block_local_length(child));
+                for (std::size_t child_index = 0; child_index < item.children.size(); ++child_index) {
+                    auto const& child = item.children[child_index];
+                    if (child_index > 0) {
+                        auto previous = last_editable_position(item.children[child_index - 1])
+                            .value_or(TextPosition{owner, 0, TextAffinity::Upstream});
+                        append_block_break(out, previous.container_id, previous.source_offset);
+                    }
                     auto marker_columns = tasks ? std::size_t{6}
                         : list.list_ordered ? std::to_string(list.list_start + index).size() + 2
                         : std::size_t{2};
                     append_nested_block(out, child, depth + 1, indent_columns + marker_columns);
-                    first_child = false;
                 }
                 if (index + 1 < items.size()) {
-                    const auto offset = item.children.empty() ? std::size_t{0} : block_local_length(item.children.back());
-                    append_block_break(out, owner, offset);
+                    auto previous = last_editable_position(item)
+                        .value_or(TextPosition{owner, 0, TextAffinity::Upstream});
+                    append_block_break(out, previous.container_id, previous.source_offset);
                 }
             }
         };
@@ -190,15 +206,18 @@ struct Builder {
             case BlockKind::BlockQuote:
             case BlockKind::Callout:
             case BlockKind::FootnoteDefinition: {
-                bool first = true;
-                for (auto const& child : block.children) {
-                    if (!first) append_block_break(out, child.id, block_local_length(child));
+                for (std::size_t child_index = 0; child_index < block.children.size(); ++child_index) {
+                    auto const& child = block.children[child_index];
+                    if (child_index > 0) {
+                        auto previous = last_editable_position(block.children[child_index - 1])
+                            .value_or(TextPosition{first_editable_owner(child).value_or(child.id), 0, TextAffinity::Upstream});
+                        append_block_break(out, previous.container_id, previous.source_offset);
+                    }
                     if (block.kind == BlockKind::BlockQuote) {
                         auto owner = first_editable_owner(child).value_or(child.id);
                         append_generated_indent(out, owner, 0, indent_columns + 2);
                     }
                     append_nested_block(out, child, depth + 1, indent_columns);
-                    first = false;
                 }
                 return;
             }
@@ -426,7 +445,7 @@ struct Builder {
     }
 
     NodeId list_item_marker_owner(const BlockNode& item) const {
-        return item.children.empty() ? item.id : item.children.front().id;
+        return first_editable_owner(item).value_or(item.id);
     }
 
     void collect_nested_blocks(

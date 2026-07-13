@@ -54,6 +54,25 @@ suite render_layout_tests = [] {
     expect(fatal(bool(indent != model.blocks.front().inline_items.end())));
 };
 
+"quote_only_list_item_maps_its_marker_to_editable_content"_test = [] {
+    auto model = build_model("- > quoted\n");
+    expect(fatal(bool(model.blocks.size() == 1u)));
+    if (model.blocks.empty()) return;
+    auto const& list = model.blocks.front();
+    auto quote = std::find_if(list.child_blocks.begin(), list.child_blocks.end(), [](auto const& child) {
+        return child.kind == RenderBlockKind::Quote;
+    });
+    expect(fatal(bool(quote != list.child_blocks.end())));
+    if (quote == list.child_blocks.end() || quote->child_blocks.empty()) return;
+    auto editableOwner = quote->child_blocks.front().source_span.container_id;
+    auto marker = std::find_if(list.inline_items.begin(), list.inline_items.end(), [](auto const& item) {
+        return item.marker_role == MarkerRole::ListBullet;
+    });
+    expect(fatal(bool(marker != list.inline_items.end())));
+    if (marker != list.inline_items.end())
+        expect(fatal(bool(marker->source_span.container_id == editableOwner)));
+};
+
 "test_empty_document_yields_editable_blank_model"_test = [] {
     EditorDocument doc = EditorDocument::empty(1);
     Outline o = Outline::empty(1);
@@ -228,6 +247,12 @@ suite render_layout_tests = [] {
         }
         expect(fatal(bool(line_indents == 4u)));
         expect(fatal(bool(flattened_code == code->code_text)));
+        auto trailingBreak = std::find_if(list.inline_items.begin(), list.inline_items.end(), [&](auto const& item) {
+            return item.marker_role == MarkerRole::Structural && item.text == U"\n"
+                && item.source_span.container_id == code->id
+                && item.source_span.source_range.start == code->code_text.size();
+        });
+        expect(fatal(bool(trailingBreak != list.inline_items.end())));
     }
     bool styled_code = false;
     for (auto const& item : list.inline_items) {
@@ -249,6 +274,16 @@ suite render_layout_tests = [] {
         expect(fatal(bool((quote->container_depth) == (1u))));
         expect(fatal(bool((quote->container_indent_columns) == (2u))));
         expect(fatal(bool(quote->container_marker_owner_id.v != 0u)));
+        expect(fatal(bool(!quote->child_blocks.empty())));
+        if (!quote->child_blocks.empty()) {
+            auto const quoteContent = quote->child_blocks.front().source_span;
+            auto trailingBreak = std::find_if(list.inline_items.begin(), list.inline_items.end(), [&](auto const& item) {
+                return item.marker_role == MarkerRole::Structural && item.text == U"\n"
+                    && item.source_span.container_id == quoteContent.container_id
+                    && item.source_span.source_range.start == quoteContent.source_range.end;
+            });
+            expect(fatal(bool(trailingBreak != list.inline_items.end())));
+        }
     }
 };
 
