@@ -11,6 +11,7 @@ import elmd.core.inline_source_edit;
 import elmd.core.text_edit;
 import elmd.core.utf;
 import elmd.core.document_edit_support;
+import elmd.core.document_input_rules;
 import elmd.core.document_source_edit;
 
 export namespace elmd {
@@ -507,11 +508,15 @@ inline std::optional<DocumentTransaction> document_indent_list_item(const Editor
     auto* list = block_at_path(after.root, list_path);
     if (!list || (list->kind != BlockKind::List && list->kind != BlockKind::TaskList) || item_index == 0) return std::nullopt;
     document_edit_detail::NodeAllocator allocator(after);
-    auto item = remove_block(*list, item_index);
-    if (!item) return std::nullopt;
-    auto& previous = list->children[item_index - 1];
+    const auto list_id = list->id;
+    const auto previous_id = list->children[item_index - 1].id;
+    auto* previous = find_block(after.root, previous_id);
+    if (!previous) return std::nullopt;
     BlockNode* nested = nullptr;
-    if (!previous.children.empty() && previous.children.back().kind == list->kind) nested = &previous.children.back();
+    if (!previous->children.empty() && previous->children.back().kind == list->kind) {
+        nested = &previous->children.back();
+    }
+    std::vector<DocumentOperation> operations;
     if (!nested) {
         BlockNode created;
         created.id = allocator.allocate();
@@ -519,12 +524,34 @@ inline std::optional<DocumentTransaction> document_indent_list_item(const Editor
         created.list_ordered = list->list_ordered;
         created.list_start = list->list_start;
         created.list_delimiter = list->list_delimiter;
-        previous.children.push_back(std::move(created));
-        nested = &previous.children.back();
+        const auto nested_id = created.id;
+        DocumentTreeEdit insert;
+        insert.kind = DocumentTreeEditKind::Insert;
+        insert.parent_id = previous_id;
+        insert.index = previous->children.size();
+        insert.after = created;
+        operations.emplace_back(std::move(insert));
+        previous->children.push_back(std::move(created));
+        nested = find_block(after.root, nested_id);
     }
-    nested->children.push_back(std::move(*item));
+    if (!nested) return std::nullopt;
+    const auto nested_id = nested->id;
+    const auto target_index = nested->children.size();
+    DocumentTreeEdit move;
+    move.kind = DocumentTreeEditKind::Move;
+    move.parent_id = list_id;
+    move.index = item_index;
+    move.other_parent_id = nested_id;
+    move.other_index = target_index;
+    list = find_block(after.root, list_id);
+    nested = find_block(after.root, nested_id);
+    auto item = list ? remove_block(*list, item_index) : std::nullopt;
+    if (!item || !nested || !insert_block(*nested, target_index, std::move(*item))) return std::nullopt;
+    operations.emplace_back(std::move(move));
     ++after.revision;
-    return document_edit_detail::transaction(document, std::move(after), selection, selection, DocumentTransactionReason::Structure);
+    return make_recorded_document_transaction(
+        std::move(after), std::move(operations), selection, selection,
+        document.revision, DocumentTransactionReason::Structure);
 }
 
 inline std::optional<DocumentTransaction> document_outdent_list_item(const EditorDocument& document, const TextSelection& selection) {
@@ -537,44 +564,20 @@ inline std::optional<DocumentTransaction> document_outdent_list_item(const Edito
         path->pop_back();
     }
     if (path->empty()) return std::nullopt;
-    auto list_path = *path;
-    const auto item_index = list_path.back();
-    list_path.pop_back();
-    auto* list = block_at_path(after.root, list_path);
-    if (!list || (list->kind != BlockKind::List && list->kind != BlockKind::TaskList)) return std::nullopt;
-    const auto list_id = list->id;
-    auto item = remove_block(*list, item_index);
-    if (!item) return std::nullopt;
-
-    auto parent_item_path = list_path;
-    if (!parent_item_path.empty()) parent_item_path.pop_back();
-    auto* parent_item = block_at_path(after.root, parent_item_path);
-    if (parent_item && (parent_item->kind == BlockKind::ListItem || parent_item->kind == BlockKind::TaskListItem)) {
-        auto grand_list_path = parent_item_path;
-        const auto parent_item_index = grand_list_path.back();
-        grand_list_path.pop_back();
-        auto* grand_list = block_at_path(after.root, grand_list_path);
-        if (!grand_list) return std::nullopt;
-        insert_block(*grand_list, parent_item_index + 1, std::move(*item));
-        if (auto* nested = elmd::find_block(after.root, list_id); nested && nested->children.empty()) {
-            auto* owner = find_parent_block(after.root, list_id);
-            if (owner) {
-                const auto nested_path = block_path(after.root, list_id);
-                if (nested_path) remove_block(*owner, nested_path->back());
-            }
-        }
-    } else {
-        auto* list_parent = find_parent_block(after.root, list_id);
-        auto list_location = block_path(after.root, list_id);
-        if (!list_parent || !list_location) return std::nullopt;
-        auto insertion = list_location->back() + 1;
-        for (auto& child : item->children) insert_block(*list_parent, insertion++, std::move(child));
-        if (auto* current_list = elmd::find_block(after.root, list_id); current_list && current_list->children.empty()) {
-            remove_block(*list_parent, list_location->back());
-        }
-    }
+    document_edit_detail::NodeAllocator allocator(after);
+    auto recorded = document_input_rules::outdent_list_item(
+        after,
+        selection.active.container_id,
+        allocator);
+    if (!recorded || recorded->operations.empty()) return std::nullopt;
     ++after.revision;
-    return document_edit_detail::transaction(document, std::move(after), selection, selection, DocumentTransactionReason::Structure);
+    return make_recorded_document_transaction(
+        std::move(after),
+        std::move(recorded->operations),
+        selection,
+        selection,
+        document.revision,
+        DocumentTransactionReason::Structure);
 }
 
 inline std::optional<DocumentTransaction> document_edit_table(

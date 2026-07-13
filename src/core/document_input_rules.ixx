@@ -1233,6 +1233,29 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> handle_enter(
     return detail::split_list_item(document, position, allocator);
 }
 
+inline std::optional<document_edit_detail::RecordedBlockEdit> outdent_list_item(
+    EditorDocument& document,
+    NodeId descendant_id,
+    document_edit_detail::NodeAllocator& allocator) {
+    auto path = block_path(document.root, descendant_id);
+    if (!path) return std::nullopt;
+    BlockNode* item = nullptr;
+    while (!path->empty()) {
+        auto* candidate = block_at_path(document.root, *path);
+        if (candidate && (candidate->kind == BlockKind::ListItem
+            || candidate->kind == BlockKind::TaskListItem)) {
+            item = candidate;
+            break;
+        }
+        path->pop_back();
+    }
+    if (!item || item->children.empty()) return std::nullopt;
+    return detail::remove_list_prefix(
+        document,
+        TextPosition{item->children.front().id, 0, TextAffinity::Downstream},
+        allocator);
+}
+
 // Structural prefixes live in the block tree, outside the editable leaf's
 // InlineDocument.source. At source offset zero, Backspace is therefore a
 // block-tree command (unwrap/outdent) regardless of visual text affinity.

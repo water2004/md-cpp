@@ -1262,6 +1262,69 @@ suite editor_tests = [] {
     verify(unwrap_list, unwrap_list_markdown, list_before, unwrapped_list, "unwrap list");
 };
 
+"list_indent_and_outdent_record_item_moves_at_arbitrary_depth"_test = [] {
+    auto exercise = [](
+        Editor& editor,
+        TextSelection before,
+        bool indent,
+        std::string_view label) {
+        const auto before_markdown = editor.markdown_utf8();
+        editor.set_selection(before);
+        reset_core_operation_counters();
+        auto transaction = indent
+            ? editor.execute_document_indent_list_item(editor.selection())
+            : editor.execute_document_outdent_list_item(editor.selection());
+        expect(fatal(bool(transaction.has_value()))) << label;
+        if (!transaction) return;
+        const auto counters = read_core_operation_counters();
+        expect(fatal(bool(counters.full_document_parses == 0u))) << label;
+        expect(fatal(bool(counters.full_document_serializations == 0u))) << label;
+        expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << label;
+        expect(fatal(bool(!transaction->operations.empty()))) << label;
+        const auto after_markdown = editor.markdown_utf8();
+        const auto after = editor.selection();
+        expect(fatal(bool(editor.undo()))) << label;
+        expect(fatal(bool(editor.markdown_utf8() == before_markdown))) << label;
+        expect(fatal(bool(editor.selection() == before))) << label;
+        expect(fatal(bool(editor.redo()))) << label;
+        expect(fatal(bool(editor.markdown_utf8() == after_markdown))) << label;
+        expect(fatal(bool(editor.selection() == after))) << label;
+    };
+
+    for (auto markdown : {
+             std::string{"- one\n- two"},
+             std::string{"> - one\n> - two"},
+             std::string{"- one\n- > two"}}) {
+        Editor editor(markdown);
+        const BlockNode* two = nullptr;
+        walk_blocks(editor.document().root, [&](const BlockNode& block) {
+            if (block.kind == BlockKind::Paragraph && block.inline_content.source == U"two") two = &block;
+        });
+        expect(fatal(bool(two != nullptr))) << markdown;
+        if (two) {
+            exercise(
+                editor,
+                TextSelection::caret({two->id, 1, TextAffinity::Downstream}),
+                true,
+                markdown);
+        }
+    }
+
+    Editor outdent("- parent\n  - > child");
+    const BlockNode* child = nullptr;
+    walk_blocks(outdent.document().root, [&](const BlockNode& block) {
+        if (block.kind == BlockKind::Paragraph && block.inline_content.source == U"child") child = &block;
+    });
+    expect(fatal(bool(child != nullptr)));
+    if (child) {
+        exercise(
+            outdent,
+            TextSelection::caret({child->id, 2, TextAffinity::Downstream}),
+            false,
+            "nested quoted item");
+    }
+};
+
 "table_navigation_changes_selection_without_creating_history"_test = [] {
     Editor editor("| A | B |\n| --- | --- |\n| 1 | 2 |");
     const auto& table = editor.document().root.children.front();
