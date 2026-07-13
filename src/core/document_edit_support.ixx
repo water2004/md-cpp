@@ -380,7 +380,7 @@ inline bool join_first_child_into_inline_owner(
     return true;
 }
 
-inline std::optional<TextPosition> exit_empty_indented_code(
+inline std::optional<RecordedBlockEdit> exit_empty_indented_code(
     EditorDocument& document,
     TextPosition position,
     NodeAllocator& allocator) {
@@ -407,34 +407,81 @@ inline std::optional<TextPosition> exit_empty_indented_code(
     auto before = block->code_text.substr(0, before_end);
     auto after_start = line_end < block->code_text.size() ? line_end + 1 : line_end;
     auto after = block->code_text.substr(after_start);
+    const auto source_size = block->code_text.size();
     auto parent_path = *path;
     const auto block_index = parent_path.back();
     parent_path.pop_back();
     auto* parent = block_at_path(document.root, parent_path);
-    if (!parent) return std::nullopt;
+    if (!parent || block_index >= parent->children.size()) return std::nullopt;
 
     auto paragraph = empty_paragraph(allocator, document);
-    const auto target = TextPosition{paragraph.id, 0, TextAffinity::Downstream};
+    RecordedBlockEdit result;
+    result.target = TextPosition{paragraph.id, 0, TextAffinity::Downstream};
+    const auto parent_id = parent->id;
     if (before.empty()) {
-        auto trailing = std::move(parent->children[block_index]);
-        trailing.code_text = std::move(after);
-        parent->children[block_index] = std::move(paragraph);
-        if (!trailing.code_text.empty()) insert_block(*parent, block_index + 1, std::move(trailing));
-        return target;
+        if (after.empty()) {
+            DocumentTreeEdit remove;
+            remove.kind = DocumentTreeEditKind::Remove;
+            remove.parent_id = parent_id;
+            remove.index = block_index;
+            remove.before = parent->children[block_index];
+            result.operations.emplace_back(std::move(remove));
+            parent->children.erase(parent->children.begin() + static_cast<std::ptrdiff_t>(block_index));
+        } else {
+            auto edit = edit_block_source(
+                document,
+                position.container_id,
+                {0, after_start},
+                {},
+                allocator);
+            if (!edit) return std::nullopt;
+            append_source_operation(result.operations, std::move(*edit));
+        }
+
+        DocumentTreeEdit insert;
+        insert.kind = DocumentTreeEditKind::Insert;
+        insert.parent_id = parent_id;
+        insert.index = block_index;
+        insert.after = paragraph;
+        result.operations.emplace_back(std::move(insert));
+        parent = find_block(document.root, parent_id);
+        if (!parent || !insert_block(*parent, block_index, std::move(paragraph))) return std::nullopt;
+        return result;
     }
 
-    parent->children[block_index].code_text = std::move(before);
-    insert_block(*parent, block_index + 1, std::move(paragraph));
+    auto edit = edit_block_source(
+        document,
+        position.container_id,
+        {before_end, source_size},
+        {},
+        allocator);
+    if (!edit) return std::nullopt;
+    append_source_operation(result.operations, std::move(*edit));
+
+    DocumentTreeEdit insert_paragraph;
+    insert_paragraph.kind = DocumentTreeEditKind::Insert;
+    insert_paragraph.parent_id = parent_id;
+    insert_paragraph.index = block_index + 1;
+    insert_paragraph.after = paragraph;
+    result.operations.emplace_back(std::move(insert_paragraph));
+    parent = find_block(document.root, parent_id);
+    if (!parent || !insert_block(*parent, block_index + 1, std::move(paragraph))) return std::nullopt;
     if (!after.empty()) {
         auto trailing = parent->children[block_index];
         trailing.id = allocator.allocate();
         trailing.code_text = std::move(after);
-        insert_block(*parent, block_index + 2, std::move(trailing));
+        DocumentTreeEdit insert_trailing;
+        insert_trailing.kind = DocumentTreeEditKind::Insert;
+        insert_trailing.parent_id = parent_id;
+        insert_trailing.index = block_index + 2;
+        insert_trailing.after = trailing;
+        result.operations.emplace_back(std::move(insert_trailing));
+        if (!insert_block(*parent, block_index + 2, std::move(trailing))) return std::nullopt;
     }
-    return target;
+    return result;
 }
 
-inline std::optional<TextPosition> exit_empty_block_quote(
+inline std::optional<RecordedBlockEdit> exit_empty_block_quote(
     EditorDocument& document,
     TextPosition position,
     NodeAllocator& allocator) {
@@ -464,29 +511,77 @@ inline std::optional<TextPosition> exit_empty_block_quote(
     // Delete the quote's empty content node. A fresh paragraph outside the
     // quote owns the caret; reparenting the trigger line would preserve it.
     auto paragraph = empty_paragraph(allocator, document);
-    const auto target = TextPosition{paragraph.id, 0, TextAffinity::Downstream};
-    BlockVec trailing_children;
-    trailing_children.insert(trailing_children.end(),
-        std::make_move_iterator(quote.children.begin() + static_cast<std::ptrdiff_t>(child_index + 1)),
-        std::make_move_iterator(quote.children.end()));
-    quote.children.erase(quote.children.begin() + static_cast<std::ptrdiff_t>(child_index), quote.children.end());
+    RecordedBlockEdit result;
+    result.target = TextPosition{paragraph.id, 0, TextAffinity::Downstream};
+    const auto parent_id = parent->id;
+    const auto quote_id = quote.id;
+    const auto trailing_count = quote.children.size() - child_index - 1;
 
-    std::optional<BlockNode> trailing_quote;
-    if (!trailing_children.empty()) {
-        BlockNode value;
-        value.id = allocator.allocate();
-        value.kind = BlockKind::BlockQuote;
-        value.children = std::move(trailing_children);
-        trailing_quote = std::move(value);
+    DocumentTreeEdit insert_paragraph;
+    insert_paragraph.kind = DocumentTreeEditKind::Insert;
+    insert_paragraph.parent_id = parent_id;
+    insert_paragraph.index = quote_index + 1;
+    insert_paragraph.after = paragraph;
+    result.operations.emplace_back(std::move(insert_paragraph));
+    if (!insert_block(*parent, quote_index + 1, std::move(paragraph))) return std::nullopt;
+
+    std::optional<NodeId> trailing_id;
+    if (trailing_count > 0) {
+        auto* current_quote = find_block(document.root, quote_id);
+        if (!current_quote) return std::nullopt;
+        auto trailing = document_transaction_detail::payload_shell(*current_quote);
+        trailing.id = allocator.allocate();
+        trailing_id = trailing.id;
+        DocumentTreeEdit insert_trailing;
+        insert_trailing.kind = DocumentTreeEditKind::Insert;
+        insert_trailing.parent_id = parent_id;
+        insert_trailing.index = quote_index + 2;
+        insert_trailing.after = trailing;
+        result.operations.emplace_back(std::move(insert_trailing));
+        parent = find_block(document.root, parent_id);
+        if (!parent || !insert_block(*parent, quote_index + 2, std::move(trailing))) return std::nullopt;
+
+        for (std::size_t target_index = 0; target_index < trailing_count; ++target_index) {
+            auto* source_quote = find_block(document.root, quote_id);
+            auto* trailing_quote = find_block(document.root, *trailing_id);
+            if (!source_quote || !trailing_quote || child_index + 1 >= source_quote->children.size()) {
+                return std::nullopt;
+            }
+            DocumentTreeEdit move;
+            move.kind = DocumentTreeEditKind::Move;
+            move.parent_id = quote_id;
+            move.index = child_index + 1;
+            move.other_parent_id = *trailing_id;
+            move.other_index = target_index;
+            auto child = remove_block(*source_quote, child_index + 1);
+            if (!child || !insert_block(*trailing_quote, target_index, std::move(*child))) return std::nullopt;
+            result.operations.emplace_back(std::move(move));
+        }
     }
-    if (quote.children.empty()) {
-        parent->children[quote_index] = std::move(paragraph);
-        if (trailing_quote) insert_block(*parent, quote_index + 1, std::move(*trailing_quote));
-    } else {
-        insert_block(*parent, quote_index + 1, std::move(paragraph));
-        if (trailing_quote) insert_block(*parent, quote_index + 2, std::move(*trailing_quote));
+
+    auto* current_quote = find_block(document.root, quote_id);
+    if (!current_quote || child_index >= current_quote->children.size()) return std::nullopt;
+    DocumentTreeEdit remove_trigger;
+    remove_trigger.kind = DocumentTreeEditKind::Remove;
+    remove_trigger.parent_id = quote_id;
+    remove_trigger.index = child_index;
+    remove_trigger.before = current_quote->children[child_index];
+    result.operations.emplace_back(std::move(remove_trigger));
+    current_quote->children.erase(
+        current_quote->children.begin() + static_cast<std::ptrdiff_t>(child_index));
+
+    if (current_quote->children.empty()) {
+        parent = find_block(document.root, parent_id);
+        if (!parent || quote_index >= parent->children.size()) return std::nullopt;
+        DocumentTreeEdit remove_quote;
+        remove_quote.kind = DocumentTreeEditKind::Remove;
+        remove_quote.parent_id = parent_id;
+        remove_quote.index = quote_index;
+        remove_quote.before = parent->children[quote_index];
+        result.operations.emplace_back(std::move(remove_quote));
+        parent->children.erase(parent->children.begin() + static_cast<std::ptrdiff_t>(quote_index));
     }
-    return target;
+    return result;
 }
 
 inline bool join_adjacent(

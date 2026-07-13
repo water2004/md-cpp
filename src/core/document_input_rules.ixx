@@ -498,7 +498,7 @@ inline BlockNode empty_item(
     return item;
 }
 
-inline std::optional<TextPosition> exit_empty_list_item(
+inline std::optional<document_edit_detail::RecordedBlockEdit> exit_empty_list_item(
     EditorDocument& document,
     TextPosition position,
     document_edit_detail::NodeAllocator& allocator) {
@@ -519,29 +519,100 @@ inline std::optional<TextPosition> exit_empty_list_item(
     if (!parent || list_index >= parent->children.size()) return std::nullopt;
 
     auto paragraph = document_edit_detail::empty_paragraph(allocator, document);
-    const auto target = TextPosition{paragraph.id, 0, TextAffinity::Downstream};
-    auto original = std::move(parent->children[list_index]);
-    BlockVec replacement;
-    if (context->item_index > 0) {
-        auto before = list_shell_from(original, original.id);
-        before.children.insert(before.children.end(),
-            std::make_move_iterator(original.children.begin()),
-            std::make_move_iterator(original.children.begin() + static_cast<std::ptrdiff_t>(context->item_index)));
-        replacement.push_back(std::move(before));
+    document_edit_detail::RecordedBlockEdit result;
+    result.target = TextPosition{paragraph.id, 0, TextAffinity::Downstream};
+    const auto parent_id = parent->id;
+    const auto list_id = list->id;
+    const auto item_count = list->children.size();
+
+    if (item_count == 1) {
+        DocumentTreeEdit remove_list;
+        remove_list.kind = DocumentTreeEditKind::Remove;
+        remove_list.parent_id = parent_id;
+        remove_list.index = list_index;
+        remove_list.before = parent->children[list_index];
+        result.operations.emplace_back(std::move(remove_list));
+        parent->children.erase(parent->children.begin() + static_cast<std::ptrdiff_t>(list_index));
+
+        DocumentTreeEdit insert_paragraph;
+        insert_paragraph.kind = DocumentTreeEditKind::Insert;
+        insert_paragraph.parent_id = parent_id;
+        insert_paragraph.index = list_index;
+        insert_paragraph.after = paragraph;
+        result.operations.emplace_back(std::move(insert_paragraph));
+        if (!insert_block(*parent, list_index, std::move(paragraph))) return std::nullopt;
+        return result;
     }
-    replacement.push_back(std::move(paragraph));
-    if (context->item_index + 1 < original.children.size()) {
-        auto after = list_shell_from(original, context->item_index == 0 ? original.id : allocator.allocate());
-        after.list_start = original.list_start + context->item_index + 1;
-        after.children.insert(after.children.end(),
-            std::make_move_iterator(original.children.begin() + static_cast<std::ptrdiff_t>(context->item_index + 1)),
-            std::make_move_iterator(original.children.end()));
-        replacement.push_back(std::move(after));
+
+    DocumentTreeEdit remove_item;
+    remove_item.kind = DocumentTreeEditKind::Remove;
+    remove_item.parent_id = list_id;
+    remove_item.index = context->item_index;
+    remove_item.before = item;
+    result.operations.emplace_back(std::move(remove_item));
+    list->children.erase(list->children.begin() + static_cast<std::ptrdiff_t>(context->item_index));
+
+    if (context->item_index == 0) {
+        DocumentTreeEdit update_list;
+        update_list.kind = DocumentTreeEditKind::UpdatePayload;
+        update_list.before = document_transaction_detail::payload_shell(*list);
+        list->list_start += 1;
+        update_list.after = document_transaction_detail::payload_shell(*list);
+        result.operations.emplace_back(std::move(update_list));
+
+        DocumentTreeEdit insert_paragraph;
+        insert_paragraph.kind = DocumentTreeEditKind::Insert;
+        insert_paragraph.parent_id = parent_id;
+        insert_paragraph.index = list_index;
+        insert_paragraph.after = paragraph;
+        result.operations.emplace_back(std::move(insert_paragraph));
+        parent = find_block(document.root, parent_id);
+        if (!parent || !insert_block(*parent, list_index, std::move(paragraph))) return std::nullopt;
+        return result;
     }
-    parent->children.erase(parent->children.begin() + static_cast<std::ptrdiff_t>(list_index));
-    parent->children.insert(parent->children.begin() + static_cast<std::ptrdiff_t>(list_index),
-        std::make_move_iterator(replacement.begin()), std::make_move_iterator(replacement.end()));
-    return target;
+
+    DocumentTreeEdit insert_paragraph;
+    insert_paragraph.kind = DocumentTreeEditKind::Insert;
+    insert_paragraph.parent_id = parent_id;
+    insert_paragraph.index = list_index + 1;
+    insert_paragraph.after = paragraph;
+    result.operations.emplace_back(std::move(insert_paragraph));
+    if (!insert_block(*parent, list_index + 1, std::move(paragraph))) return std::nullopt;
+
+    const auto trailing_count = item_count - context->item_index - 1;
+    if (trailing_count > 0) {
+        auto* current_list = find_block(document.root, list_id);
+        if (!current_list) return std::nullopt;
+        auto trailing = list_shell_from(*current_list, allocator.allocate());
+        trailing.list_start = current_list->list_start + context->item_index + 1;
+        const auto trailing_id = trailing.id;
+        DocumentTreeEdit insert_trailing;
+        insert_trailing.kind = DocumentTreeEditKind::Insert;
+        insert_trailing.parent_id = parent_id;
+        insert_trailing.index = list_index + 2;
+        insert_trailing.after = trailing;
+        result.operations.emplace_back(std::move(insert_trailing));
+        parent = find_block(document.root, parent_id);
+        if (!parent || !insert_block(*parent, list_index + 2, std::move(trailing))) return std::nullopt;
+
+        for (std::size_t target_index = 0; target_index < trailing_count; ++target_index) {
+            current_list = find_block(document.root, list_id);
+            auto* trailing_list = find_block(document.root, trailing_id);
+            if (!current_list || !trailing_list || context->item_index >= current_list->children.size()) {
+                return std::nullopt;
+            }
+            DocumentTreeEdit move;
+            move.kind = DocumentTreeEditKind::Move;
+            move.parent_id = list_id;
+            move.index = context->item_index;
+            move.other_parent_id = trailing_id;
+            move.other_index = target_index;
+            auto moved = remove_block(*current_list, context->item_index);
+            if (!moved || !insert_block(*trailing_list, target_index, std::move(*moved))) return std::nullopt;
+            result.operations.emplace_back(std::move(move));
+        }
+    }
+    return result;
 }
 
 inline std::optional<document_edit_detail::RecordedBlockEdit> split_list_item(
@@ -997,7 +1068,7 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> handle_enter(
         return closed;
     }
     if (auto exited = detail::exit_empty_list_item(document, position, allocator)) {
-        return document_edit_detail::RecordedBlockEdit{*exited, {}};
+        return exited;
     }
     return detail::split_list_item(document, position, allocator);
 }

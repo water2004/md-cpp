@@ -255,6 +255,117 @@ suite editor_tests = [] {
     expect(fatal(bool(with_nested_block.selection() == nested_after)));
 };
 
+"empty_block_exits_record_tree_operations_and_restore_exactly"_test = [] {
+    auto exercise = [](Editor& editor, TextSelection before, std::string_view label) {
+        const auto before_markdown = editor.markdown_utf8();
+        editor.set_selection(before);
+        reset_core_operation_counters();
+        auto transaction = editor.execute_document_enter(editor.selection());
+        expect(fatal(bool(transaction.has_value()))) << label;
+        if (!transaction) return;
+        const auto counters = read_core_operation_counters();
+        expect(fatal(bool(counters.full_document_parses == 0u))) << label;
+        expect(fatal(bool(counters.full_document_serializations == 0u))) << label;
+        expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << label;
+        expect(fatal(bool(!transaction->operations.empty()))) << label;
+        const auto after_markdown = editor.markdown_utf8();
+        const auto after = editor.selection();
+        expect(fatal(bool(editor.undo()))) << label;
+        expect(fatal(bool(editor.markdown_utf8() == before_markdown))) << label;
+        expect(fatal(bool(editor.selection() == before))) << label;
+        expect(fatal(bool(editor.redo()))) << label;
+        expect(fatal(bool(editor.markdown_utf8() == after_markdown))) << label;
+        expect(fatal(bool(editor.selection() == after))) << label;
+    };
+
+    Editor list("- one\n- ");
+    const BlockNode* empty_item = nullptr;
+    walk_blocks(list.document().root, [&](const BlockNode& block) {
+        if (!empty_item && block.kind == BlockKind::Paragraph && block.inline_content.source.empty()) {
+            empty_item = &block;
+        }
+    });
+    expect(fatal(bool(empty_item != nullptr)));
+    if (empty_item) {
+        exercise(list, TextSelection::caret({empty_item->id, 0, TextAffinity::Downstream}), "list");
+    }
+
+    for (auto markdown : {std::string{"- \n- two"}, std::string{"- one\n- \n- three"}, std::string{"> - one\n> - "}}) {
+        Editor split_list(markdown);
+        const BlockNode* empty = nullptr;
+        walk_blocks(split_list.document().root, [&](const BlockNode& block) {
+            if (!empty && block.kind == BlockKind::Paragraph && block.inline_content.source.empty()) {
+                empty = &block;
+            }
+        });
+        expect(fatal(bool(empty != nullptr))) << markdown;
+        if (empty) {
+            exercise(
+                split_list,
+                TextSelection::caret({empty->id, 0, TextAffinity::Downstream}),
+                markdown);
+        }
+    }
+
+    Editor quote("> one\n>\n> two");
+    auto* initial_quote = find_block(quote.document().root, quote.document().root.children.front().id);
+    expect(fatal(bool(initial_quote != nullptr)));
+    expect(fatal(bool(initial_quote && initial_quote->children.size() == 2u)));
+    if (initial_quote && initial_quote->children.size() == 2u) {
+        const auto first_id = initial_quote->children.front().id;
+        const auto first_length = initial_quote->children.front().inline_content.source.size();
+        quote.set_selection(TextSelection::caret({first_id, first_length, TextAffinity::Upstream}));
+        expect(fatal(bool(quote.execute_document_enter(quote.selection()).has_value())));
+    }
+    const BlockNode* empty_quote_line = nullptr;
+    walk_blocks(quote.document().root, [&](const BlockNode& block) {
+        if (!empty_quote_line && block.kind == BlockKind::Paragraph && block.inline_content.source.empty()) {
+            empty_quote_line = &block;
+        }
+    });
+    expect(fatal(bool(empty_quote_line != nullptr)));
+    if (empty_quote_line) {
+        exercise(quote, TextSelection::caret({empty_quote_line->id, 0, TextAffinity::Downstream}), "quote");
+        expect(fatal(bool(quote.document().root.children.size() == 3u)));
+        if (quote.document().root.children.size() == 3u) {
+            const auto& trailing = quote.document().root.children.back();
+            expect(fatal(bool(trailing.kind == BlockKind::BlockQuote)));
+        }
+    }
+
+    Editor nested_quote("- item\n  > ");
+    const BlockNode* nested_empty = nullptr;
+    walk_blocks(nested_quote.document().root, [&](const BlockNode& block) {
+        if (!nested_empty && block.kind == BlockKind::Paragraph && block.inline_content.source.empty()) {
+            nested_empty = &block;
+        }
+    });
+    expect(fatal(bool(nested_empty != nullptr)));
+    if (nested_empty) {
+        exercise(
+            nested_quote,
+            TextSelection::caret({nested_empty->id, 0, TextAffinity::Downstream}),
+            "nested quote");
+    }
+
+    Editor code("    one\n\n    two");
+    const BlockNode* code_block = nullptr;
+    walk_blocks(code.document().root, [&](const BlockNode& block) {
+        if (!code_block && block.kind == BlockKind::CodeBlock && block.code_indented) code_block = &block;
+    });
+    expect(fatal(bool(code_block != nullptr)));
+    if (code_block) {
+        const auto separator = code_block->code_text.find(U"\n\n");
+        expect(fatal(bool(separator != std::u32string::npos)));
+        if (separator != std::u32string::npos) {
+            exercise(
+                code,
+                TextSelection::caret({code_block->id, separator + 1, TextAffinity::Downstream}),
+                "indented code");
+        }
+    }
+};
+
 "selection_replacement_composes_delete_and_insert_source_edits"_test = [] {
     Editor editor("alpha");
     const auto owner_id = first_text(editor).id;

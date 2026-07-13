@@ -57,8 +57,8 @@ inline std::optional<DocumentTransaction> document_insert_text(const EditorDocum
         operations, std::move(*inserted->source_edit));
     auto target = current.active; target.source_offset = inserted->offset; target.affinity = inserted->affinity;
     auto structural = document_input_rules::apply_after_text_insert(working, target, allocator);
-    const bool has_recorded_structure = structural && !structural->operations.empty();
     if (structural) {
+        if (structural->operations.empty()) return std::nullopt;
         target = structural->target;
         operations.insert(
             operations.end(),
@@ -66,16 +66,13 @@ inline std::optional<DocumentTransaction> document_insert_text(const EditorDocum
             std::make_move_iterator(structural->operations.end()));
     }
     ++working.revision;
-    if (!structural || has_recorded_structure) {
-        return make_recorded_document_transaction(
-            std::move(working),
-            std::move(operations),
-            selection,
-            TextSelection::caret(target),
-            document.revision,
-            DocumentTransactionReason::InsertText);
-    }
-    return document_edit_detail::transaction(document, std::move(working), selection, TextSelection::caret(target), DocumentTransactionReason::InsertText);
+    return make_recorded_document_transaction(
+        std::move(working),
+        std::move(operations),
+        selection,
+        TextSelection::caret(target),
+        document.revision,
+        DocumentTransactionReason::InsertText);
 }
 
 inline std::optional<DocumentTransaction> document_enter(const EditorDocument& document, const TextSelection& selection) {
@@ -86,9 +83,11 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
     std::optional<AppliedSourceEdit> source_edit;
     std::vector<DocumentOperation> operations;
     if (auto exited = document_edit_detail::exit_empty_indented_code(after, selection.active, allocator)) {
-        target = *exited;
+        target = exited->target;
+        operations = std::move(exited->operations);
     } else if (auto exited_quote = document_edit_detail::exit_empty_block_quote(after, selection.active, allocator)) {
-        target = *exited_quote;
+        target = exited_quote->target;
+        operations = std::move(exited_quote->operations);
     } else if (auto handled = document_input_rules::handle_enter(after, selection.active, allocator)) {
         target = handled->target;
         operations = std::move(handled->operations);
@@ -125,16 +124,14 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
             document.revision,
             DocumentTransactionReason::Structure);
     }
-    if (!operations.empty()) {
-        return make_recorded_document_transaction(
-            std::move(after),
-            std::move(operations),
-            selection,
-            TextSelection::caret(target),
-            document.revision,
-            DocumentTransactionReason::Structure);
-    }
-    return document_edit_detail::transaction(document, std::move(after), selection, TextSelection::caret(target), DocumentTransactionReason::Structure);
+    if (operations.empty()) return std::nullopt;
+    return make_recorded_document_transaction(
+        std::move(after),
+        std::move(operations),
+        selection,
+        TextSelection::caret(target),
+        document.revision,
+        DocumentTransactionReason::Structure);
 }
 
 inline std::optional<DocumentTransaction> document_paste_text(const EditorDocument& document, const TextSelection& selection, std::u32string_view text) {
