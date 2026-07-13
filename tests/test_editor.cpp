@@ -363,6 +363,64 @@ suite editor_tests = [] {
     }
 };
 
+"typed_task_markers_split_list_segments_with_recorded_moves"_test = [] {
+    Editor single;
+    expect(fatal(bool(single.execute_document_insert_text(single.selection(), U"- ").has_value())));
+    const auto single_before_markdown = single.markdown_utf8();
+    const auto single_before = single.selection();
+    reset_core_operation_counters();
+    auto upgraded = single.execute_document_insert_text(single.selection(), U"[ ] ");
+    expect(fatal(bool(upgraded.has_value())));
+    if (!upgraded) return;
+    auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
+    expect(fatal(bool(single.document().root.children.front().kind == BlockKind::TaskList)));
+    expect(fatal(bool(single.selection().active.source_offset == 0u)));
+    const auto single_after_markdown = single.markdown_utf8();
+    const auto single_after = single.selection();
+    expect(fatal(bool(single.undo())));
+    expect(fatal(bool(single.markdown_utf8() == single_before_markdown)));
+    expect(fatal(bool(single.selection() == single_before)));
+    expect(fatal(bool(single.redo())));
+    expect(fatal(bool(single.markdown_utf8() == single_after_markdown)));
+    expect(fatal(bool(single.selection() == single_after)));
+
+    Editor middle("- before\n- current\n- after");
+    const auto middle_before_markdown = middle.markdown_utf8();
+    const BlockNode* current = nullptr;
+    walk_blocks(middle.document().root, [&](const BlockNode& block) {
+        if (!current && block.kind == BlockKind::Paragraph
+            && block.inline_content.source == U"current") {
+            current = &block;
+        }
+    });
+    expect(fatal(bool(current != nullptr)));
+    if (!current) return;
+    const auto middle_before = TextSelection::caret(
+        {current->id, 0, TextAffinity::Downstream});
+    middle.set_selection(middle_before);
+    reset_core_operation_counters();
+    auto split = middle.execute_document_insert_text(middle.selection(), U"[x] ");
+    expect(fatal(bool(split.has_value())));
+    if (!split) return;
+    counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
+    expect(fatal(bool(middle.document().root.children.size() == 3u)));
+    if (middle.document().root.children.size() == 3u) {
+        expect(fatal(bool(middle.document().root.children[0].kind == BlockKind::List)));
+        expect(fatal(bool(middle.document().root.children[1].kind == BlockKind::TaskList)));
+        expect(fatal(bool(middle.document().root.children[2].kind == BlockKind::List)));
+    }
+    const auto middle_after_markdown = middle.markdown_utf8();
+    const auto middle_after = middle.selection();
+    expect(fatal(bool(middle.undo())));
+    expect(fatal(bool(middle.markdown_utf8() == middle_before_markdown)));
+    expect(fatal(bool(middle.selection() == middle_before)));
+    expect(fatal(bool(middle.redo())));
+    expect(fatal(bool(middle.markdown_utf8() == middle_after_markdown)));
+    expect(fatal(bool(middle.selection() == middle_after)));
+};
+
 "code_and_math_blocks_use_local_source_edit_history"_test = [] {
     const std::vector<std::string> cases{
         "```cpp\nab\n```",
