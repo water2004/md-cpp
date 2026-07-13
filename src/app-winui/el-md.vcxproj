@@ -171,6 +171,9 @@
     <ClCompile Include="..\core\document_edit_support.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\core\document_input_rules.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\core\document_source_edit.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>

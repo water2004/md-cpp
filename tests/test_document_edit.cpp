@@ -68,6 +68,19 @@ void expect_document_valid(const EditorDocument& document) {
     });
 }
 
+std::pair<EditorDocument, TextSelection> type_text(
+    EditorDocument document,
+    TextSelection selection,
+    std::u32string_view text) {
+    for (const auto value : text) {
+        auto transaction = document_insert_text(document, selection, std::u32string(1, value));
+        if (!transaction) throw std::runtime_error("typing failed");
+        document = std::move(transaction->after);
+        selection = transaction->selection_after;
+    }
+    return {std::move(document), selection};
+}
+
 } // namespace
 
 suite document_edit_tests = [] {
@@ -104,9 +117,132 @@ suite document_edit_tests = [] {
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     const auto& inline_document = first_editable(transaction->after).inline_content;
-    expect(fatal(bool(inline_document.source == U"a**bc")));
+    expect(fatal(bool(inline_document.source == U"a*bc")));
     expect(fatal(bool(transaction->selection_after.active.source_offset == 2u)));
     expect_inline_lossless(inline_document);
+};
+
+"typed_block_markers_apply_local_tree_rules"_test = [] {
+    struct Case {
+        std::u32string input;
+        BlockKind root_kind;
+        BlockKind content_kind;
+        std::u32string marker;
+        std::uint8_t heading_level = 0;
+        bool ordered = false;
+    };
+    const std::vector<Case> cases{
+        {U"## ", BlockKind::Heading, BlockKind::Heading, U"## ", 2, false},
+        {U"> ", BlockKind::BlockQuote, BlockKind::Paragraph, U"> ", 0, false},
+        {U"- ", BlockKind::List, BlockKind::Paragraph, U"- ", 0, false},
+        {U"7) ", BlockKind::List, BlockKind::Paragraph, U"7) ", 0, true},
+        {U"- [x] ", BlockKind::TaskList, BlockKind::Paragraph, U"- [x] ", 0, false},
+    };
+    for (const auto& test : cases) {
+        auto document = parse_document("");
+        normalize_document(document);
+        auto selection = caret(first_editable(document));
+        auto [after, result] = type_text(std::move(document), selection, test.input);
+        const auto& root = after.root.children.front();
+        expect(fatal(bool(root.kind == test.root_kind)));
+        const BlockNode* content = &root;
+        if (root.kind == BlockKind::BlockQuote) content = &root.children.front();
+        if (root.kind == BlockKind::List || root.kind == BlockKind::TaskList) content = &root.children.front().children.front();
+        expect(fatal(bool(content->kind == test.content_kind)));
+        expect(fatal(bool(content->inline_content.source.empty())));
+        expect(fatal(bool(result.active.container_id == content->id)));
+        expect(fatal(bool(result.active.source_offset == 0u)));
+        if (root.kind == BlockKind::Heading) {
+            expect(fatal(bool(root.level == test.heading_level)));
+            expect(fatal(bool(root.opening_marker == test.marker)));
+        } else if (root.kind == BlockKind::List || root.kind == BlockKind::TaskList) {
+            expect(fatal(bool(root.children.front().marker == test.marker)));
+            expect(fatal(bool(root.list_ordered == test.ordered)));
+        }
+        expect_document_valid(after);
+    }
+};
+
+"typed_fence_enters_and_closes_code_without_document_reparse"_test = [] {
+    auto document = parse_document("");
+    normalize_document(document);
+    auto [opening, at_opening_end] = type_text(std::move(document), caret(first_editable(document)), U"```cpp");
+    auto entered = document_enter(opening, at_opening_end);
+    expect(fatal(bool(entered.has_value())));
+    if (!entered) return;
+    expect(fatal(bool(entered->after.root.children.front().kind == BlockKind::CodeBlock)));
+    expect(fatal(bool(entered->after.root.children.front().language == std::optional<std::string>{"cpp"})));
+    expect(fatal(bool(entered->after.root.children.front().opening_marker == U"```cpp\n")));
+    expect(fatal(bool(entered->selection_after.active.container_id == entered->after.root.children.front().id)));
+
+    auto [actually_closed, outside] = type_text(entered->after, entered->selection_after, U"```");
+    expect(fatal(bool(actually_closed.root.children.size() == 2u)));
+    expect(fatal(bool(actually_closed.root.children.front().kind == BlockKind::CodeBlock)));
+    expect(fatal(bool(actually_closed.root.children.front().closing_marker == U"```")));
+    expect(fatal(bool(actually_closed.root.children.back().kind == BlockKind::Paragraph)));
+    expect(fatal(bool(outside.active.container_id == actually_closed.root.children.back().id)));
+    expect(fatal(bool(serialize_markdown(actually_closed) == "```cpp\n```\n\n")));
+    expect_document_valid(actually_closed);
+};
+
+"enter_continues_and_exits_lists_by_tree_context"_test = [] {
+    auto bullets = parse_document("- one");
+    auto bullet_id = bullets.root.children.front().children.front().children.front().id;
+    auto continued = document_enter(bullets, TextSelection::caret({bullet_id, 3, TextAffinity::Downstream}));
+    expect(fatal(bool(continued.has_value())));
+    if (continued) {
+        const auto& list = continued->after.root.children.front();
+        expect(fatal(bool(list.children.size() == 2u)));
+        expect(fatal(bool(list.children.back().marker == U"- ")));
+        expect(fatal(bool(list.children.back().children.front().inline_content.source.empty())));
+        expect(fatal(bool(continued->selection_after.active.container_id == list.children.back().children.front().id)));
+    }
+
+    auto ordered = parse_document("7) one");
+    auto ordered_id = ordered.root.children.front().children.front().children.front().id;
+    auto next_number = document_enter(ordered, TextSelection::caret({ordered_id, 3, TextAffinity::Downstream}));
+    expect(fatal(bool(next_number.has_value())));
+    if (next_number) expect(fatal(bool(next_number->after.root.children.front().children.back().marker == U"8) ")));
+
+    auto tasks = parse_document("- [x] done");
+    auto task_id = tasks.root.children.front().children.front().children.front().id;
+    auto next_task = document_enter(tasks, TextSelection::caret({task_id, 4, TextAffinity::Downstream}));
+    expect(fatal(bool(next_task.has_value())));
+    if (next_task) {
+        const auto& item = next_task->after.root.children.front().children.back();
+        expect(fatal(bool(item.kind == BlockKind::TaskListItem)));
+        expect(fatal(bool(!item.checked)));
+        expect(fatal(bool(item.marker == U"- [ ] ")));
+    }
+
+    auto empty = parse_document("- one\n- ");
+    auto empty_id = empty.root.children.front().children.back().children.front().id;
+    auto exited = document_enter(empty, TextSelection::caret({empty_id, 0, TextAffinity::Downstream}));
+    expect(fatal(bool(exited.has_value())));
+    if (exited) {
+        expect(fatal(bool(exited->after.root.children.size() == 2u)));
+        expect(fatal(bool(exited->after.root.children.front().kind == BlockKind::List)));
+        expect(fatal(bool(exited->after.root.children.front().children.size() == 1u)));
+        expect(fatal(bool(exited->after.root.children.back().kind == BlockKind::Paragraph)));
+        expect(fatal(bool(exited->selection_after.active.container_id == exited->after.root.children.back().id)));
+    }
+};
+
+"enter_inside_nested_list_container_respects_nearest_owner"_test = [] {
+    auto document = parse_document("- > quoted");
+    auto& list = document.root.children.front();
+    auto& quote = list.children.front().children.front();
+    expect(fatal(bool(quote.kind == BlockKind::BlockQuote)));
+    auto paragraph_id = quote.children.front().id;
+    auto transaction = document_enter(document, TextSelection::caret({paragraph_id, 6, TextAffinity::Downstream}));
+    expect(fatal(bool(transaction.has_value())));
+    if (!transaction) return;
+    const auto& updated_list = transaction->after.root.children.front();
+    expect(fatal(bool(updated_list.children.size() == 1u)));
+    const auto& updated_quote = updated_list.children.front().children.front();
+    expect(fatal(bool(updated_quote.kind == BlockKind::BlockQuote)));
+    expect(fatal(bool(updated_quote.children.size() == 2u)));
+    expect_document_valid(transaction->after);
 };
 
 "backspace_inside_markers_reparses_one_inline_document"_test = [] {

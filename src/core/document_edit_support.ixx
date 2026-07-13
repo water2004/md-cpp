@@ -183,12 +183,7 @@ inline std::optional<InsertResult> insert_text(
     if (auto* inline_document = find_inline_owner(document.root.children, position.container_id)) {
         const auto offset = (std::min)(position.source_offset, inline_document->source.size());
         std::u32string replacement(text);
-        std::size_t caret = offset + replacement.size();
-        if (text.size() == 1 && (text.front() == U'*' || text.front() == U'_' || text.front() == U'~'
-            || text.front() == U'`' || text.front() == U'$')) {
-            replacement.push_back(text.front());
-            caret = offset + 1;
-        }
+        const auto caret = offset + replacement.size();
         if (!edit_inline(document, position.container_id, {offset, offset}, std::move(replacement), allocator)) return std::nullopt;
         return InsertResult{caret, TextAffinity::Downstream};
     }

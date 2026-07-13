@@ -86,6 +86,9 @@ inline std::u32string serialize_block(const BlockNode& block) {
         case BlockKind::Paragraph:
             return block.inline_content.source;
         case BlockKind::Heading:
+            if (!block.opening_marker.empty() || !block.closing_marker.empty()) {
+                return block.opening_marker + block.inline_content.source + block.closing_marker;
+            }
             return std::u32string(block.level == 0 ? 1 : block.level, U'#') + U" " + block.inline_content.source;
         case BlockKind::BlockQuote: {
             auto body = serialize_blocks(block.children);
@@ -102,6 +105,7 @@ inline std::u32string serialize_block(const BlockNode& block) {
             return serialize_list(block);
         case BlockKind::CodeBlock:
             if (block.code_indented) return serialize_indented_code(block.code_text);
+            if (!block.opening_marker.empty()) return block.opening_marker + block.code_text + block.closing_marker;
             return U"```" + (block.language ? utf8_to_cps(*block.language) : std::u32string{}) + U"\n" + block.code_text
                 + (!block.code_text.empty() && block.code_text.back() != U'\n' ? U"\n" : U"") + U"```";
         case BlockKind::MathBlock: {

@@ -10,6 +10,7 @@ import elmd.core.inline_source_edit;
 import elmd.core.text_edit;
 import elmd.core.utf;
 import elmd.core.document_edit_support;
+import elmd.core.document_input_rules;
 
 export namespace elmd {
 
@@ -46,8 +47,9 @@ inline std::optional<DocumentTransaction> document_insert_text(const EditorDocum
     document_edit_detail::NodeAllocator allocator(working);
     auto inserted = document_edit_detail::insert_text(working, current.active, text, allocator);
     if (!inserted) return std::nullopt;
-    ++working.revision;
     auto target = current.active; target.source_offset = inserted->offset; target.affinity = inserted->affinity;
+    document_input_rules::apply_after_text_insert(working, target, allocator);
+    ++working.revision;
     return document_edit_detail::transaction(document, std::move(working), selection, TextSelection::caret(target), DocumentTransactionReason::InsertText);
 }
 
@@ -60,6 +62,8 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
         target = *exited;
     } else if (auto exited_quote = document_edit_detail::exit_empty_block_quote(after, selection.active, allocator)) {
         target = *exited_quote;
+    } else if (auto handled = document_input_rules::handle_enter(after, selection.active, allocator)) {
+        target = *handled;
     } else if (auto* block = find_block(after.root, selection.active.container_id);
                block && (block->kind == BlockKind::CodeBlock || block->kind == BlockKind::MathBlock)) {
         auto inserted = document_edit_detail::insert_text(after, selection.active, U"\n", allocator);
