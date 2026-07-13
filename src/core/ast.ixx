@@ -3,6 +3,7 @@
 // wiki_links+tables+images, raw_html → UnsupportedMarkup.
 export module elmd.core.ast;
 import std;
+import elmd.core.block_source;
 import elmd.core.ids;
 import elmd.core.dialect;
 import elmd.core.inline_document;
@@ -27,6 +28,7 @@ struct BlockNode {
     // Payload — only the relevant per `kind`.
     BlockVec children;                  // the one structural child collection for every container
     InlineDocument inline_content;      // Paragraph / Heading / TableCell
+    BlockSourceDocument block_source;   // CodeBlock / MathBlock, exact full Markdown source
     std::uint8_t level = 0;             // Heading
     std::string slug;                   // Heading
     std::u32string marker;              // ListItem / TaskListItem
@@ -34,10 +36,7 @@ struct BlockNode {
     bool list_ordered = false;
     std::uint64_t list_start = 1;
     char32_t list_delimiter = U'.';
-    std::optional<std::string> language; // CodeBlock
-    std::u32string code_text;           // CodeBlock
     bool code_indented = false;
-    std::u32string tex;                 // MathBlock
     MathDelimiter math_delim = MathDelimiter::BlockDollar; // MathBlock / InlineMath (in inline)
     std::vector<TableAlignment> table_aligns;
     bool table_header_row = false;      // TableRow

@@ -16,6 +16,7 @@ import elmd.core.inline_parser;
 import elmd.core.render_builder;
 import elmd.core.render_model;
 import elmd.core.ast;
+import elmd.core.block_source;
 import elmd.core.block_tree;
 import elmd.core.text_measurer;
 import elmd.core.block_layout;
@@ -267,7 +268,7 @@ suite render_layout_tests = [] {
     expect(fatal(bool(m.blocks[0].code_indented)));
     expect(fatal(bool((m.blocks[0].code_text) == (std::u32string(U"alpha\nbeta\n")))));
     expect(fatal(bool((m.blocks[0].source_span.source_range.start) == (0u))));
-    expect(fatal(bool((m.blocks[0].source_span.source_range.end) == (m.blocks[0].code_text.size()))));
+    expect(fatal(bool((m.blocks[0].source_span.source_range.end) == (m.blocks[0].raw_source.size()))));
 };
 
 "list_render_model_retains_nested_code_block_identity"_test = [] {
@@ -291,7 +292,7 @@ suite render_layout_tests = [] {
     if (code) {
         expect(fatal(bool(code->code_indented)));
         expect(fatal(bool((code->code_text) == (std::u32string(U"<html>\n  <head>\n    <title>Test</title>\n  </head>\n")))));
-        expect(fatal(bool((code->source_span.source_range.end) == (code->code_text.size()))));
+        expect(fatal(bool((code->source_span.source_range.end) == (code->raw_source.size()))));
         std::size_t line_indents = 0;
         std::u32string flattened_code;
         for (auto const& item : list.inline_items) {
@@ -309,7 +310,7 @@ suite render_layout_tests = [] {
         auto trailingBreak = std::find_if(list.inline_items.begin(), list.inline_items.end(), [&](auto const& item) {
             return item.marker_role == MarkerRole::Structural && item.text == U"\n"
                 && item.source_span.container_id == code->id
-                && item.source_span.source_range.start == code->code_text.size();
+                && item.source_span.source_range.start == code->content_span.source_range.end;
         });
         expect(fatal(bool(trailingBreak != list.inline_items.end())));
     }
@@ -332,11 +333,12 @@ suite render_layout_tests = [] {
         if (!code && block.kind == BlockKind::CodeBlock) code = &block;
     });
     expect(fatal(bool(code != nullptr)));
-    if (!code || code->code_text.empty() || code->code_text.back() != U'\n') return;
+    auto const content = code ? block_source_content(code->block_source) : std::u32string{};
+    if (!code || content.empty() || content.back() != U'\n') return;
 
     auto inserted = document_enter(parsed.document, TextSelection::caret({
         code->id,
-        code->code_text.size() - 1,
+        block_source_offset_for_content(code->block_source, content.size() - 1),
         TextAffinity::Downstream}));
     expect(fatal(bool(inserted.has_value())));
     if (!inserted) return;
@@ -370,7 +372,7 @@ suite render_layout_tests = [] {
 
     auto exited = document_enter(parsed.document, TextSelection::caret({
         code->id,
-        code->code_text.size(),
+        code->block_source.source.size(),
         TextAffinity::Downstream}));
     expect(fatal(bool(exited.has_value())));
     if (!exited) return;
@@ -676,9 +678,8 @@ suite render_layout_tests = [] {
     auto quoted_text = make_render_text_block(BlockKind::Paragraph, U"quoted", next_id);
     auto inner_text = make_render_text_block(BlockKind::Paragraph, U"inner", next_id);
     auto code = make_render_block(BlockKind::CodeBlock, next_id);
-    code.code_text = U"int x;\n";
+    code.block_source = make_block_source(U"    int x;\n", BlockSourceKind::IndentedCode);
     code.code_indented = true;
-    code.language = "cpp";
     auto code_id = code.id;
 
     auto inner_item = make_render_block(BlockKind::ListItem, next_id);
@@ -729,8 +730,7 @@ suite render_layout_tests = [] {
     std::uint64_t next_id = 1;
     auto task_text = make_render_text_block(BlockKind::Paragraph, U"task", next_id);
     auto code = make_render_block(BlockKind::CodeBlock, next_id);
-    code.code_text = U"return 0;";
-    code.language = "cpp";
+    code.block_source = make_block_source(U"```cpp\nreturn 0;\n```", BlockSourceKind::FencedCode);
     auto code_id = code.id;
     auto blank = make_render_text_block(BlockKind::Paragraph, U"", next_id);
     auto blank_id = blank.id;
@@ -1209,17 +1209,17 @@ suite render_layout_tests = [] {
         auto const& lines = code_tree.blocks.front().children;
         expect(fatal(bool(lines.size() == 3u)));
         if (lines.size() == 3u) {
-            expect(fatal(bool(lines[0].line.source_span.source_range == SourceRange{0, 3})));
-            expect(fatal(bool(lines[1].line.source_span.source_range == SourceRange{4, 7})));
-            expect(fatal(bool(lines[2].line.source_span.source_range == SourceRange{8, 8})));
+            expect(fatal(bool(lines[0].line.source_span.source_range == SourceRange{7, 10})));
+            expect(fatal(bool(lines[1].line.source_span.source_range == SourceRange{11, 14})));
+            expect(fatal(bool(lines[2].line.source_span.source_range == SourceRange{15, 15})));
             auto hit = hit_test_layout_tree(
                 code_tree,
                 LogicalPoint(20.0f, lines[1].line.rect.y + 1.0f));
             expect(fatal(bool(hit.has_value())));
             if (hit) {
                 expect(fatal(bool(hit->position.container_id == lines[1].line.source_span.container_id)));
-                expect(fatal(bool(hit->position.source_offset >= 4u)));
-                expect(fatal(bool(hit->position.source_offset <= 7u)));
+                expect(fatal(bool(hit->position.source_offset >= 11u)));
+                expect(fatal(bool(hit->position.source_offset <= 14u)));
             }
         }
     }
@@ -1238,9 +1238,9 @@ suite render_layout_tests = [] {
         auto const& lines = math_tree.blocks.front().children;
         expect(fatal(bool(lines.size() == 3u)));
         if (lines.size() == 3u) {
-            expect(fatal(bool(lines[0].line.source_span.source_range == SourceRange{0, 1})));
-            expect(fatal(bool(lines[1].line.source_span.source_range == SourceRange{2, 3})));
-            expect(fatal(bool(lines[2].line.source_span.source_range == SourceRange{4, 4})));
+            expect(fatal(bool(lines[0].line.source_span.source_range == SourceRange{3, 4})));
+            expect(fatal(bool(lines[1].line.source_span.source_range == SourceRange{5, 6})));
+            expect(fatal(bool(lines[2].line.source_span.source_range == SourceRange{7, 7})));
         }
     }
 };

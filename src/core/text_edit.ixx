@@ -62,7 +62,8 @@ struct TextEdit {
 
 // A block-local source edit together with its exact inverse. Inline owners
 // reparse their CST after applying it; code and math owners edit their local
-// source directly. History uses the same operation shape for both.
+// source and reparse their block-source CST. History uses the same operation
+// shape for both.
 struct AppliedSourceEdit {
     TextEdit forward;
     TextEdit inverse;

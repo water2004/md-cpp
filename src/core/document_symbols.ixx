@@ -3,6 +3,7 @@
 export module elmd.core.document_symbols;
 import std;
 import elmd.core.ast;
+import elmd.core.block_source;
 import elmd.core.document;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
@@ -39,12 +40,13 @@ inline void collect_block_symbols(const BlockNode& block, DocumentSymbolIndex& s
     } else if (block.kind == BlockKind::ImageBlock) {
         symbols.images.push_back(ImageSymbol{block.id, block.src, block.image_alt});
     } else if (block.kind == BlockKind::MathBlock) {
-        symbols.math_blocks.push_back(MathSymbol{block.id, cps_to_utf8(block.tex)});
+        symbols.math_blocks.push_back(MathSymbol{block.id, cps_to_utf8(block_source_content(block.block_source))});
     } else if (block.kind == BlockKind::CodeBlock) {
-        const auto lines = block.code_text.empty()
+        const auto code = block_source_content(block.block_source);
+        const auto lines = code.empty()
             ? std::size_t{0}
-            : std::size_t{1} + static_cast<std::size_t>(std::count(block.code_text.begin(), block.code_text.end(), U'\n'));
-        symbols.code_blocks.push_back(CodeBlockSymbol{block.id, block.language, lines});
+            : std::size_t{1} + static_cast<std::size_t>(std::count(code.begin(), code.end(), U'\n'));
+        symbols.code_blocks.push_back(CodeBlockSymbol{block.id, block.block_source.tree.language, lines});
     }
     if (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading || block.kind == BlockKind::TableCell) {
         collect_inline_symbols(block.inline_content, block.inline_content.tree.nodes, symbols);

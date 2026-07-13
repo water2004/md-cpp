@@ -4,8 +4,11 @@
 export module elmd.core.document_input_rules;
 import std;
 import elmd.core.ast;
+import elmd.core.block_source;
 import elmd.core.block_tree;
+import elmd.core.dialect;
 import elmd.core.document;
+import elmd.core.ids;
 import elmd.core.inline_document;
 import elmd.core.text_edit;
 import elmd.core.utf;
@@ -105,6 +108,13 @@ struct FenceMatch {
     std::u32string exact;
 };
 
+struct RawBlockOpening {
+    BlockKind block_kind = BlockKind::CodeBlock;
+    BlockSourceKind source_kind = BlockSourceKind::FencedCode;
+    MathDelimiter math_delimiter = MathDelimiter::BlockDollar;
+    std::u32string source;
+};
+
 inline std::optional<FenceMatch> recognize_fence(std::u32string_view source) {
     const auto indent = leading_spaces(source);
     if (indent > 3 || indent >= source.size()) return std::nullopt;
@@ -119,26 +129,43 @@ inline std::optional<FenceMatch> recognize_fence(std::u32string_view source) {
     return FenceMatch{marker, count, std::move(info), std::u32string(source)};
 }
 
-inline std::optional<std::pair<char32_t, std::size_t>> opening_fence(const BlockNode& block) {
-    const auto& marker = block.opening_marker;
-    const auto indent = leading_spaces(marker);
-    if (indent > 3 || indent >= marker.size()) return std::nullopt;
-    const auto value = marker[indent];
-    if (value != U'`' && value != U'~') return std::nullopt;
-    auto cursor = indent;
-    while (cursor < marker.size() && marker[cursor] == value) ++cursor;
-    if (cursor - indent < 3) return std::nullopt;
-    return std::pair{value, cursor - indent};
-}
+inline std::optional<RawBlockOpening> recognize_raw_block_opening(
+    std::u32string_view source,
+    const MarkdownDialect& dialect) {
+    if (auto fence = recognize_fence(source)) {
+        auto info = cps_to_utf8(fence->info);
+        const auto indent = leading_spaces(source);
+        auto closing = std::u32string(source.substr(0, indent))
+            + std::u32string(fence->count, fence->marker);
+        RawBlockOpening opening;
+        opening.source = fence->exact + U"\n" + closing;
+        if (info == "math" && dialect.math.fenced_math) {
+            opening.block_kind = BlockKind::MathBlock;
+            opening.source_kind = BlockSourceKind::FencedMath;
+            opening.math_delimiter = MathDelimiter::FencedMath;
+        }
+        return opening;
+    }
 
-inline bool closing_fence_line(std::u32string_view line, char32_t marker, std::size_t minimum) {
-    const auto indent = leading_spaces(line);
-    if (indent > 3 || indent >= line.size()) return false;
-    auto cursor = indent;
-    while (cursor < line.size() && line[cursor] == marker) ++cursor;
-    if (cursor - indent < minimum) return false;
-    while (cursor < line.size() && horizontal_space(line[cursor])) ++cursor;
-    return cursor == line.size();
+    const auto indent = leading_spaces(source);
+    if (indent > 3) return std::nullopt;
+    const auto exact = std::u32string(source);
+    const auto marker = trim_horizontal(source.substr(indent));
+    RawBlockOpening opening;
+    opening.block_kind = BlockKind::MathBlock;
+    if (marker == U"$$" && dialect.math.block_dollar) {
+        opening.source_kind = BlockSourceKind::DollarMath;
+        opening.math_delimiter = MathDelimiter::BlockDollar;
+        opening.source = exact + U"\n" + std::u32string(source.substr(0, indent)) + U"$$";
+        return opening;
+    }
+    if (marker == U"\\[" && dialect.math.block_bracket) {
+        opening.source_kind = BlockSourceKind::BracketMath;
+        opening.math_delimiter = MathDelimiter::BlockBracket;
+        opening.source = exact + U"\n" + std::u32string(source.substr(0, indent)) + U"\\]";
+        return opening;
+    }
+    return std::nullopt;
 }
 
 inline BlockNode list_shell_from(const BlockNode& source, NodeId id) {
@@ -720,7 +747,7 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> split_list_item(
     return result;
 }
 
-inline std::optional<document_edit_detail::RecordedBlockEdit> open_fenced_block(
+inline std::optional<document_edit_detail::RecordedBlockEdit> open_raw_block(
     EditorDocument& document,
     TextPosition position,
     document_edit_detail::NodeAllocator& allocator) {
@@ -729,8 +756,8 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> open_fenced_block(
     auto* block = block_at_path(document.root, *path);
     if (!block || block->kind != BlockKind::Paragraph
         || position.source_offset != block->inline_content.source.size()) return std::nullopt;
-    auto fence = recognize_fence(block->inline_content.source);
-    if (!fence) return std::nullopt;
+    auto opening = recognize_raw_block_opening(block->inline_content.source, document.dialect);
+    if (!opening) return std::nullopt;
 
     document_edit_detail::RecordedBlockEdit result;
     result.target = TextPosition{position.container_id, 0, TextAffinity::Downstream};
@@ -750,71 +777,24 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> open_fenced_block(
     update.before = document_transaction_detail::payload_shell(*block);
     BlockNode replacement;
     replacement.id = block->id;
-    replacement.opening_marker = fence->exact + U"\n";
-    auto info = cps_to_utf8(fence->info);
-    if (info == "math" && document.dialect.math.fenced_math) {
-        replacement.kind = BlockKind::MathBlock;
-        replacement.math_delim = MathDelimiter::FencedMath;
-    } else {
-        replacement.kind = BlockKind::CodeBlock;
-        if (!info.empty()) replacement.language = std::move(info);
-    }
+    replacement.kind = opening->block_kind;
+    replacement.math_delim = opening->math_delimiter;
+    replacement.block_source.tree.kind = opening->source_kind;
     *block = std::move(replacement);
     update.after = document_transaction_detail::payload_shell(*block);
     result.operations.emplace_back(std::move(update));
-    return result;
-}
 
-inline std::optional<document_edit_detail::RecordedBlockEdit> close_fenced_code(
-    EditorDocument& document,
-    TextPosition position,
-    document_edit_detail::NodeAllocator& allocator) {
-    auto path = block_path(document.root, position.container_id);
-    if (!path || path->empty()) return std::nullopt;
-    auto* block = block_at_path(document.root, *path);
-    if (!block || block->kind != BlockKind::CodeBlock || position.source_offset != block->code_text.size()) return std::nullopt;
-    auto fence = opening_fence(*block);
-    if (!fence) return std::nullopt;
-    auto line_start = block->code_text.empty() ? 0 : block->code_text.rfind(U'\n');
-    line_start = line_start == std::u32string::npos ? 0 : line_start + 1;
-    auto line = std::u32string_view(block->code_text).substr(line_start);
-    if (!closing_fence_line(line, fence->first, fence->second)) return std::nullopt;
-
-    document_edit_detail::RecordedBlockEdit result;
-    const auto closing_marker = std::u32string(line);
-    const auto erase_start = line_start > 0 ? line_start - 1 : line_start;
-    auto source_edit = document_edit_detail::edit_block_source(
+    auto block_source_edit = document_edit_detail::edit_block_source(
         document,
-        block->id,
-        {erase_start, block->code_text.size()},
-        {},
+        position.container_id,
+        {0, 0},
+        std::move(opening->source),
         allocator);
-    if (!source_edit) return std::nullopt;
-    document_edit_detail::append_source_operation(result.operations, std::move(*source_edit));
+    if (!block_source_edit) return std::nullopt;
+    document_edit_detail::append_source_operation(result.operations, std::move(*block_source_edit));
     block = find_block(document.root, position.container_id);
-    if (!block) return std::nullopt;
-
-    DocumentTreeEdit update;
-    update.kind = DocumentTreeEditKind::UpdatePayload;
-    update.before = document_transaction_detail::payload_shell(*block);
-    block->closing_marker = closing_marker;
-    update.after = document_transaction_detail::payload_shell(*block);
-    result.operations.emplace_back(std::move(update));
-    auto parent_path = *path;
-    const auto index = parent_path.back();
-    parent_path.pop_back();
-    auto* parent = block_at_path(document.root, parent_path);
-    if (!parent) return std::nullopt;
-    auto paragraph = document_edit_detail::empty_paragraph(allocator, document);
-    const auto target = TextPosition{paragraph.id, 0, TextAffinity::Downstream};
-    DocumentTreeEdit insert;
-    insert.kind = DocumentTreeEditKind::Insert;
-    insert.parent_id = parent->id;
-    insert.index = index + 1;
-    insert.after = paragraph;
-    result.operations.emplace_back(std::move(insert));
-    insert_block(*parent, index + 1, std::move(paragraph));
-    result.target = target;
+    if (!block || block->block_source.tree.content_to_source.empty()) return std::nullopt;
+    result.target.source_offset = block->block_source.tree.content_to_source.front();
     return result;
 }
 
@@ -1194,10 +1174,6 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> apply_after_text_i
     EditorDocument& document,
     TextPosition& target,
     document_edit_detail::NodeAllocator& allocator) {
-    if (auto closed = detail::close_fenced_code(document, target, allocator)) {
-        target = closed->target;
-        return closed;
-    }
     if (auto task = detail::upgrade_task_item(document, target, allocator)) {
         target = task->target;
         return task;
@@ -1214,11 +1190,8 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> handle_enter(
     EditorDocument& document,
     TextPosition position,
     document_edit_detail::NodeAllocator& allocator) {
-    if (auto opened = detail::open_fenced_block(document, position, allocator)) {
+    if (auto opened = detail::open_raw_block(document, position, allocator)) {
         return opened;
-    }
-    if (auto closed = detail::close_fenced_code(document, position, allocator)) {
-        return closed;
     }
     if (auto exited = detail::exit_empty_list_item(document, position, allocator)) {
         return exited;

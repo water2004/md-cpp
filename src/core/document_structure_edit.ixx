@@ -1,6 +1,7 @@
 export module elmd.core.document_structure_edit;
 import std;
 import elmd.core.ast;
+import elmd.core.block_source;
 import elmd.core.block_tree;
 import elmd.core.document;
 import elmd.core.ids;
@@ -143,6 +144,10 @@ inline std::optional<DocumentTransaction> document_set_heading(const EditorDocum
     update.before = document_transaction_detail::payload_shell(*block);
     block->kind = level == 0 ? BlockKind::Paragraph : BlockKind::Heading;
     block->level = level;
+    block->opening_marker = level == 0
+        ? std::u32string{}
+        : std::u32string(level, U'#') + U" ";
+    block->closing_marker.clear();
     update.after = document_transaction_detail::payload_shell(*block);
     std::vector<DocumentOperation> operations;
     operations.emplace_back(std::move(update));
@@ -409,8 +414,20 @@ inline std::optional<DocumentTransaction> document_toggle_task_checkbox(const Ed
         DocumentTransactionReason::Structure);
 }
 
-inline BlockNode make_code_block(std::optional<std::string> language = std::nullopt) { BlockNode block; block.kind = BlockKind::CodeBlock; block.language = std::move(language); return block; }
-inline BlockNode make_math_block() { BlockNode block; block.kind = BlockKind::MathBlock; block.math_delim = MathDelimiter::BlockDollar; return block; }
+inline BlockNode make_code_block(std::optional<std::string> language = std::nullopt) {
+    BlockNode block;
+    block.kind = BlockKind::CodeBlock;
+    auto source = U"```" + (language ? utf8_to_cps(*language) : std::u32string{}) + U"\n```";
+    block.block_source = make_block_source(std::move(source), BlockSourceKind::FencedCode);
+    return block;
+}
+inline BlockNode make_math_block() {
+    BlockNode block;
+    block.kind = BlockKind::MathBlock;
+    block.math_delim = MathDelimiter::BlockDollar;
+    block.block_source = make_block_source(U"$$\n$$", BlockSourceKind::DollarMath);
+    return block;
+}
 inline BlockNode make_toc_block() { BlockNode block; block.kind = BlockKind::Toc; return block; }
 
 inline BlockNode make_table_block(const EditorDocument& document, std::size_t rows, std::size_t columns) {
@@ -451,6 +468,11 @@ inline std::optional<DocumentTransaction> document_insert_atomic_block(const Edi
     auto* parent = block_at_path(after.root, parent_path);
     if (!parent || index >= parent->children.size()) return std::nullopt;
     const auto inserted_id = block.id;
+    auto inserted_offset = std::size_t{0};
+    if ((block.kind == BlockKind::CodeBlock || block.kind == BlockKind::MathBlock)
+        && !block.block_source.tree.content_to_source.empty()) {
+        inserted_offset = block.block_source.tree.content_to_source.front();
+    }
     DocumentTreeEdit insert;
     insert.kind = DocumentTreeEditKind::Insert;
     insert.parent_id = parent->id;
@@ -464,7 +486,7 @@ inline std::optional<DocumentTransaction> document_insert_atomic_block(const Edi
         std::move(after),
         std::move(operations),
         selection,
-        TextSelection::caret({inserted_id, 0, TextAffinity::Downstream}),
+        TextSelection::caret({inserted_id, inserted_offset, TextAffinity::Downstream}),
         document.revision,
         DocumentTransactionReason::Structure);
 }

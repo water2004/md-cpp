@@ -77,6 +77,12 @@ namespace winrt::ElMd
     bool IsMermaidLanguage(std::optional<std::string> const& language);
     void MergeDisplayText(DisplayInlineText& target, DisplayInlineText source);
     void AppendSourceText(DisplayInlineText& display, std::u32string_view sourceText, elmd::TextSpan sourceSpan, elmd::InlineStyle style, bool marker);
+    void AppendProjectedSourceText(
+        DisplayInlineText& display,
+        std::u32string_view text,
+        elmd::NodeId owner,
+        std::vector<std::size_t> const& sourceOffsets,
+        elmd::InlineStyle style);
     void AppendGeneratedText(
         DisplayInlineText& display,
         std::u32string const& text,
@@ -99,7 +105,6 @@ namespace winrt::ElMd
         bool svgSupported,
         bool requestMath);
     DisplayInlineText BuildCodeBlockText(elmd::RenderBlock const& block, elmd::TextPosition caret, TreeSitterHighlighter& highlighter);
-    DisplayInlineText BuildIndentedCodeBlockText(elmd::RenderBlock const& block);
     DisplayInlineText BuildMathBlockText(
         elmd::RenderBlock const& block,
         elmd::TextPosition caret,

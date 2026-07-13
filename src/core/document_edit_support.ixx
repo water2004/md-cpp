@@ -2,6 +2,7 @@ export module elmd.core.document_edit_support;
 export import elmd.core.document_transaction;
 import std;
 import elmd.core.ast;
+import elmd.core.block_source;
 import elmd.core.block_tree;
 import elmd.core.document;
 import elmd.core.document_text;
@@ -37,8 +38,9 @@ inline bool atomic_block(BlockKind kind) {
 
 inline std::optional<std::size_t> local_position_length(const BlockNode& block) {
     if (const auto* document = editable_inline_document(block)) return document->source.size();
-    if (block.kind == BlockKind::CodeBlock) return block.code_text.size();
-    if (block.kind == BlockKind::MathBlock) return block.tex.size();
+    if (block.kind == BlockKind::CodeBlock || block.kind == BlockKind::MathBlock) {
+        return block.block_source.source.size();
+    }
     if (block.kind == BlockKind::Frontmatter || block.kind == BlockKind::LinkDefinition
         || block.kind == BlockKind::UnsupportedMarkup) return utf8_to_cps(block.raw).size();
     if (block.kind == BlockKind::ImageBlock || block.kind == BlockKind::Toc
@@ -189,6 +191,9 @@ inline std::optional<AppliedSourceEdit> edit_block_source(
         {range.start, range.start + forward.replacement.size()},
         std::move(removed)};
     apply_text_edit(*source, forward);
+    if (block->kind == BlockKind::CodeBlock || block->kind == BlockKind::MathBlock) {
+        reparse_block_source(block->block_source);
+    }
     return AppliedSourceEdit{std::move(forward), std::move(inverse)};
 }
 
@@ -222,8 +227,9 @@ inline std::optional<InsertResult> insert_text(
 inline std::optional<std::size_t> editable_length(const EditorDocument& document, NodeId id) {
     if (const auto* inline_document = find_inline_owner(document.root.children, id)) return inline_document->source.size();
     if (const auto* block = elmd::find_block(document.root, id)) {
-        if (block->kind == BlockKind::CodeBlock) return block->code_text.size();
-        if (block->kind == BlockKind::MathBlock) return block->tex.size();
+        if (block->kind == BlockKind::CodeBlock || block->kind == BlockKind::MathBlock) {
+            return block->block_source.source.size();
+        }
         if (atomic_block(block->kind)) return 1;
     }
     return std::nullopt;
@@ -413,25 +419,26 @@ inline std::optional<RecordedBlockEdit> exit_empty_indented_code(
     auto* block = block_at_path(document.root, *path);
     if (!block || block->kind != BlockKind::CodeBlock || !block->code_indented) return std::nullopt;
 
-    const auto offset = (std::min)(position.source_offset, block->code_text.size());
-    auto line_start = offset == 0 ? std::u32string::npos : block->code_text.rfind(U'\n', offset - 1);
+    const auto& source = block->block_source.source;
+    const auto offset = (std::min)(position.source_offset, source.size());
+    auto line_start = offset == 0 ? std::u32string::npos : source.rfind(U'\n', offset - 1);
     line_start = line_start == std::u32string::npos ? 0 : line_start + 1;
-    auto line_end = block->code_text.find(U'\n', offset);
-    if (line_end == std::u32string::npos) line_end = block->code_text.size();
+    auto line_end = source.find(U'\n', offset);
+    if (line_end == std::u32string::npos) line_end = source.size();
     for (auto index = line_start; index < line_end; ++index) {
-        if (block->code_text[index] != U' ' && block->code_text[index] != U'\t') return std::nullopt;
+        if (source[index] != U' ' && source[index] != U'\t') return std::nullopt;
     }
 
     // The blank line is the exit trigger, not content that should survive in
     // either code block. Remove its preceding line separator as well so the
     // leading block does not retain a visually empty trailing line.
-    const auto before_end = line_start > 0 && block->code_text[line_start - 1] == U'\n'
+    const auto before_end = line_start > 0 && source[line_start - 1] == U'\n'
         ? line_start - 1
         : line_start;
-    auto before = block->code_text.substr(0, before_end);
-    auto after_start = line_end < block->code_text.size() ? line_end + 1 : line_end;
-    auto after = block->code_text.substr(after_start);
-    const auto source_size = block->code_text.size();
+    auto before = source.substr(0, before_end);
+    auto after_start = line_end < source.size() ? line_end + 1 : line_end;
+    auto after = source.substr(after_start);
+    const auto source_size = source.size();
     auto parent_path = *path;
     const auto block_index = parent_path.back();
     parent_path.pop_back();
@@ -493,7 +500,7 @@ inline std::optional<RecordedBlockEdit> exit_empty_indented_code(
     if (!after.empty()) {
         auto trailing = parent->children[block_index];
         trailing.id = allocator.allocate();
-        trailing.code_text = std::move(after);
+        trailing.block_source = make_block_source(std::move(after), BlockSourceKind::IndentedCode);
         DocumentTreeEdit insert_trailing;
         insert_trailing.kind = DocumentTreeEditKind::Insert;
         insert_trailing.parent_id = parent_id;
@@ -827,6 +834,14 @@ inline void validate_blocks(const BlockVec& blocks, std::unordered_set<std::uint
         if (block.id.v == 0 || !ids.insert(block.id.v).second) errors.push_back({block.id, "duplicate or missing block id"});
         if (const auto* document = editable_inline_document(block)) {
             validate_inline_document(block.id, *document, ids, errors);
+        }
+        if (block.kind == BlockKind::CodeBlock || block.kind == BlockKind::MathBlock) {
+            if (!block_source_tokens_partition(block.block_source)) {
+                errors.push_back({block.id, "block-source tokens do not partition source"});
+            }
+            if (flatten_block_source_tokens(block.block_source) != block.block_source.source) {
+                errors.push_back({block.id, "block-source CST is not lossless"});
+            }
         }
         validate_blocks(block.children, ids, errors);
     }

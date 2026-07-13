@@ -5,6 +5,7 @@
 export module elmd.core.exporter;
 import std;
 import elmd.core.ast;
+import elmd.core.block_source;
 import elmd.core.document;
 import elmd.core.settings;
 import elmd.core.serializer;
@@ -204,8 +205,8 @@ inline std::string block_to_html(const BlockNode& b, ExportRawHtmlPolicy pol) {
         }
         case BK::CodeBlock: {
             std::string lang_attr;
-            if (b.language) lang_attr = " class=\"language-" + escape_text(*b.language) + "\"";
-            return "<pre><code" + lang_attr + ">" + escape_raw_html(cps_to_utf8(b.code_text)) + "</code></pre>\n";
+            if (b.block_source.tree.language) lang_attr = " class=\"language-" + escape_text(*b.block_source.tree.language) + "\"";
+            return "<pre><code" + lang_attr + ">" + escape_raw_html(cps_to_utf8(block_source_content(b.block_source))) + "</code></pre>\n";
         }
         case BK::BlockQuote:
             return "<blockquote>\n" + blocks_to_html(b.children, pol) + "</blockquote>\n";
@@ -226,7 +227,7 @@ inline std::string block_to_html(const BlockNode& b, ExportRawHtmlPolicy pol) {
             return "<ul class=\"task-list\">\n" + items + "</ul>\n";
         }
         case BK::MathBlock:
-            return "<div class=\"math-block\">" + escape_raw_html(cps_to_utf8(b.tex)) + "</div>\n";
+            return "<div class=\"math-block\">" + escape_raw_html(cps_to_utf8(block_source_content(b.block_source))) + "</div>\n";
         case BK::Table: {
             if (b.children.empty()) return "<table></table>\n";
             std::string html = "<table>\n<thead><tr>";

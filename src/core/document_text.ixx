@@ -48,9 +48,8 @@ inline const InlineDocument* editable_inline_document(const BlockNode& block) {
 inline std::u32string* editable_raw_block_source(BlockNode& block) {
     switch (block.kind) {
         case BlockKind::CodeBlock:
-            return &block.code_text;
         case BlockKind::MathBlock:
-            return &block.tex;
+            return &block.block_source.source;
         default:
             return nullptr;
     }
@@ -59,9 +58,8 @@ inline std::u32string* editable_raw_block_source(BlockNode& block) {
 inline const std::u32string* editable_raw_block_source(const BlockNode& block) {
     switch (block.kind) {
         case BlockKind::CodeBlock:
-            return &block.code_text;
         case BlockKind::MathBlock:
-            return &block.tex;
+            return &block.block_source.source;
         default:
             return nullptr;
     }

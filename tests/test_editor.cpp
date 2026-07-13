@@ -6,6 +6,7 @@
 
 #include "elmd_test.hpp"
 import elmd.core.ast;
+import elmd.core.block_source;
 import elmd.core.block_tree;
 import elmd.core.command;
 import elmd.core.dialect;
@@ -356,7 +357,7 @@ suite editor_tests = [] {
     });
     expect(fatal(bool(code_block != nullptr)));
     if (code_block) {
-        const auto separator = code_block->code_text.find(U"\n\n");
+        const auto separator = code_block->block_source.source.find(U"\n\n");
         expect(fatal(bool(separator != std::u32string::npos)));
         if (separator != std::u32string::npos) {
             exercise(
@@ -753,7 +754,7 @@ suite editor_tests = [] {
     expect(fatal(bool(middle.selection() == middle_after)));
 };
 
-"typed_fences_use_source_payload_and_tree_operations"_test = [] {
+"typed_fences_create_auto_closed_block_source_transactions"_test = [] {
     Editor editor;
     expect(fatal(bool(editor.execute_document_insert_text(
         editor.selection(), U"```cpp").has_value())));
@@ -768,7 +769,10 @@ suite editor_tests = [] {
     expect(fatal(bool(counters.full_document_serializations == 0u)));
     expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
     expect(fatal(bool(editor.document().root.children.front().kind == BlockKind::CodeBlock)));
-    expect(fatal(bool(editor.document().root.children.front().opening_marker == U"```cpp\n")));
+    expect(fatal(bool(editor.document().root.children.front().block_source.source == U"```cpp\n```")));
+    expect(fatal(bool(editor.document().root.children.front().block_source.tree.language
+        == std::optional<std::string>{"cpp"})));
+    expect(fatal(bool(editor.selection().active.source_offset == 7u)));
     const auto opened_markdown = editor.markdown_utf8();
     const auto opened_selection = editor.selection();
 
@@ -780,24 +784,124 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.selection() == opened_selection)));
 
     reset_core_operation_counters();
-    auto closed = editor.execute_document_insert_text(editor.selection(), U"```");
-    expect(fatal(bool(closed.has_value())));
-    if (!closed) return;
+    auto newline = editor.execute_document_enter(editor.selection());
+    expect(fatal(bool(newline.has_value())));
+    if (!newline) return;
     counters = read_core_operation_counters();
     expect(fatal(bool(counters.full_document_parses == 0u)));
     expect(fatal(bool(counters.full_document_serializations == 0u)));
     expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
-    expect(fatal(bool(editor.document().root.children.size() == 2u)));
-    expect(fatal(bool(editor.document().root.children.front().closing_marker == U"```")));
-    expect(fatal(bool(editor.document().root.children.back().kind == BlockKind::Paragraph)));
-    const auto closed_markdown = editor.markdown_utf8();
-    const auto closed_selection = editor.selection();
+    expect(fatal(bool(editor.document().root.children.size() == 1u)));
+    expect(fatal(bool(editor.document().root.children.front().block_source.source == U"```cpp\n\n```")));
+    expect(fatal(bool(editor.selection().active.source_offset == 8u)));
+    const auto newline_markdown = editor.markdown_utf8();
+    const auto newline_selection = editor.selection();
     expect(fatal(bool(editor.undo())));
     expect(fatal(bool(editor.markdown_utf8() == opened_markdown)));
     expect(fatal(bool(editor.selection() == opened_selection)));
     expect(fatal(bool(editor.redo())));
-    expect(fatal(bool(editor.markdown_utf8() == closed_markdown)));
-    expect(fatal(bool(editor.selection() == closed_selection)));
+    expect(fatal(bool(editor.markdown_utf8() == newline_markdown)));
+    expect(fatal(bool(editor.selection() == newline_selection)));
+};
+
+"toolbar_blocks_share_complete_source_construction_with_typed_rules"_test = [] {
+    Editor code;
+    Command insert_code;
+    insert_code.kind = CommandKind::InsertCodeBlock;
+    insert_code.lang = U"cpp";
+    auto code_transaction = code.execute_document_insert_atomic_block(code.selection(), insert_code);
+    expect(fatal(bool(code_transaction.has_value())));
+    if (code_transaction) {
+        auto const* block = find_block(code.document().root, code.selection().active.container_id);
+        expect(fatal(bool(block && block->kind == BlockKind::CodeBlock)));
+        expect(fatal(bool(block && block->block_source.source == U"```cpp\n```")));
+        expect(fatal(bool(code.selection().active.source_offset == 7u)));
+        expect(fatal(bool(code.execute_document_enter(code.selection()).has_value())));
+        block = find_block(code.document().root, code.selection().active.container_id);
+        expect(fatal(bool(block && block->block_source.source == U"```cpp\n\n```")));
+    }
+
+    Editor math;
+    Command insert_math;
+    insert_math.kind = CommandKind::InsertMathBlock;
+    auto math_transaction = math.execute_document_insert_atomic_block(math.selection(), insert_math);
+    expect(fatal(bool(math_transaction.has_value())));
+    if (math_transaction) {
+        auto const* block = find_block(math.document().root, math.selection().active.container_id);
+        expect(fatal(bool(block && block->kind == BlockKind::MathBlock)));
+        expect(fatal(bool(block && block->block_source.source == U"$$\n$$")));
+        expect(fatal(bool(math.selection().active.source_offset == 3u)));
+        expect(fatal(bool(math.execute_document_enter(math.selection()).has_value())));
+        block = find_block(math.document().root, math.selection().active.container_id);
+        expect(fatal(bool(block && block->block_source.source == U"$$\n\n$$")));
+        expect(fatal(bool(math.selection().active.source_offset == 4u)));
+    }
+
+    Editor heading("title");
+    expect(fatal(bool(heading.execute_document_set_heading(heading.selection(), 1).has_value())));
+    expect(fatal(bool(heading.document().root.children.front().opening_marker == U"# ")));
+    expect(fatal(bool(heading.markdown_utf8() == "# title")));
+};
+
+"fenced_code_info_is_editable_source_with_exact_undo_redo"_test = [] {
+    Editor editor;
+    Command insert_code;
+    insert_code.kind = CommandKind::InsertCodeBlock;
+    insert_code.lang = U"cpp";
+    expect(fatal(bool(editor.execute_document_insert_atomic_block(
+        editor.selection(), insert_code).has_value())));
+    const auto code_id = editor.selection().active.container_id;
+    const TextSelection language{
+        {code_id, 3, TextAffinity::Downstream},
+        {code_id, 6, TextAffinity::Downstream}};
+    editor.set_selection(language);
+    expect(fatal(bool(editor.execute_document_insert_text(editor.selection(), U"js").has_value())));
+    auto const* block = find_block(editor.document().root, code_id);
+    expect(fatal(bool(block && block->block_source.source == U"```js\n```")));
+    expect(fatal(bool(block && block->block_source.tree.language
+        == std::optional<std::string>{"js"})));
+    const auto after = editor.selection();
+    expect(fatal(bool(editor.undo())));
+    block = find_block(editor.document().root, code_id);
+    expect(fatal(bool(block && block->block_source.source == U"```cpp\n```")));
+    expect(fatal(bool(editor.selection() == language)));
+    expect(fatal(bool(editor.redo())));
+    block = find_block(editor.document().root, code_id);
+    expect(fatal(bool(block && block->block_source.source == U"```js\n```")));
+    expect(fatal(bool(editor.selection() == after)));
+};
+
+"enter_in_incomplete_fenced_code_edits_local_source_without_crashing"_test = [] {
+    Editor editor("```cpp\n");
+    auto const& code = editor.document().root.children.front();
+    expect(fatal(bool(code.kind == BlockKind::CodeBlock)));
+    expect(fatal(bool(!code.block_source.tree.complete_closing)));
+    editor.set_selection(caret(code, code.block_source.source.size()));
+    const auto before = editor.selection();
+    expect(fatal(bool(editor.execute_document_enter(editor.selection()).has_value())));
+    auto const* changed = find_block(editor.document().root, code.id);
+    expect(fatal(bool(changed && changed->block_source.source == U"```cpp\n\n")));
+    expect(fatal(bool(changed && block_source_tokens_partition(changed->block_source))));
+    expect(fatal(bool(changed && flatten_block_source_tokens(changed->block_source)
+        == changed->block_source.source)));
+    expect(fatal(bool(editor.selection().active.source_offset == 8u)));
+    expect(fatal(bool(editor.undo())));
+    expect(fatal(bool(editor.selection() == before)));
+    expect(fatal(bool(editor.redo())));
+};
+
+"typed_math_delimiter_creates_editable_auto_closed_block"_test = [] {
+    Editor editor;
+    expect(fatal(bool(editor.execute_document_insert_text(editor.selection(), U"$$").has_value())));
+    expect(fatal(bool(editor.execute_document_enter(editor.selection()).has_value())));
+    auto const* block = find_block(editor.document().root, editor.selection().active.container_id);
+    expect(fatal(bool(block && block->kind == BlockKind::MathBlock)));
+    expect(fatal(bool(block && block->block_source.source == U"$$\n$$")));
+    expect(fatal(bool(editor.selection().active.source_offset == 3u)));
+    expect(fatal(bool(editor.execute_document_enter(editor.selection()).has_value())));
+    block = find_block(editor.document().root, editor.selection().active.container_id);
+    expect(fatal(bool(block && block->block_source.source == U"$$\n\n$$")));
+    expect(fatal(bool(editor.selection().active.source_offset == 4u)));
 };
 
 "code_and_math_blocks_use_local_source_edit_history"_test = [] {

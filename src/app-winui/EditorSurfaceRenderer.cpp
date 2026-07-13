@@ -143,7 +143,7 @@ namespace winrt::ElMd
                 return display;
             }
             if (block.kind == elmd::RenderBlockKind::Code)
-                return block.code_indented ? BuildIndentedCodeBlockText(block) : BuildCodeBlockText(block, caret, treeSitter);
+                return BuildCodeBlockText(block, caret, treeSitter);
             if (block.kind == elmd::RenderBlockKind::Math)
                 return BuildMathBlockText(block, caret, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, width, svgSupported, requestEmbedded);
             if (!block.inline_items.empty())

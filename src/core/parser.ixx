@@ -24,6 +24,7 @@ import elmd.core.diagnostics;
 import elmd.core.metadata;
 import elmd.core.symbols;
 import elmd.core.ast;
+import elmd.core.block_source;
 import elmd.core.document;
 import elmd.core.document_symbols;
 import elmd.core.outline;
@@ -751,39 +752,6 @@ public:
             block.unsup_reason = UnsupportedMarkupReason::RawHtmlDisabled;
             return block;
         }
-        auto decode_text = [&](std::size_t begin, std::size_t end) {
-            std::u32string text;
-            for (auto cursor = begin; cursor < end;) {
-                if (cps[cursor] == U'<') {
-                    auto nested = html_tag_at(cursor, end);
-                    if (nested) {
-                        if (nested->name == "br" || (nested->closing && (nested->name == "p" || nested->name == "div" || nested->name == "tr"))) text.push_back(U'\n');
-                        cursor = nested->end;
-                        continue;
-                    }
-                }
-                if (cps[cursor] == U'&') {
-                    auto semicolon = cursor + 1;
-                    while (semicolon < end && semicolon - cursor <= 10 && cps[semicolon] != U';') ++semicolon;
-                    if (semicolon < end && cps[semicolon] == U';') {
-                        auto entity = cps_to_utf8(std::u32string_view(cps).substr(cursor + 1, semicolon - cursor - 1));
-                        if (entity == "amp") text.push_back(U'&');
-                        else if (entity == "lt") text.push_back(U'<');
-                        else if (entity == "gt") text.push_back(U'>');
-                        else if (entity == "quot") text.push_back(U'"');
-                        else if (entity == "apos" || entity == "#39") text.push_back(U'\'');
-                        else if (entity == "nbsp") text.push_back(U' ');
-                        else { text.append(std::u32string_view(cps).substr(cursor, semicolon - cursor + 1)); }
-                        cursor = semicolon + 1;
-                        continue;
-                    }
-                }
-                text.push_back(cps[cursor++]);
-            }
-            while (!text.empty() && (text.front() == U'\n' || text.front() == U'\r')) text.erase(text.begin());
-            while (!text.empty() && (text.back() == U'\n' || text.back() == U'\r')) text.pop_back();
-            return text;
-        };
         if (tag->name == "pre") {
             auto code_start = content_start;
             auto code_end = content_end;
@@ -802,7 +770,9 @@ public:
             BlockNode block;
             block.id = id;
             block.kind = BlockKind::CodeBlock;
-            block.code_text = decode_text(code_start, code_end);
+            block.block_source = make_block_source(
+                std::u32string(std::u32string_view(cps).substr(start, source_end - start)),
+                BlockSourceKind::HtmlCode);
             return block;
         }
         if (tag->name == "table") {
@@ -961,8 +931,10 @@ public:
         BlockNode block;
         block.id = id;
         block.kind = BlockKind::CodeBlock;
-        block.code_text = std::move(text);
         block.code_indented = true;
+        block.block_source = make_block_source(
+            std::u32string(std::u32string_view(cps).substr(start, pos - start)),
+            BlockSourceKind::IndentedCode);
         return block;
     }
 
@@ -1016,14 +988,18 @@ public:
         code_blocks.push_back({id, lang, n_lines});
         if (lang && *lang == "math" && input->dialect.math.fenced_math) {
             math_blocks.push_back({id, first_three_lines_utf8_(text)});
-            BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.tex = std::move(text); b.math_delim = MathDelimiter::FencedMath;
-            b.opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
-            if (closing_marker) b.closing_marker = std::u32string(std::u32string_view(cps).substr(closing_marker->start, closing_marker->end - closing_marker->start));
+            const auto local_end = closing_marker ? closing_marker->end : pos;
+            BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.math_delim = MathDelimiter::FencedMath;
+            b.block_source = make_block_source(
+                std::u32string(std::u32string_view(cps).substr(start, local_end - start)),
+                BlockSourceKind::FencedMath);
             return b;
         }
-        BlockNode b; b.id = id; b.kind = BlockKind::CodeBlock; b.language = lang; b.code_text = std::move(text);
-        b.opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
-        if (closing_marker) b.closing_marker = std::u32string(std::u32string_view(cps).substr(closing_marker->start, closing_marker->end - closing_marker->start));
+        const auto local_end = closing_marker ? closing_marker->end : pos;
+        BlockNode b; b.id = id; b.kind = BlockKind::CodeBlock;
+        b.block_source = make_block_source(
+            std::u32string(std::u32string_view(cps).substr(start, local_end - start)),
+            BlockSourceKind::FencedCode);
         return b;
     }
 
@@ -1053,9 +1029,10 @@ public:
                 range.marker_ranges.push_back(PhysicalRange(std::size_t(closing_start), std::size_t(closing_end)));
                 source_ranges.push_back(std::move(range));
                 math_blocks.push_back({id, first_three_lines_utf8_(tex)});
-                BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.tex = std::move(tex); b.math_delim = dollar ? MathDelimiter::BlockDollar : MathDelimiter::BlockBracket;
-                b.opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
-                b.closing_marker = std::u32string(std::u32string_view(cps).substr(closing_start, closing_end - closing_start));
+                BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.math_delim = dollar ? MathDelimiter::BlockDollar : MathDelimiter::BlockBracket;
+                b.block_source = make_block_source(
+                    std::u32string(std::u32string_view(cps).substr(start, closing_end - start)),
+                    dollar ? BlockSourceKind::DollarMath : BlockSourceKind::BracketMath);
                 return b;
             }
             tex.push_back(peek1()); advance();
@@ -1071,8 +1048,10 @@ public:
         range.marker_ranges.push_back(PhysicalRange(std::size_t(start), std::size_t(content_start)));
         source_ranges.push_back(std::move(range));
         math_blocks.push_back({id, first_three_lines_utf8_(tex)});
-        BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.tex = std::move(tex); b.math_delim = dollar ? MathDelimiter::BlockDollar : MathDelimiter::BlockBracket;
-        b.opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
+        BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.math_delim = dollar ? MathDelimiter::BlockDollar : MathDelimiter::BlockBracket;
+        b.block_source = make_block_source(
+            std::u32string(std::u32string_view(cps).substr(start, pos - start)),
+            dollar ? BlockSourceKind::DollarMath : BlockSourceKind::BracketMath);
         return b;
     }
 

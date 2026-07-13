@@ -45,8 +45,15 @@ inline BlockNode payload_shell(const BlockNode& source) {
     auto shell = source;
     shell.children.clear();
     shell.inline_content = {};
-    shell.code_text.clear();
-    shell.tex.clear();
+    shell.block_source.source.clear();
+    shell.block_source.tree.tokens.clear();
+    shell.block_source.tree.content_ranges.clear();
+    shell.block_source.tree.content_to_source.clear();
+    shell.block_source.tree.content.clear();
+    shell.block_source.tree.info_range.reset();
+    shell.block_source.tree.language.reset();
+    shell.block_source.tree.complete_opening = false;
+    shell.block_source.tree.complete_closing = false;
     return shell;
 }
 

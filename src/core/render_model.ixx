@@ -162,12 +162,12 @@ struct RenderBlock {
     // TextBlock
     std::vector<InlineRenderItem> inline_items;
     // CodeBlock
+    std::u32string raw_source;
+    std::vector<std::size_t> content_to_source;
     std::optional<std::string> language;
     std::u32string code_text;
     std::size_t line_count = 0;
     bool code_indented = false;
-    std::u32string opening_marker;
-    std::u32string closing_marker;
     // MathBlock
     std::u32string tex;
     MathDelimiter math_delim = MathDelimiter::BlockDollar;

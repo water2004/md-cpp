@@ -8,6 +8,7 @@
 
 #include "elmd_test.hpp"
 import elmd.core.ast;
+import elmd.core.block_source;
 import elmd.core.block_tree;
 import elmd.core.document;
 import elmd.core.document_edit;
@@ -332,7 +333,7 @@ suite document_edit_tests = [] {
     expect_document_valid(deletion->after);
 };
 
-"typed_fence_enters_and_closes_code_without_document_reparse"_test = [] {
+"typed_fence_enters_auto_closed_code_without_document_reparse"_test = [] {
     auto document = parse_document("");
     normalize_document(document);
     auto [opening, at_opening_end] = type_text(std::move(document), caret(first_editable(document)), U"```cpp");
@@ -340,18 +341,59 @@ suite document_edit_tests = [] {
     expect(fatal(bool(entered.has_value())));
     if (!entered) return;
     expect(fatal(bool(entered->after.root.children.front().kind == BlockKind::CodeBlock)));
-    expect(fatal(bool(entered->after.root.children.front().language == std::optional<std::string>{"cpp"})));
-    expect(fatal(bool(entered->after.root.children.front().opening_marker == U"```cpp\n")));
+    auto const& code = entered->after.root.children.front();
+    expect(fatal(bool(code.block_source.source == U"```cpp\n```")));
+    expect(fatal(bool(code.block_source.tree.language == std::optional<std::string>{"cpp"})));
+    expect(fatal(bool(code.block_source.tree.complete_opening)));
+    expect(fatal(bool(code.block_source.tree.complete_closing)));
+    expect(fatal(bool(block_source_tokens_partition(code.block_source))));
+    expect(fatal(bool(flatten_block_source_tokens(code.block_source) == code.block_source.source)));
     expect(fatal(bool(entered->selection_after.active.container_id == entered->after.root.children.front().id)));
+    expect(fatal(bool(entered->selection_after.active.source_offset == 7u)));
 
-    auto [actually_closed, outside] = type_text(entered->after, entered->selection_after, U"```");
-    expect(fatal(bool(actually_closed.root.children.size() == 2u)));
-    expect(fatal(bool(actually_closed.root.children.front().kind == BlockKind::CodeBlock)));
-    expect(fatal(bool(actually_closed.root.children.front().closing_marker == U"```")));
-    expect(fatal(bool(actually_closed.root.children.back().kind == BlockKind::Paragraph)));
-    expect(fatal(bool(outside.active.container_id == actually_closed.root.children.back().id)));
-    expect(fatal(bool(serialize_markdown(actually_closed) == "```cpp\n```\n\n")));
-    expect_document_valid(actually_closed);
+    auto second_enter = document_enter(entered->after, entered->selection_after);
+    expect(fatal(bool(second_enter.has_value())));
+    if (!second_enter) return;
+    expect(fatal(bool(second_enter->after.root.children.front().block_source.source == U"```cpp\n\n```")));
+    expect(fatal(bool(second_enter->selection_after.active.source_offset == 8u)));
+    expect(fatal(bool(serialize_markdown(second_enter->after) == "```cpp\n\n```")));
+    expect_document_valid(second_enter->after);
+};
+
+"raw_block_source_projection_is_lossless_through_incomplete_character_edits"_test = [] {
+    struct Case {
+        BlockSourceKind kind;
+        std::u32string source;
+    };
+    const std::vector<Case> cases{
+        {BlockSourceKind::FencedCode, U"```cpp"},
+        {BlockSourceKind::FencedCode, U"```cpp\n"},
+        {BlockSourceKind::FencedCode, U"~~~js\nvalue\n~~"},
+        {BlockSourceKind::DollarMath, U"$"},
+        {BlockSourceKind::DollarMath, U"$$"},
+        {BlockSourceKind::DollarMath, U"$$\n"},
+        {BlockSourceKind::BracketMath, U"\\["},
+        {BlockSourceKind::IndentedCode, U"    a\n  b\n"},
+    };
+    for (const auto& test_case : cases) {
+        auto original = make_block_source(test_case.source, test_case.kind);
+        expect(fatal(bool(block_source_tokens_partition(original))));
+        expect(fatal(bool(flatten_block_source_tokens(original) == original.source)));
+        for (std::size_t offset = 0; offset <= test_case.source.size(); ++offset) {
+            auto inserted = original;
+            inserted.source.insert(offset, 1, U'X');
+            reparse_block_source(inserted);
+            expect(fatal(bool(block_source_tokens_partition(inserted))));
+            expect(fatal(bool(flatten_block_source_tokens(inserted) == inserted.source)));
+        }
+        for (std::size_t offset = 0; offset < test_case.source.size(); ++offset) {
+            auto deleted = original;
+            deleted.source.erase(offset, 1);
+            reparse_block_source(deleted);
+            expect(fatal(bool(block_source_tokens_partition(deleted))));
+            expect(fatal(bool(flatten_block_source_tokens(deleted) == deleted.source)));
+        }
+    }
 };
 
 "enter_continues_and_exits_lists_by_tree_context"_test = [] {
@@ -507,17 +549,19 @@ suite document_edit_tests = [] {
 
 "enter_edits_code_math_and_table_cell_sources"_test = [] {
     auto fenced = parse_document("```cpp\none\ntwo\n```");
-    auto code = document_enter(fenced, TextSelection::caret({fenced.root.children.front().id, 3, TextAffinity::Downstream}));
+    auto const code_offset = block_source_offset_for_content(fenced.root.children.front().block_source, 3);
+    auto code = document_enter(fenced, TextSelection::caret({fenced.root.children.front().id, code_offset, TextAffinity::Downstream}));
     expect(fatal(bool(code.has_value())));
     if (code) {
-        expect(fatal(bool(code->after.root.children.front().code_text == U"one\n\ntwo\n")));
-        expect(fatal(bool(code->selection_after.active.source_offset == 4u)));
+        expect(fatal(bool(block_source_content(code->after.root.children.front().block_source) == U"one\n\ntwo\n")));
+        expect(fatal(bool(code->selection_after.active.source_offset == code_offset + 1)));
     }
 
     auto math = parse_document("$$\na+b\n$$");
-    auto math_break = document_enter(math, TextSelection::caret({math.root.children.front().id, 1, TextAffinity::Downstream}));
+    auto const math_offset = block_source_offset_for_content(math.root.children.front().block_source, 1);
+    auto math_break = document_enter(math, TextSelection::caret({math.root.children.front().id, math_offset, TextAffinity::Downstream}));
     expect(fatal(bool(math_break.has_value())));
-    if (math_break) expect(fatal(bool(math_break->after.root.children.front().tex == U"a\n+b\n")));
+    if (math_break) expect(fatal(bool(block_source_content(math_break->after.root.children.front().block_source) == U"a\n+b\n")));
 
     auto table = parse_document("| ab |\n| --- |");
     auto& cell = table.root.children.front().children.front().children.front();
@@ -548,15 +592,15 @@ suite document_edit_tests = [] {
 "enter_on_empty_indented_code_line_exits_the_block"_test = [] {
     auto document = parse_document("    one\n\n    two");
     auto const code_id = document.root.children.front().id;
-    auto transaction = document_enter(document, TextSelection::caret({code_id, 4, TextAffinity::Downstream}));
+    auto transaction = document_enter(document, TextSelection::caret({code_id, 8, TextAffinity::Downstream}));
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     expect(fatal(bool(transaction->after.root.children.size() == 3u)));
     expect(fatal(bool(transaction->after.root.children[0].kind == BlockKind::CodeBlock)));
-    expect(fatal(bool(transaction->after.root.children[0].code_text == U"one")));
+    expect(fatal(bool(transaction->after.root.children[0].block_source.source == U"    one")));
     expect(fatal(bool(transaction->after.root.children[1].kind == BlockKind::Paragraph)));
     expect(fatal(bool(transaction->after.root.children[2].kind == BlockKind::CodeBlock)));
-    expect(fatal(bool(transaction->after.root.children[2].code_text == U"two")));
+    expect(fatal(bool(transaction->after.root.children[2].block_source.source == U"    two")));
     expect(fatal(bool(transaction->selection_after.active.container_id == transaction->after.root.children[1].id)));
     expect(fatal(bool(serialize_markdown(transaction->after).find("    one\n    \n") == std::string::npos)));
 };
@@ -869,7 +913,7 @@ suite document_edit_tests = [] {
     if (code_document.root.children.size() == 3u) {
         auto const blank_id = code_document.root.children[1].id;
         auto const code_id = code_document.root.children[0].id;
-        auto const code_length = code_document.root.children[0].code_text.size();
+        auto const code_length = code_document.root.children[0].block_source.source.size();
         auto transaction = document_delete_backward(code_document, caret(code_document.root.children[1], 0));
         expect(fatal(bool(transaction.has_value())));
         if (transaction) {

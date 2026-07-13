@@ -443,6 +443,37 @@ namespace winrt::ElMd
         AppendDisplayText(display, std::u32string(sourceText.substr(0, length)), sourceSpan, style, marker);
     }
 
+    void AppendProjectedSourceText(
+        DisplayInlineText& display,
+        std::u32string_view text,
+        elmd::NodeId owner,
+        std::vector<std::size_t> const& sourceOffsets,
+        elmd::InlineStyle style)
+    {
+        auto start = static_cast<UINT32>(elmd::utf16_len(display.text));
+        display.text.append(text);
+        for (std::size_t index = 0; index < text.size(); ++index)
+        {
+            auto offset = sourceOffsets.empty()
+                ? index
+                : sourceOffsets[(std::min)(index, sourceOffsets.size() - 1)];
+            auto mapping = EditorDisplayPosition{
+                {owner, offset, elmd::TextAffinity::Downstream},
+                EditorDisplayPositionKind::Source};
+            display.displayToSource.push_back(mapping);
+            if (text[index] > 0xffff) display.displayToSource.push_back(mapping);
+        }
+        if (!text.empty())
+        {
+            display.ranges.push_back(InlineStyleRange{
+                start,
+                static_cast<UINT32>(elmd::utf16_len(text)),
+                style,
+                false,
+                SyntaxHighlightKind::None});
+        }
+    }
+
     void AppendMathPlaceholder(DisplayInlineText& display, std::size_t count, elmd::TextPosition sourcePosition)
     {
         auto start = static_cast<UINT32>(elmd::utf16_len(display.text));
@@ -644,20 +675,27 @@ namespace winrt::ElMd
     DisplayInlineText BuildCodeBlockText(elmd::RenderBlock const& block, elmd::TextPosition caret, TreeSitterHighlighter& highlighter)
     {
         DisplayInlineText display;
-        auto showFence = caret.container_id == block.id;
-        if (showFence)
-        {
-            AppendGeneratedText(
-                display,
-                block.opening_marker,
-                {block.id, 0, elmd::TextAffinity::Downstream},
-                elmd::InlineStyle::plain(),
-                EditorDisplayPositionKind::BoundaryDecoration);
-        }
+        auto editing = caret.container_id == block.id;
         auto code = block.code_text;
-        if (!showFence && !code.empty() && code.back() == U'\n') code.pop_back();
-        auto codeDisplayStart = static_cast<std::uint32_t>(elmd::utf16_len(display.text));
-        AppendSourceText(display, code, {block.id, {0, code.size()}}, elmd::InlineStyle::plain(), false);
+        if (!editing && !code.empty() && code.back() == U'\n') code.pop_back();
+        if (editing)
+        {
+            AppendSourceText(
+                display,
+                block.raw_source,
+                {block.id, {0, block.raw_source.size()}},
+                elmd::InlineStyle::plain(),
+                false);
+        }
+        else
+        {
+            AppendProjectedSourceText(
+                display,
+                code,
+                block.id,
+                block.content_to_source,
+                elmd::InlineStyle::plain());
+        }
         if (block.language && !code.empty())
         {
             auto highlights = highlighter.Highlight(*block.language, elmd::cps_to_utf8(code));
@@ -665,8 +703,16 @@ namespace winrt::ElMd
             {
                 auto start = (std::min)(static_cast<std::size_t>(highlight.start), code.size());
                 auto end = (std::min)(start + static_cast<std::size_t>(highlight.length), code.size());
-                auto displayStart = codeDisplayStart + static_cast<std::uint32_t>(elmd::char_index_to_utf16(code, start));
-                auto displayEnd = codeDisplayStart + static_cast<std::uint32_t>(elmd::char_index_to_utf16(code, end));
+                auto displayStart = editing
+                    ? static_cast<std::uint32_t>(elmd::char_index_to_utf16(
+                        block.raw_source,
+                        block.content_to_source.empty() ? start : block.content_to_source[start]))
+                    : static_cast<std::uint32_t>(elmd::char_index_to_utf16(code, start));
+                auto displayEnd = editing
+                    ? static_cast<std::uint32_t>(elmd::char_index_to_utf16(
+                        block.raw_source,
+                        block.content_to_source.empty() ? end : block.content_to_source[end]))
+                    : static_cast<std::uint32_t>(elmd::char_index_to_utf16(code, end));
                 if (displayStart < displayEnd)
                 {
                     display.ranges.push_back(InlineStyleRange{
@@ -679,24 +725,21 @@ namespace winrt::ElMd
                 }
             }
         }
-        if (showFence)
+        const auto endpoint = editing
+            ? block.raw_source.size()
+            : (block.content_to_source.empty()
+                ? code.size()
+                : block.content_to_source[(std::min)(code.size(), block.content_to_source.size() - 1)]);
+        if (display.text.empty())
         {
             AppendGeneratedText(
                 display,
-                block.closing_marker,
-                {block.id, block.code_text.size(), elmd::TextAffinity::Upstream},
+                U"\u200B",
+                {block.id, endpoint, elmd::TextAffinity::Downstream},
                 elmd::InlineStyle::plain(),
-                EditorDisplayPositionKind::BoundaryDecoration);
+                EditorDisplayPositionKind::Source);
         }
-        display.displayToSource.push_back({block.id, block.code_text.size(), elmd::TextAffinity::Downstream});
-        return display;
-    }
-
-    DisplayInlineText BuildIndentedCodeBlockText(elmd::RenderBlock const& block)
-    {
-        DisplayInlineText display;
-        AppendSourceText(display, block.code_text, block.source_span, elmd::InlineStyle::plain(), false);
-        display.displayToSource.push_back({block.id, block.code_text.size(), elmd::TextAffinity::Downstream});
+        display.displayToSource.push_back({block.id, endpoint, elmd::TextAffinity::Downstream});
         return display;
     }
 
@@ -712,12 +755,49 @@ namespace winrt::ElMd
         bool requestMath)
     {
         DisplayInlineText display;
-        auto span = elmd::TextSpan{block.id, {0, block.tex.size()}};
+        auto span = block.content_span;
         auto editing = caret.container_id == block.id;
-        if (!svgSupported || editing)
+        if (editing)
         {
-            AppendSourceText(display, block.tex, span, elmd::InlineStyle::plain(), false);
-            display.displayToSource.push_back({block.id, block.tex.size(), elmd::TextAffinity::Downstream});
+            AppendSourceText(
+                display,
+                block.raw_source,
+                {block.id, {0, block.raw_source.size()}},
+                elmd::InlineStyle::plain(),
+                false);
+            if (display.text.empty())
+            {
+                AppendGeneratedText(
+                    display,
+                    U"\u200B",
+                    {block.id, 0, elmd::TextAffinity::Downstream},
+                    elmd::InlineStyle::plain(),
+                    EditorDisplayPositionKind::Source);
+            }
+            display.displayToSource.push_back({block.id, block.raw_source.size(), elmd::TextAffinity::Downstream});
+            return display;
+        }
+        if (!svgSupported)
+        {
+            AppendProjectedSourceText(
+                display,
+                block.tex,
+                block.id,
+                block.content_to_source,
+                elmd::InlineStyle::plain());
+            const auto endpoint = block.content_to_source.empty()
+                ? block.tex.size()
+                : block.content_to_source.back();
+            if (display.text.empty())
+            {
+                AppendGeneratedText(
+                    display,
+                    U"\u200B",
+                    {block.id, endpoint, elmd::TextAffinity::Downstream},
+                    elmd::InlineStyle::plain(),
+                    EditorDisplayPositionKind::Source);
+            }
+            display.displayToSource.push_back({block.id, endpoint, elmd::TextAffinity::Downstream});
             return display;
         }
 
@@ -725,13 +805,30 @@ namespace winrt::ElMd
         auto math = rawMath ? NormalizeMathJaxSvg(*rawMath, svgNormalizer, svgColor, fontSize, requestMath) : std::nullopt;
         if (!math || !static_cast<bool>(*math))
         {
-            AppendSourceText(display, block.tex, span, elmd::InlineStyle::plain(), false);
+            AppendProjectedSourceText(
+                display,
+                block.tex,
+                block.id,
+                block.content_to_source,
+                elmd::InlineStyle::plain());
         }
         else
         {
             AppendMathFragments(display, *math, span, false, elmd::InlineStyle::plain());
         }
-        display.displayToSource.push_back({block.id, block.tex.size(), elmd::TextAffinity::Downstream});
+        const auto endpoint = block.content_to_source.empty()
+            ? block.tex.size()
+            : block.content_to_source.back();
+        if (display.text.empty())
+        {
+            AppendGeneratedText(
+                display,
+                U"\u200B",
+                {block.id, endpoint, elmd::TextAffinity::Downstream},
+                elmd::InlineStyle::plain(),
+                EditorDisplayPositionKind::Source);
+        }
+        display.displayToSource.push_back({block.id, endpoint, elmd::TextAffinity::Downstream});
         return display;
     }
 

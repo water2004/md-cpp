@@ -187,12 +187,15 @@ inline std::pair<LayoutBlock, float> layout_code_block(const RenderBlock& rb, fl
     LayoutBlock lb(rb.id, rb.source_span, {LayoutBlockKind::CodeBlock}, style);
     for (std::size_t i = 0; i < lines.size(); ++i) {
         const auto text = rb.code_text.substr(lines[i].start, lines[i].length());
+        const auto source_range = SourceRange{
+            rb.content_to_source.empty() ? lines[i].start : rb.content_to_source[lines[i].start],
+            rb.content_to_source.empty() ? lines[i].end : rb.content_to_source[lines[i].end]};
         auto shape = measurer.measure(text, font_size, InlineStyle::plain());
-        TextLineLayout ll{{rb.id, lines[i]}};
+        TextLineLayout ll{{rb.id, source_range}};
         ll.rect = LogicalRect(pad, y + style.margin_top * scale + pad + i * line_height, viewport_width - pad, line_height);
         ll.baseline = ll.rect.y + font_size;
         GlyphRunLayout r;
-        r.source_span = {rb.id, lines[i]}; r.text = text; r.glyphs = std::move(shape.glyphs);
+        r.source_span = {rb.id, source_range}; r.text = text; r.glyphs = std::move(shape.glyphs);
         r.style = InlineStyle::plain(); r.origin = LogicalPoint(pad, 0.0f);
         r.width = shape.width; r.height = line_height; r.marker_visibility = MarkerVisibility::Always;
         ll.runs.push_back(std::move(r));
@@ -339,12 +342,15 @@ inline std::pair<LayoutBlock, float> layout_math_block(const RenderBlock& rb, fl
     LayoutBlock lb(rb.id, rb.source_span, {LayoutBlockKind::MathBlock}, style);
     for (std::size_t i = 0; i < lines.size(); ++i) {
         const auto text = rb.tex.substr(lines[i].start, lines[i].length());
+        const auto source_range = SourceRange{
+            rb.content_to_source.empty() ? lines[i].start : rb.content_to_source[lines[i].start],
+            rb.content_to_source.empty() ? lines[i].end : rb.content_to_source[lines[i].end]};
         auto shape = measurer.measure(text, font_size, InlineStyle::plain());
-        TextLineLayout ll{{rb.id, lines[i]}};
+        TextLineLayout ll{{rb.id, source_range}};
         ll.rect = LogicalRect(pad, y + style.margin_top * scale + pad + i * line_height, viewport_width - pad, line_height);
         ll.baseline = ll.rect.y + font_size;
         GlyphRunLayout r;
-        r.source_span = {rb.id, lines[i]}; r.text = text; r.glyphs = std::move(shape.glyphs);
+        r.source_span = {rb.id, source_range}; r.text = text; r.glyphs = std::move(shape.glyphs);
         r.style = InlineStyle::plain(); r.origin = LogicalPoint(pad, 0.0f);
         r.width = shape.width; r.height = line_height; r.marker_visibility = MarkerVisibility::Always;
         ll.runs.push_back(std::move(r));

@@ -7,6 +7,7 @@
 #include "elmd_test.hpp"
 import elmd.core.parser;
 import elmd.core.ast;
+import elmd.core.block_source;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
 import elmd.core.serializer;
@@ -213,7 +214,9 @@ suite parser_tests = [] {
         if (parsed.document.root.children.size() != 1) continue;
         const auto& block = parsed.document.root.children.front();
         expect(fatal(bool(block.kind == BlockKind::MathBlock))) << source;
-        expect(fatal(bool(!block.opening_marker.empty()))) << source;
+        expect(fatal(bool(block.block_source.source == utf8_to_cps(source)))) << source;
+        expect(fatal(bool(block_source_tokens_partition(block.block_source)))) << source;
+        expect(fatal(bool(flatten_block_source_tokens(block.block_source) == block.block_source.source))) << source;
         expect(fatal(bool(serialize_markdown(parsed.document) == source))) << source;
     }
 };

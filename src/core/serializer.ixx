@@ -50,15 +50,6 @@ inline std::u32string indent_continuation(std::u32string_view value, std::size_t
     return result;
 }
 
-inline std::u32string serialize_indented_code(std::u32string_view value) {
-    std::u32string result = U"    ";
-    for (std::size_t index = 0; index < value.size(); ++index) {
-        result.push_back(value[index]);
-        if (value[index] == U'\n' && index + 1 < value.size()) result += U"    ";
-    }
-    return result;
-}
-
 inline std::u32string serialize_list(const BlockNode& block) {
     std::u32string result;
     const auto count = block.children.size();
@@ -104,19 +95,8 @@ inline std::u32string serialize_block(const BlockNode& block) {
         case BlockKind::TaskList:
             return serialize_list(block);
         case BlockKind::CodeBlock:
-            if (block.code_indented) return serialize_indented_code(block.code_text);
-            if (!block.opening_marker.empty()) return block.opening_marker + block.code_text + block.closing_marker;
-            return U"```" + (block.language ? utf8_to_cps(*block.language) : std::u32string{}) + U"\n" + block.code_text
-                + (!block.code_text.empty() && block.code_text.back() != U'\n' ? U"\n" : U"") + U"```";
-        case BlockKind::MathBlock: {
-            if (!block.opening_marker.empty()) {
-                return block.opening_marker + block.tex + block.closing_marker;
-            }
-            const auto newline = block.tex.empty() || block.tex.back() != U'\n' ? U"\n" : U"";
-            if (block.math_delim == MathDelimiter::BlockBracket) return U"\\[\n" + block.tex + newline + U"\\]";
-            if (block.math_delim == MathDelimiter::FencedMath) return U"```math\n" + block.tex + newline + U"```";
-            return U"$$\n" + block.tex + newline + U"$$";
-        }
+        case BlockKind::MathBlock:
+            return block.block_source.source;
         case BlockKind::Table: {
             if (block.children.empty()) return {};
             std::u32string result = serialize_table_row(block.children.front()) + U"\n|";

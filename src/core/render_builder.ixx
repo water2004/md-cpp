@@ -6,6 +6,7 @@ import elmd.core.types;
 import elmd.core.ids;
 import elmd.core.dialect;
 import elmd.core.ast;
+import elmd.core.block_source;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
 import elmd.core.selection;
@@ -32,9 +33,8 @@ inline std::size_t block_local_length(const BlockNode& block) {
     if (const auto* document = editable_inline_document(block)) return document->source.size();
     switch (block.kind) {
         case BlockKind::CodeBlock:
-            return block.code_text.size();
         case BlockKind::MathBlock:
-            return block.tex.size();
+            return block.block_source.source.size();
         case BlockKind::Frontmatter:
         case BlockKind::UnsupportedMarkup:
         case BlockKind::LinkDefinition:
@@ -157,26 +157,33 @@ struct Builder {
             auto existing = first_line ? emitted_columns : std::size_t{0};
             append_generated_indent(out, block.id, source_offset, desired > existing ? desired - existing : 0);
         };
-        if (block.code_text.empty()) {
-            append_line_indent(0, true);
+        const auto code = block_source_content(block.block_source);
+        if (code.empty()) {
+            append_line_indent(block_source_offset_for_content(block.block_source, 0), true);
             return;
         }
         std::size_t line_start = 0;
         bool first_line = true;
-        while (line_start < block.code_text.size()) {
-            append_line_indent(line_start, first_line);
-            auto newline = block.code_text.find(U'\n', line_start);
-            auto line_end = newline == std::u32string::npos ? block.code_text.size() : newline + 1;
+        while (line_start < code.size()) {
+            const auto source_start = block_source_offset_for_content(block.block_source, line_start);
+            append_line_indent(source_start, first_line);
+            auto newline = code.find(U'\n', line_start);
+            auto line_end = newline == std::u32string::npos ? code.size() : newline + 1;
+            const auto source_end = block_source_offset_for_content(block.block_source, line_end);
             auto item = InlineRenderItem::plain_text(
-                block.code_text.substr(line_start, line_end - line_start),
-                {block.id, {line_start, line_end}});
+                code.substr(line_start, line_end - line_start),
+                {block.id, {source_start, source_end}});
             item.style.code = true;
             out.push_back(std::move(item));
             line_start = line_end;
             first_line = false;
         }
-        if (block.code_text.back() == U'\n') {
-            append_generated_indent(out, block.id, block.code_text.size(), indent_columns + content_padding_columns);
+        if (code.back() == U'\n') {
+            append_generated_indent(
+                out,
+                block.id,
+                block_source_offset_for_content(block.block_source, code.size()),
+                indent_columns + content_padding_columns);
         }
     }
 
@@ -363,12 +370,15 @@ struct Builder {
                 break;
             case BlockKind::MathBlock: {
                 append_missing_indent(out, owner, 0, context.indent_columns, emitted_columns);
+                const auto math = block_source_content(block.block_source);
                 InlineRenderItem item;
                 item.kind = InlineRenderItem::Kind::Math;
                 item.id = block.id;
-                item.source_span = {block.id, {0, block.tex.size()}};
-                item.source_text = block.tex;
-                item.text = block.tex;
+                item.source_span = {block.id, {
+                    block_source_offset_for_content(block.block_source, 0),
+                    block_source_offset_for_content(block.block_source, math.size())}};
+                item.source_text = math;
+                item.text = math;
                 item.display = MathDisplayMode::Block;
                 item.math_delim = block.math_delim;
                 out.push_back(std::move(item));
@@ -671,18 +681,27 @@ struct Builder {
             }
             case BK::CodeBlock: {
                 auto rb = base(BlockStyle::code());
-                rb.language = b.language;
-                rb.code_text = b.code_text;
+                rb.raw_source = b.block_source.source;
+                rb.content_to_source = b.block_source.tree.content_to_source;
+                rb.language = b.block_source.tree.language;
+                rb.code_text = block_source_content(b.block_source);
                 rb.code_indented = b.code_indented;
-                rb.opening_marker = b.opening_marker;
-                rb.closing_marker = b.closing_marker;
-                std::size_t n = 1; for (char32_t c : b.code_text) if (c == '\n') ++n;
+                std::size_t n = 1; for (char32_t c : rb.code_text) if (c == '\n') ++n;
                 rb.line_count = n;
+                if (!rb.content_to_source.empty()) {
+                    rb.content_span = {b.id, {rb.content_to_source.front(), rb.content_to_source.back()}};
+                }
                 return rb;
             }
             case BK::MathBlock: {
                 auto rb = base(BlockStyle::math());
-                rb.tex = b.tex; rb.math_delim = b.math_delim;
+                rb.raw_source = b.block_source.source;
+                rb.content_to_source = b.block_source.tree.content_to_source;
+                rb.tex = block_source_content(b.block_source);
+                rb.math_delim = b.math_delim;
+                if (!rb.content_to_source.empty()) {
+                    rb.content_span = {b.id, {rb.content_to_source.front(), rb.content_to_source.back()}};
+                }
                 return rb;
             }
             case BK::Table: {

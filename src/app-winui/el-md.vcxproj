@@ -150,6 +150,9 @@
     <ClCompile Include="..\core\ast.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\core\block_source.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\core\block_tree.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
