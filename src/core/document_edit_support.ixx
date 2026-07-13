@@ -807,117 +807,7 @@ inline void prune_empty_containers_recorded(
     }
 }
 
-inline bool set_heading(BlockVec& blocks, NodeId id, std::uint8_t level) {
-    for (auto& block : blocks) {
-        if (block.id == id && text_block(block.kind)) {
-            block.kind = level == 0 ? BlockKind::Paragraph : BlockKind::Heading;
-            block.level = level;
-            return true;
-        }
-        if (set_heading(block.children, id, level)) return true;
-    }
-    return false;
-}
-
-inline std::optional<std::pair<std::size_t, std::size_t>> direct_range(const BlockVec& blocks, NodeId first, NodeId last) {
-    std::optional<std::size_t> begin, end;
-    for (std::size_t index = 0; index < blocks.size(); ++index) {
-        if (blocks[index].id == first) begin = index;
-        if (blocks[index].id == last) end = index;
-    }
-    if (!begin || !end) return std::nullopt;
-    if (*begin > *end) std::swap(*begin, *end);
-    return std::pair{*begin, *end};
-}
-
-inline bool toggle_quote(BlockVec& blocks, NodeId first, NodeId last, NodeAllocator& allocator) {
-    if (auto range = direct_range(blocks, first, last)) {
-        if (range->first == range->second && blocks[range->first].kind == BlockKind::BlockQuote) {
-            auto children = std::move(blocks[range->first].children);
-            blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(range->first));
-            blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(range->first),
-                std::make_move_iterator(children.begin()), std::make_move_iterator(children.end()));
-            return true;
-        }
-        BlockNode quote; quote.id = allocator.allocate(); quote.kind = BlockKind::BlockQuote;
-        quote.children.insert(quote.children.end(),
-            std::make_move_iterator(blocks.begin() + static_cast<std::ptrdiff_t>(range->first)),
-            std::make_move_iterator(blocks.begin() + static_cast<std::ptrdiff_t>(range->second + 1)));
-        blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(range->first), blocks.begin() + static_cast<std::ptrdiff_t>(range->second + 1));
-        blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(range->first), std::move(quote));
-        return true;
-    }
-    for (auto& block : blocks) {
-        if (toggle_quote(block.children, first, last, allocator)) return true;
-    }
-    return false;
-}
-
-inline bool toggle_callout(BlockVec& blocks, NodeId first, NodeId last, std::string kind, NodeAllocator& allocator) {
-    if (auto range = direct_range(blocks, first, last)) {
-        if (range->first == range->second && blocks[range->first].kind == BlockKind::Callout) {
-            auto children = std::move(blocks[range->first].children);
-            blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(range->first));
-            blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(range->first),
-                std::make_move_iterator(children.begin()), std::make_move_iterator(children.end()));
-            return true;
-        }
-        BlockNode callout; callout.id = allocator.allocate(); callout.kind = BlockKind::Callout; callout.callout_kind = std::move(kind);
-        callout.children.insert(callout.children.end(),
-            std::make_move_iterator(blocks.begin() + static_cast<std::ptrdiff_t>(range->first)),
-            std::make_move_iterator(blocks.begin() + static_cast<std::ptrdiff_t>(range->second + 1)));
-        blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(range->first), blocks.begin() + static_cast<std::ptrdiff_t>(range->second + 1));
-        blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(range->first), std::move(callout));
-        return true;
-    }
-    for (auto& block : blocks) {
-        if (toggle_callout(block.children, first, last, kind, allocator)) return true;
-    }
-    return false;
-}
-
 enum class ListStyle { Bullet, Ordered, Task };
-inline bool toggle_list(BlockVec& blocks, NodeId first, NodeId last, ListStyle style, NodeAllocator& allocator) {
-    if (auto range = direct_range(blocks, first, last)) {
-        if (range->first == range->second && (blocks[range->first].kind == BlockKind::List || blocks[range->first].kind == BlockKind::TaskList)) {
-            auto list = std::move(blocks[range->first]);
-            BlockVec unwrapped;
-            for (auto& item : list.children) for (auto& child : item.children) unwrapped.push_back(std::move(child));
-            blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(range->first));
-            blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(range->first),
-                std::make_move_iterator(unwrapped.begin()), std::make_move_iterator(unwrapped.end()));
-            return true;
-        }
-        BlockNode list; list.id = allocator.allocate(); list.kind = style == ListStyle::Task ? BlockKind::TaskList : BlockKind::List;
-        list.list_ordered = style == ListStyle::Ordered;
-        for (std::size_t index = range->first; index <= range->second; ++index) {
-            BlockNode item;
-            item.id = allocator.allocate();
-            item.kind = style == ListStyle::Task ? BlockKind::TaskListItem : BlockKind::ListItem;
-            item.marker = style == ListStyle::Task ? U"- [ ] " : style == ListStyle::Ordered ? U"1. " : U"- ";
-            item.children.push_back(std::move(blocks[index]));
-            list.children.push_back(std::move(item));
-        }
-        blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(range->first), blocks.begin() + static_cast<std::ptrdiff_t>(range->second + 1));
-        blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(range->first), std::move(list));
-        return true;
-    }
-    for (auto& block : blocks) {
-        if (toggle_list(block.children, first, last, style, allocator)) return true;
-    }
-    return false;
-}
-
-inline bool toggle_task(BlockVec& blocks, NodeId id) {
-    for (auto& block : blocks) {
-        if (block.kind == BlockKind::TaskListItem && elmd::find_block(block, id)) {
-            block.checked = !block.checked;
-            return true;
-        }
-        if (toggle_task(block.children, id)) return true;
-    }
-    return false;
-}
 
 inline void validate_inline_document(NodeId owner, const InlineDocument& document, std::unordered_set<std::uint64_t>& ids, std::vector<DocumentInvariantError>& errors) {
     if (!tokens_partition_source(document.tree, document.source.size())) errors.push_back({owner, "inline tokens do not partition source"});
@@ -940,10 +830,6 @@ inline void validate_blocks(const BlockVec& blocks, std::unordered_set<std::uint
         }
         validate_blocks(block.children, ids, errors);
     }
-}
-
-inline DocumentTransaction transaction(EditorDocument before, EditorDocument after, TextSelection selection_before, TextSelection selection_after, DocumentTransactionReason reason) {
-    return make_document_transaction(before, std::move(after), selection_before, selection_after, reason);
 }
 
 inline DocumentTransaction source_transaction(

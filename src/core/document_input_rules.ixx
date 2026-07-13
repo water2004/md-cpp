@@ -964,13 +964,6 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> remove_callout_pre
     return result;
 }
 
-inline BlockNode container_shell_from(const BlockNode& source, NodeId id) {
-    auto result = source;
-    result.id = id;
-    result.children.clear();
-    return result;
-}
-
 inline std::optional<document_edit_detail::RecordedBlockEdit> remove_quote_prefix(
     EditorDocument& document,
     TextPosition position) {
