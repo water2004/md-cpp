@@ -52,15 +52,21 @@ inline std::optional<DocumentTransaction> document_insert_text(const EditorDocum
     }
     document_edit_detail::NodeAllocator allocator(working);
     auto inserted = document_edit_detail::insert_text(working, current.active, text, allocator);
-    if (!inserted) return std::nullopt;
+    if (!inserted || !inserted->source_edit) return std::nullopt;
+    document_edit_detail::append_source_operation(
+        operations, std::move(*inserted->source_edit));
     auto target = current.active; target.source_offset = inserted->offset; target.affinity = inserted->affinity;
-    const bool changed_structure = document_input_rules::apply_after_text_insert(working, target, allocator);
+    auto structural = document_input_rules::apply_after_text_insert(working, target, allocator);
+    const bool has_recorded_structure = structural && !structural->operations.empty();
+    if (structural) {
+        target = structural->target;
+        operations.insert(
+            operations.end(),
+            std::make_move_iterator(structural->operations.begin()),
+            std::make_move_iterator(structural->operations.end()));
+    }
     ++working.revision;
-    if (inserted->source_edit && !changed_structure) {
-        operations.emplace_back(DocumentTextOperation{
-            std::move(inserted->source_edit->forward),
-            std::move(inserted->source_edit->inverse),
-        });
+    if (!structural || has_recorded_structure) {
         return make_recorded_document_transaction(
             std::move(working),
             std::move(operations),

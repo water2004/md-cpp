@@ -165,10 +165,10 @@ suite document_edit_tests = [] {
         return std::holds_alternative<DocumentTextOperation>(operation);
     });
     expect(fatal(bool(tree_count == 1u)));
-    // The typed marker is consumed by the same command that promotes the
-    // paragraph, so the net source is unchanged and no redundant TextEdit is
-    // retained in history.
-    expect(fatal(bool(text_count == 0u)));
+    // History records the actual semantic sequence: insert the marker source,
+    // consume that source into block structure, then update the block payload.
+    // It does not collapse the command into a before/after whole-tree diff.
+    expect(fatal(bool(text_count == 2u)));
 };
 
 "typed_block_markers_apply_local_tree_rules"_test = [] {

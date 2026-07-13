@@ -283,6 +283,86 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.selection() == after_selection)));
 };
 
+"typed_block_markers_record_source_and_tree_transformations"_test = [] {
+    struct Case {
+        std::u32string marker;
+        BlockKind expected;
+    };
+    const std::vector<Case> cases{
+        {U"# ", BlockKind::Heading},
+        {U"> ", BlockKind::BlockQuote},
+        {U"- ", BlockKind::List},
+        {U"1. ", BlockKind::List},
+    };
+    for (const auto& entry : cases) {
+        Editor editor;
+        for (std::size_t index = 0; index + 1 < entry.marker.size(); ++index) {
+            expect(fatal(bool(editor.execute_document_insert_text(
+                editor.selection(), std::u32string_view(entry.marker).substr(index, 1)).has_value())));
+        }
+        const auto before_markdown = editor.markdown_utf8();
+        const auto before_selection = editor.selection();
+        reset_core_operation_counters();
+        auto transaction = editor.execute_document_insert_text(
+            editor.selection(), std::u32string_view(entry.marker).substr(entry.marker.size() - 1, 1));
+        expect(fatal(bool(transaction.has_value()))) << cps_to_utf8(entry.marker);
+        if (!transaction) continue;
+        const auto counters = read_core_operation_counters();
+        expect(fatal(bool(counters.full_document_parses == 0u))) << cps_to_utf8(entry.marker);
+        expect(fatal(bool(counters.full_document_serializations == 0u))) << cps_to_utf8(entry.marker);
+        expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << cps_to_utf8(entry.marker);
+        expect(fatal(bool(editor.document().root.children.front().kind == entry.expected)))
+            << cps_to_utf8(entry.marker);
+        expect(fatal(bool(editor.selection().active.source_offset == 0u)))
+            << cps_to_utf8(entry.marker);
+        const auto after_markdown = editor.markdown_utf8();
+        const auto after_selection = editor.selection();
+
+        expect(fatal(bool(editor.undo()))) << cps_to_utf8(entry.marker);
+        expect(fatal(bool(editor.markdown_utf8() == before_markdown))) << cps_to_utf8(entry.marker);
+        expect(fatal(bool(editor.selection() == before_selection))) << cps_to_utf8(entry.marker);
+        expect(fatal(bool(editor.redo()))) << cps_to_utf8(entry.marker);
+        expect(fatal(bool(editor.markdown_utf8() == after_markdown))) << cps_to_utf8(entry.marker);
+        expect(fatal(bool(editor.selection() == after_selection))) << cps_to_utf8(entry.marker);
+    }
+};
+
+"typed_list_markers_coalesce_adjacent_lists_with_reversible_moves"_test = [] {
+    const std::vector<std::string> cases{
+        "- before\n\nafter",
+        "before\n\n- after",
+    };
+    for (const auto& markdown : cases) {
+        Editor editor(markdown);
+        const auto before_markdown = editor.markdown_utf8();
+        const auto paragraph = std::ranges::find_if(
+            editor.document().root.children,
+            [](const BlockNode& block) { return block.kind == BlockKind::Paragraph; });
+        expect(fatal(bool(paragraph != editor.document().root.children.end()))) << markdown;
+        if (paragraph == editor.document().root.children.end()) continue;
+        const auto before_selection = TextSelection::caret(
+            {paragraph->id, 0, TextAffinity::Downstream});
+        editor.set_selection(before_selection);
+        reset_core_operation_counters();
+        auto transaction = editor.execute_document_insert_text(editor.selection(), U"- ");
+        expect(fatal(bool(transaction.has_value()))) << markdown;
+        if (!transaction) continue;
+        const auto counters = read_core_operation_counters();
+        expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << markdown;
+        expect(fatal(bool(editor.document().root.children.size() == 1u))) << markdown;
+        expect(fatal(bool(editor.document().root.children.front().kind == BlockKind::List))) << markdown;
+        expect(fatal(bool(editor.document().root.children.front().children.size() == 2u))) << markdown;
+        const auto after_markdown = editor.markdown_utf8();
+        const auto after_selection = editor.selection();
+        expect(fatal(bool(editor.undo()))) << markdown;
+        expect(fatal(bool(editor.markdown_utf8() == before_markdown))) << markdown;
+        expect(fatal(bool(editor.selection() == before_selection))) << markdown;
+        expect(fatal(bool(editor.redo()))) << markdown;
+        expect(fatal(bool(editor.markdown_utf8() == after_markdown))) << markdown;
+        expect(fatal(bool(editor.selection() == after_selection))) << markdown;
+    }
+};
+
 "code_and_math_blocks_use_local_source_edit_history"_test = [] {
     const std::vector<std::string> cases{
         "```cpp\nab\n```",

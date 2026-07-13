@@ -157,64 +157,74 @@ inline bool compatible_lists(const BlockNode& left, const BlockNode& right) {
     return !left.list_ordered || right.list_start == left.list_start + left.children.size();
 }
 
-inline std::size_t coalesce_list(BlockNode& parent, std::size_t index) {
-    if (index >= parent.children.size()) return index;
-    if (index > 0 && compatible_lists(parent.children[index - 1], parent.children[index])) {
-        auto& previous = parent.children[index - 1];
-        auto& current = parent.children[index];
-        previous.children.insert(previous.children.end(),
-            std::make_move_iterator(current.children.begin()),
-            std::make_move_iterator(current.children.end()));
-        parent.children.erase(parent.children.begin() + static_cast<std::ptrdiff_t>(index));
-        --index;
-    }
-    if (index + 1 < parent.children.size() && compatible_lists(parent.children[index], parent.children[index + 1])) {
-        auto& current = parent.children[index];
-        auto& next = parent.children[index + 1];
-        current.children.insert(current.children.end(),
-            std::make_move_iterator(next.children.begin()),
-            std::make_move_iterator(next.children.end()));
-        parent.children.erase(parent.children.begin() + static_cast<std::ptrdiff_t>(index + 1));
-    }
-    return index;
-}
-
-inline bool replace_paragraph_with_container(
+inline std::optional<document_edit_detail::RecordedBlockEdit> replace_paragraph_with_container(
     EditorDocument& document,
     const BlockPath& path,
     const MarkerMatch& match,
     TextPosition& target,
     document_edit_detail::NodeAllocator& allocator) {
-    if (path.empty()) return false;
+    if (path.empty()) return std::nullopt;
     auto parent_path = path;
     const auto index = parent_path.back();
     parent_path.pop_back();
     auto* parent = block_at_path(document.root, parent_path);
-    if (!parent || index >= parent->children.size()) return false;
+    if (!parent || index >= parent->children.size()) return std::nullopt;
     auto& source_block = parent->children[index];
-    if (source_block.kind != BlockKind::Paragraph) return false;
+    if (source_block.kind != BlockKind::Paragraph) return std::nullopt;
+    document_edit_detail::RecordedBlockEdit result;
+    result.target = target;
+    const auto parent_id = parent->id;
     const auto exact_marker = source_block.inline_content.source.substr(0, match.length);
-    if (!document_edit_detail::edit_inline(document, source_block.id, {0, match.length}, {}, allocator)) return false;
+    auto marker_edit = document_edit_detail::edit_inline(
+        document, source_block.id, {0, match.length}, {}, allocator);
+    if (!marker_edit) return std::nullopt;
+    document_edit_detail::append_source_operation(result.operations, std::move(*marker_edit));
     target = {source_block.id, target.source_offset - match.length, TextAffinity::Downstream};
+    result.target = target;
 
     if (match.kind == MarkerMatch::Kind::Heading) {
+        DocumentTreeEdit update;
+        update.kind = DocumentTreeEditKind::UpdatePayload;
+        update.before = document_transaction_detail::payload_shell(source_block);
         source_block.kind = BlockKind::Heading;
         source_block.level = match.heading_level;
         source_block.opening_marker = exact_marker;
         source_block.closing_marker.clear();
         source_block.slug.clear();
-        return true;
+        update.after = document_transaction_detail::payload_shell(source_block);
+        result.operations.emplace_back(std::move(update));
+        return result;
     }
 
-    auto content = std::move(source_block);
     if (match.kind == MarkerMatch::Kind::Quote) {
         BlockNode quote;
         quote.id = allocator.allocate();
         quote.kind = BlockKind::BlockQuote;
         quote.opening_marker = exact_marker;
-        quote.children.push_back(std::move(content));
-        parent->children[index] = std::move(quote);
-        return true;
+        const auto quote_id = quote.id;
+        DocumentTreeEdit insert;
+        insert.kind = DocumentTreeEditKind::Insert;
+        insert.parent_id = parent_id;
+        insert.index = index;
+        insert.after = quote;
+        result.operations.emplace_back(std::move(insert));
+        parent->children.insert(
+            parent->children.begin() + static_cast<std::ptrdiff_t>(index),
+            std::move(quote));
+
+        DocumentTreeEdit move;
+        move.kind = DocumentTreeEditKind::Move;
+        move.parent_id = parent_id;
+        move.index = index + 1;
+        move.other_parent_id = quote_id;
+        move.other_index = 0;
+        auto content = remove_block(*parent, index + 1);
+        auto* inserted_quote = find_block(document.root, quote_id);
+        if (!content || !inserted_quote || !insert_block(*inserted_quote, 0, std::move(*content))) {
+            return std::nullopt;
+        }
+        result.operations.emplace_back(std::move(move));
+        return result;
     }
 
     BlockNode list;
@@ -228,11 +238,90 @@ inline bool replace_paragraph_with_container(
     item.kind = match.kind == MarkerMatch::Kind::TaskList ? BlockKind::TaskListItem : BlockKind::ListItem;
     item.marker = exact_marker;
     item.checked = match.checked;
-    item.children.push_back(std::move(content));
     list.children.push_back(std::move(item));
-    parent->children[index] = std::move(list);
-    coalesce_list(*parent, index);
-    return true;
+    const auto list_id = list.id;
+    const auto item_id = list.children.front().id;
+    DocumentTreeEdit insert;
+    insert.kind = DocumentTreeEditKind::Insert;
+    insert.parent_id = parent_id;
+    insert.index = index;
+    insert.after = list;
+    result.operations.emplace_back(std::move(insert));
+    parent->children.insert(
+        parent->children.begin() + static_cast<std::ptrdiff_t>(index),
+        std::move(list));
+
+    DocumentTreeEdit move_content;
+    move_content.kind = DocumentTreeEditKind::Move;
+    move_content.parent_id = parent_id;
+    move_content.index = index + 1;
+    move_content.other_parent_id = item_id;
+    move_content.other_index = 0;
+    auto content = remove_block(*parent, index + 1);
+    auto* inserted_item = find_block(document.root, item_id);
+    if (!content || !inserted_item || !insert_block(*inserted_item, 0, std::move(*content))) {
+        return std::nullopt;
+    }
+    result.operations.emplace_back(std::move(move_content));
+
+    auto* inserted_list = find_block(document.root, list_id);
+    parent = find_block(document.root, parent_id);
+    if (!inserted_list || !parent) return std::nullopt;
+    std::size_t effective_index = index;
+    if (effective_index > 0 && compatible_lists(parent->children[effective_index - 1], *inserted_list)) {
+        auto* previous = &parent->children[effective_index - 1];
+        const auto target_index = previous->children.size();
+        DocumentTreeEdit move_item;
+        move_item.kind = DocumentTreeEditKind::Move;
+        move_item.parent_id = list_id;
+        move_item.index = 0;
+        move_item.other_parent_id = previous->id;
+        move_item.other_index = target_index;
+        auto moved_item = remove_block(*inserted_list, 0);
+        if (!moved_item || !insert_block(*previous, target_index, std::move(*moved_item))) {
+            return std::nullopt;
+        }
+        result.operations.emplace_back(std::move(move_item));
+
+        DocumentTreeEdit remove_list;
+        remove_list.kind = DocumentTreeEditKind::Remove;
+        remove_list.parent_id = parent_id;
+        remove_list.index = effective_index;
+        remove_list.before = parent->children[effective_index];
+        result.operations.emplace_back(std::move(remove_list));
+        parent->children.erase(parent->children.begin() + static_cast<std::ptrdiff_t>(effective_index));
+        --effective_index;
+        inserted_list = &parent->children[effective_index];
+    }
+
+    if (effective_index + 1 < parent->children.size()
+        && compatible_lists(*inserted_list, parent->children[effective_index + 1])) {
+        const auto next_id = parent->children[effective_index + 1].id;
+        auto* next = &parent->children[effective_index + 1];
+        while (!next->children.empty()) {
+            DocumentTreeEdit move_item;
+            move_item.kind = DocumentTreeEditKind::Move;
+            move_item.parent_id = next_id;
+            move_item.index = 0;
+            move_item.other_parent_id = inserted_list->id;
+            move_item.other_index = inserted_list->children.size();
+            auto moved_item = remove_block(*next, 0);
+            if (!moved_item || !insert_block(
+                    *inserted_list, move_item.other_index, std::move(*moved_item))) {
+                return std::nullopt;
+            }
+            result.operations.emplace_back(std::move(move_item));
+        }
+        DocumentTreeEdit remove_list;
+        remove_list.kind = DocumentTreeEditKind::Remove;
+        remove_list.parent_id = parent_id;
+        remove_list.index = effective_index + 1;
+        remove_list.before = parent->children[effective_index + 1];
+        result.operations.emplace_back(std::move(remove_list));
+        parent->children.erase(
+            parent->children.begin() + static_cast<std::ptrdiff_t>(effective_index + 1));
+    }
+    return result;
 }
 
 struct DirectListContext {
@@ -773,20 +862,23 @@ inline std::optional<TextPosition> remove_list_prefix(
 
 } // namespace detail
 
-inline bool apply_after_text_insert(
+inline std::optional<document_edit_detail::RecordedBlockEdit> apply_after_text_insert(
     EditorDocument& document,
     TextPosition& target,
     document_edit_detail::NodeAllocator& allocator) {
     if (auto closed = detail::close_fenced_code(document, target, allocator)) {
         target = *closed;
-        return true;
+        return document_edit_detail::RecordedBlockEdit{target, {}};
     }
-    if (detail::upgrade_task_item(document, target, allocator)) return true;
+    if (detail::upgrade_task_item(document, target, allocator)) {
+        return document_edit_detail::RecordedBlockEdit{target, {}};
+    }
     auto path = block_path(document.root, target.container_id);
     auto* block = path ? block_at_path(document.root, *path) : nullptr;
-    if (!block || block->kind != BlockKind::Paragraph) return false;
+    if (!block || block->kind != BlockKind::Paragraph) return std::nullopt;
     auto marker = detail::recognize_marker(block->inline_content.source, target.source_offset);
-    return marker && detail::replace_paragraph_with_container(document, *path, *marker, target, allocator);
+    if (!marker) return std::nullopt;
+    return detail::replace_paragraph_with_container(document, *path, *marker, target, allocator);
 }
 
 inline std::optional<document_edit_detail::RecordedBlockEdit> handle_enter(
