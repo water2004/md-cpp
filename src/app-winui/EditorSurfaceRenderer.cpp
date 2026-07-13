@@ -28,7 +28,6 @@ namespace winrt::ElMd
         if (theme == value) return;
         theme = value;
         styleSheet = CreateEditorStyleSheet(value == Theme::Dark);
-        blockLayoutCache.Clear();
         renderCache.ClearTextLayouts();
         renderCache.ClearSvgDocuments();
         resources.RebuildTextFormats(styleSheet);
@@ -39,7 +38,6 @@ namespace winrt::ElMd
     {
         mathJax.Clear();
         treeSitter.Clear();
-        blockLayoutCache.Clear();
         renderCache.ClearTextLayouts();
         renderCache.ClearSvgDocuments();
     }
@@ -87,7 +85,7 @@ namespace winrt::ElMd
         struct ResetFlag { bool& value; ~ResetFlag() { value = false; } } reset{resizing};
         auto result = resources.Resize(panel, width, height);
         if (!result.resized) return;
-        if (result.widthChanged) { blockLayoutCache.Clear(); renderCache.ClearTextLayouts(); }
+        if (result.widthChanged) renderCache.ClearTextLayouts();
         scrollOffset = (std::min)(scrollOffset, MaximumScrollOffset());
         scrollTarget = (std::min)(scrollTarget, MaximumScrollOffset());
     }

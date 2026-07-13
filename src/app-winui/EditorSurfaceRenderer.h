@@ -6,7 +6,6 @@
 #include "SvgNormalizer.h"
 #include "TreeSitterHighlighter.h"
 #include "EditorStyleSheet.h"
-#include "EditorBlockLayoutCache.h"
 #include "EditorInteractionMap.h"
 #include "EditorRenderCache.h"
 #include "EditorRenderResources.h"
@@ -82,7 +81,6 @@ namespace winrt::ElMd
         Theme theme = Theme::Dark;
         EditorStyleSheet styleSheet = CreateEditorStyleSheet(true);
         EditorInteractionMap interactionMap;
-        EditorBlockLayoutCache blockLayoutCache;
         std::uint64_t observedRemoteImageGeneration = 0;
         std::optional<D2D1_POINT_2F> pointerPosition;
         std::optional<TableAction> draggedTableAction;
