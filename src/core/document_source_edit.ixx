@@ -113,9 +113,18 @@ inline std::optional<DocumentTransaction> document_paste_text(const EditorDocume
     }
     auto working = document;
     auto current = selection;
+    std::vector<DocumentOperation> operations;
+    auto apply_step = [&](DocumentTransaction step) {
+        operations.insert(
+            operations.end(),
+            std::make_move_iterator(step.operations.begin()),
+            std::make_move_iterator(step.operations.end()));
+        working = std::move(step.after);
+        current = step.selection_after;
+    };
     if (!current.is_caret()) {
         auto deletion = document_delete_selection(working, current); if (!deletion) return std::nullopt;
-        working = std::move(deletion->after); current = deletion->selection_after;
+        apply_step(std::move(*deletion));
     }
     std::size_t start = 0;
     while (start <= normalized.size()) {
@@ -123,13 +132,21 @@ inline std::optional<DocumentTransaction> document_paste_text(const EditorDocume
         const auto segment_end = end == std::u32string::npos ? normalized.size() : end;
         if (segment_end > start) {
             auto insertion = document_insert_text(working, current, std::u32string_view(normalized).substr(start, segment_end - start));
-            if (!insertion) return std::nullopt; working = std::move(insertion->after); current = insertion->selection_after;
+            if (!insertion) return std::nullopt;
+            apply_step(std::move(*insertion));
         }
         if (end == std::u32string::npos) break;
         auto split = document_enter(working, current); if (!split) return std::nullopt;
-        working = std::move(split->after); current = split->selection_after; start = end + 1;
+        apply_step(std::move(*split));
+        start = end + 1;
     }
-    return document_edit_detail::transaction(document, std::move(working), selection, current, DocumentTransactionReason::Paste);
+    return make_recorded_document_transaction(
+        std::move(working),
+        std::move(operations),
+        selection,
+        current,
+        document.revision,
+        DocumentTransactionReason::Paste);
 }
 
 inline std::u32string format_marker(InlineFormat format) {

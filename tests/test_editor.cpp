@@ -92,6 +92,32 @@ suite editor_tests = [] {
     expect(fatal(bool(undo.inline_reparses == 1u)));
 };
 
+"paste_composes_recorded_source_operations_without_a_final_tree_diff"_test = [] {
+    Editor editor("ab");
+    const auto before_selection = caret(first_text(editor), 1);
+    editor.set_selection(before_selection);
+    reset_core_operation_counters();
+    auto transaction = editor.execute_document_paste_text(editor.selection(), U"X");
+    expect(fatal(bool(transaction.has_value())));
+    if (!transaction) return;
+    const auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_parses == 0u)));
+    expect(fatal(bool(counters.full_document_serializations == 0u)));
+    expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
+    expect(fatal(bool(counters.inline_reparses == 1u)));
+    expect(fatal(bool(transaction->operations.size() == 1u)));
+    expect(fatal(bool(std::holds_alternative<DocumentTextOperation>(transaction->operations.front()))));
+    expect(fatal(bool(editor.markdown_utf8() == "aXb")));
+    const auto after_selection = editor.selection();
+
+    expect(fatal(bool(editor.undo())));
+    expect(fatal(bool(editor.markdown_utf8() == "ab")));
+    expect(fatal(bool(editor.selection() == before_selection)));
+    expect(fatal(bool(editor.redo())));
+    expect(fatal(bool(editor.markdown_utf8() == "aXb")));
+    expect(fatal(bool(editor.selection() == after_selection)));
+};
+
 "callout_titles_are_inline_source_owners_with_local_history"_test = [] {
     Editor editor("> [!NOTE] _title_\n> body");
     const auto callout_id = editor.document().root.children.front().id;
