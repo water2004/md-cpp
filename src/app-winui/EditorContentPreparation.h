@@ -52,12 +52,19 @@ namespace winrt::ElMd
             std::optional<float> height;
         };
 
+        struct IndentOverlay
+        {
+            std::uint32_t displayStart = 0;
+            float width = 0.0f;
+        };
+
         std::u32string text;
         std::vector<elmd::TextPosition> displayToSource;
         std::vector<InlineStyleRange> ranges;
         std::vector<MathOverlay> mathOverlays;
         std::vector<MathPreview> mathPreviews;
         std::vector<ImageOverlay> imageOverlays;
+        std::vector<IndentOverlay> indentOverlays;
     };
 
     std::wstring ToWide(std::u32string_view text);
@@ -73,6 +80,7 @@ namespace winrt::ElMd
     void AppendMathPlaceholder(DisplayInlineText& display, std::size_t count, elmd::TextPosition sourcePosition);
     void ApplyInlinePlaceholder(IDWriteTextLayout* layout, UINT32 displayStart, float width, float height, float baseline);
     void ApplyMathInlineObjects(IDWriteTextLayout* layout, std::vector<DisplayInlineText::MathOverlay> const& overlays);
+    void ApplyIndentInlineObjects(IDWriteTextLayout* layout, std::vector<DisplayInlineText::IndentOverlay> const& overlays);
     DisplayInlineText BuildDisplayInlineText(
         std::vector<elmd::InlineRenderItem> const& items,
         elmd::TextPosition caret,

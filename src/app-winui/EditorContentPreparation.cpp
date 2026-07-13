@@ -191,6 +191,47 @@ namespace winrt::ElMd
         float baseline;
     };
 
+    class IndentInlineObject final : public ::Microsoft::WRL::RuntimeClass<::Microsoft::WRL::RuntimeClassFlags<::Microsoft::WRL::ClassicCom>, IDWriteInlineObject>
+    {
+    public:
+        IndentInlineObject(float width, float height, float baseline) : width(width), height(height), baseline(baseline) {}
+
+        IFACEMETHODIMP Draw(void*, IDWriteTextRenderer*, FLOAT, FLOAT, BOOL, BOOL, IUnknown*) override
+        {
+            return S_OK;
+        }
+
+        IFACEMETHODIMP GetMetrics(DWRITE_INLINE_OBJECT_METRICS* metrics) override
+        {
+            if (!metrics) return E_POINTER;
+            metrics->width = width;
+            metrics->height = height;
+            metrics->baseline = baseline;
+            metrics->supportsSideways = FALSE;
+            return S_OK;
+        }
+
+        IFACEMETHODIMP GetOverhangMetrics(DWRITE_OVERHANG_METRICS* overhangs) override
+        {
+            if (!overhangs) return E_POINTER;
+            *overhangs = {};
+            return S_OK;
+        }
+
+        IFACEMETHODIMP GetBreakConditions(DWRITE_BREAK_CONDITION* before, DWRITE_BREAK_CONDITION* after) override
+        {
+            if (!before || !after) return E_POINTER;
+            *before = DWRITE_BREAK_CONDITION_MUST_BREAK;
+            *after = DWRITE_BREAK_CONDITION_MAY_NOT_BREAK;
+            return S_OK;
+        }
+
+    private:
+        float width;
+        float height;
+        float baseline;
+    };
+
     bool IsStyleMarker(elmd::InlineRenderItem const& item)
     {
         if (item.kind != elmd::InlineRenderItem::Kind::Marker) return false;
@@ -378,6 +419,11 @@ namespace winrt::ElMd
             overlay.displayStart += offset;
             target.imageOverlays.push_back(std::move(overlay));
         }
+        for (auto& overlay : source.indentOverlays)
+        {
+            overlay.displayStart += offset;
+            target.indentOverlays.push_back(std::move(overlay));
+        }
     }
 
     void AppendSourceText(DisplayInlineText& display, std::u32string_view sourceText, elmd::TextSpan sourceSpan, elmd::InlineStyle style, bool marker)
@@ -453,6 +499,16 @@ namespace winrt::ElMd
         if (!layout) return;
         auto object = ::Microsoft::WRL::Make<MathInlineObject>(width, height, baseline);
         if (object) layout->SetInlineObject(object.Get(), DWRITE_TEXT_RANGE{ displayStart, 1 });
+    }
+
+    void ApplyIndentInlineObjects(IDWriteTextLayout* layout, std::vector<DisplayInlineText::IndentOverlay> const& overlays)
+    {
+        if (!layout) return;
+        for (auto const& overlay : overlays)
+        {
+            auto object = ::Microsoft::WRL::Make<IndentInlineObject>(overlay.width, 1.0f, 1.0f);
+            if (object) layout->SetInlineObject(object.Get(), DWRITE_TEXT_RANGE{ overlay.displayStart, 1 });
+        }
     }
 
     DisplayInlineText BuildDisplayInlineText(

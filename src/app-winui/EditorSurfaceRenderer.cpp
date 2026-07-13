@@ -371,10 +371,12 @@ namespace winrt::ElMd
             applyNestedCodeHighlights(display, block);
             auto code = block.kind == elmd::RenderBlockKind::Code || block.kind == elmd::RenderBlockKind::Frontmatter || block.kind == elmd::RenderBlockKind::Unsupported;
             auto format = textLayoutEngine.FormatFor(code, display.ranges);
-            auto layout = textLayoutEngine.Create(ToWide(display.text), format, documentWidth);
-            textLayoutEngine.ApplyStyles(layout.Get(), display.ranges);
-            ApplyMathInlineObjects(layout.Get(), display.mathOverlays);
-            auto images = inlineImages.Resolve(layout.Get(), display.imageOverlays, documentWidth);
+            std::vector<EditorInlineImageRenderer::ImageDraw> images;
+            auto layout = textLayoutEngine.CreateFlow(display, format, documentWidth,
+                [&](IDWriteTextLayout* candidate, DisplayInlineText const& candidateDisplay)
+                {
+                    images = inlineImages.Resolve(candidate, candidateDisplay.imageOverlays, documentWidth);
+                });
             auto flowContainer = !block.inline_items.empty()
                 && (block.kind == elmd::RenderBlockKind::Quote
                     || block.kind == elmd::RenderBlockKind::Callout
