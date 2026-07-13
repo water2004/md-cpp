@@ -117,14 +117,20 @@ inline void scan_ids(const BlockNode& block, std::uint64_t& maximum) {
 
 inline bool apply_text_history_edit(EditorDocument& document, const DocumentTextOperation& operation, bool forward) {
     const auto& edit = forward ? operation.forward : operation.inverse;
-    auto* owner = inline_owner(document.root, edit.container_id);
-    if (!owner) return false;
-    std::uint64_t maximum = 0;
-    scan_ids(document.root, maximum);
-    InlineParseContext context;
-    context.dialect = document.dialect;
-    context.allocate_id = [next = maximum + 1]() mutable { return NodeId{next++}; };
-    apply_inline_source_edit(edit.container_id, *owner, edit, context);
+    if (auto* owner = inline_owner(document.root, edit.container_id)) {
+        std::uint64_t maximum = 0;
+        scan_ids(document.root, maximum);
+        InlineParseContext context;
+        context.dialect = document.dialect;
+        context.allocate_id = [next = maximum + 1]() mutable { return NodeId{next++}; };
+        apply_inline_source_edit(edit.container_id, *owner, edit, context);
+        return true;
+    }
+    auto* block = find_block(document.root, edit.container_id);
+    if (!block) return false;
+    auto* source = editable_raw_block_source(*block);
+    if (!source || !edit.range.valid_for(source->size())) return false;
+    apply_text_edit(*source, edit);
     return true;
 }
 

@@ -45,13 +45,32 @@ inline const InlineDocument* editable_inline_document(const BlockNode& block) {
     }
 }
 
-inline std::optional<std::u32string> editable_block_text(const BlockNode& block) {
-    if (const auto* document = editable_inline_document(block)) return document->source;
+inline std::u32string* editable_raw_block_source(BlockNode& block) {
     switch (block.kind) {
         case BlockKind::CodeBlock:
-            return block.code_text;
+            return &block.code_text;
         case BlockKind::MathBlock:
-            return block.tex;
+            return &block.tex;
+        default:
+            return nullptr;
+    }
+}
+
+inline const std::u32string* editable_raw_block_source(const BlockNode& block) {
+    switch (block.kind) {
+        case BlockKind::CodeBlock:
+            return &block.code_text;
+        case BlockKind::MathBlock:
+            return &block.tex;
+        default:
+            return nullptr;
+    }
+}
+
+inline std::optional<std::u32string> editable_block_text(const BlockNode& block) {
+    if (const auto* document = editable_inline_document(block)) return document->source;
+    if (const auto* source = editable_raw_block_source(block)) return *source;
+    switch (block.kind) {
         case BlockKind::Frontmatter:
         case BlockKind::LinkDefinition:
         case BlockKind::UnsupportedMarkup:

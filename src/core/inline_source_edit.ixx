@@ -9,11 +9,6 @@ import elmd.core.text_edit;
 
 export namespace elmd {
 
-struct AppliedInlineEdit {
-    TextEdit forward;
-    TextEdit inverse;
-};
-
 namespace inline_source_edit_detail {
 
 inline std::optional<SourceRange> adjacent_hard_break(
@@ -130,7 +125,7 @@ inline std::optional<SourceRange> inline_forward_delete_range(
     return SourceRange{offset, offset + 1};
 }
 
-inline AppliedInlineEdit apply_inline_source_edit(
+inline AppliedSourceEdit apply_inline_source_edit(
     NodeId owner_id,
     InlineDocument& document,
     const TextEdit& edit,
@@ -157,7 +152,7 @@ inline AppliedInlineEdit apply_inline_source_edit(
     inverse.container_id = owner_id;
     inverse.range = {edit.range.start, edit.range.start + edit.replacement.size()};
     inverse.replacement = removed;
-    return AppliedInlineEdit{edit, std::move(inverse)};
+    return AppliedSourceEdit{edit, std::move(inverse)};
 }
 
 } // namespace elmd

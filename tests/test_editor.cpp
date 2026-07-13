@@ -10,6 +10,7 @@ import elmd.core.command;
 import elmd.core.dialect;
 import elmd.core.document;
 import elmd.core.document_edit;
+import elmd.core.document_text;
 import elmd.core.editor;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
@@ -116,6 +117,74 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.redo())));
     expect(fatal(bool(editor.markdown_utf8() == "aXb")));
     expect(fatal(bool(editor.selection() == after_selection)));
+};
+
+"code_and_math_blocks_use_local_source_edit_history"_test = [] {
+    const std::vector<std::string> cases{
+        "```cpp\nab\n```",
+        "$$\nab\n$$",
+    };
+    for (const auto& markdown : cases) {
+        Editor editor(markdown);
+        const auto owner_id = editor.document().root.children.front().id;
+        const auto original_source = *document_editable_text(editor.document(), owner_id);
+        const auto before_markdown = editor.markdown_utf8();
+        const auto before_selection = TextSelection::caret(
+            {owner_id, 1, TextAffinity::Downstream});
+        editor.set_selection(before_selection);
+
+        reset_core_operation_counters();
+        auto inserted = editor.execute_document_insert_text(editor.selection(), U"X");
+        expect(fatal(bool(inserted.has_value()))) << markdown;
+        if (!inserted) continue;
+        auto counters = read_core_operation_counters();
+        expect(fatal(bool(counters.full_document_parses == 0u))) << markdown;
+        expect(fatal(bool(counters.full_document_serializations == 0u))) << markdown;
+        expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << markdown;
+        expect(fatal(bool(counters.inline_reparses == 0u))) << markdown;
+        auto expected = original_source;
+        expected.insert(1, U"X");
+        const auto inserted_expected = expected;
+        expect(fatal(bool(document_editable_text(editor.document(), owner_id) == expected))) << markdown;
+        const auto inserted_selection = editor.selection();
+
+        expect(fatal(bool(editor.undo()))) << markdown;
+        expect(fatal(bool(editor.markdown_utf8() == before_markdown))) << markdown;
+        expect(fatal(bool(editor.selection() == before_selection))) << markdown;
+        expect(fatal(bool(editor.redo()))) << markdown;
+        expect(fatal(bool(document_editable_text(editor.document(), owner_id) == expected))) << markdown;
+        expect(fatal(bool(editor.selection() == inserted_selection))) << markdown;
+
+        reset_core_operation_counters();
+        auto entered = editor.execute_document_enter(editor.selection());
+        expect(fatal(bool(entered.has_value()))) << markdown;
+        if (!entered) continue;
+        counters = read_core_operation_counters();
+        expect(fatal(bool(counters.full_document_parses == 0u))) << markdown;
+        expect(fatal(bool(counters.full_document_serializations == 0u))) << markdown;
+        expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << markdown;
+        expect(fatal(bool(counters.inline_reparses == 0u))) << markdown;
+        expected.insert(2, U"\n");
+        expect(fatal(bool(document_editable_text(editor.document(), owner_id) == expected))) << markdown;
+        expect(fatal(bool(editor.undo()))) << markdown;
+        expect(fatal(bool(document_editable_text(editor.document(), owner_id)
+            == inserted_expected))) << markdown;
+
+        reset_core_operation_counters();
+        auto deleted = editor.execute_document_delete_backward(editor.selection());
+        expect(fatal(bool(deleted.has_value()))) << markdown;
+        if (!deleted) continue;
+        counters = read_core_operation_counters();
+        expect(fatal(bool(counters.full_document_parses == 0u))) << markdown;
+        expect(fatal(bool(counters.full_document_serializations == 0u))) << markdown;
+        expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << markdown;
+        expect(fatal(bool(counters.inline_reparses == 0u))) << markdown;
+        expect(fatal(bool(document_editable_text(editor.document(), owner_id)
+            == original_source))) << markdown;
+        expect(fatal(bool(editor.undo()))) << markdown;
+        expect(fatal(bool(document_editable_text(editor.document(), owner_id)
+            == inserted_expected))) << markdown;
+    }
 };
 
 "callout_titles_are_inline_source_owners_with_local_history"_test = [] {

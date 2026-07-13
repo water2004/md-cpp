@@ -6,7 +6,7 @@ import elmd.core.selection;
 
 export namespace elmd {
 
-// Half-open [start, end) range in an editable node's InlineDocument::source.
+// Half-open [start, end) range in an editable node's block-local source.
 struct SourceRange {
     std::size_t start = 0;
     std::size_t end = 0;
@@ -22,7 +22,7 @@ struct SourceRange {
     bool operator==(const SourceRange&) const = default;
 };
 
-// The only authoritative coordinate inside editable inline content.
+// The only authoritative coordinate inside editable block-local content.
 struct TextPosition {
     NodeId container_id{};
     std::size_t source_offset = 0;
@@ -57,6 +57,14 @@ struct TextEdit {
     std::u32string replacement;
 };
 
+// A block-local source edit together with its exact inverse. Inline owners
+// reparse their CST after applying it; code and math owners edit their local
+// source directly. History uses the same operation shape for both.
+struct AppliedSourceEdit {
+    TextEdit forward;
+    TextEdit inverse;
+};
+
 inline std::ptrdiff_t text_edit_delta(const TextEdit& edit) {
     return static_cast<std::ptrdiff_t>(edit.replacement.size())
         - static_cast<std::ptrdiff_t>(edit.range.length());
@@ -66,7 +74,7 @@ inline std::ptrdiff_t text_edit_delta(const TextEdit& edit) {
 // selection/history restoration non-reversible, so reject them explicitly.
 inline std::ptrdiff_t apply_text_edit(std::u32string& source, const TextEdit& edit) {
     if (!edit.range.valid_for(source.size())) {
-        throw std::out_of_range("TextEdit range is outside InlineDocument::source");
+        throw std::out_of_range("TextEdit range is outside its block-local source");
     }
     source.replace(edit.range.start, edit.range.length(), edit.replacement);
     return text_edit_delta(edit);
