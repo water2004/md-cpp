@@ -485,7 +485,16 @@ namespace winrt::ElMd
 
     void EditorSurfaceRenderer::Render(detail::EditorRenderFrame const& frame)
     {
-        if (!resources.Ready() || resizing || rendering) return;
+        if (!resources.Ready()) return;
+        if (resizing || rendering)
+        {
+            // A source edit may request a frame while an asynchronous math or
+            // SVG invalidation is painting. Never drop that newer frame: the
+            // deferred callback obtains the latest session model after this
+            // render completes.
+            deferredInvalidate = true;
+            return;
+        }
         rendering = true;
         struct Reset { EditorSurfaceRenderer& owner; ~Reset() { owner.rendering = false; if (owner.deferredInvalidate.exchange(false)) owner.Invalidate(); } } reset{*this};
         resources.EnsureFrameResources(styleSheet);

@@ -761,37 +761,17 @@ namespace winrt::ElMd
         DisplayInlineText display;
         auto span = block.content_span;
         auto editing = caret.container_id == block.id;
-        if (editing)
-        {
-            AppendSourceText(
-                display,
-                block.raw_source,
-                {block.id, {0, block.raw_source.size()}},
-                elmd::InlineStyle::plain(),
-                false);
-            if (display.text.empty())
-            {
-                AppendGeneratedText(
-                    display,
-                    U"\u200B",
-                    {block.id, 0, elmd::TextAffinity::Downstream},
-                    elmd::InlineStyle::plain(),
-                    EditorDisplayPositionKind::Source);
-            }
-            display.displayToSource.push_back({block.id, block.raw_source.size(), elmd::TextAffinity::Downstream});
-            return display;
-        }
         if (!svgSupported)
         {
-            AppendProjectedSourceText(
-                display,
-                block.tex,
-                block.id,
-                block.content_to_source,
-                elmd::InlineStyle::plain());
-            const auto endpoint = block.content_to_source.empty()
-                ? block.tex.size()
-                : block.content_to_source.back();
+            const auto endpoint = editing
+                ? block.raw_source.size()
+                : block.content_to_source.empty()
+                    ? block.tex.size()
+                    : block.content_to_source.back();
+            if (editing)
+                AppendSourceText(display, block.raw_source, {block.id, {0, endpoint}}, elmd::InlineStyle::plain(), false);
+            else
+                AppendProjectedSourceText(display, block.tex, block.id, block.content_to_source, elmd::InlineStyle::plain());
             if (display.text.empty())
             {
                 AppendGeneratedText(
@@ -807,7 +787,21 @@ namespace winrt::ElMd
 
         auto rawMath = mathJax.GetOrQueue(elmd::cps_to_utf8(block.tex), true, fontSize, containerWidth, requestMath);
         auto math = rawMath ? NormalizeMathJaxSvg(*rawMath, svgNormalizer, svgColor, fontSize, requestMath) : std::nullopt;
-        if (!math || !static_cast<bool>(*math))
+        if (editing)
+        {
+            AppendSourceText(
+                display,
+                block.raw_source,
+                {block.id, {0, block.raw_source.size()}},
+                elmd::InlineStyle::plain(),
+                false);
+            // Editing keeps the exact source visible, while the live preview
+            // proves that the same block is already parsed and rendered. A
+            // toolbar command is no longer needed to make the block visible.
+            if (math && static_cast<bool>(*math))
+                AppendMathFragments(display, *math, span, true, elmd::InlineStyle::plain());
+        }
+        else if (!math || !static_cast<bool>(*math))
         {
             AppendProjectedSourceText(
                 display,
@@ -820,9 +814,11 @@ namespace winrt::ElMd
         {
             AppendMathFragments(display, *math, span, false, elmd::InlineStyle::plain());
         }
-        const auto endpoint = block.content_to_source.empty()
-            ? block.tex.size()
-            : block.content_to_source.back();
+        const auto endpoint = editing
+            ? block.raw_source.size()
+            : block.content_to_source.empty()
+                ? block.tex.size()
+                : block.content_to_source.back();
         if (display.text.empty())
         {
             AppendGeneratedText(

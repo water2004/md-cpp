@@ -712,6 +712,13 @@ suite render_layout_tests = [] {
     }
 };
 
+"display_math_keeps_an_explicit_block_container"_test = [] {
+    auto model = build_model("$$\nx + y\n$$");
+    expect(fatal(bool(model.blocks.size() == 1u)));
+    expect(fatal(bool(model.blocks.front().kind == RenderBlockKind::Math)));
+    expect(fatal(bool(model.blocks.front().block_style.background.has_value())));
+};
+
 "unified_flow_composes_list_quote_list_and_code"_test = [] {
     std::uint64_t next_id = 1;
     auto outer_text = make_render_text_block(BlockKind::Paragraph, U"outer", next_id);

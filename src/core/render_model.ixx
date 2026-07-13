@@ -90,6 +90,9 @@ struct BlockStyle {
     static BlockStyle math() {
         BlockStyle s; s.margin_top = 12; s.margin_bottom = 12;
         s.padding_top = 8; s.padding_bottom = 8; s.padding_left = 12; s.padding_right = 12;
+        // Display math is an atomic editable block. Keep its container
+        // visible while the source delimiters are revealed for editing.
+        s.background = Color{};
         return s;
     }
     static BlockStyle table()  { BlockStyle s; s.margin_top = 8; s.margin_bottom = 8; return s; }
