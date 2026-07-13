@@ -515,6 +515,172 @@ inline std::optional<TextPosition> close_fenced_code(
     return target;
 }
 
+inline std::optional<TextPosition> remove_heading_prefix(
+    EditorDocument& document,
+    TextPosition position) {
+    auto* block = find_block(document.root, position.container_id);
+    if (!block || block->kind != BlockKind::Heading) return std::nullopt;
+    block->kind = BlockKind::Paragraph;
+    block->level = 0;
+    block->slug.clear();
+    block->opening_marker.clear();
+    block->closing_marker.clear();
+    return TextPosition{block->id, 0, TextAffinity::Downstream};
+}
+
+inline BlockNode container_shell_from(const BlockNode& source, NodeId id) {
+    auto result = source;
+    result.id = id;
+    result.children.clear();
+    return result;
+}
+
+inline std::optional<TextPosition> remove_quote_prefix(
+    EditorDocument& document,
+    TextPosition position,
+    document_edit_detail::NodeAllocator& allocator) {
+    auto path = block_path(document.root, position.container_id);
+    if (!path || path->size() < 2) return std::nullopt;
+
+    auto quote_path = *path;
+    const auto child_index = quote_path.back();
+    quote_path.pop_back();
+    const auto* quote = block_at_path(document.root, quote_path);
+    if (!quote || quote->kind != BlockKind::BlockQuote || child_index >= quote->children.size()) {
+        return std::nullopt;
+    }
+
+    auto parent_path = quote_path;
+    const auto quote_index = parent_path.back();
+    parent_path.pop_back();
+    auto* parent = block_at_path(document.root, parent_path);
+    if (!parent || quote_index >= parent->children.size()) return std::nullopt;
+
+    auto original = std::move(parent->children[quote_index]);
+    auto selected = std::move(original.children[child_index]);
+    BlockVec replacement;
+    if (child_index > 0) {
+        auto before = container_shell_from(original, original.id);
+        before.children.insert(before.children.end(),
+            std::make_move_iterator(original.children.begin()),
+            std::make_move_iterator(original.children.begin() + static_cast<std::ptrdiff_t>(child_index)));
+        replacement.push_back(std::move(before));
+    }
+    replacement.push_back(std::move(selected));
+    if (child_index + 1 < original.children.size()) {
+        auto after = container_shell_from(
+            original,
+            child_index == 0 ? original.id : allocator.allocate());
+        after.children.insert(after.children.end(),
+            std::make_move_iterator(original.children.begin() + static_cast<std::ptrdiff_t>(child_index + 1)),
+            std::make_move_iterator(original.children.end()));
+        replacement.push_back(std::move(after));
+    }
+
+    parent->children.erase(parent->children.begin() + static_cast<std::ptrdiff_t>(quote_index));
+    parent->children.insert(
+        parent->children.begin() + static_cast<std::ptrdiff_t>(quote_index),
+        std::make_move_iterator(replacement.begin()),
+        std::make_move_iterator(replacement.end()));
+    return TextPosition{position.container_id, 0, TextAffinity::Downstream};
+}
+
+inline std::optional<TextPosition> outdent_nested_list_item(
+    EditorDocument& document,
+    const DirectListContext& context,
+    TextPosition position) {
+    auto parent_item_path = context.list_path;
+    if (parent_item_path.empty()) return std::nullopt;
+    parent_item_path.pop_back();
+    const auto* parent_item = block_at_path(document.root, parent_item_path);
+    if (!parent_item || (parent_item->kind != BlockKind::ListItem
+        && parent_item->kind != BlockKind::TaskListItem)) return std::nullopt;
+
+    auto grand_list_path = parent_item_path;
+    if (grand_list_path.empty()) return std::nullopt;
+    const auto parent_item_index = grand_list_path.back();
+    grand_list_path.pop_back();
+    const auto* grand_list = block_at_path(document.root, grand_list_path);
+    if (!grand_list || (grand_list->kind != BlockKind::List
+        && grand_list->kind != BlockKind::TaskList)) return std::nullopt;
+
+    const auto nested_list_id = block_at_path(document.root, context.list_path)->id;
+    auto* nested_list = block_at_path(document.root, context.list_path);
+    if (!nested_list || context.item_index >= nested_list->children.size()) return std::nullopt;
+    auto item = remove_block(*nested_list, context.item_index);
+    if (!item) return std::nullopt;
+
+    if (auto* current = find_block(document.root, nested_list_id); current && current->children.empty()) {
+        auto location = block_path(document.root, nested_list_id);
+        auto* owner = find_parent_block(document.root, nested_list_id);
+        if (!location || !owner || !remove_block(*owner, location->back())) return std::nullopt;
+    }
+
+    auto* target_list = block_at_path(document.root, grand_list_path);
+    if (!target_list || parent_item_index >= target_list->children.size()) return std::nullopt;
+    if (!insert_block(*target_list, parent_item_index + 1, std::move(*item))) return std::nullopt;
+    return TextPosition{position.container_id, 0, TextAffinity::Downstream};
+}
+
+inline std::optional<TextPosition> remove_top_level_list_prefix(
+    EditorDocument& document,
+    const DirectListContext& context,
+    TextPosition position,
+    document_edit_detail::NodeAllocator& allocator) {
+    if (context.list_path.empty()) return std::nullopt;
+    auto parent_path = context.list_path;
+    const auto list_index = parent_path.back();
+    parent_path.pop_back();
+    auto* parent = block_at_path(document.root, parent_path);
+    if (!parent || list_index >= parent->children.size()) return std::nullopt;
+
+    auto original = std::move(parent->children[list_index]);
+    if (context.item_index >= original.children.size()) return std::nullopt;
+    auto selected = std::move(original.children[context.item_index]);
+    BlockVec replacement;
+    if (context.item_index > 0) {
+        auto before = list_shell_from(original, original.id);
+        before.children.insert(before.children.end(),
+            std::make_move_iterator(original.children.begin()),
+            std::make_move_iterator(original.children.begin() + static_cast<std::ptrdiff_t>(context.item_index)));
+        replacement.push_back(std::move(before));
+    }
+    replacement.insert(replacement.end(),
+        std::make_move_iterator(selected.children.begin()),
+        std::make_move_iterator(selected.children.end()));
+    if (context.item_index + 1 < original.children.size()) {
+        auto after = list_shell_from(
+            original,
+            context.item_index == 0 ? original.id : allocator.allocate());
+        if (after.list_ordered) after.list_start += context.item_index + 1;
+        after.children.insert(after.children.end(),
+            std::make_move_iterator(original.children.begin() + static_cast<std::ptrdiff_t>(context.item_index + 1)),
+            std::make_move_iterator(original.children.end()));
+        replacement.push_back(std::move(after));
+    }
+    if (replacement.empty()) {
+        replacement.push_back(document_edit_detail::empty_paragraph(allocator, document));
+        position.container_id = replacement.front().id;
+    }
+
+    parent->children.erase(parent->children.begin() + static_cast<std::ptrdiff_t>(list_index));
+    parent->children.insert(
+        parent->children.begin() + static_cast<std::ptrdiff_t>(list_index),
+        std::make_move_iterator(replacement.begin()),
+        std::make_move_iterator(replacement.end()));
+    return TextPosition{position.container_id, 0, TextAffinity::Downstream};
+}
+
+inline std::optional<TextPosition> remove_list_prefix(
+    EditorDocument& document,
+    TextPosition position,
+    document_edit_detail::NodeAllocator& allocator) {
+    auto context = direct_list_context(document, position.container_id);
+    if (!context || context->child_index != 0) return std::nullopt;
+    if (auto nested = outdent_nested_list_item(document, *context, position)) return nested;
+    return remove_top_level_list_prefix(document, *context, position, allocator);
+}
+
 } // namespace detail
 
 inline bool apply_after_text_insert(
@@ -541,6 +707,22 @@ inline std::optional<TextPosition> handle_enter(
     if (auto closed = detail::close_fenced_code(document, position, allocator)) return closed;
     if (auto exited = detail::exit_empty_list_item(document, position, allocator)) return exited;
     return detail::split_list_item(document, position, allocator);
+}
+
+// Structural prefixes live in the block tree, outside the editable leaf's
+// InlineDocument.source. Downstream offset zero is the position immediately
+// after those prefixes, so Backspace there removes exactly one innermost
+// structural layer instead of joining serialized blocks.
+inline std::optional<TextPosition> handle_backspace_at_start(
+    EditorDocument& document,
+    TextPosition position,
+    document_edit_detail::NodeAllocator& allocator) {
+    if (position.source_offset != 0 || position.affinity != TextAffinity::Downstream) {
+        return std::nullopt;
+    }
+    if (auto heading = detail::remove_heading_prefix(document, position)) return heading;
+    if (auto quote = detail::remove_quote_prefix(document, position, allocator)) return quote;
+    return detail::remove_list_prefix(document, position, allocator);
 }
 
 } // namespace elmd::document_input_rules

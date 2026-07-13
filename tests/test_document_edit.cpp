@@ -163,6 +163,111 @@ suite document_edit_tests = [] {
     }
 };
 
+"backspace_at_downstream_block_start_removes_one_structural_prefix"_test = [] {
+    const std::vector<std::u32string> markers{U"# ", U"> ", U"- ", U"1. ", U"- [ ] "};
+    for (const auto& marker : markers) {
+        auto document = parse_document("");
+        normalize_document(document);
+        auto [structured, at_content_start] = type_text(
+            std::move(document), caret(first_editable(document)), marker);
+        auto [with_content, after_content] = type_text(
+            std::move(structured), at_content_start, U"content");
+        auto deletion = document_delete_backward(
+            with_content,
+            TextSelection::caret({
+                after_content.active.container_id,
+                0,
+                TextAffinity::Downstream}));
+        expect(fatal(bool(deletion.has_value())));
+        if (!deletion) continue;
+        expect(fatal(bool(deletion->after.root.children.size() == 1u)));
+        expect(fatal(bool(deletion->after.root.children.front().kind == BlockKind::Paragraph)));
+        expect(fatal(bool(deletion->after.root.children.front().inline_content.source == U"content")));
+        expect(fatal(bool(deletion->selection_after.active.container_id
+            == deletion->after.root.children.front().id)));
+        expect(fatal(bool(deletion->selection_after.active.source_offset == 0u)));
+        expect(fatal(bool(deletion->selection_after.active.affinity == TextAffinity::Downstream)));
+        expect_document_valid(deletion->after);
+    }
+};
+
+"block_start_backspace_peels_nested_prefixes_from_inside_out"_test = [] {
+    auto document = parse_document("");
+    normalize_document(document);
+    auto [quoted, quoted_start] = type_text(
+        std::move(document), caret(first_editable(document)), U"> ");
+    auto [heading, heading_start] = type_text(
+        std::move(quoted), quoted_start, U"# ");
+    auto [with_content, after_content] = type_text(
+        std::move(heading), heading_start, U"nested");
+    const auto content_id = after_content.active.container_id;
+
+    auto remove_heading = document_delete_backward(
+        with_content,
+        TextSelection::caret({content_id, 0, TextAffinity::Downstream}));
+    expect(fatal(bool(remove_heading.has_value())));
+    if (!remove_heading) return;
+    expect(fatal(bool(remove_heading->after.root.children.front().kind == BlockKind::BlockQuote)));
+    expect(fatal(bool(remove_heading->after.root.children.front().children.front().kind == BlockKind::Paragraph)));
+    expect(fatal(bool(remove_heading->after.root.children.front().children.front().inline_content.source == U"nested")));
+
+    auto remove_quote = document_delete_backward(remove_heading->after, remove_heading->selection_after);
+    expect(fatal(bool(remove_quote.has_value())));
+    if (!remove_quote) return;
+    expect(fatal(bool(remove_quote->after.root.children.size() == 1u)));
+    expect(fatal(bool(remove_quote->after.root.children.front().kind == BlockKind::Paragraph)));
+    expect(fatal(bool(remove_quote->after.root.children.front().id == content_id)));
+    expect(fatal(bool(remove_quote->after.root.children.front().inline_content.source == U"nested")));
+    expect_document_valid(remove_quote->after);
+};
+
+"backspace_unlists_only_the_direct_first_block_and_preserves_siblings"_test = [] {
+    auto document = parse_document("- one\n- two\n- three");
+    std::vector<NodeId> editable;
+    walk_blocks(document.root, [&](const BlockNode& node) {
+        if (node.kind == BlockKind::Paragraph) editable.push_back(node.id);
+    });
+    expect(fatal(bool(editable.size() == 3u)));
+    if (editable.size() != 3) return;
+    auto deletion = document_delete_backward(
+        document,
+        TextSelection::caret({editable[1], 0, TextAffinity::Downstream}));
+    expect(fatal(bool(deletion.has_value())));
+    if (!deletion) return;
+    expect(fatal(bool(deletion->after.root.children.size() == 3u)));
+    expect(fatal(bool(deletion->after.root.children[0].kind == BlockKind::List)));
+    expect(fatal(bool(deletion->after.root.children[1].kind == BlockKind::Paragraph)));
+    expect(fatal(bool(deletion->after.root.children[1].id == editable[1])));
+    expect(fatal(bool(deletion->after.root.children[1].inline_content.source == U"two")));
+    expect(fatal(bool(deletion->after.root.children[2].kind == BlockKind::List)));
+    expect(fatal(bool(deletion->after.root.children[0].children.size() == 1u)));
+    expect(fatal(bool(deletion->after.root.children[2].children.size() == 1u)));
+    expect_document_valid(deletion->after);
+};
+
+"backspace_outdents_a_nested_list_item_by_one_tree_level"_test = [] {
+    auto document = parse_document("- outer\n  - inner");
+    const BlockNode* inner = nullptr;
+    walk_blocks(document.root, [&](const BlockNode& node) {
+        if (node.kind == BlockKind::Paragraph && node.inline_content.source == U"inner") inner = &node;
+    });
+    expect(fatal(bool(inner != nullptr)));
+    if (!inner) return;
+    const auto inner_id = inner->id;
+    auto deletion = document_delete_backward(
+        document,
+        TextSelection::caret({inner_id, 0, TextAffinity::Downstream}));
+    expect(fatal(bool(deletion.has_value())));
+    if (!deletion) return;
+    const auto& list = deletion->after.root.children.front();
+    expect(fatal(bool(list.kind == BlockKind::List)));
+    expect(fatal(bool(list.children.size() == 2u)));
+    expect(fatal(bool(list.children[0].children.size() == 1u)));
+    expect(fatal(bool(list.children[1].children.front().id == inner_id)));
+    expect(fatal(bool(list.children[1].children.front().inline_content.source == U"inner")));
+    expect_document_valid(deletion->after);
+};
+
 "typed_fence_enters_and_closes_code_without_document_reparse"_test = [] {
     auto document = parse_document("");
     normalize_document(document);

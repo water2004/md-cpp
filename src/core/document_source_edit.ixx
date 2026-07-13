@@ -194,6 +194,8 @@ inline std::optional<DocumentTransaction> document_delete_backward(const EditorD
         const std::size_t start = target.source_offset - 1, end = target.source_offset;
         if (!document_edit_detail::erase_text(after, target.container_id, {start, end}, allocator)) return std::nullopt;
         target.source_offset = start;
+    } else if (auto unprefixed = document_input_rules::handle_backspace_at_start(after, target, allocator)) {
+        target = *unprefixed;
     } else if (!document_edit_detail::join_adjacent(after.root.children, target.container_id, true, after, allocator, target)) {
         if (!document_edit_detail::remove_atomic(after.root.children, target.container_id, allocator, after, target)) return std::nullopt;
     }
