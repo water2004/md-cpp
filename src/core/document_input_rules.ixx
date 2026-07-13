@@ -411,8 +411,11 @@ inline std::optional<TextPosition> split_list_item(
     if (context->child_index == 0 && offset == 0) {
         auto inserted = empty_item(*list, item, context->item_index == 0 ? 0 : context->item_index - 1, document, allocator);
         const auto target = TextPosition{inserted.children.front().id, 0, TextAffinity::Downstream};
-        if (list->list_ordered) inserted.marker = utf8_to_cps(std::to_string(list->list_start + context->item_index))
-            + std::u32string(1, list->list_delimiter) + U" ";
+        if (list->list_ordered) {
+            inserted.marker = utf8_to_cps(std::to_string(list->list_start + context->item_index))
+                + std::u32string(1, list->list_delimiter) + U" ";
+            item.marker = next_item_marker(*list, item, context->item_index);
+        }
         list->children.insert(list->children.begin() + static_cast<std::ptrdiff_t>(context->item_index), std::move(inserted));
         return target;
     }

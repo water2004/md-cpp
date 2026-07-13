@@ -204,6 +204,17 @@ suite document_edit_tests = [] {
     expect(fatal(bool(next_number.has_value())));
     if (next_number) expect(fatal(bool(next_number->after.root.children.front().children.back().marker == U"8) ")));
 
+    auto before_ordered = parse_document("7) one");
+    auto before_ordered_id = before_ordered.root.children.front().children.front().children.front().id;
+    auto inserted_before = document_enter(before_ordered, TextSelection::caret({before_ordered_id, 0, TextAffinity::Downstream}));
+    expect(fatal(bool(inserted_before.has_value())));
+    if (inserted_before) {
+        const auto& list = inserted_before->after.root.children.front();
+        expect(fatal(bool(list.children.front().marker == U"7) ")));
+        expect(fatal(bool(list.children.back().marker == U"8) ")));
+        expect(fatal(bool(list.children.back().children.front().inline_content.source == U"one")));
+    }
+
     auto tasks = parse_document("- [x] done");
     auto task_id = tasks.root.children.front().children.front().children.front().id;
     auto next_task = document_enter(tasks, TextSelection::caret({task_id, 4, TextAffinity::Downstream}));
