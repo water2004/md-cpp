@@ -41,6 +41,7 @@ namespace winrt::ElMd
             elmd::TextSpan sourceSpan;
             elmd::TextSpan contentSpan;
             bool strikethrough = false;
+            bool separateBlock = false;
         };
 
         struct ImageOverlay
@@ -93,6 +94,7 @@ namespace winrt::ElMd
     void ApplyInlinePlaceholder(IDWriteTextLayout* layout, UINT32 displayStart, float width, float height, float baseline);
     void ApplyMathInlineObjects(IDWriteTextLayout* layout, std::vector<DisplayInlineText::MathOverlay> const& overlays);
     void ApplyIndentInlineObjects(IDWriteTextLayout* layout, std::vector<DisplayInlineText::IndentOverlay> const& overlays);
+    DisplayInlineText BuildMathPreviewText(DisplayInlineText::MathPreview const& preview);
     DisplayInlineText BuildDisplayInlineText(
         std::vector<elmd::InlineRenderItem> const& items,
         elmd::TextPosition caret,

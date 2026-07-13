@@ -81,6 +81,7 @@ namespace winrt::ElMd
         Theme theme = Theme::Dark;
         EditorStyleSheet styleSheet = CreateEditorStyleSheet(true);
         EditorInteractionMap interactionMap;
+        std::vector<D2D1_RECT_F> nonInteractiveRegions;
         std::uint64_t observedRemoteImageGeneration = 0;
         std::optional<D2D1_POINT_2F> pointerPosition;
         std::optional<TableAction> draggedTableAction;

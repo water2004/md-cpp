@@ -560,6 +560,23 @@ namespace winrt::ElMd
         }
     }
 
+    DisplayInlineText BuildMathPreviewText(DisplayInlineText::MathPreview const& preview)
+    {
+        DisplayInlineText display;
+        AppendMathFragments(
+            display,
+            preview.svg,
+            preview.contentSpan,
+            false,
+            elmd::InlineStyle::plain());
+        display.displayToSource.push_back({
+            preview.contentSpan.container_id,
+            preview.contentSpan.source_range.end,
+            elmd::TextAffinity::Downstream,
+            EditorDisplayPositionKind::Generated});
+        return display;
+    }
+
     DisplayInlineText BuildDisplayInlineText(
         std::vector<elmd::InlineRenderItem> const& items,
         elmd::TextPosition caret,
@@ -795,11 +812,19 @@ namespace winrt::ElMd
                 {block.id, {0, block.raw_source.size()}},
                 elmd::InlineStyle::plain(),
                 false);
-            // Editing keeps the exact source visible, while the live preview
-            // proves that the same block is already parsed and rendered. A
-            // toolbar command is no longer needed to make the block visible.
+            // The preview is rendered below this editable source as its own
+            // non-interactive visual block. It must never enter the source
+            // display mapping or become a caret target.
             if (math && static_cast<bool>(*math))
-                AppendMathFragments(display, *math, span, true, elmd::InlineStyle::plain());
+                display.mathPreviews.push_back(DisplayInlineText::MathPreview{
+                    *math,
+                    0,
+                    0,
+                    span,
+                    span,
+                    false,
+                    true,
+                });
         }
         else if (!math || !static_cast<bool>(*math))
         {

@@ -93,6 +93,7 @@ namespace winrt::ElMd
     void EditorSurfaceRenderer::DrawDocument(detail::EditorRenderFrame const& frame)
     {
         interactionMap.Clear(frame.renderModel.blocks.size());
+        nonInteractiveRegions.clear();
         auto padding = (std::min)(styleSheet.horizontalPadding, (std::max)(12.0f, resources.surfaceWidthDip * 0.06f));
         auto documentLeft = padding;
         auto documentRight = (std::max)(documentLeft + 1.0f, (std::min)(resources.surfaceWidthDip - padding - 14.0f, documentLeft + styleSheet.documentWidth));
@@ -384,6 +385,32 @@ namespace winrt::ElMd
                 {
                     images = inlineImages.Resolve(candidate, candidateDisplay.imageOverlays, documentWidth);
                 });
+            struct PreparedMathPreview
+            {
+                DisplayInlineText display;
+                ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+                float height = 0.0f;
+            };
+            std::vector<PreparedMathPreview> mathPreviews;
+            mathPreviews.reserve(display.mathPreviews.size());
+            for (auto const& preview : display.mathPreviews)
+            {
+                if (!preview.separateBlock) continue;
+                auto previewDisplay = BuildMathPreviewText(preview);
+                auto previewLayout = textLayoutEngine.CreateFlow(
+                    previewDisplay,
+                    resources.textFormat.Get(),
+                    (std::max)(1.0f, documentWidth - 16.0f),
+                    {});
+                auto previewHeight = textLayoutEngine.MeasureHeight(
+                    previewLayout.Get(),
+                    styleSheet.body.lineHeight);
+                mathPreviews.push_back({
+                    std::move(previewDisplay),
+                    std::move(previewLayout),
+                    previewHeight,
+                });
+            }
             auto flowContainer = !block.inline_items.empty()
                 && (block.kind == elmd::RenderBlockKind::Quote
                     || block.kind == elmd::RenderBlockKind::Callout
@@ -391,8 +418,10 @@ namespace winrt::ElMd
             auto paddingTop = flowContainer ? 0.0f : block.block_style.padding_top;
             auto paddingBottom = flowContainer ? 0.0f : block.block_style.padding_bottom;
             auto paddingLeft = flowContainer ? 0.0f : block.block_style.padding_left;
-            auto height = textLayoutEngine.MeasureHeight(layout.Get(), textLayoutEngine.LineHeightFor(code, display.ranges));
-            height += paddingTop + paddingBottom;
+            auto textHeight = textLayoutEngine.MeasureHeight(layout.Get(), textLayoutEngine.LineHeightFor(code, display.ranges));
+            auto previewHeight = 0.0f;
+            for (auto const& preview : mathPreviews) previewHeight += preview.height + 24.0f;
+            auto height = textHeight + previewHeight + paddingTop + paddingBottom;
             auto origin = D2D1::Point2F(documentLeft + paddingLeft, y + paddingTop);
             auto rect = D2D1::RectF(documentLeft, y, documentRight, y + height);
             if (code || block.block_style.background) resources.d2dContext->FillRectangle(rect, resources.panelBrush.Get());
@@ -408,6 +437,43 @@ namespace winrt::ElMd
                 auto mathOrigin = D2D1::Point2F(origin.x + x + overlay.leadingSpace, origin.y + metrics.top);
                 if (!drawMath(overlay.fragment, mathOrigin, styleSheet.textColor)) drawMathFallback(overlay.sourceSpan, mathOrigin);
                 interactionMap.mathHits.push_back({D2D1::RectF(mathOrigin.x, mathOrigin.y, mathOrigin.x + overlay.fragment.width, mathOrigin.y + overlay.fragment.height), overlay.sourceSpan, overlay.progressStart, overlay.progressEnd});
+            }
+            auto previewTop = origin.y + textHeight;
+            for (auto const& preview : mathPreviews)
+            {
+                auto nonInteractiveTop = previewTop;
+                previewTop += 8.0f;
+                auto previewRect = D2D1::RectF(
+                    documentLeft + paddingLeft,
+                    previewTop,
+                    documentRight - block.block_style.padding_right,
+                    previewTop + preview.height + 16.0f);
+                resources.d2dContext->FillRectangle(previewRect, resources.nestedQuoteBrush.Get());
+                auto previewOrigin = D2D1::Point2F(previewRect.left + 8.0f, previewRect.top + 8.0f);
+                if (preview.layout)
+                    resources.d2dContext->DrawTextLayout(
+                        previewOrigin,
+                        preview.layout.Get(),
+                        resources.textBrush.Get(),
+                        D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                for (auto const& overlay : preview.display.mathOverlays)
+                {
+                    FLOAT x = 0.0f, lineY = 0.0f;
+                    DWRITE_HIT_TEST_METRICS metrics{};
+                    if (!preview.layout || FAILED(preview.layout->HitTestTextPosition(
+                            overlay.displayStart, FALSE, &x, &lineY, &metrics))) continue;
+                    auto mathOrigin = D2D1::Point2F(
+                        previewOrigin.x + x + overlay.leadingSpace,
+                        previewOrigin.y + metrics.top);
+                    if (!drawMath(overlay.fragment, mathOrigin, styleSheet.textColor))
+                        drawMathFallback(overlay.sourceSpan, mathOrigin);
+                }
+                nonInteractiveRegions.push_back(D2D1::RectF(
+                    previewRect.left,
+                    nonInteractiveTop,
+                    previewRect.right,
+                    previewRect.bottom));
+                previewTop = previewRect.bottom;
             }
             EditorVisualBlock visual;
             visual.rect = rect;
@@ -477,7 +543,13 @@ namespace winrt::ElMd
         return false;
     }
 
-    std::optional<elmd::TextPosition> EditorSurfaceRenderer::HitTest(float x, float y) const { return interactionMap.HitTest(x, y); }
+    std::optional<elmd::TextPosition> EditorSurfaceRenderer::HitTest(float x, float y) const
+    {
+        for (auto const& rect : nonInteractiveRegions)
+            if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom)
+                return std::nullopt;
+        return interactionMap.HitTest(x, y);
+    }
     std::optional<D2D1_RECT_F> EditorSurfaceRenderer::CaretBounds(elmd::TextPosition position) const { return interactionMap.CaretBounds(position, styleSheet.body.lineHeight); }
     std::optional<elmd::TextPosition> EditorSurfaceRenderer::MoveCaretVertically(elmd::TextPosition position, bool down, float& goalX) const { return interactionMap.MoveCaretVertically(position, down, goalX, styleSheet.body.lineHeight); }
     std::optional<elmd::TextPosition> EditorSurfaceRenderer::VisualLineStart(elmd::TextPosition position) const { return interactionMap.VisualLineStart(position); }
