@@ -151,7 +151,7 @@ namespace winrt::ElMd
             if (!block.inline_items.empty())
             {
                 auto sourceEnd = InlineItemsEndPosition(block.inline_items, {block.id, block.content_span.source_range.end, elmd::TextAffinity::Downstream});
-                return BuildDisplayInlineText(block.inline_items, caret, sourceEnd, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, width, svgSupported, requestEmbedded, block.id);
+                return BuildDisplayInlineText(block.inline_items, caret, sourceEnd, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, width, svgSupported, requestEmbedded);
             }
 
             DisplayInlineText display;
@@ -256,7 +256,17 @@ namespace winrt::ElMd
             };
             auto contentLeftFor = [&](elmd::RenderBlock const& nested, std::pair<std::size_t, std::size_t> range) -> std::optional<float>
             {
-                auto contentColumn = (std::min)(range.first + nested.flow_indent_columns, range.second);
+                std::optional<std::size_t> anchorStart;
+                for (std::size_t index = 0; index < displayLimit; ++index)
+                {
+                    if (display.displayToSource[index].container_id == nested.flow_anchor_owner_id)
+                    {
+                        anchorStart = index;
+                        break;
+                    }
+                }
+                if (!anchorStart) return std::nullopt;
+                auto contentColumn = (std::min)(*anchorStart + nested.flow_indent_columns, range.second);
                 FLOAT x = 0.0f;
                 FLOAT lineY = 0.0f;
                 DWRITE_HIT_TEST_METRICS hit{};

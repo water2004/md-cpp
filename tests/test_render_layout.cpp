@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <utility>
@@ -10,6 +11,8 @@
 #include "elmd_test.hpp"
 import elmd.core.parser;
 import elmd.core.document_edit;
+import elmd.core.document;
+import elmd.core.inline_parser;
 import elmd.core.render_builder;
 import elmd.core.render_model;
 import elmd.core.ast;
@@ -42,6 +45,39 @@ static const RenderBlock* first_render_leaf(const RenderBlock& root) {
         if (auto found = first_render_leaf(child)) return found;
     }
     return nullptr;
+}
+
+static const RenderBlock* find_render_block(const RenderBlock& root, NodeId id) {
+    if (root.id == id) return &root;
+    for (auto const& child : root.child_blocks) {
+        if (auto found = find_render_block(child, id)) return found;
+    }
+    return nullptr;
+}
+
+static BlockNode make_render_block(BlockKind kind, std::uint64_t& next_id) {
+    BlockNode block;
+    block.id = NodeId{next_id++};
+    block.kind = kind;
+    return block;
+}
+
+static BlockNode make_render_text_block(BlockKind kind, std::u32string source, std::uint64_t& next_id) {
+    auto block = make_render_block(kind, next_id);
+    block.inline_content.source = std::move(source);
+    InlineParseContext context;
+    context.allocate_id = [&] { return NodeId{next_id++}; };
+    reparse_inline_document(block.inline_content, context);
+    return block;
+}
+
+static RenderModel build_model(BlockNode block, std::uint64_t next_id) {
+    EditorDocument document;
+    document.root.id = NodeId{next_id++};
+    document.root.kind = BlockKind::Document;
+    document.root.children.push_back(std::move(block));
+    document.revision = 1;
+    return build_render_model(document, Outline::empty(1));
 }
 
 
@@ -86,6 +122,12 @@ suite render_layout_tests = [] {
     expect(fatal(bool(marker != list.inline_items.end())));
     if (marker != list.inline_items.end())
         expect(fatal(bool(marker->source_span.container_id == editableOwner)));
+    auto indent = std::find_if(list.inline_items.begin(), list.inline_items.end(), [&](auto const& item) {
+        return item.source_span.container_id == editableOwner
+            && item.marker_role == MarkerRole::Structural
+            && item.display_text == U"  ";
+    });
+    expect(fatal(bool(indent != list.inline_items.end())));
 };
 
 "test_empty_document_yields_editable_blank_model"_test = [] {
@@ -616,6 +658,148 @@ suite render_layout_tests = [] {
         if (!m.blocks[0].child_blocks[1].child_blocks.empty())
             expect(fatal(bool((m.blocks[0].child_blocks[1].child_blocks[0].flow_indent_columns) == (4u))));
     }
+};
+
+"unified_flow_composes_list_quote_list_and_code"_test = [] {
+    std::uint64_t next_id = 1;
+    auto outer_text = make_render_text_block(BlockKind::Paragraph, U"outer", next_id);
+    auto quoted_text = make_render_text_block(BlockKind::Paragraph, U"quoted", next_id);
+    auto inner_text = make_render_text_block(BlockKind::Paragraph, U"inner", next_id);
+    auto code = make_render_block(BlockKind::CodeBlock, next_id);
+    code.code_text = U"int x;\n";
+    code.code_indented = true;
+    code.language = "cpp";
+    auto code_id = code.id;
+
+    auto inner_item = make_render_block(BlockKind::ListItem, next_id);
+    inner_item.marker = U"1. ";
+    inner_item.children.push_back(std::move(inner_text));
+    inner_item.children.push_back(std::move(code));
+    auto inner_list = make_render_block(BlockKind::List, next_id);
+    inner_list.list_ordered = true;
+    inner_list.children.push_back(std::move(inner_item));
+    auto quote = make_render_block(BlockKind::BlockQuote, next_id);
+    quote.children.push_back(std::move(quoted_text));
+    quote.children.push_back(std::move(inner_list));
+    auto quote_id = quote.id;
+    auto outer_item = make_render_block(BlockKind::ListItem, next_id);
+    outer_item.marker = U"- ";
+    outer_item.children.push_back(std::move(outer_text));
+    outer_item.children.push_back(std::move(quote));
+    auto list = make_render_block(BlockKind::List, next_id);
+    list.children.push_back(std::move(outer_item));
+
+    auto model = build_model(std::move(list), next_id);
+    expect(fatal(bool((model.blocks.size()) == (1u))));
+    if (model.blocks.empty()) return;
+    auto const* rendered_quote = find_render_block(model.blocks[0], quote_id);
+    auto const* rendered_code = find_render_block(model.blocks[0], code_id);
+    expect(fatal(bool(rendered_quote != nullptr)));
+    expect(fatal(bool(rendered_code != nullptr)));
+    if (!rendered_quote || !rendered_code) return;
+    expect(fatal(bool(rendered_quote->kind == RenderBlockKind::Quote)));
+    expect(fatal(bool((rendered_quote->flow_indent_columns) == (2u))));
+    expect(fatal(bool((rendered_code->flow_indent_columns) == (7u))));
+
+    std::u32string flattened_code;
+    std::size_t code_indents = 0;
+    for (auto const& item : model.blocks[0].inline_items) {
+        if (item.source_span.container_id != code_id) continue;
+        if (item.kind == InlineRenderItem::Kind::Text && item.style.code) flattened_code += item.text;
+        if (item.marker_role == MarkerRole::Structural && !item.display_text.empty()) {
+            ++code_indents;
+            expect(fatal(bool((item.display_text.size()) == (9u))));
+        }
+    }
+    expect(fatal(bool(flattened_code == U"int x;\n")));
+    expect(fatal(bool((code_indents) == (2u))));
+};
+
+"unified_flow_composes_task_callout_footnote_quote_code_and_blank"_test = [] {
+    std::uint64_t next_id = 1;
+    auto task_text = make_render_text_block(BlockKind::Paragraph, U"task", next_id);
+    auto code = make_render_block(BlockKind::CodeBlock, next_id);
+    code.code_text = U"return 0;";
+    code.language = "cpp";
+    auto code_id = code.id;
+    auto blank = make_render_text_block(BlockKind::Paragraph, U"", next_id);
+    auto blank_id = blank.id;
+
+    auto quote = make_render_block(BlockKind::BlockQuote, next_id);
+    quote.children.push_back(std::move(code));
+    quote.children.push_back(std::move(blank));
+    auto quote_id = quote.id;
+    auto footnote = make_render_block(BlockKind::FootnoteDefinition, next_id);
+    footnote.footnote_label = "n";
+    footnote.children.push_back(std::move(quote));
+    auto footnote_id = footnote.id;
+    auto callout = make_render_block(BlockKind::Callout, next_id);
+    callout.callout_kind = "NOTE";
+    callout.children.push_back(std::move(footnote));
+    auto callout_id = callout.id;
+    auto task_item = make_render_block(BlockKind::TaskListItem, next_id);
+    task_item.marker = U"- [ ] ";
+    task_item.children.push_back(std::move(task_text));
+    task_item.children.push_back(std::move(callout));
+    auto tasks = make_render_block(BlockKind::TaskList, next_id);
+    tasks.children.push_back(std::move(task_item));
+
+    auto model = build_model(std::move(tasks), next_id);
+    expect(fatal(bool((model.blocks.size()) == (1u))));
+    if (model.blocks.empty()) return;
+    auto const* rendered_callout = find_render_block(model.blocks[0], callout_id);
+    auto const* rendered_footnote = find_render_block(model.blocks[0], footnote_id);
+    auto const* rendered_quote = find_render_block(model.blocks[0], quote_id);
+    auto const* rendered_code = find_render_block(model.blocks[0], code_id);
+    auto const* rendered_blank = find_render_block(model.blocks[0], blank_id);
+    expect(fatal(bool(rendered_callout && rendered_footnote && rendered_quote && rendered_code && rendered_blank)));
+    if (!rendered_callout || !rendered_footnote || !rendered_quote || !rendered_code || !rendered_blank) return;
+    expect(fatal(bool((rendered_callout->flow_indent_columns) == (6u))));
+    expect(fatal(bool((rendered_footnote->flow_indent_columns) == (8u))));
+    expect(fatal(bool((rendered_quote->flow_indent_columns) == (10u))));
+    expect(fatal(bool((rendered_code->flow_indent_columns) == (12u))));
+    expect(fatal(bool((rendered_blank->flow_indent_columns) == (12u))));
+
+    auto blank_indent = std::find_if(model.blocks[0].inline_items.begin(), model.blocks[0].inline_items.end(), [&](auto const& item) {
+        return item.source_span.container_id == blank_id
+            && item.marker_role == MarkerRole::Structural
+            && item.display_text == std::u32string(12, U' ');
+    });
+    expect(fatal(bool(blank_indent != model.blocks[0].inline_items.end())));
+};
+
+"unified_flow_accumulates_arbitrary_container_depth"_test = [] {
+    std::uint64_t next_id = 1;
+    auto leaf = make_render_text_block(BlockKind::Paragraph, U"", next_id);
+    auto leaf_id = leaf.id;
+    BlockNode chain = std::move(leaf);
+    constexpr std::size_t depth = 12;
+    for (std::size_t index = 0; index < depth; ++index) {
+        auto kind = index % 3 == 0 ? BlockKind::BlockQuote
+            : index % 3 == 1 ? BlockKind::Callout
+            : BlockKind::FootnoteDefinition;
+        auto parent = make_render_block(kind, next_id);
+        parent.children.push_back(std::move(chain));
+        chain = std::move(parent);
+    }
+    auto model = build_model(std::move(chain), next_id);
+    expect(fatal(bool((model.blocks.size()) == (1u))));
+    if (model.blocks.empty()) return;
+
+    auto const* cursor = &model.blocks[0];
+    for (std::size_t level = 0; level < depth; ++level) {
+        expect(fatal(bool((cursor->flow_indent_columns) == (level * 2u))));
+        expect(fatal(bool((cursor->child_blocks.size()) == (1u))));
+        if (cursor->child_blocks.empty()) return;
+        cursor = &cursor->child_blocks[0];
+    }
+    expect(fatal(bool(cursor->id == leaf_id)));
+    expect(fatal(bool((cursor->flow_indent_columns) == (depth * 2u))));
+    auto leaf_indent = std::find_if(model.blocks[0].inline_items.begin(), model.blocks[0].inline_items.end(), [&](auto const& item) {
+        return item.source_span.container_id == leaf_id
+            && item.display_text == std::u32string(depth * 2u, U' ');
+    });
+    expect(fatal(bool(leaf_indent != model.blocks[0].inline_items.end())));
 };
 
 "nested_quote_flow_tree_owns_its_visible_content"_test = [] {

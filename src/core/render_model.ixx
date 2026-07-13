@@ -179,6 +179,7 @@ struct RenderBlock {
     // Cumulative display indentation from the flow root. Tree depth is carried
     // by child_blocks itself rather than a second, manually maintained counter.
     std::size_t flow_indent_columns = 0;
+    NodeId flow_anchor_owner_id{};
     std::string callout_kind;
     std::string footnote_label;
     // Frontmatter / Unsupported

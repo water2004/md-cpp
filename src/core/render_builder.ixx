@@ -179,6 +179,7 @@ struct Builder {
 
     struct FlowContext {
         std::size_t indent_columns = 0;
+        NodeId anchor_owner_id{};
     };
 
     std::size_t list_marker_columns(const BlockNode& list, std::size_t index) const {
@@ -209,6 +210,9 @@ struct Builder {
             block_local_length(block),
             flow_container_style(block.kind, block.callout_kind));
         rendered.flow_indent_columns = context.indent_columns;
+        rendered.flow_anchor_owner_id = context.anchor_owner_id.v != 0
+            ? context.anchor_owner_id
+            : first_editable_owner(block).value_or(block.id);
         if (block.kind == BlockKind::Callout) {
             rendered.callout_kind = block.callout_kind;
         } else if (block.kind == BlockKind::FootnoteDefinition) {
@@ -250,7 +254,7 @@ struct Builder {
                     rendered.child_blocks.push_back(append_flow_block(
                         out,
                         block.children[index],
-                        FlowContext{context.indent_columns},
+                        FlowContext{context.indent_columns, context.anchor_owner_id},
                         index == 0 ? emitted_columns : 0));
                 }
                 return rendered;
@@ -291,7 +295,7 @@ struct Builder {
                         tasks ? MarkerRole::TaskCheckbox : block.list_ordered ? MarkerRole::ListNumber : MarkerRole::ListBullet,
                         std::u32string(missing_indent, U' ') + display_marker);
 
-                    FlowContext item_context{context.indent_columns + marker_columns};
+                    FlowContext item_context{context.indent_columns + marker_columns, item_owner};
                     auto item_rendered = make_flow_container(item, item_context);
                     for (std::size_t child_index = 0; child_index < item.children.size(); ++child_index) {
                         if (child_index > 0) {
@@ -333,7 +337,7 @@ struct Builder {
                     rendered.child_blocks.push_back(append_flow_block(
                         out,
                         block.children[index],
-                        FlowContext{content_indent},
+                        FlowContext{content_indent, context.anchor_owner_id.v != 0 ? context.anchor_owner_id : owner},
                         index == 0 && child_start == 0 ? emitted_columns : 0));
                 }
                 return rendered;
@@ -414,6 +418,7 @@ struct Builder {
                 break;
         }
         rendered.flow_indent_columns = context.indent_columns;
+        rendered.flow_anchor_owner_id = context.anchor_owner_id.v != 0 ? context.anchor_owner_id : owner;
         return rendered;
     }
     std::vector<InlineRenderItem> build_inline_document(
@@ -633,7 +638,7 @@ struct Builder {
             case BK::Callout:
             case BK::FootnoteDefinition: {
                 std::vector<InlineRenderItem> flow_items;
-                auto rb = append_flow_block(flow_items, b, FlowContext{0});
+                auto rb = append_flow_block(flow_items, b, FlowContext{0, first_editable_owner(b).value_or(b.id)});
                 rb.inline_items = std::move(flow_items);
                 return rb;
             }

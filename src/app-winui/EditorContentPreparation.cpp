@@ -246,7 +246,14 @@ namespace winrt::ElMd
         {
             if (item.source_span.container_id.v != 0)
             {
-                result = {item.source_span.container_id, item.source_span.source_range.end, elmd::TextAffinity::Upstream};
+                auto generatedPrefix = item.kind == elmd::InlineRenderItem::Kind::Marker
+                    && item.source_span.source_range.empty()
+                    && !item.display_text.empty();
+                result = {
+                    item.source_span.container_id,
+                    item.source_span.source_range.end,
+                    generatedPrefix ? elmd::TextAffinity::Downstream : elmd::TextAffinity::Upstream,
+                };
             }
         }
         return result;
@@ -458,8 +465,7 @@ namespace winrt::ElMd
         float fontSize,
         float containerWidth,
         bool svgSupported,
-        bool requestMath,
-        std::optional<elmd::NodeId> focusContainer)
+        bool requestMath)
     {
         DisplayInlineText display;
         auto markerVisibility = RevealedStyleMarkers(items, caret);
@@ -470,7 +476,7 @@ namespace winrt::ElMd
             {
                 continue;
             }
-            if (IsHeadingMarker(item) && (!focusContainer || caret.container_id != *focusContainer))
+            if (IsHeadingMarker(item) && caret.container_id != item.source_span.container_id)
             {
                 continue;
             }
@@ -482,7 +488,7 @@ namespace winrt::ElMd
                 }
                 else
                 {
-                    MergeDisplayText(display, BuildDisplayInlineText(item.children, caret, {item.source_span.container_id, item.source_span.source_range.end, elmd::TextAffinity::Downstream}, mathJax, svgNormalizer, svgColor, fontSize, containerWidth, svgSupported, requestMath, focusContainer));
+                    MergeDisplayText(display, BuildDisplayInlineText(item.children, caret, {item.source_span.container_id, item.source_span.source_range.end, elmd::TextAffinity::Downstream}, mathJax, svgNormalizer, svgColor, fontSize, containerWidth, svgSupported, requestMath));
                 }
                 continue;
             }

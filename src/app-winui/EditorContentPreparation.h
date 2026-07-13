@@ -83,8 +83,7 @@ namespace winrt::ElMd
         float fontSize,
         float containerWidth,
         bool svgSupported,
-        bool requestMath,
-        std::optional<elmd::NodeId> focusContainer = std::nullopt);
+        bool requestMath);
     DisplayInlineText BuildCodeBlockText(elmd::RenderBlock const& block, elmd::TextPosition caret, TreeSitterHighlighter& highlighter);
     DisplayInlineText BuildIndentedCodeBlockText(elmd::RenderBlock const& block);
     DisplayInlineText BuildMathBlockText(
