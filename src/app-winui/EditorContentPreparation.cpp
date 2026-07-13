@@ -288,8 +288,7 @@ namespace winrt::ElMd
             if (item.source_span.container_id.v != 0)
             {
                 auto generatedPrefix = item.kind == elmd::InlineRenderItem::Kind::Marker
-                    && item.source_span.source_range.empty()
-                    && !item.display_text.empty();
+                    && item.source_span.source_range.empty();
                 result = {
                     item.source_span.container_id,
                     item.source_span.source_range.end,
@@ -599,9 +598,10 @@ namespace winrt::ElMd
                 AppendMathFragments(display, *math, {item.source_span.container_id, {contentStart, contentEnd}}, false, item.style);
                 continue;
             }
-            if (item.kind == elmd::InlineRenderItem::Kind::Marker && item.source_span.source_range.start == item.source_span.source_range.end && !item.display_text.empty())
+            if (item.kind == elmd::InlineRenderItem::Kind::Marker && item.source_span.source_range.empty())
             {
-                AppendGeneratedText(display, item.display_text, {item.source_span.container_id, item.source_span.source_range.start, elmd::TextAffinity::Upstream}, item.style);
+                auto const& markerText = item.display_text.empty() ? item.text : item.display_text;
+                AppendGeneratedText(display, markerText, {item.source_span.container_id, item.source_span.source_range.start, elmd::TextAffinity::Upstream}, item.style);
             }
             else
             {
@@ -619,7 +619,7 @@ namespace winrt::ElMd
         auto showFence = caret.container_id == block.id;
         if (showFence)
         {
-            AppendGeneratedText(display, block.opening_marker, {block.id, 0, elmd::TextAffinity::Downstream}, elmd::InlineStyle::plain());
+            AppendGeneratedText(display, block.opening_marker, {block.id, 0, elmd::TextAffinity::Upstream}, elmd::InlineStyle::plain());
         }
         auto code = block.code_text;
         if (!showFence && !code.empty() && code.back() == U'\n') code.pop_back();
@@ -648,7 +648,7 @@ namespace winrt::ElMd
         }
         if (showFence)
         {
-            AppendGeneratedText(display, block.closing_marker, {block.id, block.code_text.size(), elmd::TextAffinity::Downstream}, elmd::InlineStyle::plain());
+            AppendGeneratedText(display, block.closing_marker, {block.id, block.code_text.size(), elmd::TextAffinity::Upstream}, elmd::InlineStyle::plain());
         }
         display.displayToSource.push_back({block.id, block.code_text.size(), elmd::TextAffinity::Downstream});
         return display;
