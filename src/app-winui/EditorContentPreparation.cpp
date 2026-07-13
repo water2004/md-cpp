@@ -239,6 +239,19 @@ namespace winrt::ElMd
         return (start > 0 && offset == start - 1) || (end < (std::numeric_limits<std::size_t>::max)() && offset == end + 1);
     }
 
+    elmd::TextPosition InlineItemsEndPosition(std::vector<elmd::InlineRenderItem> const& items, elmd::TextPosition fallback)
+    {
+        auto result = fallback;
+        for (auto const& item : items)
+        {
+            if (item.source_span.container_id.v != 0)
+            {
+                result = {item.source_span.container_id, item.source_span.source_range.end, elmd::TextAffinity::Upstream};
+            }
+        }
+        return result;
+    }
+
     std::vector<bool> RevealedStyleMarkers(std::vector<elmd::InlineRenderItem> const& items, elmd::TextPosition caret)
     {
         std::vector<bool> visible(items.size(), true);

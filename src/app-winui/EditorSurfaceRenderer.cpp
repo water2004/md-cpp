@@ -99,7 +99,11 @@ namespace winrt::ElMd
         auto positionLess = [&](elmd::TextPosition left, elmd::TextPosition right)
         {
             if (left.container_id == right.container_id) return left.source_offset < right.source_offset;
-            return order[left.container_id.v] < order[right.container_id.v];
+            auto leftOrder = order.find(left.container_id.v);
+            auto rightOrder = order.find(right.container_id.v);
+            if (leftOrder == order.end()) return false;
+            if (rightOrder == order.end()) return true;
+            return leftOrder->second < rightOrder->second;
         };
         auto selectionStart = positionLess(frame.selection.active, frame.selection.anchor) ? frame.selection.active : frame.selection.anchor;
         auto selectionEnd = positionLess(frame.selection.active, frame.selection.anchor) ? frame.selection.anchor : frame.selection.active;
@@ -135,7 +139,10 @@ namespace winrt::ElMd
             if (block.kind == elmd::RenderBlockKind::Code)
                 return block.code_indented ? BuildIndentedCodeBlockText(block) : BuildCodeBlockText(block, caret);
             if (!block.inline_items.empty())
-                return BuildDisplayInlineText(block.inline_items, caret, {block.id, block.content_span.source_range.end, elmd::TextAffinity::Downstream}, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, width, svgSupported, true, block.id);
+            {
+                auto sourceEnd = InlineItemsEndPosition(block.inline_items, {block.id, block.content_span.source_range.end, elmd::TextAffinity::Downstream});
+                return BuildDisplayInlineText(block.inline_items, caret, sourceEnd, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, width, svgSupported, true, block.id);
+            }
 
             DisplayInlineText display;
             if (block.kind == elmd::RenderBlockKind::Math)

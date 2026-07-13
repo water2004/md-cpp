@@ -56,7 +56,24 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
     auto after = document;
     document_edit_detail::NodeAllocator allocator(after);
     TextPosition target;
-    if (!document_edit_detail::split_direct(after.root.children, selection.active.container_id, selection.active.source_offset, after, allocator, target)) return std::nullopt;
+    if (auto exited = document_edit_detail::exit_empty_indented_code(after, selection.active, allocator)) {
+        target = *exited;
+    } else if (auto exited = document_edit_detail::exit_empty_block_quote(after, selection.active, allocator)) {
+        target = *exited;
+    } else if (auto* block = find_block(after.root, selection.active.container_id);
+               block && (block->kind == BlockKind::CodeBlock || block->kind == BlockKind::MathBlock)) {
+        auto inserted = document_edit_detail::insert_text(after, selection.active, U"\n", allocator);
+        if (!inserted) return std::nullopt;
+        target = selection.active;
+        target.source_offset = inserted->offset;
+        target.affinity = inserted->affinity;
+    } else if (block && block->kind == BlockKind::TableCell) {
+        const auto offset = (std::min)(selection.active.source_offset, block->inline_content.source.size());
+        if (!document_edit_detail::edit_inline(after, block->id, {offset, offset}, U"<br>", allocator)) return std::nullopt;
+        target = {block->id, offset + 4, TextAffinity::Downstream};
+    } else if (!document_edit_detail::split_direct(after.root.children, selection.active.container_id, selection.active.source_offset, after, allocator, target)) {
+        return std::nullopt;
+    }
     ++after.revision;
     return document_edit_detail::transaction(document, std::move(after), selection, TextSelection::caret(target), DocumentTransactionReason::Structure);
 }

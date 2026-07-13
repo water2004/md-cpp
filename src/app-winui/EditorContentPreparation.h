@@ -65,6 +65,7 @@ namespace winrt::ElMd
     std::optional<MathJaxSvg> NormalizeMathJaxSvg(MathJaxSvg const& source, SvgNormalizer& normalizer, D2D1_COLOR_F color, float fontSize, bool allowQueue);
     std::optional<MermaidSvg> NormalizeMermaidSvg(MermaidSvg const& source, SvgNormalizer& normalizer, bool allowQueue);
     std::u32string InlineText(std::vector<elmd::InlineRenderItem> const& items);
+    elmd::TextPosition InlineItemsEndPosition(std::vector<elmd::InlineRenderItem> const& items, elmd::TextPosition fallback);
     bool IsMermaidLanguage(std::optional<std::string> const& language);
     void MergeDisplayText(DisplayInlineText& target, DisplayInlineText source);
     void AppendSourceText(DisplayInlineText& display, std::u32string_view sourceText, elmd::TextSpan sourceSpan, elmd::InlineStyle style, bool marker);

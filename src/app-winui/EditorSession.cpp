@@ -106,12 +106,17 @@ namespace winrt::ElMd
 
     void EditorSession::SetSelection(elmd::TextPosition anchor, elmd::TextPosition active)
     {
+        auto anchorSource = core_->editor.editable_source(anchor.container_id);
+        auto activeSource = core_->editor.editable_source(active.container_id);
+        if (!anchorSource || !activeSource) return;
+        anchor.source_offset = (std::min)(anchor.source_offset, anchorSource->size());
+        active.source_offset = (std::min)(active.source_offset, activeSource->size());
         core_->editor.set_selection({anchor, active});
     }
 
     void EditorSession::SetSelection(elmd::TextSelection selection)
     {
-        core_->editor.set_selection(std::move(selection));
+        SetSelection(selection.anchor, selection.active);
     }
 
     bool EditorSession::HasSelection() const

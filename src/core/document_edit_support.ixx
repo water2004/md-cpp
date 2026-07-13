@@ -222,6 +222,107 @@ inline bool split_direct(
     return false;
 }
 
+inline std::optional<TextPosition> exit_empty_indented_code(
+    EditorDocument& document,
+    TextPosition position,
+    NodeAllocator& allocator) {
+    auto path = block_path(document.root, position.container_id);
+    if (!path || path->empty()) return std::nullopt;
+    auto* block = block_at_path(document.root, *path);
+    if (!block || block->kind != BlockKind::CodeBlock || !block->code_indented) return std::nullopt;
+
+    const auto offset = (std::min)(position.source_offset, block->code_text.size());
+    auto line_start = offset == 0 ? std::u32string::npos : block->code_text.rfind(U'\n', offset - 1);
+    line_start = line_start == std::u32string::npos ? 0 : line_start + 1;
+    auto line_end = block->code_text.find(U'\n', offset);
+    if (line_end == std::u32string::npos) line_end = block->code_text.size();
+    for (auto index = line_start; index < line_end; ++index) {
+        if (block->code_text[index] != U' ' && block->code_text[index] != U'\t') return std::nullopt;
+    }
+
+    auto before = block->code_text.substr(0, line_start);
+    auto after_start = line_end < block->code_text.size() ? line_end + 1 : line_end;
+    auto after = block->code_text.substr(after_start);
+    auto parent_path = *path;
+    const auto block_index = parent_path.back();
+    parent_path.pop_back();
+    auto* parent = block_at_path(document.root, parent_path);
+    if (!parent) return std::nullopt;
+
+    auto paragraph = empty_paragraph(allocator, document);
+    const auto target = TextPosition{paragraph.id, 0, TextAffinity::Downstream};
+    if (before.empty()) {
+        auto trailing = std::move(parent->children[block_index]);
+        trailing.code_text = std::move(after);
+        parent->children[block_index] = std::move(paragraph);
+        if (!trailing.code_text.empty()) insert_block(*parent, block_index + 1, std::move(trailing));
+        return target;
+    }
+
+    parent->children[block_index].code_text = std::move(before);
+    insert_block(*parent, block_index + 1, std::move(paragraph));
+    if (!after.empty()) {
+        auto trailing = parent->children[block_index];
+        trailing.id = allocator.allocate();
+        trailing.code_text = std::move(after);
+        insert_block(*parent, block_index + 2, std::move(trailing));
+    }
+    return target;
+}
+
+inline std::optional<TextPosition> exit_empty_block_quote(
+    EditorDocument& document,
+    TextPosition position,
+    NodeAllocator& allocator) {
+    auto path = block_path(document.root, position.container_id);
+    if (!path || path->empty()) return std::nullopt;
+    auto* selected = block_at_path(document.root, *path);
+    if (!selected || selected->kind != BlockKind::Paragraph || !selected->inline_content.source.empty()) return std::nullopt;
+
+    std::optional<std::size_t> quote_depth;
+    for (std::size_t depth = path->size(); depth > 0; --depth) {
+        BlockPath candidate(path->begin(), path->begin() + static_cast<std::ptrdiff_t>(depth));
+        auto const* ancestor = block_at_path(document.root, candidate);
+        if (ancestor && ancestor->kind == BlockKind::BlockQuote) { quote_depth = depth; break; }
+    }
+    if (!quote_depth || path->size() != *quote_depth + 1) return std::nullopt;
+
+    BlockPath quote_path(path->begin(), path->begin() + static_cast<std::ptrdiff_t>(*quote_depth));
+    auto parent_path = quote_path;
+    const auto quote_index = parent_path.back();
+    parent_path.pop_back();
+    auto* parent = block_at_path(document.root, parent_path);
+    if (!parent || quote_index >= parent->children.size()) return std::nullopt;
+    auto& quote = parent->children[quote_index];
+    const auto child_index = (*path)[*quote_depth];
+    if (child_index >= quote.children.size()) return std::nullopt;
+
+    auto paragraph = std::move(quote.children[child_index]);
+    const auto target = TextPosition{paragraph.id, 0, TextAffinity::Downstream};
+    BlockVec trailing_children;
+    trailing_children.insert(trailing_children.end(),
+        std::make_move_iterator(quote.children.begin() + static_cast<std::ptrdiff_t>(child_index + 1)),
+        std::make_move_iterator(quote.children.end()));
+    quote.children.erase(quote.children.begin() + static_cast<std::ptrdiff_t>(child_index), quote.children.end());
+
+    std::optional<BlockNode> trailing_quote;
+    if (!trailing_children.empty()) {
+        BlockNode value;
+        value.id = allocator.allocate();
+        value.kind = BlockKind::BlockQuote;
+        value.children = std::move(trailing_children);
+        trailing_quote = std::move(value);
+    }
+    if (quote.children.empty()) {
+        parent->children[quote_index] = std::move(paragraph);
+        if (trailing_quote) insert_block(*parent, quote_index + 1, std::move(*trailing_quote));
+    } else {
+        insert_block(*parent, quote_index + 1, std::move(paragraph));
+        if (trailing_quote) insert_block(*parent, quote_index + 2, std::move(*trailing_quote));
+    }
+    return target;
+}
+
 inline bool join_adjacent(
     BlockVec& blocks,
     NodeId id,

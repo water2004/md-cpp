@@ -189,6 +189,63 @@ suite document_edit_tests = [] {
     expect_document_valid(transaction->after);
 };
 
+"enter_edits_code_math_and_table_cell_sources"_test = [] {
+    auto fenced = parse_document("```cpp\none\ntwo\n```");
+    auto code = document_enter(fenced, TextSelection::caret({fenced.root.children.front().id, 3, TextAffinity::Downstream}));
+    expect(fatal(bool(code.has_value())));
+    if (code) {
+        expect(fatal(bool(code->after.root.children.front().code_text == U"one\n\ntwo\n")));
+        expect(fatal(bool(code->selection_after.active.source_offset == 4u)));
+    }
+
+    auto math = parse_document("$$\na+b\n$$");
+    auto math_break = document_enter(math, TextSelection::caret({math.root.children.front().id, 1, TextAffinity::Downstream}));
+    expect(fatal(bool(math_break.has_value())));
+    if (math_break) expect(fatal(bool(math_break->after.root.children.front().tex == U"a\n+b")));
+
+    auto table = parse_document("| ab |\n| --- |");
+    auto& cell = table.root.children.front().children.front().children.front();
+    auto cell_break = document_enter(table, caret(cell, 1));
+    expect(fatal(bool(cell_break.has_value())));
+    if (cell_break) {
+        auto const& edited = cell_break->after.root.children.front().children.front().children.front().inline_content;
+        expect(fatal(bool(edited.source == U"a<br>b")));
+        expect(fatal(bool(inline_contains_kind(edited, InlineCstKind::HardBreak))));
+        expect(fatal(bool(serialize_markdown(cell_break->after).find("a<br>b") != std::string::npos)));
+    }
+};
+
+"enter_on_empty_indented_code_line_exits_the_block"_test = [] {
+    auto document = parse_document("    one\n\n    two");
+    auto const code_id = document.root.children.front().id;
+    auto transaction = document_enter(document, TextSelection::caret({code_id, 4, TextAffinity::Downstream}));
+    expect(fatal(bool(transaction.has_value())));
+    if (!transaction) return;
+    expect(fatal(bool(transaction->after.root.children.size() == 3u)));
+    expect(fatal(bool(transaction->after.root.children[0].kind == BlockKind::CodeBlock)));
+    expect(fatal(bool(transaction->after.root.children[0].code_text == U"one\n")));
+    expect(fatal(bool(transaction->after.root.children[1].kind == BlockKind::Paragraph)));
+    expect(fatal(bool(transaction->after.root.children[2].kind == BlockKind::CodeBlock)));
+    expect(fatal(bool(transaction->after.root.children[2].code_text == U"two")));
+    expect(fatal(bool(transaction->selection_after.active.container_id == transaction->after.root.children[1].id)));
+};
+
+"enter_on_empty_quote_line_exits_the_quote"_test = [] {
+    auto document = parse_document("> one\n>");
+    auto const& quote = document.root.children.front();
+    expect(fatal(bool(quote.kind == BlockKind::BlockQuote)));
+    expect(fatal(bool(quote.children.size() == 2u)));
+    auto const empty_id = quote.children.back().id;
+    auto transaction = document_enter(document, TextSelection::caret({empty_id, 0, TextAffinity::Downstream}));
+    expect(fatal(bool(transaction.has_value())));
+    if (!transaction) return;
+    expect(fatal(bool(transaction->after.root.children.size() == 2u)));
+    expect(fatal(bool(transaction->after.root.children[0].kind == BlockKind::BlockQuote)));
+    expect(fatal(bool(transaction->after.root.children[1].kind == BlockKind::Paragraph)));
+    expect(fatal(bool(transaction->after.root.children[1].id == empty_id)));
+    expect(fatal(bool(transaction->selection_after.active.container_id == empty_id)));
+};
+
 "backspace_and_delete_join_adjacent_blocks"_test = [] {
     auto document = parse_document("alpha\n\nbeta");
     const auto second_id = document.root.children[1].id;
