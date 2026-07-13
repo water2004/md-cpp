@@ -6,6 +6,7 @@ import std;
 import elmd.core.ast;
 import elmd.core.block_tree;
 import elmd.core.document;
+import elmd.core.document_text;
 import elmd.core.inline_document;
 import elmd.core.instrumentation;
 import elmd.core.text_edit;
@@ -44,10 +45,6 @@ struct DocumentTransaction {
 
 namespace document_transaction_detail {
 
-inline bool editable_kind(BlockKind kind) {
-    return kind == BlockKind::Paragraph || kind == BlockKind::Heading || kind == BlockKind::TableCell;
-}
-
 inline BlockNode payload_shell(const BlockNode& source) {
     auto shell = source;
     shell.children.clear();
@@ -56,10 +53,6 @@ inline BlockNode payload_shell(const BlockNode& source) {
 }
 
 inline bool payload_equal(const BlockNode& left, const BlockNode& right) {
-    const auto inline_optional_equal = [](const std::optional<InlineDocument>& a, const std::optional<InlineDocument>& b) {
-        if (a.has_value() != b.has_value()) return false;
-        return !a || a->source == b->source;
-    };
     return left.id == right.id && left.kind == right.kind && left.level == right.level
         && left.slug == right.slug && left.marker == right.marker && left.checked == right.checked
         && left.list_ordered == right.list_ordered && left.list_start == right.list_start
@@ -72,7 +65,7 @@ inline bool payload_equal(const BlockNode& left, const BlockNode& right) {
         && left.image_width == right.image_width && left.image_height == right.image_height
         && left.opening_marker == right.opening_marker && left.closing_marker == right.closing_marker
         && left.callout_kind == right.callout_kind
-        && inline_optional_equal(left.callout_title, right.callout_title)
+        && left.callout_title.has_value() == right.callout_title.has_value()
         && left.footnote_label == right.footnote_label && left.toc_marker == right.toc_marker
         && left.fmt == right.fmt && left.raw == right.raw && left.unsup_reason == right.unsup_reason
         && left.ext_name == right.ext_name;
@@ -187,12 +180,13 @@ inline void append_content_differences(
             edit.after = payload_shell(after_node);
             operations.emplace_back(std::move(edit));
         }
-        if (editable_kind(before_node->kind) && editable_kind(after_node.kind)
-            && before_node->inline_content.source != after_node.inline_content.source) {
+        const auto* before_inline = editable_inline_document(*before_node);
+        const auto* after_inline = editable_inline_document(after_node);
+        if (before_inline && after_inline && before_inline->source != after_inline->source) {
             operations.emplace_back(text_difference(
                 after_node.id,
-                before_node->inline_content.source,
-                after_node.inline_content.source));
+                before_inline->source,
+                after_inline->source));
         }
     }
     for (const auto& child : after_node.children) {

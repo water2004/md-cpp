@@ -4,6 +4,7 @@ import std;
 import elmd.core.ast;
 import elmd.core.block_tree;
 import elmd.core.document;
+import elmd.core.document_text;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
 import elmd.core.inline_parser;
@@ -35,7 +36,7 @@ inline bool atomic_block(BlockKind kind) {
 }
 
 inline std::optional<std::size_t> local_position_length(const BlockNode& block) {
-    if (text_block(block.kind) || block.kind == BlockKind::TableCell) return block.inline_content.source.size();
+    if (const auto* document = editable_inline_document(block)) return document->source.size();
     if (block.kind == BlockKind::CodeBlock) return block.code_text.size();
     if (block.kind == BlockKind::MathBlock) return block.tex.size();
     if (block.kind == BlockKind::Frontmatter || block.kind == BlockKind::LinkDefinition
@@ -75,8 +76,7 @@ inline void scan_inline_ids(const InlineDocument& document, std::uint64_t& maxim
 }
 inline void scan_block_ids(const BlockNode& block, std::uint64_t& maximum) {
     maximum = (std::max)(maximum, block.id.v);
-    if (text_block(block.kind) || block.kind == BlockKind::TableCell) scan_inline_ids(block.inline_content, maximum);
-    if (block.callout_title) scan_inline_ids(*block.callout_title, maximum);
+    if (const auto* document = editable_inline_document(block)) scan_inline_ids(*document, maximum);
     for (const auto& child : block.children) scan_block_ids(child, maximum);
 }
 
@@ -110,14 +110,14 @@ inline InlineDocument make_inline(std::u32string source, const EditorDocument& o
 
 inline InlineDocument* find_inline_owner(BlockVec& blocks, NodeId id) {
     for (auto& block : blocks) {
-        if ((text_block(block.kind) || block.kind == BlockKind::TableCell) && block.id == id) return &block.inline_content;
+        if (block.id == id) return editable_inline_document(block);
         if (auto* found = find_inline_owner(block.children, id)) return found;
     }
     return nullptr;
 }
 inline const InlineDocument* find_inline_owner(const BlockVec& blocks, NodeId id) {
     for (const auto& block : blocks) {
-        if ((text_block(block.kind) || block.kind == BlockKind::TableCell) && block.id == id) return &block.inline_content;
+        if (block.id == id) return editable_inline_document(block);
         if (const auto* found = find_inline_owner(block.children, id)) return found;
     }
     return nullptr;
@@ -137,8 +137,7 @@ inline void assign_missing_ids(InlineDocument& document, const EditorDocument& o
 }
 inline void assign_missing_ids(BlockNode& block, const EditorDocument& owner, NodeAllocator& allocator) {
     if (block.id.v == 0) block.id = allocator.allocate();
-    if (text_block(block.kind) || block.kind == BlockKind::TableCell) assign_missing_ids(block.inline_content, owner, allocator);
-    if (block.callout_title) assign_missing_ids(*block.callout_title, owner, allocator);
+    if (auto* document = editable_inline_document(block)) assign_missing_ids(*document, owner, allocator);
     for (auto& child : block.children) assign_missing_ids(child, owner, allocator);
 }
 
@@ -595,7 +594,9 @@ inline void validate_inline_document(NodeId owner, const InlineDocument& documen
 inline void validate_blocks(const BlockVec& blocks, std::unordered_set<std::uint64_t>& ids, std::vector<DocumentInvariantError>& errors) {
     for (const auto& block : blocks) {
         if (block.id.v == 0 || !ids.insert(block.id.v).second) errors.push_back({block.id, "duplicate or missing block id"});
-        if (text_block(block.kind) || block.kind == BlockKind::TableCell) validate_inline_document(block.id, block.inline_content, ids, errors);
+        if (const auto* document = editable_inline_document(block)) {
+            validate_inline_document(block.id, *document, ids, errors);
+        }
         validate_blocks(block.children, ids, errors);
     }
 }

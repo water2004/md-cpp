@@ -7,6 +7,7 @@ import std;
 import elmd.core.ast;
 import elmd.core.block_tree;
 import elmd.core.document;
+import elmd.core.document_text;
 import elmd.core.document_transaction;
 import elmd.core.inline_document;
 import elmd.core.inline_parser;
@@ -25,26 +26,29 @@ struct DocumentHistoryEntry {
 
 namespace document_history_detail {
 
-inline bool editable_kind(BlockKind kind) {
-    return kind == BlockKind::Paragraph || kind == BlockKind::Heading || kind == BlockKind::TableCell;
-}
-
 inline InlineDocument* inline_owner(BlockNode& root, NodeId id) {
     auto* block = find_block(root, id);
-    return block && editable_kind(block->kind) ? &block->inline_content : nullptr;
+    return block ? editable_inline_document(*block) : nullptr;
 }
 
 inline const InlineDocument* inline_owner(const BlockNode& root, NodeId id) {
     const auto* block = find_block(root, id);
-    return block && editable_kind(block->kind) ? &block->inline_content : nullptr;
+    return block ? editable_inline_document(*block) : nullptr;
 }
 
 inline void apply_payload(BlockNode& target, const BlockNode& shell) {
     auto children = std::move(target.children);
-    auto inline_content = std::move(target.inline_content);
+    std::optional<InlineDocument> preserved_inline;
+    if (auto* document = editable_inline_document(target)) {
+        preserved_inline = std::move(*document);
+    }
     target = shell;
     target.children = std::move(children);
-    target.inline_content = std::move(inline_content);
+    if (preserved_inline) {
+        if (auto* document = editable_inline_document(target)) {
+            *document = std::move(*preserved_inline);
+        }
+    }
 }
 
 inline bool move_child(BlockNode& root, NodeId from_parent_id, std::size_t from_index,

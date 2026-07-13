@@ -9,6 +9,7 @@ import elmd.core.ast;
 import elmd.core.block_tree;
 import elmd.core.document;
 import elmd.core.ids;
+import elmd.core.inline_document;
 import elmd.core.text_edit;
 
 export namespace elmd {
@@ -18,12 +19,35 @@ struct DocumentTextFragment {
     std::u32string text;
 };
 
-inline std::optional<std::u32string> editable_block_text(const BlockNode& block) {
+inline InlineDocument* editable_inline_document(BlockNode& block) {
     switch (block.kind) {
         case BlockKind::Paragraph:
         case BlockKind::Heading:
         case BlockKind::TableCell:
-            return block.inline_content.source;
+            return &block.inline_content;
+        case BlockKind::Callout:
+            return block.callout_title ? &*block.callout_title : nullptr;
+        default:
+            return nullptr;
+    }
+}
+
+inline const InlineDocument* editable_inline_document(const BlockNode& block) {
+    switch (block.kind) {
+        case BlockKind::Paragraph:
+        case BlockKind::Heading:
+        case BlockKind::TableCell:
+            return &block.inline_content;
+        case BlockKind::Callout:
+            return block.callout_title ? &*block.callout_title : nullptr;
+        default:
+            return nullptr;
+    }
+}
+
+inline std::optional<std::u32string> editable_block_text(const BlockNode& block) {
+    if (const auto* document = editable_inline_document(block)) return document->source;
+    switch (block.kind) {
         case BlockKind::CodeBlock:
             return block.code_text;
         case BlockKind::MathBlock:

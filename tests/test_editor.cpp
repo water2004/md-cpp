@@ -92,6 +92,46 @@ suite editor_tests = [] {
     expect(fatal(bool(undo.inline_reparses == 1u)));
 };
 
+"callout_titles_are_inline_source_owners_with_local_history"_test = [] {
+    Editor editor("> [!NOTE] _title_\n> body");
+    const auto callout_id = editor.document().root.children.front().id;
+    const auto* callout = find_block(editor.document().root, callout_id);
+    expect(fatal(bool(callout != nullptr)));
+    expect(fatal(bool(callout && callout->kind == BlockKind::Callout)));
+    expect(fatal(bool(callout && callout->callout_title.has_value())));
+    if (!callout || !callout->callout_title) return;
+    expect(fatal(bool(callout->callout_title->source == U"_title_")));
+
+    const auto before_selection = TextSelection::caret(
+        {callout_id, 1, TextAffinity::Downstream});
+    editor.set_selection(before_selection);
+    reset_core_operation_counters();
+    expect(fatal(bool(editor.execute_document_insert_text(editor.selection(), U"X").has_value())));
+    const auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_parses == 0u)));
+    expect(fatal(bool(counters.full_document_serializations == 0u)));
+    expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
+    expect(fatal(bool(counters.inline_reparses == 1u)));
+
+    callout = find_block(editor.document().root, callout_id);
+    expect(fatal(bool(callout && callout->callout_title.has_value())));
+    if (!callout || !callout->callout_title) return;
+    expect(fatal(bool(callout->callout_title->source == U"_Xtitle_")));
+    expect(fatal(bool(flatten_tokens(callout->callout_title->tree, callout->callout_title->source)
+        == callout->callout_title->source)));
+    const auto after_selection = editor.selection();
+    expect(fatal(bool(after_selection.active == TextPosition{
+        callout_id, 2, TextAffinity::Downstream})));
+    expect(fatal(bool(editor.markdown_utf8() == "> [!NOTE] _Xtitle_\n> body")));
+
+    expect(fatal(bool(editor.undo())));
+    expect(fatal(bool(editor.selection() == before_selection)));
+    expect(fatal(bool(editor.markdown_utf8() == "> [!NOTE] _title_\n> body")));
+    expect(fatal(bool(editor.redo())));
+    expect(fatal(bool(editor.selection() == after_selection)));
+    expect(fatal(bool(editor.markdown_utf8() == "> [!NOTE] _Xtitle_\n> body")));
+};
+
 "inline_delete_and_format_record_their_text_edits_directly"_test = [] {
     Editor editor("alpha");
     editor.set_selection(caret(first_text(editor), 2));
