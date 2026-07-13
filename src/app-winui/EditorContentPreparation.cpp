@@ -408,6 +408,10 @@ namespace winrt::ElMd
                 : sourceStart + static_cast<std::size_t>(std::floor((progress / math.width) * static_cast<float>(length)));
             if (index > 0 && fragment.breakBefore)
             {
+                // MathJax emits fragments at legal line-break opportunities.
+                // Keep them in one DirectWrite flow and expose an optional
+                // break; a hard newline would force every fragment onto its
+                // own line even when the remaining width is sufficient.
                 AppendGeneratedText(display, U"\u200B", {sourceSpan.container_id, mappedOffset, elmd::TextAffinity::Downstream}, style);
             }
             auto start = static_cast<UINT32>(elmd::utf16_len(display.text));
@@ -545,7 +549,7 @@ namespace winrt::ElMd
         return display;
     }
 
-    DisplayInlineText BuildCodeBlockText(elmd::RenderBlock const& block, elmd::TextPosition caret)
+    DisplayInlineText BuildCodeBlockText(elmd::RenderBlock const& block, elmd::TextPosition caret, TreeSitterHighlighter& highlighter)
     {
         DisplayInlineText display;
         auto showFence = caret.container_id == block.id;
@@ -555,7 +559,29 @@ namespace winrt::ElMd
         }
         auto code = block.code_text;
         if (!showFence && !code.empty() && code.back() == U'\n') code.pop_back();
+        auto codeDisplayStart = static_cast<std::uint32_t>(elmd::utf16_len(display.text));
         AppendSourceText(display, code, {block.id, {0, code.size()}}, elmd::InlineStyle::plain(), false);
+        if (block.language && !code.empty())
+        {
+            auto highlights = highlighter.Highlight(*block.language, elmd::cps_to_utf8(code));
+            for (auto const& highlight : highlights)
+            {
+                auto start = (std::min)(static_cast<std::size_t>(highlight.start), code.size());
+                auto end = (std::min)(start + static_cast<std::size_t>(highlight.length), code.size());
+                auto displayStart = codeDisplayStart + static_cast<std::uint32_t>(elmd::char_index_to_utf16(code, start));
+                auto displayEnd = codeDisplayStart + static_cast<std::uint32_t>(elmd::char_index_to_utf16(code, end));
+                if (displayStart < displayEnd)
+                {
+                    display.ranges.push_back(InlineStyleRange{
+                        displayStart,
+                        displayEnd - displayStart,
+                        elmd::InlineStyle::plain(),
+                        false,
+                        highlight.kind,
+                    });
+                }
+            }
+        }
         if (showFence)
         {
             AppendGeneratedText(display, block.closing_marker, {block.id, block.code_text.size(), elmd::TextAffinity::Downstream}, elmd::InlineStyle::plain());
@@ -572,6 +598,41 @@ namespace winrt::ElMd
         return display;
     }
 
+    DisplayInlineText BuildMathBlockText(
+        elmd::RenderBlock const& block,
+        elmd::TextPosition caret,
+        MathJaxRenderer& mathJax,
+        SvgNormalizer& svgNormalizer,
+        D2D1_COLOR_F svgColor,
+        float fontSize,
+        float containerWidth,
+        bool svgSupported,
+        bool requestMath)
+    {
+        DisplayInlineText display;
+        auto span = elmd::TextSpan{block.id, {0, block.tex.size()}};
+        auto editing = caret.container_id == block.id;
+        if (!svgSupported || editing)
+        {
+            AppendSourceText(display, block.tex, span, elmd::InlineStyle::plain(), false);
+            display.displayToSource.push_back({block.id, block.tex.size(), elmd::TextAffinity::Downstream});
+            return display;
+        }
+
+        auto rawMath = mathJax.GetOrQueue(elmd::cps_to_utf8(block.tex), true, fontSize, containerWidth, requestMath);
+        auto math = rawMath ? NormalizeMathJaxSvg(*rawMath, svgNormalizer, svgColor, fontSize, requestMath) : std::nullopt;
+        if (!math || !static_cast<bool>(*math))
+        {
+            AppendSourceText(display, block.tex, span, elmd::InlineStyle::plain(), false);
+        }
+        else
+        {
+            AppendMathFragments(display, *math, span, false, elmd::InlineStyle::plain());
+        }
+        display.displayToSource.push_back({block.id, block.tex.size(), elmd::TextAffinity::Downstream});
+        return display;
+    }
+
     std::size_t DisplayPositionForSource(std::vector<elmd::TextPosition> const& displayToSource, elmd::TextPosition sourcePosition)
     {
         if (displayToSource.empty())
@@ -579,14 +640,19 @@ namespace winrt::ElMd
             return 0;
         }
 
+        std::optional<std::size_t> lastInContainer;
         for (std::size_t index = 0; index < displayToSource.size(); ++index)
         {
-            if (displayToSource[index].container_id == sourcePosition.container_id
-                && displayToSource[index].source_offset >= sourcePosition.source_offset)
+            if (displayToSource[index].container_id != sourcePosition.container_id)
+            {
+                continue;
+            }
+            lastInContainer = index;
+            if (displayToSource[index].source_offset >= sourcePosition.source_offset)
             {
                 return index;
             }
         }
-        return displayToSource.size() - 1;
+        return lastInContainer.value_or(0);
     }
 }

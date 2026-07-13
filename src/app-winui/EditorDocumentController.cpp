@@ -158,7 +158,11 @@ namespace winrt::ElMd
             if (!Active(state, generation)) co_return;
             auto oldLength = state->session->AcpLength();
             *state->session = std::move(loaded);
-            if (state->renderer) state->renderer->SetScrollOffset(0.0f);
+            if (state->renderer)
+            {
+                state->renderer->ResetDocumentCaches();
+                state->renderer->SetScrollOffset(0.0f);
+            }
             if (state->textInput) state->textInput->NotifyTextChanged(oldLength);
             if (state->documentChanged) state->documentChanged();
             if (state->setStatus) state->setStatus(state->session->Path() + L" | " + winrt::to_hstring(state->session->Text().size()) + L" chars | rev " + winrt::to_hstring(state->session->Revision()));

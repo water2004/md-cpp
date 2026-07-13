@@ -36,6 +36,15 @@ namespace winrt::ElMd
         resources.ResetBrushes();
     }
 
+    void EditorSurfaceRenderer::ResetDocumentCaches()
+    {
+        mathJax.Clear();
+        treeSitter.Clear();
+        blockLayoutCache.Clear();
+        renderCache.ClearTextLayouts();
+        renderCache.ClearSvgDocuments();
+    }
+
     void EditorSurfaceRenderer::SetInvalidateCallback(std::function<void()> callback)
     {
         std::scoped_lock lock(invalidationState->mutex);
@@ -126,8 +135,8 @@ namespace winrt::ElMd
             resources.d2dContext->DrawTextW(label, 7, resources.codeFormat.Get(), D2D1::RectF(origin.x, origin.y, documentRight, origin.y + styleSheet.code.lineHeight), resources.textBrush.Get());
         };
 
-        std::function<DisplayInlineText(elmd::RenderBlock const&, float)> prepare;
-        prepare = [&](elmd::RenderBlock const& block, float width) -> DisplayInlineText
+        std::function<DisplayInlineText(elmd::RenderBlock const&, float, bool)> prepare;
+        prepare = [&](elmd::RenderBlock const& block, float width, bool requestEmbedded) -> DisplayInlineText
         {
             if (block.kind == elmd::RenderBlockKind::Blank)
             {
@@ -137,19 +146,17 @@ namespace winrt::ElMd
                 return display;
             }
             if (block.kind == elmd::RenderBlockKind::Code)
-                return block.code_indented ? BuildIndentedCodeBlockText(block) : BuildCodeBlockText(block, caret);
+                return block.code_indented ? BuildIndentedCodeBlockText(block) : BuildCodeBlockText(block, caret, treeSitter);
+            if (block.kind == elmd::RenderBlockKind::Math)
+                return BuildMathBlockText(block, caret, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, width, svgSupported, requestEmbedded);
             if (!block.inline_items.empty())
             {
                 auto sourceEnd = InlineItemsEndPosition(block.inline_items, {block.id, block.content_span.source_range.end, elmd::TextAffinity::Downstream});
-                return BuildDisplayInlineText(block.inline_items, caret, sourceEnd, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, width, svgSupported, true, block.id);
+                return BuildDisplayInlineText(block.inline_items, caret, sourceEnd, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, width, svgSupported, requestEmbedded, block.id);
             }
 
             DisplayInlineText display;
-            if (block.kind == elmd::RenderBlockKind::Math)
-            {
-                AppendSourceText(display, block.tex, {block.id, {0, block.tex.size()}}, elmd::InlineStyle::plain(), false);
-            }
-            else if (block.kind == elmd::RenderBlockKind::Image)
+            if (block.kind == elmd::RenderBlockKind::Image)
             {
                 auto position = elmd::TextPosition{block.id, 0, elmd::TextAffinity::Downstream};
                 auto start = static_cast<std::uint32_t>(display.displayToSource.size());
@@ -166,11 +173,11 @@ namespace winrt::ElMd
             else if (block.kind == elmd::RenderBlockKind::Callout || block.kind == elmd::RenderBlockKind::Footnote)
             {
                 if (block.callout_title)
-                    MergeDisplayText(display, BuildDisplayInlineText(*block.callout_title, caret, {block.id, 0, elmd::TextAffinity::Downstream}, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, width, svgSupported, true, block.id));
+                    MergeDisplayText(display, BuildDisplayInlineText(*block.callout_title, caret, {block.id, 0, elmd::TextAffinity::Downstream}, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, width, svgSupported, requestEmbedded, block.id));
                 for (auto const& child : block.child_blocks)
                 {
                     if (!display.text.empty()) AppendGeneratedText(display, U"\n", {child.id, 0, elmd::TextAffinity::Downstream}, elmd::InlineStyle::plain());
-                    MergeDisplayText(display, prepare(child, width));
+                    MergeDisplayText(display, prepare(child, width, requestEmbedded));
                 }
             }
             else
@@ -279,14 +286,18 @@ namespace winrt::ElMd
         {
             y += block.block_style.margin_top;
             auto top = y;
+            // Keep expensive asynchronous renderers near the viewport. Cached
+            // results still paint outside this band, but opening a large math
+            // document no longer queues every formula in the file at once.
+            auto requestEmbedded = top < resources.surfaceHeightDip + 800.0f && top > -1200.0f;
             if (block.kind == elmd::RenderBlockKind::Table)
             {
-                auto bottom = EditorTableBlockRenderer::Render(block, caret, frame.selection, documentLeft, documentRight, y, scrollOffset, svgSupported, true, resources, styleSheet, interactionMap, textLayoutEngine, inlineImages, mathJax, svgNormalizer, drawMath, drawMathFallback);
+                auto bottom = EditorTableBlockRenderer::Render(block, caret, frame.selection, documentLeft, documentRight, y, scrollOffset, svgSupported, requestEmbedded, resources, styleSheet, interactionMap, textLayoutEngine, inlineImages, mathJax, svgNormalizer, drawMath, drawMathFallback);
                 if (bottom) { y = *bottom + block.block_style.margin_bottom + styleSheet.blockGap; continue; }
             }
             if (block.kind == elmd::RenderBlockKind::Quote)
             {
-                y = EditorQuoteBlockRenderer::Render(block, caret, frame.selection, documentLeft, documentRight, y, scrollOffset, svgSupported, true, resources, styleSheet, interactionMap, textLayoutEngine, inlineImages, mathJax, svgNormalizer, drawMath, drawMathFallback)
+                y = EditorQuoteBlockRenderer::Render(block, caret, frame.selection, documentLeft, documentRight, y, scrollOffset, svgSupported, requestEmbedded, resources, styleSheet, interactionMap, textLayoutEngine, inlineImages, mathJax, svgNormalizer, treeSitter, drawMath, drawMathFallback)
                     + block.block_style.margin_bottom + styleSheet.blockGap;
                 continue;
             }
@@ -312,7 +323,7 @@ namespace winrt::ElMd
                 continue;
             }
 
-            auto display = prepare(block, documentWidth);
+            auto display = prepare(block, documentWidth, requestEmbedded);
             auto code = block.kind == elmd::RenderBlockKind::Code || block.kind == elmd::RenderBlockKind::Frontmatter || block.kind == elmd::RenderBlockKind::Unsupported;
             auto format = textLayoutEngine.FormatFor(code, display.ranges);
             auto layout = textLayoutEngine.Create(ToWide(display.text), format, documentWidth);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditorInlineImageRenderer.h"
+#include "TreeSitterHighlighter.h"
 #include "EditorEmbeddedDraw.h"
 #include "EditorInteractionMap.h"
 #include "EditorRenderResources.h"
@@ -35,6 +36,7 @@ namespace winrt::ElMd
             EditorInlineImageRenderer& inlineImageRenderer,
             MathJaxRenderer& mathJax,
             SvgNormalizer& svgNormalizer,
+            TreeSitterHighlighter& treeSitter,
             EditorDrawMath const& drawMath,
             EditorDrawMathFallback const& drawMathFallback);
     };

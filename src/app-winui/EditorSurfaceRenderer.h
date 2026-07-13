@@ -28,6 +28,7 @@ namespace winrt::ElMd
         void Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height);
         void Render(detail::EditorRenderFrame const& frame);
         void SetTheme(Theme value);
+        void ResetDocumentCaches();
         void SetInvalidateCallback(std::function<void()> callback);
 
         using CaretMove = EditorCaretMove;

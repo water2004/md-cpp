@@ -49,6 +49,7 @@ namespace winrt::ElMd
         EditorInlineImageRenderer& inlineImageRenderer,
         MathJaxRenderer& mathJax,
         SvgNormalizer& svgNormalizer,
+        TreeSitterHighlighter& treeSitter,
         EditorDrawMath const& drawMath,
         EditorDrawMathFallback const& drawMathFallback)
     {
@@ -71,7 +72,11 @@ namespace winrt::ElMd
             }
             else if (code)
             {
-                display = child.code_indented ? BuildIndentedCodeBlockText(child) : BuildCodeBlockText(child, caret);
+                display = child.code_indented ? BuildIndentedCodeBlockText(child) : BuildCodeBlockText(child, caret, treeSitter);
+            }
+            else if (child.kind == elmd::RenderBlockKind::Math)
+            {
+                display = BuildMathBlockText(child, caret, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, contentRight - contentLeft, svgSupported, requestEmbedded);
             }
             else if (!child.inline_items.empty())
             {
