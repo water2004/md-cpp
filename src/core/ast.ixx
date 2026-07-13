@@ -56,6 +56,10 @@ struct BlockNode {
     std::string raw;                    // Frontmatter.raw / UnsupportedMarkup.raw
     UnsupportedMarkupReason unsup_reason = UnsupportedMarkupReason::RawHtmlDisabled;
     std::string ext_name;               // Extension
+    // Exact source between the preceding direct sibling and this block.
+    // This is parser/serializer ownership metadata, never an editing
+    // coordinate and never part of a block's local editable source.
+    std::optional<std::u32string> separator_before;
 };
 
 // Heading sibling helper used in several places.

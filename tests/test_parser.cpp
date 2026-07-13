@@ -357,4 +357,26 @@ suite parser_tests = [] {
     expect(fatal(bool(serialize_markdown_cps(second.document) == saved)));
 };
 
+"direct_block_separators_round_trip_exactly"_test = [] {
+    const std::vector<std::string> sources{
+        "\nvalue\n```",
+        "value\n```cpp\nx\n```",
+        "value\n\n```cpp\nx\n```",
+        "$$\n$$\nnext",
+        "$$\n$$\n\nnext",
+        "# heading\n> quote",
+        "# heading\n\n> quote",
+        "one\n\n",
+        "\n\n",
+        "one\n\n\nthree",
+    };
+    for (const auto& source : sources) {
+        const auto parsed = parse_text(1, source);
+        const auto saved = serialize_markdown(parsed.document);
+        expect(fatal(bool(saved == source))) << source;
+        const auto reloaded = parse_text(2, saved);
+        expect(fatal(bool(serialize_markdown(reloaded.document) == source))) << source;
+    }
+};
+
 }; // suite parser_tests

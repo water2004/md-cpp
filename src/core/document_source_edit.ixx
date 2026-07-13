@@ -44,15 +44,17 @@ inline DocumentTransaction source_transaction_with_block_reparse(
     std::uint64_t revision_before,
     DocumentTransactionReason reason) {
     std::vector<DocumentOperation> operations;
-    document_edit_detail::append_source_operation(operations, std::move(edit));
     document_edit_detail::NodeAllocator allocator(after);
     if (auto reclassified = document_edit_detail::reparse_edited_direct_block(
-            after, target, allocator)) {
+            after, target, allocator, &edit)) {
         target = reclassified->target;
+        document_edit_detail::append_source_operation(operations, std::move(edit));
         operations.insert(
             operations.end(),
             std::make_move_iterator(reclassified->operations.begin()),
             std::make_move_iterator(reclassified->operations.end()));
+    } else {
+        document_edit_detail::append_source_operation(operations, std::move(edit));
     }
     return make_recorded_document_transaction(
         std::move(after),
@@ -81,6 +83,7 @@ inline std::optional<DocumentTransaction> document_insert_text(const EditorDocum
     document_edit_detail::NodeAllocator allocator(working);
     auto inserted = document_edit_detail::insert_text(working, current.active, text, allocator);
     if (!inserted || !inserted->source_edit) return std::nullopt;
+    const auto reparse_edit = *inserted->source_edit;
     document_edit_detail::append_source_operation(
         operations, std::move(*inserted->source_edit));
     auto target = current.active; target.source_offset = inserted->offset; target.affinity = inserted->affinity;
@@ -94,7 +97,7 @@ inline std::optional<DocumentTransaction> document_insert_text(const EditorDocum
             std::make_move_iterator(structural->operations.end()));
     }
     if (auto reclassified = document_edit_detail::reparse_edited_direct_block(
-            working, target, allocator)) {
+            working, target, allocator, &reparse_edit)) {
         target = reclassified->target;
         operations.insert(
             operations.end(),
@@ -174,14 +177,16 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
     }
     ++after.revision;
     if (source_edit) {
-        document_edit_detail::append_source_operation(operations, std::move(*source_edit));
         if (auto reclassified = document_edit_detail::reparse_edited_direct_block(
-                after, target, allocator)) {
+                after, target, allocator, &*source_edit)) {
+            document_edit_detail::append_source_operation(operations, std::move(*source_edit));
             target = reclassified->target;
             operations.insert(
                 operations.end(),
                 std::make_move_iterator(reclassified->operations.begin()),
                 std::make_move_iterator(reclassified->operations.end()));
+        } else {
+            document_edit_detail::append_source_operation(operations, std::move(*source_edit));
         }
     }
     if (operations.empty()) return std::nullopt;
@@ -486,6 +491,7 @@ inline std::optional<DocumentTransaction> document_delete_selection(const Editor
         std::move(suffix),
         allocator);
     if (!source_edit) return std::nullopt;
+    const auto reparse_edit = *source_edit;
     std::vector<DocumentOperation> operations;
     document_edit_detail::append_source_operation(operations, std::move(*source_edit));
     for (std::size_t index = *anchor_index + 1; index <= *active_index; ++index) {
@@ -509,7 +515,7 @@ inline std::optional<DocumentTransaction> document_delete_selection(const Editor
     ++after.revision;
     auto target = TextPosition{first.container_id, first.source_offset, TextAffinity::Downstream};
     if (auto reclassified = document_edit_detail::reparse_edited_direct_block(
-            after, target, allocator)) {
+            after, target, allocator, &reparse_edit)) {
         target = reclassified->target;
         operations.insert(
             operations.end(),

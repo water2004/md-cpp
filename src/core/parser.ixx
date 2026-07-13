@@ -34,6 +34,7 @@ import elmd.core.inline_cst;
 import elmd.core.inline_document;
 import elmd.core.inline_parser;
 import elmd.core.instrumentation;
+import elmd.core.serializer;
 import elmd.core.text_edit;
 
 export namespace elmd {
@@ -455,7 +456,9 @@ public:
         source_ranges.push_back(r);
     }
     // ---- block dispatch ----
-    void parse_blank_lines(std::vector<BlockNode>& blocks) {
+    void parse_blank_lines(
+        std::vector<BlockNode>& blocks,
+        std::optional<std::size_t>& preceding_source_end) {
         std::vector<std::pair<std::size_t, std::size_t>> blank_ranges;
         while (!eof() && is_blank_line()) {
             const auto start = cur();
@@ -469,27 +472,56 @@ public:
             BlockNode paragraph;
             paragraph.id = next_node_id();
             paragraph.kind = BlockKind::Paragraph;
+            const auto source_end = blocks.empty()
+                ? blank_ranges[index].first
+                : blank_ranges[index].second;
+            if (!blocks.empty() && preceding_source_end) {
+                paragraph.separator_before = std::u32string(
+                    std::u32string_view(cps).substr(
+                        *preceding_source_end,
+                        source_end - *preceding_source_end));
+            }
             push_range(
                 paragraph.id,
                 PhysicalRange(blank_ranges[index].first, blank_ranges[index].second),
                 PhysicalRange(blank_ranges[index].first, blank_ranges[index].first));
             blocks.push_back(std::move(paragraph));
+            preceding_source_end = source_end;
         }
     }
 
     std::vector<BlockNode> parse_blocks(std::function<bool(const std::u32string&)> stop = nullptr) {
         std::vector<BlockNode> blocks;
+        std::optional<std::size_t> preceding_source_end;
         while (!eof()) {
             if (is_blank_line()) {
-                parse_blank_lines(blocks);
+                parse_blank_lines(blocks, preceding_source_end);
                 continue;
             }
             if (stop) {
                 auto [line, _] = rest_of_line();
                 if (stop(line)) break;
             }
-            if (auto b = parse_block()) blocks.push_back(std::move(*b));
-            else advance();
+            const auto block_start = cur();
+            if (auto b = parse_block()) {
+                if (!blocks.empty() && preceding_source_end) {
+                    b->separator_before = std::u32string(
+                        std::u32string_view(cps).substr(
+                            *preceding_source_end,
+                            block_start - *preceding_source_end));
+                }
+                auto block_end = cur();
+                const auto serialized = serializer_detail::serialize_block(*b);
+                if (block_end > block_start
+                    && cps[block_end - 1] == U'\n'
+                    && (serialized.empty() || serialized.back() != U'\n')) {
+                    --block_end;
+                }
+                blocks.push_back(std::move(*b));
+                preceding_source_end = block_end;
+            } else {
+                advance();
+            }
         }
         return blocks;
     }

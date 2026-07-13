@@ -50,6 +50,27 @@ inline bool same_raw_projection(const BlockNode& current, const BlockVec& parsed
     return true;
 }
 
+inline bool range_overlaps(SourceRange left, SourceRange right) {
+    if (left.empty()) return right.covers(left.start);
+    return left.start < right.end && right.start < left.end;
+}
+
+inline bool edit_touches_raw_structure(
+    const BlockNode& current,
+    const AppliedSourceEdit& edit) {
+    if (edit.forward.container_id != current.id) return false;
+    auto previous_source = current.block_source.source;
+    apply_text_edit(previous_source, edit.inverse);
+    const auto previous = parse_block_source(
+        previous_source,
+        current.block_source.tree.kind);
+    return std::ranges::any_of(previous.tokens, [&](const auto& token) {
+        const auto structural = token.kind == BlockSourceTokenKind::OpeningMarker
+            || token.kind == BlockSourceTokenKind::Indentation;
+        return structural && range_overlaps(edit.forward.range, token.source_range);
+    });
+}
+
 struct TargetCandidate {
     NodeId parser_id{};
     std::size_t local_offset = 0;
@@ -109,12 +130,14 @@ inline void assign_fresh_ids(
 inline BlockNode exact_paragraph(
     std::u32string source,
     NodeId id,
+    std::optional<std::u32string> separator_before,
     const EditorDocument& owner,
     NodeAllocator& allocator) {
     BlockNode paragraph;
     paragraph.id = id;
     paragraph.kind = BlockKind::Paragraph;
     paragraph.inline_content = make_inline(std::move(source), owner, allocator);
+    paragraph.separator_before = std::move(separator_before);
     return paragraph;
 }
 
@@ -127,7 +150,8 @@ inline BlockNode exact_paragraph(
 inline std::optional<RecordedBlockEdit> reparse_edited_direct_block(
     EditorDocument& document,
     TextPosition position,
-    NodeAllocator& allocator) {
+    NodeAllocator& allocator,
+    const AppliedSourceEdit* source_edit = nullptr) {
     auto path = block_path(document.root, position.container_id);
     if (!path || path->empty()) return std::nullopt;
     auto* current = block_at_path(document.root, *path);
@@ -138,6 +162,10 @@ inline std::optional<RecordedBlockEdit> reparse_edited_direct_block(
     const auto is_multiline_paragraph = current->kind == BlockKind::Paragraph
         && current->inline_content.source.find(U'\n') != std::u32string::npos;
     if (!is_raw && !is_multiline_paragraph) return std::nullopt;
+    if (is_raw && source_edit
+        && !block_reparse_detail::edit_touches_raw_structure(*current, *source_edit)) {
+        return std::nullopt;
+    }
 
     const auto source = is_raw
         ? current->block_source.source
@@ -151,7 +179,11 @@ inline std::optional<RecordedBlockEdit> reparse_edited_direct_block(
     }
 
     auto target = block_reparse_detail::target_candidate(parsed, position.source_offset);
-    const auto exact = serializer_detail::serialize_blocks(parsed.blocks) == source;
+    // A character edit may reclassify one direct block, but it is not an
+    // implicit multi-block split command. Enter remains the operation that
+    // creates sibling block boundaries.
+    const auto exact = parsed.blocks.size() == 1
+        && serializer_detail::serialize_blocks(parsed.blocks) == source;
     if (!exact || !target) {
         if (!is_raw) return std::nullopt;
         parsed.blocks.clear();
@@ -159,6 +191,7 @@ inline std::optional<RecordedBlockEdit> reparse_edited_direct_block(
         parsed.blocks.push_back(block_reparse_detail::exact_paragraph(
             source,
             current->id,
+            current->separator_before,
             document,
             allocator));
         target = block_reparse_detail::TargetCandidate{
@@ -168,6 +201,7 @@ inline std::optional<RecordedBlockEdit> reparse_edited_direct_block(
             source.size(),
         };
     } else {
+        parsed.blocks.front().separator_before = current->separator_before;
         for (auto& block : parsed.blocks) {
             block_reparse_detail::assign_fresh_ids(
                 block,

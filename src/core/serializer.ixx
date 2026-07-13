@@ -163,7 +163,8 @@ inline bool is_empty_paragraph(const BlockNode& block) {
     return block.kind == BlockKind::Paragraph && block.inline_content.source.empty();
 }
 
-inline std::u32string_view block_separator(const BlockNode& previous, const BlockNode&) {
+inline std::u32string block_separator(const BlockNode& previous, const BlockNode& current) {
+    if (current.separator_before) return *current.separator_before;
     if (is_empty_paragraph(previous)) return U"\n";
     const auto serialized = serialize_block(previous);
     if (!serialized.empty() && serialized.back() == U'\n') return U"\n";
