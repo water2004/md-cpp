@@ -164,7 +164,7 @@ namespace winrt::ElMd
         std::condition_variable_any ready;
         std::deque<Request> requests;
         std::unordered_set<std::string> queued;
-        std::unordered_map<std::string, MathJaxSvg> cache;
+        std::unordered_map<std::string, std::shared_ptr<MathJaxSvg const>> cache;
         std::unordered_map<std::string, std::size_t> transientFailures;
         std::deque<std::string> cacheOrder;
         std::size_t cacheBytes = 0;
@@ -365,21 +365,22 @@ namespace winrt::ElMd
         void Store(Request const& request, MathJaxSvg result)
         {
             constexpr std::size_t budget = 16 * 1024 * 1024;
-            auto bytes = request.key.size() + ResultBytes(result);
+            auto shared = std::make_shared<MathJaxSvg const>(std::move(result));
+            auto bytes = request.key.size() + ResultBytes(*shared);
             while ((!cacheOrder.empty()) && (cacheBytes + bytes > budget || cache.size() >= 4096))
             {
                 auto oldest = std::move(cacheOrder.front());
                 cacheOrder.pop_front();
                 auto found = cache.find(oldest);
                 if (found == cache.end()) continue;
-                cacheBytes -= found->first.size() + ResultBytes(found->second);
+                cacheBytes -= found->first.size() + ResultBytes(*found->second);
                 cache.erase(found);
             }
             if (bytes <= budget)
             {
                 cacheBytes += bytes;
                 cacheOrder.push_back(request.key);
-                cache.emplace(request.key, std::move(result));
+                cache.emplace(request.key, std::move(shared));
             }
         }
 
@@ -456,12 +457,12 @@ namespace winrt::ElMd
         state->completion = std::move(callback);
     }
 
-    std::optional<MathJaxSvg> MathJaxRenderer::GetOrQueue(std::string_view tex, bool display, float em, float containerWidth, bool allowQueue)
+    std::shared_ptr<MathJaxSvg const> MathJaxRenderer::GetOrQueue(std::string_view tex, bool display, float em, float containerWidth, bool allowQueue)
     {
         auto key = std::string(tex) + '\x1f' + (display ? "1" : "0") + '\x1f' + std::to_string(em) + '\x1f' + std::to_string(containerWidth);
         std::scoped_lock lock(state->mutex);
         if (auto found = state->cache.find(key); found != state->cache.end()) return found->second;
-        if (!allowQueue) return std::nullopt;
+        if (!allowQueue) return {};
         if (state->queued.insert(key).second)
         {
             while (state->requests.size() >= 256)
@@ -472,6 +473,6 @@ namespace winrt::ElMd
             state->requests.push_back(State::Request{ key, std::string(tex), display, em, containerWidth, state->generation });
             state->ready.notify_one();
         }
-        return std::nullopt;
+        return {};
     }
 }

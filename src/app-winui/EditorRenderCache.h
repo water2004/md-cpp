@@ -1,5 +1,7 @@
 #pragma once
 
+#include <list>
+
 #include "EditorRenderResources.h"
 
 namespace winrt::ElMd
@@ -32,6 +34,7 @@ namespace winrt::ElMd
         {
             ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> document;
             std::size_t bytes = 0;
+            std::list<std::uint64_t>::iterator order;
         };
 
         struct CachedTextLayout
@@ -64,7 +67,7 @@ namespace winrt::ElMd
         std::deque<std::wstring> rasterImageOrder;
         std::size_t rasterImageBytes = 0;
         std::unordered_map<std::uint64_t, CachedSvgDocument> svgDocuments;
-        std::deque<std::uint64_t> svgDocumentOrder;
+        std::list<std::uint64_t> svgDocumentOrder;
         std::size_t svgDocumentBytes = 0;
         std::shared_ptr<RemoteState> remoteState = std::make_shared<RemoteState>();
     };

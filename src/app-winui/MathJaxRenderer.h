@@ -41,7 +41,7 @@ namespace winrt::ElMd
         MathJaxRenderer(MathJaxRenderer const&) = delete;
         MathJaxRenderer& operator=(MathJaxRenderer const&) = delete;
 
-        std::optional<MathJaxSvg> GetOrQueue(std::string_view tex, bool display, float em, float containerWidth, bool allowQueue = true);
+        std::shared_ptr<MathJaxSvg const> GetOrQueue(std::string_view tex, bool display, float em, float containerWidth, bool allowQueue = true);
         void SetCompletionCallback(std::function<void()> callback);
         void Clear();
 

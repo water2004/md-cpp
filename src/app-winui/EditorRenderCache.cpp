@@ -287,11 +287,7 @@ namespace winrt::ElMd
         if (!context || renderId == 0 || source.empty() || width <= 0.0f || height <= 0.0f) return {};
         if (auto found = svgDocuments.find(renderId); found != svgDocuments.end())
         {
-            if (auto order = std::find(svgDocumentOrder.begin(), svgDocumentOrder.end(), renderId); order != svgDocumentOrder.end())
-            {
-                svgDocumentOrder.erase(order);
-                svgDocumentOrder.push_back(renderId);
-            }
+            svgDocumentOrder.splice(svgDocumentOrder.end(), svgDocumentOrder, found->second.order);
             return found->second.document;
         }
         auto allocation = GlobalAlloc(GMEM_MOVEABLE, source.size());
@@ -313,7 +309,7 @@ namespace winrt::ElMd
         ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> document;
         if (FAILED(context->CreateSvgDocument(stream.Get(), D2D1::SizeF(width, height), document.GetAddressOf())) || !document) return {};
         constexpr std::size_t budget = 24 * 1024 * 1024;
-        constexpr std::size_t limit = 96;
+        constexpr std::size_t limit = 512;
         auto resourceCost = (std::max)(std::size_t{16 * 1024}, source.size() * 8);
         while (!svgDocumentOrder.empty() && (svgDocumentBytes + resourceCost > budget || svgDocuments.size() >= limit))
         {
@@ -328,7 +324,11 @@ namespace winrt::ElMd
         {
             svgDocumentBytes += resourceCost;
             svgDocumentOrder.push_back(renderId);
-            svgDocuments.emplace(renderId, CachedSvgDocument{ document, resourceCost });
+            svgDocuments.emplace(renderId, CachedSvgDocument{
+                document,
+                resourceCost,
+                std::prev(svgDocumentOrder.end()),
+            });
         }
         return document;
     }
