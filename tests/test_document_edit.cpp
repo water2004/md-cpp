@@ -620,6 +620,70 @@ suite document_edit_tests = [] {
     }
 };
 
+"backspace_joins_later_text_children_before_unwrapping_containers"_test = [] {
+    const std::vector<std::pair<std::string, BlockKind>> cases{
+        {"> first", BlockKind::BlockQuote},
+        {"> [!NOTE]\n> first", BlockKind::Callout},
+        {"[^1]: first", BlockKind::FootnoteDefinition},
+    };
+
+    for (const auto& [markdown, container_kind] : cases) {
+        auto document = parse_document(markdown);
+        auto const first_id = first_editable(document).id;
+        auto split = document_enter(document, caret(first_editable(document), 5));
+        expect(fatal(bool(split.has_value()))) << markdown;
+        if (!split) continue;
+        const auto second_id = split->selection_after.active.container_id;
+        auto inserted = document_insert_text(split->after, split->selection_after, U"second");
+        expect(fatal(bool(inserted.has_value()))) << markdown;
+        if (!inserted) continue;
+
+        auto joined = document_delete_backward(
+            inserted->after,
+            TextSelection::caret({second_id, 0, TextAffinity::Downstream}));
+        expect(fatal(bool(joined.has_value()))) << markdown;
+        if (!joined) continue;
+
+        const BlockNode* container = nullptr;
+        walk_blocks(joined->after.root, [&](const BlockNode& node) {
+            if (!container && node.kind == container_kind) container = &node;
+        });
+        expect(fatal(bool(container != nullptr))) << markdown;
+        if (!container) continue;
+        expect(fatal(bool(container->children.size() == 1u))) << markdown;
+        expect(fatal(bool(container->children.front().id == first_id))) << markdown;
+        expect(fatal(bool(container->children.front().inline_content.source == U"firstsecond"))) << markdown;
+        expect(fatal(bool(joined->selection_after.active.container_id == first_id))) << markdown;
+        expect(fatal(bool(joined->selection_after.active.source_offset == 5u))) << markdown;
+        expect_document_valid(joined->after);
+    }
+
+    auto list_document = parse_document("- first\n\n  second");
+    auto const& list = list_document.root.children.front();
+    expect(fatal(bool(list.kind == BlockKind::List)));
+    expect(fatal(bool(list.children.size() == 1u)));
+    expect(fatal(bool(list.children.front().children.size() == 2u)));
+    if (list.kind == BlockKind::List && list.children.size() == 1u
+        && list.children.front().children.size() == 2u) {
+        const auto first_id = list.children.front().children.front().id;
+        const auto second_id = list.children.front().children.back().id;
+        auto joined = document_delete_backward(
+            list_document,
+            TextSelection::caret({second_id, 0, TextAffinity::Downstream}));
+        expect(fatal(bool(joined.has_value())));
+        if (joined) {
+            auto const& updated_list = joined->after.root.children.front();
+            expect(fatal(bool(updated_list.kind == BlockKind::List)));
+            expect(fatal(bool(updated_list.children.front().children.size() == 1u)));
+            expect(fatal(bool(updated_list.children.front().children.front().id == first_id)));
+            expect(fatal(bool(updated_list.children.front().children.front().inline_content.source == U"firstsecond")));
+            expect(fatal(bool(joined->selection_after.active.container_id == first_id)));
+            expect(fatal(bool(joined->selection_after.active.source_offset == 5u)));
+            expect_document_valid(joined->after);
+        }
+    }
+};
+
 "backspace_removes_blank_paragraph_after_structural_block"_test = [] {
     auto quote_document = parse_document("> quoted\n\n\nnext");
     expect(fatal(bool(quote_document.root.children.size() == 3u)));

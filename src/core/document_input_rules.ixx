@@ -537,8 +537,7 @@ inline BlockNode container_shell_from(const BlockNode& source, NodeId id) {
 
 inline std::optional<TextPosition> remove_quote_prefix(
     EditorDocument& document,
-    TextPosition position,
-    document_edit_detail::NodeAllocator& allocator) {
+    TextPosition position) {
     auto path = block_path(document.root, position.container_id);
     if (!path || path->size() < 2) return std::nullopt;
 
@@ -546,7 +545,11 @@ inline std::optional<TextPosition> remove_quote_prefix(
     const auto child_index = quote_path.back();
     quote_path.pop_back();
     const auto* quote = block_at_path(document.root, quote_path);
-    if (!quote || quote->kind != BlockKind::BlockQuote || child_index >= quote->children.size()) {
+    // Only the first direct child owns the quote's opening structural boundary.
+    // At the start of a later child, Backspace must fall through to the uniform
+    // sibling join path and stay inside the quote.
+    if (!quote || quote->kind != BlockKind::BlockQuote || child_index != 0
+        || child_index >= quote->children.size()) {
         return std::nullopt;
     }
 
@@ -557,22 +560,13 @@ inline std::optional<TextPosition> remove_quote_prefix(
     if (!parent || quote_index >= parent->children.size()) return std::nullopt;
 
     auto original = std::move(parent->children[quote_index]);
-    auto selected = std::move(original.children[child_index]);
+    auto selected = std::move(original.children.front());
     BlockVec replacement;
-    if (child_index > 0) {
-        auto before = container_shell_from(original, original.id);
-        before.children.insert(before.children.end(),
-            std::make_move_iterator(original.children.begin()),
-            std::make_move_iterator(original.children.begin() + static_cast<std::ptrdiff_t>(child_index)));
-        replacement.push_back(std::move(before));
-    }
     replacement.push_back(std::move(selected));
-    if (child_index + 1 < original.children.size()) {
-        auto after = container_shell_from(
-            original,
-            child_index == 0 ? original.id : allocator.allocate());
+    if (original.children.size() > 1) {
+        auto after = container_shell_from(original, original.id);
         after.children.insert(after.children.end(),
-            std::make_move_iterator(original.children.begin() + static_cast<std::ptrdiff_t>(child_index + 1)),
+            std::make_move_iterator(original.children.begin() + 1),
             std::make_move_iterator(original.children.end()));
         replacement.push_back(std::move(after));
     }
@@ -721,7 +715,7 @@ inline std::optional<TextPosition> handle_backspace_at_start(
         return std::nullopt;
     }
     if (auto heading = detail::remove_heading_prefix(document, position)) return heading;
-    if (auto quote = detail::remove_quote_prefix(document, position, allocator)) return quote;
+    if (auto quote = detail::remove_quote_prefix(document, position)) return quote;
     return detail::remove_list_prefix(document, position, allocator);
 }
 
