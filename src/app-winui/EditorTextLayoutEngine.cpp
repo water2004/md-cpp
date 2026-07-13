@@ -42,7 +42,8 @@ namespace winrt::ElMd
                 auto lineEnd = newline == std::wstring::npos ? static_cast<UINT32>(text.size()) : static_cast<UINT32>(newline);
                 auto contentStart = lineStart;
                 while (contentStart < lineEnd && contentStart < display.displayToSource.size()
-                    && display.displayToSource[contentStart].affinity == elmd::TextAffinity::Upstream)
+                    && display.displayToSource[contentStart].kind == EditorDisplayPositionKind::BoundaryDecoration
+                    && display.displayToSource[contentStart].affinity == elmd::TextAffinity::Downstream)
                 {
                     ++contentStart;
                 }
@@ -86,12 +87,13 @@ namespace winrt::ElMd
         {
             const auto textLength = static_cast<UINT32>(elmd::utf16_len(display.text));
             position = (std::min)(position, textLength);
-            auto mapping = position < display.displayToSource.size()
+            EditorDisplayPosition mapping = position < display.displayToSource.size()
                 ? display.displayToSource[position]
                 : display.displayToSource.empty()
-                    ? elmd::TextPosition{}
+                    ? EditorDisplayPosition{}
                     : display.displayToSource.back();
-            mapping.affinity = elmd::TextAffinity::Upstream;
+            mapping.affinity = elmd::TextAffinity::Downstream;
+            mapping.kind = EditorDisplayPositionKind::BoundaryDecoration;
             display.text.insert(display.text.begin() + static_cast<std::ptrdiff_t>(CodepointIndexAtUtf16(display.text, position)), U'\uFFFC');
             auto mappingIndex = (std::min)(static_cast<std::size_t>(position), display.displayToSource.size());
             display.displayToSource.insert(display.displayToSource.begin() + static_cast<std::ptrdiff_t>(mappingIndex), mapping);
@@ -115,9 +117,9 @@ namespace winrt::ElMd
                     source.displayToSource.begin() + static_cast<std::ptrdiff_t>(start),
                     source.displayToSource.begin() + static_cast<std::ptrdiff_t>(mappingEnd));
             }
-            auto endPosition = end < source.displayToSource.size()
+            EditorDisplayPosition endPosition = end < source.displayToSource.size()
                 ? source.displayToSource[end]
-                : source.displayToSource.empty() ? elmd::TextPosition{} : source.displayToSource.back();
+                : source.displayToSource.empty() ? EditorDisplayPosition{} : source.displayToSource.back();
             result.displayToSource.push_back(endPosition);
 
             for (auto const& range : source.ranges)

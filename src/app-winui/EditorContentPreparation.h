@@ -7,6 +7,7 @@ import elmd.core.text_edit;
 #include "MermaidRenderer.h"
 #include "SvgNormalizer.h"
 #include "TreeSitterHighlighter.h"
+#include "EditorDisplayMapping.h"
 
 namespace winrt::ElMd
 {
@@ -59,7 +60,7 @@ namespace winrt::ElMd
         };
 
         std::u32string text;
-        std::vector<elmd::TextPosition> displayToSource;
+        EditorDisplayMapping displayToSource;
         std::vector<InlineStyleRange> ranges;
         std::vector<MathOverlay> mathOverlays;
         std::vector<MathPreview> mathPreviews;
@@ -76,7 +77,12 @@ namespace winrt::ElMd
     bool IsMermaidLanguage(std::optional<std::string> const& language);
     void MergeDisplayText(DisplayInlineText& target, DisplayInlineText source);
     void AppendSourceText(DisplayInlineText& display, std::u32string_view sourceText, elmd::TextSpan sourceSpan, elmd::InlineStyle style, bool marker);
-    void AppendGeneratedText(DisplayInlineText& display, std::u32string const& text, elmd::TextPosition sourcePosition, elmd::InlineStyle style);
+    void AppendGeneratedText(
+        DisplayInlineText& display,
+        std::u32string const& text,
+        elmd::TextPosition sourcePosition,
+        elmd::InlineStyle style,
+        EditorDisplayPositionKind kind = EditorDisplayPositionKind::Generated);
     void AppendMathPlaceholder(DisplayInlineText& display, std::size_t count, elmd::TextPosition sourcePosition);
     void ApplyInlinePlaceholder(IDWriteTextLayout* layout, UINT32 displayStart, float width, float height, float baseline);
     void ApplyMathInlineObjects(IDWriteTextLayout* layout, std::vector<DisplayInlineText::MathOverlay> const& overlays);
@@ -104,5 +110,4 @@ namespace winrt::ElMd
         float containerWidth,
         bool svgSupported,
         bool requestMath);
-    std::size_t DisplayPositionForSource(std::vector<elmd::TextPosition> const& displayToSource, elmd::TextPosition sourcePosition);
 }

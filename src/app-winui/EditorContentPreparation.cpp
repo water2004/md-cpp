@@ -368,8 +368,12 @@ namespace winrt::ElMd
                 sourceSpan.container_id,
                 sourceSpan.source_range.start + (std::min)(index, sourceSpan.source_range.length()),
                 elmd::TextAffinity::Downstream};
-            display.displayToSource.push_back(position);
-            if (text[index] > 0xffff) display.displayToSource.push_back(position);
+            display.displayToSource.push_back(EditorDisplayPosition{
+                position,
+                EditorDisplayPositionKind::Source});
+            if (text[index] > 0xffff) display.displayToSource.push_back(EditorDisplayPosition{
+                position,
+                EditorDisplayPositionKind::Source});
         }
         if (length > 0)
         {
@@ -382,12 +386,20 @@ namespace winrt::ElMd
         }
     }
 
-    void AppendGeneratedText(DisplayInlineText& display, std::u32string const& text, elmd::TextPosition sourcePosition, elmd::InlineStyle style)
+    void AppendGeneratedText(
+        DisplayInlineText& display,
+        std::u32string const& text,
+        elmd::TextPosition sourcePosition,
+        elmd::InlineStyle style,
+        EditorDisplayPositionKind kind)
     {
         auto start = static_cast<UINT32>(elmd::utf16_len(display.text));
         display.text += text;
         auto length = elmd::utf16_len(text);
-        display.displayToSource.insert(display.displayToSource.end(), length, sourcePosition);
+        display.displayToSource.insert(
+            display.displayToSource.end(),
+            length,
+            EditorDisplayPosition{sourcePosition, kind});
         if (!text.empty()) display.ranges.push_back(InlineStyleRange{start, static_cast<UINT32>(length), style, false, SyntaxHighlightKind::None});
     }
 
@@ -435,7 +447,10 @@ namespace winrt::ElMd
     {
         auto start = static_cast<UINT32>(elmd::utf16_len(display.text));
         display.text.append(count, U'\u2007');
-        display.displayToSource.insert(display.displayToSource.end(), count, sourcePosition);
+        display.displayToSource.insert(
+            display.displayToSource.end(),
+            count,
+            EditorDisplayPosition{sourcePosition, EditorDisplayPositionKind::Generated});
         if (count > 0)
         {
             display.ranges.push_back(InlineStyleRange{ start, static_cast<UINT32>(count), elmd::InlineStyle::plain(), false, SyntaxHighlightKind::None });
@@ -468,7 +483,11 @@ namespace winrt::ElMd
             }
             auto start = static_cast<UINT32>(elmd::utf16_len(display.text));
             display.text.push_back(U'\uFFFC');
-            display.displayToSource.push_back({sourceSpan.container_id, mappedOffset, elmd::TextAffinity::Downstream});
+            display.displayToSource.push_back({
+                sourceSpan.container_id,
+                mappedOffset,
+                elmd::TextAffinity::Downstream,
+                EditorDisplayPositionKind::Generated});
             display.ranges.push_back(InlineStyleRange{ start, 1, style, false, SyntaxHighlightKind::None });
             auto fragmentStart = math.width > 0.0f ? progress / math.width : 0.0f;
             progress += fragment.breakSpace + fragment.width;
@@ -601,7 +620,16 @@ namespace winrt::ElMd
             if (item.kind == elmd::InlineRenderItem::Kind::Marker && item.source_span.source_range.empty())
             {
                 auto const& markerText = item.display_text.empty() ? item.text : item.display_text;
-                AppendGeneratedText(display, markerText, {item.source_span.container_id, item.source_span.source_range.start, elmd::TextAffinity::Upstream}, item.style);
+                AppendGeneratedText(
+                    display,
+                    markerText,
+                    {
+                        item.source_span.container_id,
+                        item.source_span.source_range.start,
+                        item.generated_boundary_affinity.value_or(elmd::TextAffinity::Upstream),
+                    },
+                    item.style,
+                    EditorDisplayPositionKind::BoundaryDecoration);
             }
             else
             {
@@ -619,7 +647,12 @@ namespace winrt::ElMd
         auto showFence = caret.container_id == block.id;
         if (showFence)
         {
-            AppendGeneratedText(display, block.opening_marker, {block.id, 0, elmd::TextAffinity::Upstream}, elmd::InlineStyle::plain());
+            AppendGeneratedText(
+                display,
+                block.opening_marker,
+                {block.id, 0, elmd::TextAffinity::Downstream},
+                elmd::InlineStyle::plain(),
+                EditorDisplayPositionKind::BoundaryDecoration);
         }
         auto code = block.code_text;
         if (!showFence && !code.empty() && code.back() == U'\n') code.pop_back();
@@ -648,7 +681,12 @@ namespace winrt::ElMd
         }
         if (showFence)
         {
-            AppendGeneratedText(display, block.closing_marker, {block.id, block.code_text.size(), elmd::TextAffinity::Upstream}, elmd::InlineStyle::plain());
+            AppendGeneratedText(
+                display,
+                block.closing_marker,
+                {block.id, block.code_text.size(), elmd::TextAffinity::Upstream},
+                elmd::InlineStyle::plain(),
+                EditorDisplayPositionKind::BoundaryDecoration);
         }
         display.displayToSource.push_back({block.id, block.code_text.size(), elmd::TextAffinity::Downstream});
         return display;
@@ -697,31 +735,4 @@ namespace winrt::ElMd
         return display;
     }
 
-    std::size_t DisplayPositionForSource(std::vector<elmd::TextPosition> const& displayToSource, elmd::TextPosition sourcePosition)
-    {
-        if (displayToSource.empty())
-        {
-            return 0;
-        }
-
-        std::optional<std::size_t> lastInContainer;
-        std::optional<std::size_t> exactFallback;
-        for (std::size_t index = 0; index < displayToSource.size(); ++index)
-        {
-            if (displayToSource[index].container_id != sourcePosition.container_id)
-            {
-                continue;
-            }
-            lastInContainer = index;
-            if (displayToSource[index].source_offset < sourcePosition.source_offset)
-            {
-                continue;
-            }
-            if (displayToSource[index].source_offset > sourcePosition.source_offset)
-                return exactFallback.value_or(index);
-            if (!exactFallback) exactFallback = index;
-            if (displayToSource[index].affinity == sourcePosition.affinity) return index;
-        }
-        return exactFallback.value_or(lastInContainer.value_or(0));
-    }
 }

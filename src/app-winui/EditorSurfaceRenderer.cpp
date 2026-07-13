@@ -179,7 +179,7 @@ namespace winrt::ElMd
             return display;
         };
 
-        auto drawSelection = [&](IDWriteTextLayout* layout, D2D1_POINT_2F origin, std::vector<elmd::TextPosition> const& mapping)
+        auto drawSelection = [&](IDWriteTextLayout* layout, D2D1_POINT_2F origin, EditorDisplayMapping const& mapping)
         {
             if (!layout || frame.selection.is_caret() || mapping.empty()) return;
             std::size_t index = 0;
@@ -422,8 +422,7 @@ namespace winrt::ElMd
         scrollTarget = (std::min)(scrollTarget, MaximumScrollOffset());
         if (frame.selection.is_caret())
         {
-            auto upstream = caret.affinity == elmd::TextAffinity::Upstream;
-            if (auto rect = CaretBounds(caret, upstream))
+            if (auto rect = CaretBounds(caret))
                 resources.d2dContext->DrawLine(D2D1::Point2F(rect->left, rect->top), D2D1::Point2F(rect->left, rect->bottom), resources.caretBrush.Get(), 1.5f);
         }
     }
@@ -471,11 +470,11 @@ namespace winrt::ElMd
         return false;
     }
 
-    std::optional<elmd::TextPosition> EditorSurfaceRenderer::HitTest(float x, float y, bool* upstream) const { return interactionMap.HitTest(x, y, upstream); }
-    std::optional<D2D1_RECT_F> EditorSurfaceRenderer::CaretBounds(elmd::TextPosition position, bool upstream) const { return interactionMap.CaretBounds(position, upstream, styleSheet.body.lineHeight); }
-    std::optional<EditorSurfaceRenderer::CaretMove> EditorSurfaceRenderer::MoveCaretVertically(elmd::TextPosition position, bool upstream, bool down, float& goalX) const { return interactionMap.MoveCaretVertically(position, upstream, down, goalX, styleSheet.body.lineHeight); }
-    std::optional<elmd::TextPosition> EditorSurfaceRenderer::VisualLineStart(elmd::TextPosition position, bool upstream) const { return interactionMap.VisualLineStart(position, upstream); }
-    std::optional<elmd::TextPosition> EditorSurfaceRenderer::VisualLineEnd(elmd::TextPosition position, bool upstream) const { return interactionMap.VisualLineEnd(position, upstream); }
+    std::optional<elmd::TextPosition> EditorSurfaceRenderer::HitTest(float x, float y) const { return interactionMap.HitTest(x, y); }
+    std::optional<D2D1_RECT_F> EditorSurfaceRenderer::CaretBounds(elmd::TextPosition position) const { return interactionMap.CaretBounds(position, styleSheet.body.lineHeight); }
+    std::optional<elmd::TextPosition> EditorSurfaceRenderer::MoveCaretVertically(elmd::TextPosition position, bool down, float& goalX) const { return interactionMap.MoveCaretVertically(position, down, goalX, styleSheet.body.lineHeight); }
+    std::optional<elmd::TextPosition> EditorSurfaceRenderer::VisualLineStart(elmd::TextPosition position) const { return interactionMap.VisualLineStart(position); }
+    std::optional<elmd::TextPosition> EditorSurfaceRenderer::VisualLineEnd(elmd::TextPosition position) const { return interactionMap.VisualLineEnd(position); }
 
     void EditorSurfaceRenderer::Render(detail::EditorRenderFrame const& frame)
     {

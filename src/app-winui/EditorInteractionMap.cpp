@@ -20,28 +20,8 @@ namespace winrt::ElMd
             return span && span->source_range.covers(position.source_offset);
         }
 
-        std::size_t DisplayPositionForSource(
-            std::vector<elmd::TextPosition> const& mapping,
-            elmd::TextPosition position)
-        {
-            if (mapping.empty()) return 0;
-            std::optional<std::size_t> lastInContainer;
-            std::optional<std::size_t> exactFallback;
-            for (std::size_t index = 0; index < mapping.size(); ++index)
-            {
-                if (mapping[index].container_id != position.container_id) continue;
-                lastInContainer = index;
-                if (mapping[index].source_offset < position.source_offset) continue;
-                if (mapping[index].source_offset > position.source_offset)
-                    return exactFallback.value_or(index);
-                if (!exactFallback) exactFallback = index;
-                if (mapping[index].affinity == position.affinity) return index;
-            }
-            return exactFallback.value_or(lastInContainer.value_or(0));
-        }
-
         std::vector<elmd::TextSpan> SpansFromMapping(
-            std::vector<elmd::TextPosition> const& mapping,
+            EditorDisplayMapping const& mapping,
             std::size_t start,
             std::size_t end,
             elmd::TextSpan fallback)
@@ -86,7 +66,7 @@ namespace winrt::ElMd
 
         std::optional<elmd::TextPosition> ResolveMappedPosition(
             EditorVisualLine const& line,
-            std::vector<elmd::TextPosition> const& mapping,
+            EditorDisplayMapping const& mapping,
             std::size_t displayPosition)
         {
             if (line.sourceSpans.empty()) return std::nullopt;
@@ -101,7 +81,7 @@ namespace winrt::ElMd
             displayPosition = (std::clamp)(displayPosition, first, last);
             auto resolve = [&](std::size_t index) -> std::optional<elmd::TextPosition>
             {
-                auto position = mapping[index];
+                elmd::TextPosition position = mapping[index];
                 auto span = SourceSpanFor(line, position.container_id);
                 if (!span) return std::nullopt;
                 position.source_offset = (std::clamp)(position.source_offset, span->source_range.start, span->source_range.end);
@@ -219,7 +199,7 @@ namespace winrt::ElMd
         lines.push_back(line);
     }
 
-    std::optional<std::size_t> EditorInteractionMap::LineIndexFor(elmd::TextPosition position, bool upstream) const
+    std::optional<std::size_t> EditorInteractionMap::LineIndexFor(elmd::TextPosition position) const
     {
         std::optional<std::size_t> first;
         std::optional<std::size_t> last;
@@ -230,13 +210,12 @@ namespace winrt::ElMd
             last = index;
         }
         if (!first) return std::nullopt;
-        return upstream ? first : last;
+        return position.affinity == elmd::TextAffinity::Upstream ? first : last;
     }
 
     std::optional<D2D1_RECT_F> EditorInteractionMap::CaretRectOnLine(
         EditorVisualLine const& line,
         elmd::TextPosition position,
-        bool upstream,
         float bodyLineHeight) const
     {
         auto sourceSpan = SourceSpanFor(line, position.container_id);
@@ -264,7 +243,9 @@ namespace winrt::ElMd
         displayPos = (std::clamp)(displayPos, static_cast<std::size_t>(line.displayStart), static_cast<std::size_t>(line.displayEnd));
         UINT32 hitPos = static_cast<UINT32>(displayPos);
         BOOL trailing = FALSE;
-        if (displayPos == line.displayEnd && upstream && displayPos > line.displayStart) { --hitPos; trailing = TRUE; }
+        if (displayPos == line.displayEnd
+            && position.affinity == elmd::TextAffinity::Upstream
+            && displayPos > line.displayStart) { --hitPos; trailing = TRUE; }
         FLOAT x = 0.0f, y = 0.0f;
         DWRITE_HIT_TEST_METRICS metrics{};
         if (FAILED(layout->HitTestTextPosition(hitPos, trailing, &x, &y, &metrics))) return std::nullopt;
@@ -272,33 +253,32 @@ namespace winrt::ElMd
         return D2D1::RectF(left, line.rect.top, left + 2.0f, line.rect.bottom);
     }
 
-    std::optional<D2D1_RECT_F> EditorInteractionMap::CaretBounds(elmd::TextPosition position, bool upstream, float bodyLineHeight) const
+    std::optional<D2D1_RECT_F> EditorInteractionMap::CaretBounds(elmd::TextPosition position, float bodyLineHeight) const
     {
-        auto line = LineIndexFor(position, upstream);
-        return line ? CaretRectOnLine(lines[*line], position, upstream, bodyLineHeight) : std::nullopt;
+        auto line = LineIndexFor(position);
+        return line ? CaretRectOnLine(lines[*line], position, bodyLineHeight) : std::nullopt;
     }
 
-    std::optional<elmd::TextPosition> EditorInteractionMap::VisualLineStart(elmd::TextPosition position, bool upstream) const
+    std::optional<elmd::TextPosition> EditorInteractionMap::VisualLineStart(elmd::TextPosition position) const
     {
-        auto line = LineIndexFor(position, upstream);
+        auto line = LineIndexFor(position);
         if (!line) return std::nullopt;
         auto span = SourceSpanFor(lines[*line], position.container_id);
         if (!span) return std::nullopt;
         return elmd::TextPosition{span->container_id, span->source_range.start, elmd::TextAffinity::Downstream};
     }
 
-    std::optional<elmd::TextPosition> EditorInteractionMap::VisualLineEnd(elmd::TextPosition position, bool upstream) const
+    std::optional<elmd::TextPosition> EditorInteractionMap::VisualLineEnd(elmd::TextPosition position) const
     {
-        auto line = LineIndexFor(position, upstream);
+        auto line = LineIndexFor(position);
         if (!line) return std::nullopt;
         auto span = SourceSpanFor(lines[*line], position.container_id);
         if (!span) return std::nullopt;
         return elmd::TextPosition{span->container_id, span->source_range.end, elmd::TextAffinity::Upstream};
     }
 
-    std::optional<elmd::TextPosition> EditorInteractionMap::HitTest(float x, float y, bool* outUpstream) const
+    std::optional<elmd::TextPosition> EditorInteractionMap::HitTest(float x, float y) const
     {
-        if (outUpstream) *outUpstream = false;
         for (auto hit = mathHits.rbegin(); hit != mathHits.rend(); ++hit)
         {
             if (x < hit->rect.left || x > hit->rect.right || y < hit->rect.top || y > hit->rect.bottom) continue;
@@ -351,29 +331,26 @@ namespace winrt::ElMd
         displayPos = (std::clamp)(displayPos, static_cast<std::size_t>(line.displayStart), static_cast<std::size_t>(line.displayEnd));
         auto resolved = ResolveMappedPosition(line, *mapping, displayPos);
         auto position = resolved.value_or(end);
-        if (outUpstream)
-        {
-            auto nextWrap = best + 1 < lines.size() && lines[best + 1].blockIndex == line.blockIndex
-                && lines[best + 1].wrapContinuation && lines[best + 1].displayStart == line.displayEnd;
-            auto sourceSpan = SourceSpanFor(line, position.container_id);
-            *outUpstream = sourceSpan && position.source_offset == sourceSpan->source_range.end && nextWrap;
-        }
+        auto nextWrap = best + 1 < lines.size() && lines[best + 1].blockIndex == line.blockIndex
+            && lines[best + 1].wrapContinuation && lines[best + 1].displayStart == line.displayEnd;
+        auto sourceSpan = SourceSpanFor(line, position.container_id);
+        if (sourceSpan && position.source_offset == sourceSpan->source_range.end && nextWrap)
+            position.affinity = elmd::TextAffinity::Upstream;
         return position;
     }
 
-    std::optional<EditorCaretMove> EditorInteractionMap::MoveCaretVertically(
+    std::optional<elmd::TextPosition> EditorInteractionMap::MoveCaretVertically(
         elmd::TextPosition position,
-        bool upstream,
         bool down,
         float& goalX,
         float bodyLineHeight) const
     {
-        auto current = LineIndexFor(position, upstream);
+        auto current = LineIndexFor(position);
         if (!current || lines.empty()) return std::nullopt;
         auto x = goalX;
         if (x < 0.0f)
         {
-            auto rect = CaretRectOnLine(lines[*current], position, upstream, bodyLineHeight);
+            auto rect = CaretRectOnLine(lines[*current], position, bodyLineHeight);
             x = rect ? rect->left : lines[*current].rect.left;
             goalX = x;
         }
@@ -381,12 +358,12 @@ namespace winrt::ElMd
         if (!down && *current == 0)
         {
             auto const& span = lines.front().sourceSpans.front();
-            return EditorCaretMove{{span.container_id, span.source_range.start, elmd::TextAffinity::Downstream}, false};
+            return elmd::TextPosition{span.container_id, span.source_range.start, elmd::TextAffinity::Downstream};
         }
         if (down && *current + 1 >= lines.size())
         {
             auto const& span = lines.back().sourceSpans.back();
-            return EditorCaretMove{{span.container_id, span.source_range.end, elmd::TextAffinity::Upstream}, true};
+            return elmd::TextPosition{span.container_id, span.source_range.end, elmd::TextAffinity::Upstream};
         }
         auto targetIndex = down ? *current + 1 : *current - 1;
         auto const& currentLine = lines[*current];
@@ -436,10 +413,12 @@ namespace winrt::ElMd
         auto targetSpan = SourceSpanFor(target, targetPosition.container_id);
         if (!targetSpan) return std::nullopt;
         targetPosition.source_offset = (std::clamp)(targetPosition.source_offset, targetSpan->source_range.start, targetSpan->source_range.end);
-        auto downstreamLine = LineIndexFor(targetPosition, false);
-        auto upstreamLine = LineIndexFor(targetPosition, true);
+        targetPosition.affinity = elmd::TextAffinity::Downstream;
+        auto downstreamLine = LineIndexFor(targetPosition);
+        targetPosition.affinity = elmd::TextAffinity::Upstream;
+        auto upstreamLine = LineIndexFor(targetPosition);
         auto newUpstream = (!downstreamLine || *downstreamLine != targetIndex) && upstreamLine && *upstreamLine == targetIndex;
         targetPosition.affinity = newUpstream ? elmd::TextAffinity::Upstream : elmd::TextAffinity::Downstream;
-        return EditorCaretMove{targetPosition, newUpstream};
+        return targetPosition;
     }
 }

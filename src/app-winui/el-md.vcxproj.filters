@@ -156,6 +156,9 @@
     <ClInclude Include="EditorInteractionMap.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="EditorDisplayMapping.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="EditorContentPreparation.h">
       <Filter>Header Files</Filter>
     </ClInclude>

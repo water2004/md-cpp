@@ -31,16 +31,14 @@ namespace winrt::ElMd
         void ResetDocumentCaches();
         void SetInvalidateCallback(std::function<void()> callback);
 
-        using CaretMove = EditorCaretMove;
-
         using TableActionKind = EditorTableActionKind;
         using TableAction = EditorTableAction;
 
-        std::optional<elmd::TextPosition> HitTest(float x, float y, bool* outUpstream = nullptr) const;
-        std::optional<D2D1_RECT_F> CaretBounds(elmd::TextPosition position, bool upstream = false) const;
-        std::optional<CaretMove> MoveCaretVertically(elmd::TextPosition position, bool upstream, bool down, float& goalX) const;
-        std::optional<elmd::TextPosition> VisualLineStart(elmd::TextPosition position, bool upstream) const;
-        std::optional<elmd::TextPosition> VisualLineEnd(elmd::TextPosition position, bool upstream) const;
+        std::optional<elmd::TextPosition> HitTest(float x, float y) const;
+        std::optional<D2D1_RECT_F> CaretBounds(elmd::TextPosition position) const;
+        std::optional<elmd::TextPosition> MoveCaretVertically(elmd::TextPosition position, bool down, float& goalX) const;
+        std::optional<elmd::TextPosition> VisualLineStart(elmd::TextPosition position) const;
+        std::optional<elmd::TextPosition> VisualLineEnd(elmd::TextPosition position) const;
         void UpdatePointer(float x, float y);
         void ClearPointer();
         std::optional<TableAction> TableActionAt(float x, float y) const;

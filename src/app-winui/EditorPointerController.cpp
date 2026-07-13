@@ -94,8 +94,7 @@ namespace winrt::ElMd
             return;
         }
 
-        bool hitUpstream = false;
-        auto hit = renderer_->HitTest(static_cast<float>(point.X), static_cast<float>(point.Y), &hitUpstream);
+        auto hit = renderer_->HitTest(static_cast<float>(point.X), static_cast<float>(point.Y));
         if (!hit) return;
         if ((args.KeyModifiers() & winrt::Windows::System::VirtualKeyModifiers::Control) == winrt::Windows::System::VirtualKeyModifiers::Control)
         {
@@ -113,7 +112,6 @@ namespace winrt::ElMd
         }
         selecting_ = true;
         anchor_ = *hit;
-        anchor_.affinity = hitUpstream ? elmd::TextAffinity::Upstream : elmd::TextAffinity::Downstream;
         session_->SetSelection(anchor_, anchor_);
         if (textInput_) textInput_->NotifySelectionChanged();
         surface_.CapturePointer(args.Pointer());
@@ -152,10 +150,8 @@ namespace winrt::ElMd
             if (render_) render_();
             return;
         }
-        bool hitUpstream = false;
-        auto hit = renderer_->HitTest(static_cast<float>(point.X), static_cast<float>(point.Y), &hitUpstream);
+        auto hit = renderer_->HitTest(static_cast<float>(point.X), static_cast<float>(point.Y));
         if (!hit) return;
-        hit->affinity = hitUpstream ? elmd::TextAffinity::Upstream : elmd::TextAffinity::Downstream;
         session_->SetSelection(anchor_, *hit);
         if (textInput_) textInput_->NotifySelectionChanged();
         if (render_) render_();

@@ -2,6 +2,8 @@
 
 import elmd.core.text_edit;
 
+#include "EditorDisplayMapping.h"
+
 namespace winrt::ElMd
 {
     struct EditorVisualBlock
@@ -12,7 +14,7 @@ namespace winrt::ElMd
         elmd::TextSpan sourceSpan;
         float documentY = 0.0f;
         std::u32string text;
-        std::vector<elmd::TextPosition> displayToSource;
+        EditorDisplayMapping displayToSource;
         ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
         bool thematicBreak = false;
     };
@@ -39,7 +41,7 @@ namespace winrt::ElMd
         std::size_t row = 0;
         std::size_t column = 0;
         std::u32string text;
-        std::vector<elmd::TextPosition> displayToSource;
+        EditorDisplayMapping displayToSource;
         ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
     };
 
@@ -63,22 +65,16 @@ namespace winrt::ElMd
         float progressEnd = 1.0f;
     };
 
-    struct EditorCaretMove
-    {
-        elmd::TextPosition position;
-        bool upstream = false;
-    };
-
     struct EditorInteractionMap
     {
         void Clear(std::size_t blockCapacity);
         void AddBlockLines(std::size_t blockIndex);
         void AddTableCellLines(std::size_t blockIndex, std::size_t tableIndex, std::size_t cellIndex);
-        std::optional<elmd::TextPosition> HitTest(float x, float y, bool* outUpstream = nullptr) const;
-        std::optional<D2D1_RECT_F> CaretBounds(elmd::TextPosition position, bool upstream, float bodyLineHeight) const;
-        std::optional<EditorCaretMove> MoveCaretVertically(elmd::TextPosition position, bool upstream, bool down, float& goalX, float bodyLineHeight) const;
-        std::optional<elmd::TextPosition> VisualLineStart(elmd::TextPosition position, bool upstream) const;
-        std::optional<elmd::TextPosition> VisualLineEnd(elmd::TextPosition position, bool upstream) const;
+        std::optional<elmd::TextPosition> HitTest(float x, float y) const;
+        std::optional<D2D1_RECT_F> CaretBounds(elmd::TextPosition position, float bodyLineHeight) const;
+        std::optional<elmd::TextPosition> MoveCaretVertically(elmd::TextPosition position, bool down, float& goalX, float bodyLineHeight) const;
+        std::optional<elmd::TextPosition> VisualLineStart(elmd::TextPosition position) const;
+        std::optional<elmd::TextPosition> VisualLineEnd(elmd::TextPosition position) const;
 
         std::vector<EditorVisualBlock> blocks;
         std::vector<EditorVisualLine> lines;
@@ -86,7 +82,7 @@ namespace winrt::ElMd
         std::vector<EditorVisualMathHit> mathHits;
 
     private:
-        std::optional<std::size_t> LineIndexFor(elmd::TextPosition position, bool upstream) const;
-        std::optional<D2D1_RECT_F> CaretRectOnLine(EditorVisualLine const& line, elmd::TextPosition position, bool upstream, float bodyLineHeight) const;
+        std::optional<std::size_t> LineIndexFor(elmd::TextPosition position) const;
+        std::optional<D2D1_RECT_F> CaretRectOnLine(EditorVisualLine const& line, elmd::TextPosition position, float bodyLineHeight) const;
     };
 }

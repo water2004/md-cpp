@@ -134,7 +134,7 @@ namespace winrt::ElMd
             {
                 auto request = args.Request();
                 auto selectionState = session_->Selection();
-                auto caretBounds = renderer_->CaretBounds(selectionState.active, selectionState.active.affinity == elmd::TextAffinity::Upstream);
+                auto caretBounds = renderer_->CaretBounds(selectionState.active);
                 auto textRect = winrt::Windows::Foundation::Rect{ 0.0f, 0.0f, 1.0f, 24.0f };
                 auto controlRect = winrt::Windows::Foundation::Rect{ 0.0f, 0.0f, static_cast<float>(surface_.ActualWidth()), static_cast<float>(surface_.ActualHeight()) };
                 auto transform = surface_.TransformToVisual(nullptr);

@@ -114,6 +114,7 @@
     <ClInclude Include="EditorRenderFrame.h" />
     <ClInclude Include="EditorStyleSheet.h" />
     <ClInclude Include="EditorInteractionMap.h" />
+    <ClInclude Include="EditorDisplayMapping.h" />
     <ClInclude Include="EditorContentPreparation.h" />
     <ClInclude Include="EditorRenderResources.h" />
     <ClInclude Include="EditorRenderCache.h" />
