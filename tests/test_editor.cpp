@@ -18,6 +18,7 @@ import elmd.core.input;
 import elmd.core.serializer;
 import elmd.core.text_edit;
 import elmd.core.theme;
+import elmd.core.utf;
 
 using namespace elmd;
 using namespace boost::ut;
@@ -335,15 +336,24 @@ suite editor_tests = [] {
         "| abc |\n| --- |",
         "> [!NOTE]\n> abc",
         "[^1]: abc",
+        "- > abc",
+        "> - abc",
+        "- [ ] > abc",
     };
     for (auto const& markdown : cases) {
         Editor editor(markdown);
         auto const id = first_text(editor).id;
         editor.set_selection(TextSelection::caret({id, 1, TextAffinity::Downstream}));
         const auto before = editor.markdown_utf8();
-        expect(fatal(bool(editor.execute_document_insert_text(editor.selection(), U"X").has_value())));
+        reset_core_operation_counters();
+        expect(fatal(bool(editor.execute_document_insert_text(editor.selection(), U"X").has_value()))) << markdown;
+        const auto counters = read_core_operation_counters();
+        expect(fatal(bool(counters.full_document_parses == 0u)));
+        expect(fatal(bool(counters.full_document_serializations == 0u)));
+        expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
+        expect(fatal(bool(counters.inline_reparses == 1u)));
         auto edited = *editor.editable_source(id);
-        expect(fatal(bool(edited == U"aXbc")));
+        expect(fatal(bool(edited == U"aXbc"))) << markdown << " source=" << cps_to_utf8(edited);
         auto const* owner = find_block(editor.document().root, id);
         expect(fatal(bool(owner != nullptr)));
         if (owner) expect(fatal(bool(flatten_tokens(owner->inline_content.tree, owner->inline_content.source) == owner->inline_content.source)));
@@ -359,6 +369,72 @@ suite editor_tests = [] {
         expect(fatal(bool(*editor.editable_source(id) == U"abc")));
         expect(fatal(bool(editor.redo())));
         expect(fatal(bool(*editor.editable_source(id) == U"aXbc")));
+    }
+};
+
+"representative_inline_states_round_trip_through_every_editable_context"_test = [] {
+    const std::vector<std::u32string> samples{
+        U"abc", U"*abc*", U"_abc_", U"**abc**", U"__abc__", U"**", U"**abc",
+        U"a***b***c", U"~~abc~~", U"~~abc", U"`abc`", U"`abc", U"[title](url)",
+        U"[title](<url>)", U"[title](url \"name\")", U"[title](", U"![alt](url)",
+        U"$abc$", U"$abc", U"\\*abc\\*", U"&amp;", U"a\\**b*",
+    };
+
+    for (const auto& sample : samples) {
+        const auto original_source = U"p" + sample + U"q";
+        const auto source_utf8 = cps_to_utf8(original_source);
+        const std::vector<std::string> documents{
+            source_utf8,
+            "# " + source_utf8,
+            "- " + source_utf8,
+            "- [ ] " + source_utf8,
+            "> " + source_utf8,
+            "| " + source_utf8 + " |\n| --- |",
+            "> [!NOTE]\n> " + source_utf8,
+            "[^1]: " + source_utf8,
+            "- > " + source_utf8,
+        };
+
+        for (const auto& markdown : documents) {
+            Editor editor(markdown);
+            const auto owner_id = first_text(editor).id;
+            expect(fatal(bool(first_text(editor).inline_content.source == original_source)));
+            const auto offset = 1 + sample.size() / 2;
+            const auto before_source = editor.markdown_utf8();
+            const auto before_selection = TextSelection::caret(
+                {owner_id, offset, TextAffinity::Downstream});
+            editor.set_selection(before_selection);
+
+            reset_core_operation_counters();
+            expect(fatal(bool(editor.execute_document_insert_text(editor.selection(), U"X").has_value())));
+            const auto counters = read_core_operation_counters();
+            expect(fatal(bool(counters.full_document_parses == 0u)));
+            expect(fatal(bool(counters.full_document_serializations == 0u)));
+            expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
+            expect(fatal(bool(counters.inline_reparses == 1u)));
+
+            auto expected_source = original_source;
+            expected_source.insert(offset, 1, U'X');
+            const auto* owner = find_block(editor.document().root, owner_id);
+            expect(fatal(bool(owner != nullptr)));
+            if (!owner) continue;
+            expect(fatal(bool(owner->inline_content.source == expected_source)));
+            expect(fatal(bool(flatten_tokens(owner->inline_content.tree, owner->inline_content.source)
+                == owner->inline_content.source)));
+            expect(fatal(bool(editor.selection().active.container_id == owner_id)));
+            expect(fatal(bool(editor.selection().active.source_offset == offset + 1)));
+
+            const auto edited_source = editor.markdown_utf8();
+            Editor reloaded(edited_source);
+            expect(fatal(bool(first_text(reloaded).inline_content.source == expected_source)));
+
+            expect(fatal(bool(editor.undo())));
+            expect(fatal(bool(editor.markdown_utf8() == before_source)));
+            expect(fatal(bool(editor.selection() == before_selection)));
+            expect(fatal(bool(editor.redo())));
+            expect(fatal(bool(editor.markdown_utf8() == edited_source)));
+            expect(fatal(bool(*editor.editable_source(owner_id) == expected_source)));
+        }
     }
 };
 

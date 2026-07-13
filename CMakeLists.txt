@@ -129,5 +129,6 @@ file(GLOB ELMD_TEST_SRC CONFIGURE_DEPENDS
 target_sources(elmd_tests PRIVATE
     ${ELMD_TEST_SRC})
 target_link_libraries(elmd_tests PRIVATE elmd_core Boost::ut_module)
-# Boost.UT parses argv for filtering (`-t "*name*"` / suite / tag).
+# Boost.UT parses positional test-name patterns and CLI options. For example,
+# `elmd_tests.exe "*name*"` filters by name; `-t` lists tags.
 add_test(NAME elmd_tests COMMAND elmd_tests)

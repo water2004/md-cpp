@@ -42,10 +42,12 @@
 - 2026-07-12 测试框架迁移到仓库 fork 的 Boost.UT C++23 module (`third_party/ut`):
   - CMake: `cmake_minimum_required(VERSION 4.0)`、`file(GLOB)` 收集 `tests/*.cpp`，`elmd_tests` 链接 `Boost::ut_module`
   - `tests/elmd_test.hpp` 使用 `import boost.ut;`；测试 TU 不再 `import std;`
-  - `tests/main.cpp` 将 `argc`/`argv` 传给 `boost::ut::cfg<>.run()`，支持 Boost.UT 过滤参数
+  - `tests/main.cpp` 将 `argc`/`argv` 传给 `boost::ut::cfg<>.run()`；测试名过滤使用位置参数（例如 `elmd_tests.exe "*name*"`），`-t` 用于列出标签
   - fork 包含 MSVC module linkage 与命令行初始化修复；不得退回 `<boost/ut.hpp>` header-only 路径
   - 删除旧的 `tests/test_framework.h`
   - 验证: 全部核心测试套件在 module 路径下编译并通过
 - 2026-07-13 完成统一块树、局部 source/CST、单一 TextPosition、可逆操作 history、局部渲染与 WinUI/TSF UTF-16 边界迁移。
 - 删除 `SourceMap`、`source_structure`、`document_position`、`CharOffset`/`CharRange`、legacy selection/caret、全文增量重解析与旧 WinUI 全文映射路径。
 - 验证: 核心随机/无损/编辑/history/渲染测试通过；WinUI Debug x64 构建通过。
+- 2026-07-13 history 改为只保存可逆 `TextEdit`/树操作，不再保存 before/after 双快照；普通 inline 热路径在修改发生时直接记录精确操作。
+- 2026-07-13 HardBreak 作为单个可视编辑单元删除，`<br>` 与 Markdown hard break 不再被 Backspace/Delete 拆成残缺源码。
