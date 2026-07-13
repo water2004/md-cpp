@@ -268,6 +268,57 @@ suite document_edit_tests = [] {
     }
 };
 
+"backspace_removes_blank_paragraph_after_structural_block"_test = [] {
+    auto quote_document = parse_document("> quoted\n\n\nnext");
+    expect(fatal(bool(quote_document.root.children.size() == 3u)));
+    if (quote_document.root.children.size() == 3u) {
+        auto const blank_id = quote_document.root.children[1].id;
+        auto const& quote_content = quote_document.root.children[0].children.back();
+        auto transaction = document_delete_backward(quote_document, caret(quote_document.root.children[1], 0));
+        expect(fatal(bool(transaction.has_value())));
+        if (transaction) {
+            expect(fatal(bool(transaction->after.root.children.size() == 2u)));
+            expect(fatal(bool(find_block(transaction->after.root, blank_id) == nullptr)));
+            expect(fatal(bool(transaction->selection_after.active.container_id == quote_content.id)));
+            expect(fatal(bool(transaction->selection_after.active.source_offset == quote_content.inline_content.source.size())));
+            expect_document_valid(transaction->after);
+        }
+    }
+
+    auto code_document = parse_document("```cpp\ncode\n```\n\n\nnext");
+    expect(fatal(bool(code_document.root.children.size() == 3u)));
+    if (code_document.root.children.size() == 3u) {
+        auto const blank_id = code_document.root.children[1].id;
+        auto const code_id = code_document.root.children[0].id;
+        auto const code_length = code_document.root.children[0].code_text.size();
+        auto transaction = document_delete_backward(code_document, caret(code_document.root.children[1], 0));
+        expect(fatal(bool(transaction.has_value())));
+        if (transaction) {
+            expect(fatal(bool(transaction->after.root.children.size() == 2u)));
+            expect(fatal(bool(find_block(transaction->after.root, blank_id) == nullptr)));
+            expect(fatal(bool(transaction->selection_after.active.container_id == code_id)));
+            expect(fatal(bool(transaction->selection_after.active.source_offset == code_length)));
+            expect_document_valid(transaction->after);
+        }
+    }
+};
+
+"delete_removes_blank_paragraph_before_structural_block"_test = [] {
+    auto document = parse_document("first\n\n\n> quoted");
+    expect(fatal(bool(document.root.children.size() == 3u)));
+    if (document.root.children.size() != 3u) return;
+    auto const blank_id = document.root.children[1].id;
+    auto const quote_content_id = document.root.children[2].children.front().id;
+    auto transaction = document_delete_forward(document, caret(document.root.children[1], 0));
+    expect(fatal(bool(transaction.has_value())));
+    if (!transaction) return;
+    expect(fatal(bool(transaction->after.root.children.size() == 2u)));
+    expect(fatal(bool(find_block(transaction->after.root, blank_id) == nullptr)));
+    expect(fatal(bool(transaction->selection_after.active.container_id == quote_content_id)));
+    expect(fatal(bool(transaction->selection_after.active.source_offset == 0u)));
+    expect_document_valid(transaction->after);
+};
+
 "cross_block_selection_deletes_structure_and_merges_sources"_test = [] {
     auto document = parse_document("alpha\n\nbeta\n\ngamma");
     TextSelection selection{

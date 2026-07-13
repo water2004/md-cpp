@@ -41,6 +41,33 @@ inline bool atomic_block(BlockKind kind) {
         || kind == BlockKind::UnsupportedMarkup || kind == BlockKind::Extension;
 }
 
+inline std::optional<TextPosition> first_editable_position(const BlockNode& block) {
+    if (text_block(block.kind) || block.kind == BlockKind::TableCell
+        || block.kind == BlockKind::CodeBlock || block.kind == BlockKind::MathBlock) {
+        return TextPosition{block.id, 0, TextAffinity::Downstream};
+    }
+    for (const auto& child : block.children) {
+        if (auto position = first_editable_position(child)) return position;
+    }
+    return std::nullopt;
+}
+
+inline std::optional<TextPosition> last_editable_position(const BlockNode& block) {
+    if (text_block(block.kind) || block.kind == BlockKind::TableCell) {
+        return TextPosition{block.id, block.inline_content.source.size(), TextAffinity::Upstream};
+    }
+    if (block.kind == BlockKind::CodeBlock) {
+        return TextPosition{block.id, block.code_text.size(), TextAffinity::Upstream};
+    }
+    if (block.kind == BlockKind::MathBlock) {
+        return TextPosition{block.id, block.tex.size(), TextAffinity::Upstream};
+    }
+    for (auto child = block.children.rbegin(); child != block.children.rend(); ++child) {
+        if (auto position = last_editable_position(*child)) return position;
+    }
+    return std::nullopt;
+}
+
 inline void scan_inline_ids(const InlineCstNodes& nodes, std::uint64_t& maximum) {
     for (const auto& node : nodes) {
         maximum = (std::max)(maximum, node.id.v);
@@ -349,6 +376,14 @@ inline bool join_adjacent(
                 target = TextPosition{owner, offset, TextAffinity::Upstream};
                 return true;
             }
+            if (backward && index > 0 && blocks[index].kind == BlockKind::Paragraph
+                && blocks[index].inline_content.source.empty()) {
+                if (auto previous = last_editable_position(blocks[index - 1])) {
+                    blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index));
+                    target = *previous;
+                    return true;
+                }
+            }
             if (!backward && index + 1 < blocks.size() && text_block(blocks[index + 1].kind)) {
                 const auto offset = blocks[index].inline_content.source.size();
                 blocks[index].inline_content.source += blocks[index + 1].inline_content.source;
@@ -356,6 +391,14 @@ inline bool join_adjacent(
                 blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index + 1));
                 target = TextPosition{blocks[index].id, offset, TextAffinity::Downstream};
                 return true;
+            }
+            if (!backward && index + 1 < blocks.size() && blocks[index].kind == BlockKind::Paragraph
+                && blocks[index].inline_content.source.empty()) {
+                if (auto next = first_editable_position(blocks[index + 1])) {
+                    blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index));
+                    target = *next;
+                    return true;
+                }
             }
         }
         if (join_adjacent(blocks[index].children, id, backward, document, allocator, target)) return true;
