@@ -3,6 +3,7 @@ import std;
 import elmd.core.ast;
 import elmd.core.block_tree;
 import elmd.core.document;
+import elmd.core.document_text;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
 import elmd.core.inline_parser;
@@ -303,10 +304,11 @@ inline std::optional<DocumentTransaction> document_delete_selection(const Editor
         return document_edit_detail::transaction(document, std::move(after), selection, TextSelection::caret(target), DocumentTransactionReason::Delete);
     }
 
-    std::vector<document_edit_detail::EditableNode> nodes;
-    document_edit_detail::collect_editable_nodes(after.root.children, nodes);
+    const auto nodes = document_text_fragments(after);
     auto index_of = [&](NodeId id) -> std::optional<std::size_t> {
-        for (std::size_t index = 0; index < nodes.size(); ++index) if (nodes[index].id == id) return index;
+        for (std::size_t index = 0; index < nodes.size(); ++index) {
+            if (nodes[index].container_id == id) return index;
+        }
         return std::nullopt;
     };
     auto anchor_index = index_of(selection.anchor.container_id);
@@ -327,7 +329,7 @@ inline std::optional<DocumentTransaction> document_delete_selection(const Editor
         + last_owner->source.substr(last.source_offset);
     if (!document_edit_detail::edit_inline(after, first.container_id, {0, first_owner->source.size()}, std::move(replacement), allocator)) return std::nullopt;
     for (std::size_t index = *anchor_index + 1; index <= *active_index; ++index) {
-        document_edit_detail::remove_node(after.root.children, nodes[index].id);
+        document_edit_detail::remove_node(after.root.children, nodes[index].container_id);
     }
     document_edit_detail::prune_empty_containers(after.root.children);
     if (after.root.children.empty()) after.root.children.push_back(document_edit_detail::empty_paragraph(allocator, after));
@@ -337,10 +339,12 @@ inline std::optional<DocumentTransaction> document_delete_selection(const Editor
 }
 
 inline std::optional<TextSelection> document_move_selection(const EditorDocument& document, const TextSelection& selection, DocumentMove movement, bool extend) {
-    std::vector<document_edit_detail::EditableNode> nodes; document_edit_detail::collect_editable_nodes(document.root.children, nodes);
+    const auto nodes = document_text_fragments(document);
     if (nodes.empty()) return std::nullopt;
     auto index_of = [&](NodeId id) -> std::optional<std::size_t> {
-        for (std::size_t index = 0; index < nodes.size(); ++index) if (nodes[index].id == id) return index;
+        for (std::size_t index = 0; index < nodes.size(); ++index) {
+            if (nodes[index].container_id == id) return index;
+        }
         return std::nullopt;
     };
     auto index = index_of(selection.active.container_id); if (!index) return std::nullopt;
@@ -352,14 +356,14 @@ inline std::optional<TextSelection> document_move_selection(const EditorDocument
             ? (anchor_first ? selection.anchor : selection.active) : (anchor_first ? selection.active : selection.anchor);
         return TextSelection::caret(target);
     }
-    if (movement == DocumentMove::DocumentStart) target = {nodes.front().id, 0, TextAffinity::Downstream};
-    else if (movement == DocumentMove::DocumentEnd) target = {nodes.back().id, nodes.back().text.size(), TextAffinity::Downstream};
+    if (movement == DocumentMove::DocumentStart) target = {nodes.front().container_id, 0, TextAffinity::Downstream};
+    else if (movement == DocumentMove::DocumentEnd) target = {nodes.back().container_id, nodes.back().text.size(), TextAffinity::Downstream};
     else if (movement == DocumentMove::Left) {
         if (target.source_offset > 0) --target.source_offset;
-        else if (*index > 0) target = {nodes[*index - 1].id, nodes[*index - 1].text.size(), TextAffinity::Upstream};
+        else if (*index > 0) target = {nodes[*index - 1].container_id, nodes[*index - 1].text.size(), TextAffinity::Upstream};
     } else if (movement == DocumentMove::Right) {
         if (target.source_offset < nodes[*index].text.size()) ++target.source_offset;
-        else if (*index + 1 < nodes.size()) target = {nodes[*index + 1].id, 0, TextAffinity::Downstream};
+        else if (*index + 1 < nodes.size()) target = {nodes[*index + 1].container_id, 0, TextAffinity::Downstream};
     } else {
         const auto& text = nodes[*index].text;
         const auto before = target.source_offset == 0 ? std::u32string::npos : text.rfind(U'\n', target.source_offset - 1);
@@ -388,9 +392,11 @@ inline std::optional<TextSelection> document_move_selection(const EditorDocument
 }
 
 inline std::optional<TextSelection> document_select_all(const EditorDocument& document) {
-    std::vector<document_edit_detail::EditableNode> nodes; document_edit_detail::collect_editable_nodes(document.root.children, nodes);
+    const auto nodes = document_text_fragments(document);
     if (nodes.empty()) return std::nullopt;
-    return TextSelection{{nodes.front().id, 0, TextAffinity::Downstream}, {nodes.back().id, nodes.back().text.size(), TextAffinity::Downstream}};
+    return TextSelection{
+        {nodes.front().container_id, 0, TextAffinity::Downstream},
+        {nodes.back().container_id, nodes.back().text.size(), TextAffinity::Downstream}};
 }
 
 } // namespace elmd

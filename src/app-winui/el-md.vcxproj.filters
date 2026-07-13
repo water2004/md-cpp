@@ -31,6 +31,7 @@
     <ClCompile Include="..\core\document_structure_edit.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\document_transaction.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\document_symbols.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\document_text.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\editor.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\error.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\extension.ixx"><Filter>Core Modules</Filter></ClCompile>

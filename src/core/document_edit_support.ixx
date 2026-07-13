@@ -467,18 +467,6 @@ inline void prune_empty_containers(BlockVec& blocks) {
     });
 }
 
-struct EditableNode { NodeId id{}; std::u32string text; };
-inline void collect_editable_nodes(const BlockVec& blocks, std::vector<EditableNode>& output) {
-    for (const auto& block : blocks) {
-        if (text_block(block.kind)) output.push_back({block.id, block.inline_content.source});
-        else if (block.kind == BlockKind::CodeBlock) output.push_back({block.id, block.code_text});
-        else if (block.kind == BlockKind::MathBlock) output.push_back({block.id, block.tex});
-        else if (atomic_block(block.kind)) output.push_back({block.id, U"\ufffc"});
-        else if (block.kind == BlockKind::TableCell) output.push_back({block.id, block.inline_content.source});
-        collect_editable_nodes(block.children, output);
-    }
-}
-
 inline bool set_heading(BlockVec& blocks, NodeId id, std::uint8_t level) {
     for (auto& block : blocks) {
         if (block.id == id && text_block(block.kind)) {

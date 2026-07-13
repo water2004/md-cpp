@@ -189,6 +189,9 @@
     <ClCompile Include="..\core\document_symbols.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\core\document_text.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\core\editor.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
