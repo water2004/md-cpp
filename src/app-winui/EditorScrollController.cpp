@@ -11,6 +11,7 @@ namespace winrt::ElMd
         std::atomic_uint64_t requestedFrameId = 0;
         std::atomic_uint64_t frameSequence = 0;
         std::atomic_uint64_t outstandingFrameId = 0;
+        std::atomic<float> frameIntervalSeconds = 1.0f / 120.0f;
         EditorScrollController* owner = nullptr;
         winrt::Microsoft::UI::Dispatching::DispatcherQueue dispatcher{ nullptr };
     };
@@ -138,6 +139,10 @@ namespace winrt::ElMd
             HANDLE requestHandles[] = { stopEvent, requestEvent };
             HANDLE frameHandles[] = { stopEvent, frameLatencyWaitableObject };
             auto lastRequestId = std::uint64_t{0};
+            auto lastFrameSignal = std::chrono::steady_clock::time_point{};
+            std::array<float, 16> frameIntervals{};
+            auto frameIntervalCount = std::size_t{0};
+            auto nextFrameInterval = std::size_t{0};
             while (!stopToken.stop_requested())
             {
                 if (WaitForMultipleObjects(2, requestHandles, FALSE, INFINITE) != WAIT_OBJECT_0 + 1) break;
@@ -146,6 +151,23 @@ namespace winrt::ElMd
                 if (frameId == 0 || frameId == lastRequestId) continue;
                 lastRequestId = frameId;
                 if (WaitForMultipleObjects(2, frameHandles, FALSE, INFINITE) != WAIT_OBJECT_0 + 1) break;
+                auto frameSignal = std::chrono::steady_clock::now();
+                if (lastFrameSignal.time_since_epoch().count() != 0)
+                {
+                    auto interval = std::chrono::duration<float>(frameSignal - lastFrameSignal).count();
+                    if (interval >= 1.0f / 500.0f && interval <= 1.0f / 30.0f)
+                    {
+                        frameIntervals[nextFrameInterval] = interval;
+                        nextFrameInterval = (nextFrameInterval + 1) % frameIntervals.size();
+                        frameIntervalCount = (std::min)(frameIntervalCount + 1, frameIntervals.size());
+                        auto sortedIntervals = frameIntervals;
+                        std::sort(sortedIntervals.begin(), sortedIntervals.begin() + frameIntervalCount);
+                        state->frameIntervalSeconds.store(
+                            sortedIntervals[frameIntervalCount / 2],
+                            std::memory_order_release);
+                    }
+                }
+                lastFrameSignal = frameSignal;
                 if (!state->attached.load(std::memory_order_acquire)) break;
                 auto queued = state->dispatcher.TryEnqueue(
                     winrt::Microsoft::UI::Dispatching::DispatcherQueuePriority::High,
@@ -222,10 +244,11 @@ namespace winrt::ElMd
         {
             return;
         }
-        // A callback represents one presentation opportunity. Advancing by a
-        // fixed step prevents UI-dispatch delays from becoming visible jumps.
-        constexpr float animationStepSeconds = 1.0f / 120.0f;
-        auto active = renderer->AdvanceScrollAnimation(animationStepSeconds);
+        auto frameInterval = frameDispatch
+            ? frameDispatch->frameIntervalSeconds.load(std::memory_order_acquire)
+            : 1.0f / 120.0f;
+        auto active = renderer->AdvanceScrollAnimation(
+            (std::clamp)(frameInterval, 1.0f / 240.0f, 1.0f / 30.0f));
         if (render) render();
         if (active) RequestFrame();
         else Stop();

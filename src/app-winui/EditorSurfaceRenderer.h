@@ -99,6 +99,8 @@ namespace winrt::ElMd
         float scrollInputPeriodSeconds = 0.0f;
         float lastScrollDelta = 0.0f;
         std::uint32_t scrollInputRunLength = 0;
+        bool continuousScrollInput = false;
+        float continuousScrollSpeed = 0.0f;
         float totalDocumentHeight = 0.0f;
         bool resizing = false;
         bool rendering = false;
