@@ -137,6 +137,13 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
             operations.end(),
             std::make_move_iterator(exited->operations.begin()),
             std::make_move_iterator(exited->operations.end()));
+    } else if (auto exited_raw = document_edit_detail::exit_complete_raw_block_at_end(
+                   after, current.active, allocator)) {
+        target = exited_raw->target;
+        operations.insert(
+            operations.end(),
+            std::make_move_iterator(exited_raw->operations.begin()),
+            std::make_move_iterator(exited_raw->operations.end()));
     } else if (auto exited_quote = document_edit_detail::exit_empty_block_quote(after, current.active, allocator)) {
         target = exited_quote->target;
         operations.insert(

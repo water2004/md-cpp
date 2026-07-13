@@ -512,6 +512,39 @@ inline std::optional<RecordedBlockEdit> exit_empty_indented_code(
     return result;
 }
 
+inline std::optional<RecordedBlockEdit> exit_complete_raw_block_at_end(
+    EditorDocument& document,
+    TextPosition position,
+    NodeAllocator& allocator) {
+    auto path = block_path(document.root, position.container_id);
+    if (!path || path->empty()) return std::nullopt;
+    auto* block = block_at_path(document.root, *path);
+    if (!block || (block->kind != BlockKind::CodeBlock
+            && block->kind != BlockKind::MathBlock)
+        || !block->block_source.tree.complete_closing
+        || position.source_offset != block->block_source.source.size()) {
+        return std::nullopt;
+    }
+
+    auto parent_path = *path;
+    const auto index = parent_path.back();
+    parent_path.pop_back();
+    auto* parent = block_at_path(document.root, parent_path);
+    if (!parent || index >= parent->children.size()) return std::nullopt;
+
+    auto paragraph = empty_paragraph(allocator, document);
+    RecordedBlockEdit result;
+    result.target = {paragraph.id, 0, TextAffinity::Downstream};
+    DocumentTreeEdit insert;
+    insert.kind = DocumentTreeEditKind::Insert;
+    insert.parent_id = parent->id;
+    insert.index = index + 1;
+    insert.after = paragraph;
+    result.operations.emplace_back(std::move(insert));
+    if (!insert_block(*parent, index + 1, std::move(paragraph))) return std::nullopt;
+    return result;
+}
+
 inline std::optional<RecordedBlockEdit> exit_empty_block_quote(
     EditorDocument& document,
     TextPosition position,

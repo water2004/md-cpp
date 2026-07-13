@@ -908,6 +908,62 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.selection().active.source_offset == 4u)));
 };
 
+"enter_after_a_complete_raw_block_creates_a_sibling_paragraph"_test = [] {
+    for (const auto& markdown : {
+            std::string{"$$\nx + y\n$$"},
+            std::string{"```cpp\nvalue\n```"},
+        }) {
+        Editor editor(markdown);
+        const auto raw_id = editor.document().root.children.front().id;
+        const auto raw_size = editor.document().root.children.front().block_source.source.size();
+        const auto raw_source = editor.document().root.children.front().block_source.source;
+        editor.set_selection(TextSelection::caret({
+            raw_id,
+            raw_size,
+            TextAffinity::Downstream,
+        }));
+        expect(fatal(bool(editor.execute_document_enter(editor.selection()).has_value()))) << markdown;
+        expect(fatal(bool(editor.document().root.children.size() == 2u))) << markdown;
+        expect(fatal(bool(editor.document().root.children.front().id == raw_id))) << markdown;
+        expect(fatal(bool(editor.document().root.children.front().block_source.source == raw_source))) << markdown;
+        expect(fatal(bool(editor.document().root.children.back().kind == BlockKind::Paragraph))) << markdown;
+        expect(fatal(bool(editor.selection().active.container_id
+            == editor.document().root.children.back().id))) << markdown;
+        expect(fatal(bool(editor.selection().active.source_offset == 0u))) << markdown;
+    }
+};
+
+"enter_after_nested_complete_raw_block_stays_in_its_direct_container"_test = [] {
+    Editor editor("> - ```cpp\n>   value\n>   ```");
+    const BlockNode* code = nullptr;
+    walk_blocks(editor.document().root, [&](const BlockNode& block) {
+        if (!code && block.kind == BlockKind::CodeBlock) code = &block;
+    });
+    expect(fatal(bool(code != nullptr)));
+    if (!code) return;
+    editor.set_selection(TextSelection::caret({
+        code->id,
+        code->block_source.source.size(),
+        TextAffinity::Downstream,
+    }));
+    expect(fatal(bool(editor.execute_document_enter(editor.selection()).has_value())));
+    const auto* paragraph = find_block(
+        editor.document().root,
+        editor.selection().active.container_id);
+    expect(fatal(bool(paragraph && paragraph->kind == BlockKind::Paragraph)));
+    expect(fatal(bool(editor.document().root.children.front().kind == BlockKind::BlockQuote)));
+    expect(fatal(bool(editor.document().root.children.front().children.front().kind == BlockKind::List)));
+    const BlockNode* list_item = nullptr;
+    walk_blocks(editor.document().root, [&](const BlockNode& block) {
+        if (!list_item && block.kind == BlockKind::ListItem) list_item = &block;
+    });
+    expect(fatal(bool(list_item != nullptr)));
+    if (!list_item) return;
+    expect(fatal(bool(list_item->children.size() == 2u)));
+    expect(fatal(bool(list_item->children.front().kind == BlockKind::CodeBlock)));
+    expect(fatal(bool(list_item->children.back().id == editor.selection().active.container_id)));
+};
+
 "command_pipeline_exposes_typed_and_toolbar_raw_blocks_to_rendering_immediately"_test = [] {
     struct TypedCase {
         std::u32string opening;
