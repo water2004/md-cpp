@@ -1503,6 +1503,81 @@ suite editor_tests = [] {
     }
 };
 
+"enter_replaces_the_source_selection_before_applying_block_semantics"_test = [] {
+    auto exercise = [](std::string markdown, std::u32string_view selected_source,
+                       std::u32string_view expected_first, std::u32string_view expected_second) {
+        Editor editor(std::move(markdown));
+        const auto fragments = document_text_fragments(editor.document());
+        auto selected = std::find_if(fragments.begin(), fragments.end(), [&](const auto& fragment) {
+            return fragment.text == selected_source;
+        });
+        expect(fatal(bool(selected != fragments.end())));
+        if (selected == fragments.end()) return;
+
+        const auto before_markdown = editor.markdown_utf8();
+        const TextSelection before{
+            {selected->container_id, 1, TextAffinity::Downstream},
+            {selected->container_id, 3, TextAffinity::Downstream},
+        };
+        editor.set_selection(before);
+        reset_core_operation_counters();
+        auto transaction = editor.execute_document_enter(editor.selection());
+        expect(fatal(bool(transaction.has_value())));
+        if (!transaction) return;
+        const auto counters = read_core_operation_counters();
+        expect(fatal(bool(counters.full_document_parses == 0u)));
+        expect(fatal(bool(counters.full_document_serializations == 0u)));
+        expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
+
+        const auto after_fragments = document_text_fragments(editor.document());
+        auto first = std::find_if(after_fragments.begin(), after_fragments.end(), [&](const auto& fragment) {
+            return fragment.text == expected_first;
+        });
+        auto second = std::find_if(after_fragments.begin(), after_fragments.end(), [&](const auto& fragment) {
+            return fragment.text == expected_second;
+        });
+        expect(fatal(bool(first != after_fragments.end())));
+        expect(fatal(bool(second != after_fragments.end())));
+        const auto after_markdown = editor.markdown_utf8();
+        const auto after_selection = editor.selection();
+
+        expect(fatal(bool(editor.undo())));
+        expect(fatal(bool(editor.markdown_utf8() == before_markdown)));
+        expect(fatal(bool(editor.selection() == before)));
+        expect(fatal(bool(editor.redo())));
+        expect(fatal(bool(editor.markdown_utf8() == after_markdown)));
+        expect(fatal(bool(editor.selection() == after_selection)));
+    };
+
+    exercise("abcd", U"abcd", U"a", U"d");
+    exercise("> abcd", U"abcd", U"a", U"d");
+    exercise("- abcd", U"abcd", U"a", U"d");
+    exercise("> [!NOTE] abcd\n> body", U"abcd", U"a", U"d");
+    exercise("| abcd |\n| --- |", U"abcd", U"a<br>d", U"a<br>d");
+};
+
+"table_line_break_is_one_semantic_delete_unit"_test = [] {
+    Editor editor("| abcd |\n| --- |");
+    const auto owner = first_text(editor).id;
+    editor.set_selection({
+        {owner, 1, TextAffinity::Downstream},
+        {owner, 3, TextAffinity::Downstream},
+    });
+    expect(fatal(bool(editor.execute_document_enter(editor.selection()).has_value())));
+    expect(fatal(bool(*editor.editable_source(owner) == U"a<br>d")));
+    expect(fatal(bool(editor.selection().active.source_offset == 5u)));
+
+    reset_core_operation_counters();
+    expect(fatal(bool(editor.execute_document_delete_backward(editor.selection()).has_value())));
+    const auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_parses == 0u)));
+    expect(fatal(bool(counters.full_document_serializations == 0u)));
+    expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
+    expect(fatal(bool(counters.inline_reparses == 1u)));
+    expect(fatal(bool(*editor.editable_source(owner) == U"ad")));
+    expect(fatal(bool(editor.selection().active.source_offset == 1u)));
+};
+
 "representative_inline_states_round_trip_through_every_editable_context"_test = [] {
     const std::vector<std::u32string> samples{
         U"abc", U"*abc*", U"_abc_", U"**abc**", U"__abc__", U"**", U"**abc",

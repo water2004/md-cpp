@@ -76,53 +76,69 @@ inline std::optional<DocumentTransaction> document_insert_text(const EditorDocum
 }
 
 inline std::optional<DocumentTransaction> document_enter(const EditorDocument& document, const TextSelection& selection) {
-    if (!selection.is_caret()) return std::nullopt;
     auto after = document;
+    auto current = selection;
+    std::vector<DocumentOperation> operations;
+    if (!current.is_caret()) {
+        auto deletion = document_delete_selection(after, current);
+        if (!deletion) return std::nullopt;
+        operations.insert(
+            operations.end(),
+            std::make_move_iterator(deletion->operations.begin()),
+            std::make_move_iterator(deletion->operations.end()));
+        after = std::move(deletion->after);
+        current = deletion->selection_after;
+    }
     document_edit_detail::NodeAllocator allocator(after);
     TextPosition target;
     std::optional<AppliedSourceEdit> source_edit;
-    std::vector<DocumentOperation> operations;
-    if (auto exited = document_edit_detail::exit_empty_indented_code(after, selection.active, allocator)) {
+    if (auto exited = document_edit_detail::exit_empty_indented_code(after, current.active, allocator)) {
         target = exited->target;
-        operations = std::move(exited->operations);
-    } else if (auto exited_quote = document_edit_detail::exit_empty_block_quote(after, selection.active, allocator)) {
+        operations.insert(
+            operations.end(),
+            std::make_move_iterator(exited->operations.begin()),
+            std::make_move_iterator(exited->operations.end()));
+    } else if (auto exited_quote = document_edit_detail::exit_empty_block_quote(after, current.active, allocator)) {
         target = exited_quote->target;
-        operations = std::move(exited_quote->operations);
-    } else if (auto handled = document_input_rules::handle_enter(after, selection.active, allocator)) {
+        operations.insert(
+            operations.end(),
+            std::make_move_iterator(exited_quote->operations.begin()),
+            std::make_move_iterator(exited_quote->operations.end()));
+    } else if (auto handled = document_input_rules::handle_enter(after, current.active, allocator)) {
         target = handled->target;
-        operations = std::move(handled->operations);
-    } else if (auto* block = find_block(after.root, selection.active.container_id);
+        operations.insert(
+            operations.end(),
+            std::make_move_iterator(handled->operations.begin()),
+            std::make_move_iterator(handled->operations.end()));
+    } else if (auto* block = find_block(after.root, current.active.container_id);
                block && (block->kind == BlockKind::CodeBlock || block->kind == BlockKind::MathBlock)) {
-        auto inserted = document_edit_detail::insert_text(after, selection.active, U"\n", allocator);
+        auto inserted = document_edit_detail::insert_text(after, current.active, U"\n", allocator);
         if (!inserted) return std::nullopt;
         source_edit = std::move(inserted->source_edit);
-        target = selection.active;
+        target = current.active;
         target.source_offset = inserted->offset;
         target.affinity = inserted->affinity;
     } else if (block && block->kind == BlockKind::TableCell) {
-        const auto offset = (std::min)(selection.active.source_offset, block->inline_content.source.size());
+        const auto offset = (std::min)(current.active.source_offset, block->inline_content.source.size());
         source_edit = document_edit_detail::edit_inline(after, block->id, {offset, offset}, U"<br>", allocator);
         if (!source_edit) return std::nullopt;
         target = {block->id, offset + 4, TextAffinity::Downstream};
     } else {
         auto split = document_edit_detail::split_direct(
             after,
-            selection.active.container_id,
-            selection.active.source_offset,
+            current.active.container_id,
+            current.active.source_offset,
             allocator);
         if (!split) return std::nullopt;
         target = split->target;
-        operations = std::move(split->operations);
+        operations.insert(
+            operations.end(),
+            std::make_move_iterator(split->operations.begin()),
+            std::make_move_iterator(split->operations.end()));
     }
     ++after.revision;
     if (source_edit) {
-        return document_edit_detail::source_transaction(
-            std::move(after),
-            std::move(*source_edit),
-            selection,
-            TextSelection::caret(target),
-            document.revision,
-            DocumentTransactionReason::Structure);
+        document_edit_detail::append_source_operation(operations, std::move(*source_edit));
     }
     if (operations.empty()) return std::nullopt;
     return make_recorded_document_transaction(
