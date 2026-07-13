@@ -410,22 +410,48 @@ inline std::optional<DocumentTransaction> document_delete_selection(const Editor
         std::swap(anchor_index, active_index);
         std::swap(first, last);
     }
-    auto* first_owner = document_edit_detail::find_inline_owner(after.root.children, first.container_id);
-    auto* last_owner = document_edit_detail::find_inline_owner(after.root.children, last.container_id);
-    if (!first_owner || !last_owner) return std::nullopt;
-    first.source_offset = (std::min)(first.source_offset, first_owner->source.size());
-    last.source_offset = (std::min)(last.source_offset, last_owner->source.size());
-    auto replacement = first_owner->source.substr(0, first.source_offset)
-        + last_owner->source.substr(last.source_offset);
-    if (!document_edit_detail::edit_inline(after, first.container_id, {0, first_owner->source.size()}, std::move(replacement), allocator)) return std::nullopt;
+    auto first_source = document_editable_text(after, first.container_id);
+    auto last_source = document_editable_text(after, last.container_id);
+    if (!first_source || !last_source) return std::nullopt;
+    first.source_offset = (std::min)(first.source_offset, first_source->size());
+    last.source_offset = (std::min)(last.source_offset, last_source->size());
+    auto suffix = last_source->substr(last.source_offset);
+    auto source_edit = document_edit_detail::edit_block_source(
+        after,
+        first.container_id,
+        {first.source_offset, first_source->size()},
+        std::move(suffix),
+        allocator);
+    if (!source_edit) return std::nullopt;
+    std::vector<DocumentOperation> operations;
+    document_edit_detail::append_source_operation(operations, std::move(*source_edit));
     for (std::size_t index = *anchor_index + 1; index <= *active_index; ++index) {
-        document_edit_detail::remove_node(after.root.children, nodes[index].container_id);
+        auto remove = document_edit_detail::remove_node_recorded(
+            after,
+            nodes[index].container_id);
+        if (!remove) return std::nullopt;
+        operations.emplace_back(std::move(*remove));
     }
-    document_edit_detail::prune_empty_containers(after.root.children);
-    if (after.root.children.empty()) after.root.children.push_back(document_edit_detail::empty_paragraph(allocator, after));
+    document_edit_detail::prune_empty_containers_recorded(after.root, operations);
+    if (after.root.children.empty()) {
+        auto paragraph = document_edit_detail::empty_paragraph(allocator, after);
+        DocumentTreeEdit insert;
+        insert.kind = DocumentTreeEditKind::Insert;
+        insert.parent_id = after.root.id;
+        insert.index = 0;
+        insert.after = paragraph;
+        operations.emplace_back(std::move(insert));
+        after.root.children.push_back(std::move(paragraph));
+    }
     ++after.revision;
     const auto target = TextPosition{first.container_id, first.source_offset, TextAffinity::Downstream};
-    return document_edit_detail::transaction(document, std::move(after), selection, TextSelection::caret(target), DocumentTransactionReason::Delete);
+    return make_recorded_document_transaction(
+        std::move(after),
+        std::move(operations),
+        selection,
+        TextSelection::caret(target),
+        document.revision,
+        DocumentTransactionReason::Delete);
 }
 
 inline std::optional<TextSelection> document_move_selection(const EditorDocument& document, const TextSelection& selection, DocumentMove movement, bool extend) {

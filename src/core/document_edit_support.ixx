@@ -750,34 +750,61 @@ inline std::optional<RecordedBlockEdit> remove_atomic(
     return result;
 }
 
-inline bool remove_node(BlockVec& blocks, NodeId id) {
-    for (std::size_t index = 0; index < blocks.size(); ++index) {
-        if (blocks[index].id == id) {
-            blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index));
-            return true;
-        }
-        if (remove_node(blocks[index].children, id)) return true;
-    }
-    return false;
+inline std::optional<DocumentTreeEdit> remove_node_recorded(
+    EditorDocument& document,
+    NodeId id) {
+    auto path = block_path(document.root, id);
+    if (!path || path->empty()) return std::nullopt;
+    auto parent_path = *path;
+    const auto index = parent_path.back();
+    parent_path.pop_back();
+    auto* parent = block_at_path(document.root, parent_path);
+    if (!parent || index >= parent->children.size()) return std::nullopt;
+    DocumentTreeEdit remove;
+    remove.kind = DocumentTreeEditKind::Remove;
+    remove.parent_id = parent->id;
+    remove.index = index;
+    remove.before = parent->children[index];
+    parent->children.erase(parent->children.begin() + static_cast<std::ptrdiff_t>(index));
+    return remove;
 }
 
-inline void prune_empty_containers(BlockVec& blocks) {
-    for (auto& block : blocks) prune_empty_containers(block.children);
-    std::erase_if(blocks, [](const BlockNode& block) {
-        switch (block.kind) {
-            case BlockKind::BlockQuote:
-            case BlockKind::Callout:
-            case BlockKind::FootnoteDefinition:
-            case BlockKind::List:
-            case BlockKind::TaskList:
-            case BlockKind::ListItem:
-            case BlockKind::TaskListItem:
-            case BlockKind::TableRow:
-                return block.children.empty();
-            default:
-                return false;
+inline bool prunable_empty_container(const BlockNode& block) {
+    if (!block.children.empty()) return false;
+    switch (block.kind) {
+        case BlockKind::BlockQuote:
+        case BlockKind::FootnoteDefinition:
+        case BlockKind::List:
+        case BlockKind::TaskList:
+        case BlockKind::ListItem:
+        case BlockKind::TaskListItem:
+        case BlockKind::TableRow:
+            return true;
+        case BlockKind::Callout:
+            return !block.callout_title.has_value();
+        default:
+            return false;
+    }
+}
+
+inline void prune_empty_containers_recorded(
+    BlockNode& parent,
+    std::vector<DocumentOperation>& operations) {
+    std::size_t index = 0;
+    while (index < parent.children.size()) {
+        prune_empty_containers_recorded(parent.children[index], operations);
+        if (!prunable_empty_container(parent.children[index])) {
+            ++index;
+            continue;
         }
-    });
+        DocumentTreeEdit remove;
+        remove.kind = DocumentTreeEditKind::Remove;
+        remove.parent_id = parent.id;
+        remove.index = index;
+        remove.before = parent.children[index];
+        operations.emplace_back(std::move(remove));
+        parent.children.erase(parent.children.begin() + static_cast<std::ptrdiff_t>(index));
+    }
 }
 
 inline bool set_heading(BlockVec& blocks, NodeId id, std::uint8_t level) {

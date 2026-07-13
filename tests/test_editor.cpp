@@ -513,6 +513,79 @@ suite editor_tests = [] {
     if (nested_child) exercise(nested_list, nested_child->id, "nested list");
 };
 
+"cross_block_selection_delete_records_source_and_pruning_operations"_test = [] {
+    auto exercise = [](Editor& editor, TextSelection selection, std::string_view label) {
+        const auto before_markdown = editor.markdown_utf8();
+        editor.set_selection(selection);
+        reset_core_operation_counters();
+        auto transaction = editor.execute_document_delete_selection(editor.selection());
+        expect(fatal(bool(transaction.has_value()))) << label;
+        if (!transaction) return;
+        const auto counters = read_core_operation_counters();
+        expect(fatal(bool(counters.full_document_parses == 0u))) << label;
+        expect(fatal(bool(counters.full_document_serializations == 0u))) << label;
+        expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << label;
+        expect(fatal(bool(!transaction->operations.empty()))) << label;
+        const auto after_markdown = editor.markdown_utf8();
+        const auto after = editor.selection();
+        expect(fatal(bool(editor.undo()))) << label;
+        expect(fatal(bool(editor.markdown_utf8() == before_markdown))) << label;
+        expect(fatal(bool(editor.selection() == selection))) << label;
+        expect(fatal(bool(editor.redo()))) << label;
+        expect(fatal(bool(editor.markdown_utf8() == after_markdown))) << label;
+        expect(fatal(bool(editor.selection() == after))) << label;
+    };
+
+    Editor paragraphs("alpha\n\nbeta\n\ngamma");
+    exercise(
+        paragraphs,
+        TextSelection{
+            {paragraphs.document().root.children.front().id, 2, TextAffinity::Downstream},
+            {paragraphs.document().root.children.back().id, 3, TextAffinity::Downstream}},
+        "paragraphs");
+
+    Editor nested("alpha\n\n> beta\n\n- gamma\n\nomega");
+    const BlockNode* first = nullptr;
+    const BlockNode* last = nullptr;
+    walk_blocks(nested.document().root, [&](const BlockNode& block) {
+        if (block.kind != BlockKind::Paragraph) return;
+        if (block.inline_content.source == U"alpha") first = &block;
+        if (block.inline_content.source == U"omega") last = &block;
+    });
+    expect(fatal(bool(first != nullptr && last != nullptr)));
+    if (first && last) {
+        exercise(
+            nested,
+            TextSelection{
+                {first->id, 2, TextAffinity::Downstream},
+                {last->id, 2, TextAffinity::Downstream}},
+            "nested containers");
+    }
+
+    Editor callout("> [!NOTE] title\n> body");
+    const auto callout_id = callout.document().root.children.front().id;
+    const auto body_id = callout.document().root.children.front().children.front().id;
+    exercise(
+        callout,
+        TextSelection{
+            {callout_id, 2, TextAffinity::Downstream},
+            {body_id, 2, TextAffinity::Downstream}},
+        "callout title to body");
+    const auto* remaining_callout = find_block(callout.document().root, callout_id);
+    expect(fatal(bool(remaining_callout != nullptr)));
+    expect(fatal(bool(remaining_callout && remaining_callout->callout_title.has_value())));
+
+    Editor raw("```\nalpha\n```\n\nomega");
+    const auto code_id = raw.document().root.children.front().id;
+    const auto paragraph_id = raw.document().root.children.back().id;
+    exercise(
+        raw,
+        TextSelection{
+            {code_id, 2, TextAffinity::Downstream},
+            {paragraph_id, 2, TextAffinity::Downstream}},
+        "raw source boundary");
+};
+
 "selection_replacement_composes_delete_and_insert_source_edits"_test = [] {
     Editor editor("alpha");
     const auto owner_id = first_text(editor).id;
