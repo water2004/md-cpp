@@ -146,6 +146,9 @@ struct Builder {
             out.push_back(std::move(item));
             line_start = line_end;
         }
+        if (block.code_text.back() == U'\n') {
+            append_generated_indent(out, block.id, block.code_text.size(), indent_columns + content_padding_columns);
+        }
     }
     void append_list_contents(std::vector<InlineRenderItem>& out, const BlockNode& list, std::size_t depth, std::size_t indent_columns = 0) {
         auto append_items = [&](const BlockVec& items, bool tasks) {
@@ -179,6 +182,10 @@ struct Builder {
                         : list.list_ordered ? std::to_string(list.list_start + index).size() + 2
                         : std::size_t{2};
                     append_nested_block(out, child, depth + 1, indent_columns + marker_columns);
+                    if (child_index > 0 && child.kind == BlockKind::Paragraph
+                        && child.inline_content.source.empty()) {
+                        append_generated_indent(out, child.id, 0, indent_columns + marker_columns);
+                    }
                 }
                 if (index + 1 < items.size()) {
                     auto previous = last_editable_position(item)

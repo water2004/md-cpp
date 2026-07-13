@@ -9,9 +9,11 @@
 
 #include "elmd_test.hpp"
 import elmd.core.parser;
+import elmd.core.document_edit;
 import elmd.core.render_builder;
 import elmd.core.render_model;
 import elmd.core.ast;
+import elmd.core.block_tree;
 import elmd.core.text_measurer;
 import elmd.core.block_layout;
 import elmd.core.hit_test;
@@ -245,7 +247,7 @@ suite render_layout_tests = [] {
                 flattened_code += item.text;
             }
         }
-        expect(fatal(bool(line_indents == 4u)));
+        expect(fatal(bool(line_indents == code->line_count)));
         expect(fatal(bool(flattened_code == code->code_text)));
         auto trailingBreak = std::find_if(list.inline_items.begin(), list.inline_items.end(), [&](auto const& item) {
             return item.marker_role == MarkerRole::Structural && item.text == U"\n"
@@ -259,6 +261,74 @@ suite render_layout_tests = [] {
         if (item.kind == InlineRenderItem::Kind::Text && item.style.code) styled_code = true;
     }
     expect(fatal(bool(styled_code)));
+};
+
+"enter_at_nested_code_end_keeps_the_caret_on_list_content_indent"_test = [] {
+    auto parsed = parse_text(1,
+        "1. item\n"
+        "\n"
+        "        code\n"
+        "\n"
+        "2. next\n");
+    BlockNode const* code = nullptr;
+    walk_blocks(parsed.document.root, [&](BlockNode const& block) {
+        if (!code && block.kind == BlockKind::CodeBlock) code = &block;
+    });
+    expect(fatal(bool(code != nullptr)));
+    if (!code || code->code_text.empty() || code->code_text.back() != U'\n') return;
+
+    auto inserted = document_enter(parsed.document, TextSelection::caret({
+        code->id,
+        code->code_text.size() - 1,
+        TextAffinity::Downstream}));
+    expect(fatal(bool(inserted.has_value())));
+    if (!inserted) return;
+    expect(fatal(bool(inserted->selection_after.active.container_id == code->id)));
+    auto model = build_render_model(inserted->after, Outline::empty(inserted->after.revision));
+    expect(fatal(bool(model.blocks.size() == 1u)));
+    if (model.blocks.empty()) return;
+    auto caretIndent = std::find_if(model.blocks.front().inline_items.begin(), model.blocks.front().inline_items.end(), [&](auto const& item) {
+        return item.marker_role == MarkerRole::Structural
+            && item.source_span.container_id == inserted->selection_after.active.container_id
+            && item.source_span.source_range.start == inserted->selection_after.active.source_offset
+            && !item.display_text.empty()
+            && std::all_of(item.display_text.begin(), item.display_text.end(), [](char32_t value) { return value == U' '; });
+    });
+    expect(fatal(bool(caretIndent != model.blocks.front().inline_items.end())));
+};
+
+"exiting_nested_code_maps_the_empty_paragraph_to_list_content_indent"_test = [] {
+    auto parsed = parse_text(1,
+        "1. item\n"
+        "\n"
+        "        code\n"
+        "\n"
+        "2. next\n");
+    BlockNode const* code = nullptr;
+    walk_blocks(parsed.document.root, [&](BlockNode const& block) {
+        if (!code && block.kind == BlockKind::CodeBlock) code = &block;
+    });
+    expect(fatal(bool(code != nullptr)));
+    if (!code) return;
+
+    auto exited = document_enter(parsed.document, TextSelection::caret({
+        code->id,
+        code->code_text.size(),
+        TextAffinity::Downstream}));
+    expect(fatal(bool(exited.has_value())));
+    if (!exited) return;
+    expect(fatal(bool(exited->selection_after.active.container_id != code->id)));
+    auto model = build_render_model(exited->after, Outline::empty(exited->after.revision));
+    expect(fatal(bool(model.blocks.size() == 1u)));
+    if (model.blocks.empty()) return;
+    auto caretIndent = std::find_if(model.blocks.front().inline_items.begin(), model.blocks.front().inline_items.end(), [&](auto const& item) {
+        return item.marker_role == MarkerRole::Structural
+            && item.source_span.container_id == exited->selection_after.active.container_id
+            && item.source_span.source_range.start == 0u
+            && !item.display_text.empty()
+            && std::all_of(item.display_text.begin(), item.display_text.end(), [](char32_t value) { return value == U' '; });
+    });
+    expect(fatal(bool(caretIndent != model.blocks.front().inline_items.end())));
 };
 
 "list_render_model_retains_nested_quote_identity_and_indent"_test = [] {
