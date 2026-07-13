@@ -569,11 +569,12 @@ public:
             while (content_end > content_start && (cps[content_end - 1] == U' ' || cps[content_end - 1] == U'\t')) --content_end;
         } else {
             closing_start = line_end;
+            content_end = line_end;
         }
         pos = line_end;
         if (peek1() == '\n') advance();
         auto inline_content = make_inline_document(content_start, content_end);
-        std::u32string title = inline_visible_text(inline_content);
+        std::u32string title = trim_cps_(inline_visible_text(inline_content));
         std::string title_utf8 = cps_to_utf8(title);
         std::string slug = generate_slug(title_utf8, {});
         NodeId id = next_node_id();

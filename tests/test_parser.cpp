@@ -264,6 +264,29 @@ suite parser_tests = [] {
     }
 };
 
+"atx_heading_keeps_non_closing_trailing_whitespace_in_local_source"_test = [] {
+    for (const auto& source : {
+             std::string{"# title  "},
+             std::string{"## _title_\t"},
+         }) {
+        const auto parsed = parse_text(1, source);
+        expect(fatal(bool(parsed.document.root.children.size() == 1u))) << source;
+        if (parsed.document.root.children.size() != 1) continue;
+        const auto& heading = parsed.document.root.children.front();
+        expect(fatal(bool(heading.kind == BlockKind::Heading))) << source;
+        expect(fatal(bool(heading.inline_content.source.ends_with(
+            source.back() == '\t' ? U"\t" : U"  ")))) << source;
+        expect_lossless(heading.inline_content);
+        expect(fatal(bool(serialize_markdown(parsed.document) == source))) << source;
+    }
+
+    const auto closed = parse_text(1, "# title  ###  ");
+    const auto& heading = closed.document.root.children.front();
+    expect(fatal(bool(heading.inline_content.source == U"title")));
+    expect(fatal(bool(heading.closing_marker == U"  ###  ")));
+    expect(fatal(bool(serialize_markdown(closed.document) == "# title  ###  ")));
+};
+
 "tables_give_every_cell_its_own_inline_document"_test = [] {
     const auto parsed = parse_text(1,
         "| **A** | $B$ |\n"
