@@ -1101,6 +1101,72 @@ suite editor_tests = [] {
     expect(fatal(bool(table_node.children.front().children.front().kind == BlockKind::TableCell)));
 };
 
+"simple_structure_commands_publish_reversible_operations"_test = [] {
+    auto verify = [](
+        Editor& editor,
+        const std::string& before_markdown,
+        TextSelection before,
+        const std::optional<DocumentTransaction>& transaction,
+        std::string_view label) {
+        expect(fatal(bool(transaction.has_value()))) << label;
+        if (!transaction) return;
+        const auto counters = read_core_operation_counters();
+        expect(fatal(bool(counters.full_document_parses == 0u))) << label;
+        expect(fatal(bool(counters.full_document_serializations == 0u))) << label;
+        expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << label;
+        expect(fatal(bool(!transaction->operations.empty()))) << label;
+        const auto after_markdown = editor.markdown_utf8();
+        const auto after = editor.selection();
+        expect(fatal(bool(editor.undo()))) << label;
+        expect(fatal(bool(editor.markdown_utf8() == before_markdown))) << label;
+        expect(fatal(bool(editor.selection() == before))) << label;
+        expect(fatal(bool(editor.redo()))) << label;
+        expect(fatal(bool(editor.markdown_utf8() == after_markdown))) << label;
+        expect(fatal(bool(editor.selection() == after))) << label;
+    };
+
+    Editor heading("title");
+    auto heading_before = caret(first_text(heading), 2);
+    const auto heading_markdown = heading.markdown_utf8();
+    heading.set_selection(heading_before);
+    reset_core_operation_counters();
+    auto heading_transaction = heading.execute_document_set_heading(heading.selection(), 2);
+    verify(heading, heading_markdown, heading_before, heading_transaction, "heading");
+
+    Editor task("- [ ] item");
+    auto task_before = caret(first_text(task), 1);
+    const auto task_markdown = task.markdown_utf8();
+    task.set_selection(task_before);
+    reset_core_operation_counters();
+    auto task_transaction = task.execute_document_toggle_task_checkbox(task.selection());
+    verify(task, task_markdown, task_before, task_transaction, "task checkbox");
+    expect(fatal(bool(task.markdown_utf8() == "- [x] item")));
+
+    Editor nested_atomic("> body");
+    auto atomic_before = caret(first_text(nested_atomic), 2);
+    const auto atomic_markdown = nested_atomic.markdown_utf8();
+    nested_atomic.set_selection(atomic_before);
+    Command code;
+    code.kind = CommandKind::InsertCodeBlock;
+    reset_core_operation_counters();
+    auto atomic_transaction = nested_atomic.execute_document_insert_atomic_block(
+        nested_atomic.selection(), code);
+    expect(fatal(bool(nested_atomic.document().root.children.front().children.size() == 2u)));
+    verify(nested_atomic, atomic_markdown, atomic_before, atomic_transaction, "nested atomic");
+
+    Editor footnote("body");
+    auto footnote_before = caret(first_text(footnote), 4);
+    const auto footnote_markdown = footnote.markdown_utf8();
+    footnote.set_selection(footnote_before);
+    Command insert_footnote;
+    insert_footnote.kind = CommandKind::InsertFootnote;
+    insert_footnote.text = U"note";
+    reset_core_operation_counters();
+    auto footnote_transaction = footnote.execute_document_insert_footnote(
+        footnote.selection(), insert_footnote);
+    verify(footnote, footnote_markdown, footnote_before, footnote_transaction, "footnote");
+};
+
 "table_navigation_changes_selection_without_creating_history"_test = [] {
     Editor editor("| A | B |\n| --- | --- |\n| 1 | 2 |");
     const auto& table = editor.document().root.children.front();

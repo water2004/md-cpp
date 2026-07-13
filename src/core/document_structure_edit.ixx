@@ -16,8 +16,25 @@ export namespace elmd {
 
 inline std::optional<DocumentTransaction> document_set_heading(const EditorDocument& document, const TextSelection& selection, std::uint8_t level) {
     if (level > 6 || selection.anchor.container_id != selection.active.container_id) return std::nullopt;
-    auto after = document; if (!document_edit_detail::set_heading(after.root.children, selection.active.container_id, level)) return std::nullopt;
-    ++after.revision; return document_edit_detail::transaction(document, std::move(after), selection, selection, DocumentTransactionReason::Structure);
+    auto after = document;
+    auto* block = find_block(after.root, selection.active.container_id);
+    if (!block || !document_edit_detail::text_block(block->kind)) return std::nullopt;
+    DocumentTreeEdit update;
+    update.kind = DocumentTreeEditKind::UpdatePayload;
+    update.before = document_transaction_detail::payload_shell(*block);
+    block->kind = level == 0 ? BlockKind::Paragraph : BlockKind::Heading;
+    block->level = level;
+    update.after = document_transaction_detail::payload_shell(*block);
+    std::vector<DocumentOperation> operations;
+    operations.emplace_back(std::move(update));
+    ++after.revision;
+    return make_recorded_document_transaction(
+        std::move(after),
+        std::move(operations),
+        selection,
+        selection,
+        document.revision,
+        DocumentTransactionReason::Structure);
 }
 
 inline std::optional<DocumentTransaction> document_toggle_block_quote(const EditorDocument& document, const TextSelection& selection) {
@@ -40,8 +57,40 @@ inline std::optional<DocumentTransaction> document_toggle_list(const EditorDocum
 using ListStyle = document_edit_detail::ListStyle;
 
 inline std::optional<DocumentTransaction> document_toggle_task_checkbox(const EditorDocument& document, const TextSelection& selection) {
-    auto after = document; if (!document_edit_detail::toggle_task(after.root.children, selection.active.container_id)) return std::nullopt;
-    ++after.revision; return document_edit_detail::transaction(document, std::move(after), selection, selection, DocumentTransactionReason::Structure);
+    auto after = document;
+    auto path = block_path(after.root, selection.active.container_id);
+    if (!path) return std::nullopt;
+    BlockNode* item = nullptr;
+    while (!path->empty()) {
+        auto* candidate = block_at_path(after.root, *path);
+        if (candidate && candidate->kind == BlockKind::TaskListItem) {
+            item = candidate;
+            break;
+        }
+        path->pop_back();
+    }
+    if (!item) return std::nullopt;
+    DocumentTreeEdit update;
+    update.kind = DocumentTreeEditKind::UpdatePayload;
+    update.before = document_transaction_detail::payload_shell(*item);
+    item->checked = !item->checked;
+    const auto unchecked = item->marker.find(U"[ ]");
+    const auto checked_lower = item->marker.find(U"[x]");
+    const auto checked_upper = item->marker.find(U"[X]");
+    if (item->checked && unchecked != std::u32string::npos) item->marker[unchecked + 1] = U'x';
+    if (!item->checked && checked_lower != std::u32string::npos) item->marker[checked_lower + 1] = U' ';
+    if (!item->checked && checked_upper != std::u32string::npos) item->marker[checked_upper + 1] = U' ';
+    update.after = document_transaction_detail::payload_shell(*item);
+    std::vector<DocumentOperation> operations;
+    operations.emplace_back(std::move(update));
+    ++after.revision;
+    return make_recorded_document_transaction(
+        std::move(after),
+        std::move(operations),
+        selection,
+        selection,
+        document.revision,
+        DocumentTransactionReason::Structure);
 }
 
 inline BlockNode make_code_block(std::optional<std::string> language = std::nullopt) { BlockNode block; block.kind = BlockKind::CodeBlock; block.language = std::move(language); return block; }
@@ -78,22 +127,52 @@ inline std::optional<DocumentTransaction> document_insert_atomic_block(const Edi
     document_edit_detail::scan_block_ids(block, block_maximum);
     allocator.next = (std::max)(allocator.next, block_maximum + 1);
     document_edit_detail::assign_missing_ids(block, after, allocator);
-    for (std::size_t index = 0; index < after.root.children.size(); ++index) {
-        if (after.root.children[index].id != selection.active.container_id) continue;
-        const auto inserted_id = block.id;
-        after.root.children.insert(after.root.children.begin() + static_cast<std::ptrdiff_t>(index + 1), std::move(block));
-        ++after.revision;
-        return document_edit_detail::transaction(document, std::move(after), selection, TextSelection::caret({inserted_id, 0, TextAffinity::Downstream}), DocumentTransactionReason::Structure);
-    }
-    return std::nullopt;
+    auto path = block_path(after.root, selection.active.container_id);
+    if (!path || path->empty()) return std::nullopt;
+    auto parent_path = *path;
+    const auto index = parent_path.back();
+    parent_path.pop_back();
+    auto* parent = block_at_path(after.root, parent_path);
+    if (!parent || index >= parent->children.size()) return std::nullopt;
+    const auto inserted_id = block.id;
+    DocumentTreeEdit insert;
+    insert.kind = DocumentTreeEditKind::Insert;
+    insert.parent_id = parent->id;
+    insert.index = index + 1;
+    insert.after = block;
+    std::vector<DocumentOperation> operations;
+    operations.emplace_back(std::move(insert));
+    if (!insert_block(*parent, index + 1, std::move(block))) return std::nullopt;
+    ++after.revision;
+    return make_recorded_document_transaction(
+        std::move(after),
+        std::move(operations),
+        selection,
+        TextSelection::caret({inserted_id, 0, TextAffinity::Downstream}),
+        document.revision,
+        DocumentTransactionReason::Structure);
 }
 
 inline std::optional<DocumentTransaction> document_insert_footnote(const EditorDocument& document, const TextSelection& selection, std::string label) {
     auto after = document; document_edit_detail::NodeAllocator allocator(after);
     BlockNode footnote; footnote.id = allocator.allocate(); footnote.kind = BlockKind::FootnoteDefinition; footnote.footnote_label = std::move(label); footnote.children.push_back(document_edit_detail::empty_paragraph(allocator, after));
-    after.root.children.push_back(std::move(footnote)); ++after.revision;
-    const auto target = TextPosition{after.root.children.back().children.front().id, 0, TextAffinity::Downstream};
-    return document_edit_detail::transaction(document, std::move(after), selection, TextSelection::caret(target), DocumentTransactionReason::Structure);
+    const auto target = TextPosition{footnote.children.front().id, 0, TextAffinity::Downstream};
+    DocumentTreeEdit insert;
+    insert.kind = DocumentTreeEditKind::Insert;
+    insert.parent_id = after.root.id;
+    insert.index = after.root.children.size();
+    insert.after = footnote;
+    std::vector<DocumentOperation> operations;
+    operations.emplace_back(std::move(insert));
+    after.root.children.push_back(std::move(footnote));
+    ++after.revision;
+    return make_recorded_document_transaction(
+        std::move(after),
+        std::move(operations),
+        selection,
+        TextSelection::caret(target),
+        document.revision,
+        DocumentTransactionReason::Structure);
 }
 
 inline std::optional<DocumentTransaction> document_indent_list_item(const EditorDocument& document, const TextSelection& selection) {
