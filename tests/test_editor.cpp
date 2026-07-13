@@ -18,6 +18,8 @@ import elmd.core.inline_cst;
 import elmd.core.inline_document;
 import elmd.core.instrumentation;
 import elmd.core.input;
+import elmd.core.render_builder;
+import elmd.core.render_model;
 import elmd.core.serializer;
 import elmd.core.text_edit;
 import elmd.core.theme;
@@ -812,6 +814,7 @@ suite editor_tests = [] {
     auto code_transaction = code.execute_document_insert_atomic_block(code.selection(), insert_code);
     expect(fatal(bool(code_transaction.has_value())));
     if (code_transaction) {
+        expect(fatal(bool(code.document().root.children.size() == 1u)));
         auto const* block = find_block(code.document().root, code.selection().active.container_id);
         expect(fatal(bool(block && block->kind == BlockKind::CodeBlock)));
         expect(fatal(bool(block && block->block_source.source == U"```cpp\n```")));
@@ -827,6 +830,7 @@ suite editor_tests = [] {
     auto math_transaction = math.execute_document_insert_atomic_block(math.selection(), insert_math);
     expect(fatal(bool(math_transaction.has_value())));
     if (math_transaction) {
+        expect(fatal(bool(math.document().root.children.size() == 1u)));
         auto const* block = find_block(math.document().root, math.selection().active.container_id);
         expect(fatal(bool(block && block->kind == BlockKind::MathBlock)));
         expect(fatal(bool(block && block->block_source.source == U"$$\n$$")));
@@ -904,6 +908,46 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.selection().active.source_offset == 4u)));
 };
 
+"command_pipeline_exposes_typed_and_toolbar_raw_blocks_to_rendering_immediately"_test = [] {
+    struct TypedCase {
+        std::u32string opening;
+        BlockKind block_kind;
+        RenderBlockKind render_kind;
+    };
+    for (const auto& test_case : std::vector<TypedCase>{
+            {U"```cpp", BlockKind::CodeBlock, RenderBlockKind::Code},
+            {U"$$", BlockKind::MathBlock, RenderBlockKind::Math},
+        }) {
+        Editor editor;
+        expect(fatal(bool(editor.execute_command(Command::InsertText(test_case.opening)))));
+        Command enter;
+        enter.kind = CommandKind::InsertNewline;
+        expect(fatal(bool(editor.execute_command(enter))));
+        expect(fatal(bool(editor.document().root.children.front().kind == test_case.block_kind)));
+        auto model = build_render_model(editor.document(), editor.outline());
+        expect(fatal(bool(model.revision == editor.revision())));
+        expect(fatal(bool(model.blocks.size() == 1u)));
+        expect(fatal(bool(model.blocks.front().kind == test_case.render_kind)));
+    }
+
+    for (const auto command_kind : {
+            CommandKind::InsertCodeBlock,
+            CommandKind::InsertMathBlock,
+        }) {
+        Editor editor;
+        Command command;
+        command.kind = command_kind;
+        expect(fatal(bool(editor.execute_command(command))));
+        auto model = build_render_model(editor.document(), editor.outline());
+        expect(fatal(bool(model.blocks.size() == 1u)));
+        expect(fatal(bool(model.blocks.front().kind
+            == (command_kind == CommandKind::InsertCodeBlock
+                ? RenderBlockKind::Code
+                : RenderBlockKind::Math))));
+        expect(fatal(bool(model.blocks.front().id == editor.selection().active.container_id)));
+    }
+};
+
 "code_and_math_blocks_use_local_source_edit_history"_test = [] {
     const std::vector<std::string> cases{
         "```cpp\nab\n```",
@@ -912,10 +956,12 @@ suite editor_tests = [] {
     for (const auto& markdown : cases) {
         Editor editor(markdown);
         const auto owner_id = editor.document().root.children.front().id;
+        const auto content_offset = editor.document().root.children.front()
+            .block_source.tree.content_to_source.front();
         const auto original_source = *document_editable_text(editor.document(), owner_id);
         const auto before_markdown = editor.markdown_utf8();
         const auto before_selection = TextSelection::caret(
-            {owner_id, 1, TextAffinity::Downstream});
+            {owner_id, content_offset, TextAffinity::Downstream});
         editor.set_selection(before_selection);
 
         reset_core_operation_counters();
@@ -928,7 +974,7 @@ suite editor_tests = [] {
         expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << markdown;
         expect(fatal(bool(counters.inline_reparses == 0u))) << markdown;
         auto expected = original_source;
-        expected.insert(1, U"X");
+        expected.insert(content_offset, U"X");
         const auto inserted_expected = expected;
         expect(fatal(bool(document_editable_text(editor.document(), owner_id) == expected))) << markdown;
         const auto inserted_selection = editor.selection();
@@ -949,7 +995,7 @@ suite editor_tests = [] {
         expect(fatal(bool(counters.full_document_serializations == 0u))) << markdown;
         expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << markdown;
         expect(fatal(bool(counters.inline_reparses == 0u))) << markdown;
-        expected.insert(2, U"\n");
+        expected.insert(content_offset + 1, U"\n");
         expect(fatal(bool(document_editable_text(editor.document(), owner_id) == expected))) << markdown;
         expect(fatal(bool(editor.undo()))) << markdown;
         expect(fatal(bool(document_editable_text(editor.document(), owner_id)
@@ -970,6 +1016,110 @@ suite editor_tests = [] {
         expect(fatal(bool(document_editable_text(editor.document(), owner_id)
             == inserted_expected))) << markdown;
     }
+};
+
+"raw_marker_edits_reclassify_one_block_without_document_reparse"_test = [] {
+    struct Case {
+        std::string markdown;
+        std::u32string opening;
+        BlockKind kind;
+    };
+    const std::vector<Case> cases{
+        {"```cpp\nvalue\n```", U"```cpp", BlockKind::CodeBlock},
+        {"$$\nvalue\n$$", U"$$", BlockKind::MathBlock},
+    };
+
+    for (const auto& test_case : cases) {
+        Editor editor(test_case.markdown);
+        const auto owner_id = editor.document().root.children.front().id;
+        const auto original_selection = TextSelection{
+            {owner_id, 0, TextAffinity::Downstream},
+            {owner_id, test_case.opening.size(), TextAffinity::Downstream},
+        };
+        editor.set_selection(original_selection);
+
+        reset_core_operation_counters();
+        expect(fatal(bool(editor.execute_document_delete_selection(
+            editor.selection()).has_value()))) << test_case.markdown;
+        auto counters = read_core_operation_counters();
+        expect(fatal(bool(counters.full_document_parses == 0u))) << test_case.markdown;
+        expect(fatal(bool(counters.full_document_serializations == 0u))) << test_case.markdown;
+        expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << test_case.markdown;
+        auto const* changed = find_block(editor.document().root, owner_id);
+        expect(fatal(bool(changed && changed->kind == BlockKind::Paragraph))) << test_case.markdown;
+        const auto downgraded_source = utf8_to_cps(test_case.markdown)
+            .substr(test_case.opening.size());
+        expect(fatal(bool(changed && changed->inline_content.source
+            == downgraded_source))) << test_case.markdown;
+        expect(fatal(bool(editor.selection().active.container_id == owner_id))) << test_case.markdown;
+        expect(fatal(bool(editor.selection().active.source_offset == 0u))) << test_case.markdown;
+        expect(fatal(bool(validate_document(editor.document()).empty()))) << test_case.markdown;
+        expect(fatal(bool(editor.markdown_utf8() == cps_to_utf8(downgraded_source)))) << test_case.markdown;
+        Editor reloaded(editor.markdown_utf8());
+        expect(fatal(bool(reloaded.markdown_utf8() == editor.markdown_utf8()))) << test_case.markdown;
+        const auto downgraded_selection = editor.selection();
+
+        reset_core_operation_counters();
+        expect(fatal(bool(editor.execute_document_insert_text(
+            editor.selection(), test_case.opening).has_value()))) << test_case.markdown;
+        counters = read_core_operation_counters();
+        expect(fatal(bool(counters.full_document_parses == 0u))) << test_case.markdown;
+        expect(fatal(bool(counters.full_document_serializations == 0u))) << test_case.markdown;
+        expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << test_case.markdown;
+        changed = find_block(editor.document().root, owner_id);
+        expect(fatal(bool(changed && changed->kind == test_case.kind))) << test_case.markdown;
+        expect(fatal(bool(changed && changed->block_source.source
+            == utf8_to_cps(test_case.markdown)))) << test_case.markdown;
+        expect(fatal(bool(validate_document(editor.document()).empty()))) << test_case.markdown;
+        const auto restored_selection = editor.selection();
+
+        expect(fatal(bool(editor.undo()))) << test_case.markdown;
+        changed = find_block(editor.document().root, owner_id);
+        expect(fatal(bool(changed && changed->kind == BlockKind::Paragraph))) << test_case.markdown;
+        expect(fatal(bool(editor.selection() == downgraded_selection))) << test_case.markdown;
+        expect(fatal(bool(editor.redo()))) << test_case.markdown;
+        changed = find_block(editor.document().root, owner_id);
+        expect(fatal(bool(changed && changed->kind == test_case.kind))) << test_case.markdown;
+        expect(fatal(bool(editor.selection() == restored_selection))) << test_case.markdown;
+    }
+};
+
+"raw_marker_reclassification_preserves_arbitrary_ancestor_structure"_test = [] {
+    Editor editor("> - ```cpp\n>   value\n>   ```");
+    const BlockNode* code = nullptr;
+    walk_blocks(editor.document().root, [&](const BlockNode& block) {
+        if (!code && block.kind == BlockKind::CodeBlock) code = &block;
+    });
+    expect(fatal(bool(code != nullptr)));
+    if (!code) return;
+    const auto code_id = code->id;
+    const auto opening_end = code->block_source.source.find(U'\n');
+    expect(fatal(bool(opening_end != std::u32string::npos)));
+    if (opening_end == std::u32string::npos) return;
+    editor.set_selection({
+        {code_id, 0, TextAffinity::Downstream},
+        {code_id, opening_end, TextAffinity::Downstream},
+    });
+
+    reset_core_operation_counters();
+    expect(fatal(bool(editor.execute_document_delete_selection(
+        editor.selection()).has_value())));
+    const auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_parses == 0u)));
+    expect(fatal(bool(counters.full_document_serializations == 0u)));
+    expect(fatal(bool(editor.document().root.children.front().kind == BlockKind::BlockQuote)));
+    expect(fatal(bool(editor.document().root.children.front().children.front().kind == BlockKind::List)));
+    const auto* paragraph = find_block(editor.document().root, code_id);
+    expect(fatal(bool(paragraph && paragraph->kind == BlockKind::Paragraph)));
+    expect(fatal(bool(editor.selection().active.container_id == code_id)));
+    expect(fatal(bool(validate_document(editor.document()).empty())));
+
+    expect(fatal(bool(editor.undo())));
+    const auto* restored = find_block(editor.document().root, code_id);
+    expect(fatal(bool(restored && restored->kind == BlockKind::CodeBlock)));
+    expect(fatal(bool(editor.redo())));
+    paragraph = find_block(editor.document().root, code_id);
+    expect(fatal(bool(paragraph && paragraph->kind == BlockKind::Paragraph)));
 };
 
 "callout_titles_are_inline_source_owners_with_local_history"_test = [] {

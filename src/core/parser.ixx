@@ -34,6 +34,7 @@ import elmd.core.inline_cst;
 import elmd.core.inline_document;
 import elmd.core.inline_parser;
 import elmd.core.instrumentation;
+import elmd.core.text_edit;
 
 export namespace elmd {
 
@@ -53,6 +54,20 @@ struct ParseOutput {
     DocumentSymbolIndex symbols;
     Outline outline;
     std::vector<Diagnostic> diagnostics;
+};
+
+// A block fragment is the smallest parser entry point used by structure-aware
+// editing. Its physical ranges are transient mapping data for replacing one
+// edited direct block; they never become a second selection coordinate.
+struct BlockFragmentSourceRange {
+    NodeId node_id{};
+    SourceRange source_range;
+    SourceRange content_range;
+};
+
+struct ParsedBlockFragment {
+    BlockVec blocks;
+    std::vector<BlockFragmentSourceRange> source_ranges;
 };
 
 // ---------------------------------------------------------------------------
@@ -1626,6 +1641,24 @@ inline ParseOutput parse(const ParseInput& input) {
 
 inline ParseOutput parse_text(std::uint64_t rev, const std::string& text, MarkdownDialect d = default_dialect()) {
     return parse(ParseInput(rev, text, d));
+}
+
+inline ParsedBlockFragment parse_block_fragment(
+    std::u32string_view source,
+    MarkdownDialect dialect = default_dialect()) {
+    ParseInput input{0, cps_to_utf8(source), std::move(dialect)};
+    detail::Parser parser(&input);
+    ParsedBlockFragment result;
+    result.blocks = parser.parse_blocks(nullptr);
+    result.source_ranges.reserve(parser.source_ranges.size());
+    for (const auto& range : parser.source_ranges) {
+        result.source_ranges.push_back({
+            range.node_id,
+            {range.source_range.start, range.source_range.end},
+            {range.content_range.start, range.content_range.end},
+        });
+    }
+    return result;
 }
 
 } // namespace elmd

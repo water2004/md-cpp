@@ -468,25 +468,55 @@ inline std::optional<DocumentTransaction> document_insert_atomic_block(const Edi
     auto* parent = block_at_path(after.root, parent_path);
     if (!parent || index >= parent->children.size()) return std::nullopt;
     const auto inserted_id = block.id;
-    auto inserted_offset = std::size_t{0};
+    auto inserted_target = document_edit_detail::first_editable_position(block)
+        .value_or(TextPosition{block.id, 0, TextAffinity::Downstream});
     if ((block.kind == BlockKind::CodeBlock || block.kind == BlockKind::MathBlock)
         && !block.block_source.tree.content_to_source.empty()) {
-        inserted_offset = block.block_source.tree.content_to_source.front();
+        inserted_target = {
+            block.id,
+            block.block_source.tree.content_to_source.front(),
+            TextAffinity::Downstream,
+        };
     }
-    DocumentTreeEdit insert;
-    insert.kind = DocumentTreeEditKind::Insert;
-    insert.parent_id = parent->id;
-    insert.index = index + 1;
-    insert.after = block;
     std::vector<DocumentOperation> operations;
-    operations.emplace_back(std::move(insert));
-    if (!insert_block(*parent, index + 1, std::move(block))) return std::nullopt;
+    const auto replace_empty_paragraph = parent->children[index].kind == BlockKind::Paragraph
+        && parent->children[index].inline_content.source.empty();
+    if (replace_empty_paragraph) {
+        const auto preserved_id = parent->children[index].id;
+        block.id = preserved_id;
+        if (inserted_target.container_id == inserted_id) {
+            inserted_target.container_id = preserved_id;
+        }
+        DocumentTreeEdit remove;
+        remove.kind = DocumentTreeEditKind::Remove;
+        remove.parent_id = parent->id;
+        remove.index = index;
+        remove.before = parent->children[index];
+        operations.emplace_back(std::move(remove));
+        parent->children.erase(parent->children.begin() + static_cast<std::ptrdiff_t>(index));
+
+        DocumentTreeEdit insert;
+        insert.kind = DocumentTreeEditKind::Insert;
+        insert.parent_id = parent->id;
+        insert.index = index;
+        insert.after = block;
+        operations.emplace_back(std::move(insert));
+        if (!insert_block(*parent, index, std::move(block))) return std::nullopt;
+    } else {
+        DocumentTreeEdit insert;
+        insert.kind = DocumentTreeEditKind::Insert;
+        insert.parent_id = parent->id;
+        insert.index = index + 1;
+        insert.after = block;
+        operations.emplace_back(std::move(insert));
+        if (!insert_block(*parent, index + 1, std::move(block))) return std::nullopt;
+    }
     ++after.revision;
     return make_recorded_document_transaction(
         std::move(after),
         std::move(operations),
         selection,
-        TextSelection::caret({inserted_id, inserted_offset, TextAffinity::Downstream}),
+        TextSelection::caret(inserted_target),
         document.revision,
         DocumentTransactionReason::Structure);
 }

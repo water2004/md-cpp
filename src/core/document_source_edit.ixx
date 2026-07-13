@@ -11,6 +11,7 @@ import elmd.core.inline_source_edit;
 import elmd.core.text_edit;
 import elmd.core.utf;
 import elmd.core.document_edit_support;
+import elmd.core.document_block_reparse;
 import elmd.core.document_input_rules;
 
 export namespace elmd {
@@ -34,6 +35,33 @@ inline std::vector<DocumentInvariantError> validate_document(const EditorDocumen
 }
 
 inline std::optional<DocumentTransaction> document_delete_selection(const EditorDocument&, const TextSelection&);
+
+inline DocumentTransaction source_transaction_with_block_reparse(
+    EditorDocument after,
+    AppliedSourceEdit edit,
+    TextSelection selection_before,
+    TextPosition target,
+    std::uint64_t revision_before,
+    DocumentTransactionReason reason) {
+    std::vector<DocumentOperation> operations;
+    document_edit_detail::append_source_operation(operations, std::move(edit));
+    document_edit_detail::NodeAllocator allocator(after);
+    if (auto reclassified = document_edit_detail::reparse_edited_direct_block(
+            after, target, allocator)) {
+        target = reclassified->target;
+        operations.insert(
+            operations.end(),
+            std::make_move_iterator(reclassified->operations.begin()),
+            std::make_move_iterator(reclassified->operations.end()));
+    }
+    return make_recorded_document_transaction(
+        std::move(after),
+        std::move(operations),
+        selection_before,
+        TextSelection::caret(target),
+        revision_before,
+        reason);
+}
 
 inline std::optional<DocumentTransaction> document_insert_text(const EditorDocument& document, const TextSelection& selection, std::u32string_view text) {
     if (text.empty()) return std::nullopt;
@@ -64,6 +92,14 @@ inline std::optional<DocumentTransaction> document_insert_text(const EditorDocum
             operations.end(),
             std::make_move_iterator(structural->operations.begin()),
             std::make_move_iterator(structural->operations.end()));
+    }
+    if (auto reclassified = document_edit_detail::reparse_edited_direct_block(
+            working, target, allocator)) {
+        target = reclassified->target;
+        operations.insert(
+            operations.end(),
+            std::make_move_iterator(reclassified->operations.begin()),
+            std::make_move_iterator(reclassified->operations.end()));
     }
     ++working.revision;
     return make_recorded_document_transaction(
@@ -139,6 +175,14 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
     ++after.revision;
     if (source_edit) {
         document_edit_detail::append_source_operation(operations, std::move(*source_edit));
+        if (auto reclassified = document_edit_detail::reparse_edited_direct_block(
+                after, target, allocator)) {
+            target = reclassified->target;
+            operations.insert(
+                operations.end(),
+                std::make_move_iterator(reclassified->operations.begin()),
+                std::make_move_iterator(reclassified->operations.end()));
+        }
     }
     if (operations.empty()) return std::nullopt;
     return make_recorded_document_transaction(
@@ -324,8 +368,9 @@ inline std::optional<DocumentTransaction> document_delete_backward(const EditorD
     }
     ++after.revision;
     if (source_edit) {
-        return document_edit_detail::source_transaction(
-            std::move(after), std::move(*source_edit), selection, TextSelection::caret(target), document.revision, DocumentTransactionReason::Delete);
+        return source_transaction_with_block_reparse(
+            std::move(after), std::move(*source_edit), selection, target,
+            document.revision, DocumentTransactionReason::Delete);
     }
     if (operations.empty()) return std::nullopt;
     return make_recorded_document_transaction(
@@ -382,8 +427,9 @@ inline std::optional<DocumentTransaction> document_delete_forward(const EditorDo
     }
     ++after.revision;
     if (source_edit) {
-        return document_edit_detail::source_transaction(
-            std::move(after), std::move(*source_edit), selection, TextSelection::caret(target), document.revision, DocumentTransactionReason::Delete);
+        return source_transaction_with_block_reparse(
+            std::move(after), std::move(*source_edit), selection, target,
+            document.revision, DocumentTransactionReason::Delete);
     }
     if (operations.empty()) return std::nullopt;
     return make_recorded_document_transaction(
@@ -406,8 +452,9 @@ inline std::optional<DocumentTransaction> document_delete_selection(const Editor
         if (!source_edit) return std::nullopt;
         ++after.revision;
         const auto target = TextPosition{selection.active.container_id, start, TextAffinity::Downstream};
-        return document_edit_detail::source_transaction(
-            std::move(after), std::move(*source_edit), selection, TextSelection::caret(target), document.revision, DocumentTransactionReason::Delete);
+        return source_transaction_with_block_reparse(
+            std::move(after), std::move(*source_edit), selection, target,
+            document.revision, DocumentTransactionReason::Delete);
     }
 
     const auto nodes = document_text_fragments(after);
@@ -460,7 +507,15 @@ inline std::optional<DocumentTransaction> document_delete_selection(const Editor
         after.root.children.push_back(std::move(paragraph));
     }
     ++after.revision;
-    const auto target = TextPosition{first.container_id, first.source_offset, TextAffinity::Downstream};
+    auto target = TextPosition{first.container_id, first.source_offset, TextAffinity::Downstream};
+    if (auto reclassified = document_edit_detail::reparse_edited_direct_block(
+            after, target, allocator)) {
+        target = reclassified->target;
+        operations.insert(
+            operations.end(),
+            std::make_move_iterator(reclassified->operations.begin()),
+            std::make_move_iterator(reclassified->operations.end()));
+    }
     return make_recorded_document_transaction(
         std::move(after),
         std::move(operations),
