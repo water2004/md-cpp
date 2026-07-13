@@ -56,9 +56,11 @@ namespace winrt::ElMd
 
     private:
         struct PreparedDocument;
+        struct ScrollVisualCache;
 
-        void DrawDocument(detail::EditorRenderFrame const& frame);
+        void DrawDocument(detail::EditorRenderFrame const& frame, float paintViewportHeight, bool paintTransientInteractions);
         void ClearPreparedDocument();
+        void ClearScrollVisualCache();
 
         void Invalidate();
 
@@ -88,6 +90,7 @@ namespace winrt::ElMd
         EditorInteractionMap interactionMap;
         std::vector<D2D1_RECT_F> nonInteractiveRegions;
         std::unique_ptr<PreparedDocument> preparedDocument;
+        std::unique_ptr<ScrollVisualCache> scrollVisualCache;
         std::unordered_map<std::uint64_t, float> documentOwnerY;
         std::uint64_t embeddedGeneration = 0;
         std::optional<D2D1_POINT_2F> pointerPosition;
@@ -101,6 +104,7 @@ namespace winrt::ElMd
         std::uint32_t scrollInputRunLength = 0;
         bool continuousScrollInput = false;
         float continuousScrollSpeed = 0.0f;
+        float interactionMapTranslationY = 0.0f;
         float totalDocumentHeight = 0.0f;
         bool resizing = false;
         bool rendering = false;
