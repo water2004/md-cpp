@@ -44,7 +44,10 @@ struct TextSelection {
     TextPosition active;
 
     static TextSelection caret(TextPosition position) { return {position, position}; }
-    bool is_caret() const { return anchor == active; }
+    bool is_caret() const {
+        return anchor.container_id == active.container_id
+            && anchor.source_offset == active.source_offset;
+    }
     const TextPosition& head() const { return active; }
     const TextPosition& tail() const { return anchor; }
     bool operator==(const TextSelection&) const = default;

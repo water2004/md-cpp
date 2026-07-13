@@ -124,6 +124,16 @@ suite inline_cst_tests = [] {
     expect(rejected);
 };
 
+"selection_affinity_does_not_create_a_source_range"_test = [] {
+    const auto owner = NodeId{7};
+    const TextSelection selection{
+        {owner, 2, TextAffinity::Upstream},
+        {owner, 2, TextAffinity::Downstream},
+    };
+    expect(selection.is_caret());
+    expect(selection.anchor != selection.active);
+};
+
 "every character boundary remains lossless after insert and delete"_test = [] {
     const std::vector<std::u32string> samples{
         U"abc", U"**abc**", U"__abc__", U"**", U"**abc", U"a***b***c",
