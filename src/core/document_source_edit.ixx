@@ -269,9 +269,13 @@ inline std::optional<DocumentTransaction> document_delete_backward(const EditorD
     if (!selection.is_caret()) return document_delete_selection(document, selection);
     auto after = document; auto target = selection.active; document_edit_detail::NodeAllocator allocator(after);
     std::optional<AppliedSourceEdit> source_edit;
+    std::vector<DocumentOperation> operations;
     auto const* selected_block = find_block(after.root, target.container_id);
     if (selected_block && document_edit_detail::atomic_block(selected_block->kind)) {
-        if (!document_edit_detail::remove_atomic(after.root.children, target.container_id, allocator, after, target)) return std::nullopt;
+        auto removed = document_edit_detail::remove_atomic(after, target.container_id, allocator);
+        if (!removed) return std::nullopt;
+        target = removed->target;
+        operations = std::move(removed->operations);
     } else if (target.source_offset > 0) {
         if (auto* owner = document_edit_detail::find_inline_owner(after.root.children, target.container_id)) {
             auto range = inline_backward_delete_range(*owner, target.source_offset);
@@ -287,16 +291,33 @@ inline std::optional<DocumentTransaction> document_delete_backward(const EditorD
         }
     } else if (auto unprefixed = document_input_rules::handle_backspace_at_start(after, target, allocator)) {
         target = *unprefixed;
-    } else if (!document_edit_detail::join_parent_inline_owner(
-                   after, target.container_id, allocator, target)
-        && !document_edit_detail::join_adjacent(
-            after.root.children, target.container_id, true, after, allocator, target)) {
-        if (!document_edit_detail::remove_atomic(after.root.children, target.container_id, allocator, after, target)) return std::nullopt;
+    } else if (auto joined_parent = document_edit_detail::join_parent_inline_owner(
+                   after, target.container_id, allocator)) {
+        target = joined_parent->target;
+        operations = std::move(joined_parent->operations);
+    } else if (auto joined = document_edit_detail::join_adjacent(
+                   after, target.container_id, true, allocator)) {
+        target = joined->target;
+        operations = std::move(joined->operations);
+    } else {
+        auto removed = document_edit_detail::remove_atomic(after, target.container_id, allocator);
+        if (!removed) return std::nullopt;
+        target = removed->target;
+        operations = std::move(removed->operations);
     }
     ++after.revision;
     if (source_edit) {
         return document_edit_detail::source_transaction(
             std::move(after), std::move(*source_edit), selection, TextSelection::caret(target), document.revision, DocumentTransactionReason::Delete);
+    }
+    if (!operations.empty()) {
+        return make_recorded_document_transaction(
+            std::move(after),
+            std::move(operations),
+            selection,
+            TextSelection::caret(target),
+            document.revision,
+            DocumentTransactionReason::Delete);
     }
     return document_edit_detail::transaction(document, std::move(after), selection, TextSelection::caret(target), DocumentTransactionReason::Delete);
 }
@@ -305,11 +326,21 @@ inline std::optional<DocumentTransaction> document_delete_forward(const EditorDo
     if (!selection.is_caret()) return document_delete_selection(document, selection);
     auto after = document; auto target = selection.active; document_edit_detail::NodeAllocator allocator(after);
     std::optional<AppliedSourceEdit> source_edit;
+    std::vector<DocumentOperation> operations;
     auto const* selected_block = find_block(after.root, target.container_id);
     if (selected_block && document_edit_detail::atomic_block(selected_block->kind)) {
-        if (!document_edit_detail::remove_atomic(after.root.children, target.container_id, allocator, after, target)) return std::nullopt;
+        auto removed = document_edit_detail::remove_atomic(after, target.container_id, allocator);
+        if (!removed) return std::nullopt;
+        target = removed->target;
+        operations = std::move(removed->operations);
         ++after.revision;
-        return document_edit_detail::transaction(document, std::move(after), selection, TextSelection::caret(target), DocumentTransactionReason::Delete);
+        return make_recorded_document_transaction(
+            std::move(after),
+            std::move(operations),
+            selection,
+            TextSelection::caret(target),
+            document.revision,
+            DocumentTransactionReason::Delete);
     }
     const auto length = document_edit_detail::editable_length(after, target.container_id); if (!length) return std::nullopt;
     if (target.source_offset < *length) {
@@ -323,16 +354,30 @@ inline std::optional<DocumentTransaction> document_delete_forward(const EditorDo
                 after, target.container_id, {target.source_offset, target.source_offset + 1}, allocator);
             if (!source_edit) return std::nullopt;
         }
-    } else if (!document_edit_detail::join_first_child_into_inline_owner(
-                   after, target.container_id, allocator, target)
-        && !document_edit_detail::join_adjacent(
-            after.root.children, target.container_id, false, after, allocator, target)) return std::nullopt;
+    } else if (auto joined_child = document_edit_detail::join_first_child_into_inline_owner(
+                   after, target.container_id, allocator)) {
+        target = joined_child->target;
+        operations = std::move(joined_child->operations);
+    } else if (auto joined = document_edit_detail::join_adjacent(
+                   after, target.container_id, false, allocator)) {
+        target = joined->target;
+        operations = std::move(joined->operations);
+    } else {
+        return std::nullopt;
+    }
     ++after.revision;
     if (source_edit) {
         return document_edit_detail::source_transaction(
             std::move(after), std::move(*source_edit), selection, TextSelection::caret(target), document.revision, DocumentTransactionReason::Delete);
     }
-    return document_edit_detail::transaction(document, std::move(after), selection, TextSelection::caret(target), DocumentTransactionReason::Delete);
+    if (operations.empty()) return std::nullopt;
+    return make_recorded_document_transaction(
+        std::move(after),
+        std::move(operations),
+        selection,
+        TextSelection::caret(target),
+        document.revision,
+        DocumentTransactionReason::Delete);
 }
 
 inline std::optional<DocumentTransaction> document_delete_selection(const EditorDocument& document, const TextSelection& selection) {

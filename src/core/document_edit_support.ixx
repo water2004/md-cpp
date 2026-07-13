@@ -335,49 +335,73 @@ inline std::optional<RecordedBlockEdit> split_direct(
     return result;
 }
 
-inline bool join_parent_inline_owner(
+inline std::optional<RecordedBlockEdit> join_parent_inline_owner(
     EditorDocument& document,
     NodeId child_id,
-    NodeAllocator& allocator,
-    TextPosition& target) {
+    NodeAllocator& allocator) {
     auto path = block_path(document.root, child_id);
-    if (!path || path->size() < 2 || path->back() != 0) return false;
+    if (!path || path->size() < 2 || path->back() != 0) return std::nullopt;
     auto parent_path = *path;
     parent_path.pop_back();
     auto* parent = block_at_path(document.root, parent_path);
-    if (!parent || parent->children.empty()) return false;
+    if (!parent || parent->children.empty()) return std::nullopt;
     auto* parent_inline = editable_inline_document(*parent);
     auto* child_inline = editable_inline_document(parent->children.front());
-    if (!parent_inline || !child_inline) return false;
+    if (!parent_inline || !child_inline) return std::nullopt;
 
     const auto offset = parent_inline->source.size();
-    parent_inline->source += child_inline->source;
-    reparse(*parent_inline, document, allocator);
-    parent->children.erase(parent->children.begin());
-    target = TextPosition{
+    auto child_source = child_inline->source;
+    RecordedBlockEdit result;
+    result.target = TextPosition{
         parent->id,
         offset,
         offset == 0 ? TextAffinity::Downstream : TextAffinity::Upstream};
-    return true;
+    if (!child_source.empty()) {
+        auto edit = edit_inline(document, parent->id, {offset, offset}, std::move(child_source), allocator);
+        if (!edit) return std::nullopt;
+        append_source_operation(result.operations, std::move(*edit));
+        parent = find_block(document.root, parent->id);
+        if (!parent || parent->children.empty()) return std::nullopt;
+    }
+    DocumentTreeEdit remove;
+    remove.kind = DocumentTreeEditKind::Remove;
+    remove.parent_id = parent->id;
+    remove.index = 0;
+    remove.before = parent->children.front();
+    result.operations.emplace_back(std::move(remove));
+    parent->children.erase(parent->children.begin());
+    return result;
 }
 
-inline bool join_first_child_into_inline_owner(
+inline std::optional<RecordedBlockEdit> join_first_child_into_inline_owner(
     EditorDocument& document,
     NodeId parent_id,
-    NodeAllocator& allocator,
-    TextPosition& target) {
+    NodeAllocator& allocator) {
     auto* parent = find_block(document.root, parent_id);
-    if (!parent || parent->children.empty()) return false;
+    if (!parent || parent->children.empty()) return std::nullopt;
     auto* parent_inline = editable_inline_document(*parent);
     auto* child_inline = editable_inline_document(parent->children.front());
-    if (!parent_inline || !child_inline) return false;
+    if (!parent_inline || !child_inline) return std::nullopt;
 
     const auto offset = parent_inline->source.size();
-    parent_inline->source += child_inline->source;
-    reparse(*parent_inline, document, allocator);
+    auto child_source = child_inline->source;
+    RecordedBlockEdit result;
+    result.target = TextPosition{parent->id, offset, TextAffinity::Downstream};
+    if (!child_source.empty()) {
+        auto edit = edit_inline(document, parent->id, {offset, offset}, std::move(child_source), allocator);
+        if (!edit) return std::nullopt;
+        append_source_operation(result.operations, std::move(*edit));
+        parent = find_block(document.root, parent_id);
+        if (!parent || parent->children.empty()) return std::nullopt;
+    }
+    DocumentTreeEdit remove;
+    remove.kind = DocumentTreeEditKind::Remove;
+    remove.parent_id = parent->id;
+    remove.index = 0;
+    remove.before = parent->children.front();
+    result.operations.emplace_back(std::move(remove));
     parent->children.erase(parent->children.begin());
-    target = TextPosition{parent->id, offset, TextAffinity::Downstream};
-    return true;
+    return result;
 }
 
 inline std::optional<RecordedBlockEdit> exit_empty_indented_code(
@@ -584,85 +608,146 @@ inline std::optional<RecordedBlockEdit> exit_empty_block_quote(
     return result;
 }
 
-inline bool join_adjacent(
-    BlockVec& blocks,
+inline std::optional<RecordedBlockEdit> join_adjacent(
+    EditorDocument& document,
     NodeId id,
     bool backward,
-    EditorDocument& document,
-    NodeAllocator& allocator,
-    TextPosition& target) {
-    for (std::size_t index = 0; index < blocks.size(); ++index) {
-        if (blocks[index].id == id && text_block(blocks[index].kind)) {
-            if (backward && index > 0 && text_block(blocks[index - 1].kind)) {
-                const auto offset = blocks[index - 1].inline_content.source.size();
-                blocks[index - 1].inline_content.source += blocks[index].inline_content.source;
-                reparse(blocks[index - 1].inline_content, document, allocator);
-                const auto owner = blocks[index - 1].id;
-                blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index));
-                target = TextPosition{
-                    owner,
-                    offset,
-                    offset == 0 ? TextAffinity::Downstream : TextAffinity::Upstream};
-                return true;
-            }
-            if (backward && index > 0 && blocks[index].kind == BlockKind::Paragraph
-                && blocks[index].inline_content.source.empty()) {
-                if (auto previous = last_editable_position(blocks[index - 1])) {
-                    blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index));
-                    target = *previous;
-                    return true;
-                }
-            }
-            if (!backward && index + 1 < blocks.size() && text_block(blocks[index + 1].kind)) {
-                const auto offset = blocks[index].inline_content.source.size();
-                blocks[index].inline_content.source += blocks[index + 1].inline_content.source;
-                reparse(blocks[index].inline_content, document, allocator);
-                blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index + 1));
-                target = TextPosition{blocks[index].id, offset, TextAffinity::Downstream};
-                return true;
-            }
-            if (!backward && index + 1 < blocks.size() && blocks[index].kind == BlockKind::Paragraph
-                && blocks[index].inline_content.source.empty()) {
-                if (auto next = first_editable_position(blocks[index + 1])) {
-                    blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index));
-                    target = *next;
-                    return true;
-                }
-            }
-        }
-        if (join_adjacent(blocks[index].children, id, backward, document, allocator, target)) return true;
+    NodeAllocator& allocator) {
+    auto path = block_path(document.root, id);
+    if (!path || path->empty()) return std::nullopt;
+    auto parent_path = *path;
+    const auto index = parent_path.back();
+    parent_path.pop_back();
+    auto* parent = block_at_path(document.root, parent_path);
+    if (!parent || index >= parent->children.size() || !text_block(parent->children[index].kind)) {
+        return std::nullopt;
     }
-    return false;
+    auto& current = parent->children[index];
+    const auto parent_id = parent->id;
+    RecordedBlockEdit result;
+
+    if (backward && index > 0 && text_block(parent->children[index - 1].kind)) {
+        const auto owner = parent->children[index - 1].id;
+        const auto offset = parent->children[index - 1].inline_content.source.size();
+        auto source = current.inline_content.source;
+        if (!source.empty()) {
+            auto edit = edit_inline(document, owner, {offset, offset}, std::move(source), allocator);
+            if (!edit) return std::nullopt;
+            append_source_operation(result.operations, std::move(*edit));
+        }
+        parent = find_block(document.root, parent_id);
+        if (!parent || index >= parent->children.size()) return std::nullopt;
+        DocumentTreeEdit remove;
+        remove.kind = DocumentTreeEditKind::Remove;
+        remove.parent_id = parent_id;
+        remove.index = index;
+        remove.before = parent->children[index];
+        result.operations.emplace_back(std::move(remove));
+        parent->children.erase(parent->children.begin() + static_cast<std::ptrdiff_t>(index));
+        result.target = TextPosition{
+            owner,
+            offset,
+            offset == 0 ? TextAffinity::Downstream : TextAffinity::Upstream};
+        return result;
+    }
+    if (backward && index > 0 && current.kind == BlockKind::Paragraph
+        && current.inline_content.source.empty()) {
+        if (auto previous = last_editable_position(parent->children[index - 1])) {
+            result.target = *previous;
+            DocumentTreeEdit remove;
+            remove.kind = DocumentTreeEditKind::Remove;
+            remove.parent_id = parent_id;
+            remove.index = index;
+            remove.before = current;
+            result.operations.emplace_back(std::move(remove));
+            parent->children.erase(parent->children.begin() + static_cast<std::ptrdiff_t>(index));
+            return result;
+        }
+    }
+    if (!backward && index + 1 < parent->children.size()
+        && text_block(parent->children[index + 1].kind)) {
+        const auto owner = current.id;
+        const auto offset = current.inline_content.source.size();
+        auto source = parent->children[index + 1].inline_content.source;
+        if (!source.empty()) {
+            auto edit = edit_inline(document, owner, {offset, offset}, std::move(source), allocator);
+            if (!edit) return std::nullopt;
+            append_source_operation(result.operations, std::move(*edit));
+        }
+        parent = find_block(document.root, parent_id);
+        if (!parent || index + 1 >= parent->children.size()) return std::nullopt;
+        DocumentTreeEdit remove;
+        remove.kind = DocumentTreeEditKind::Remove;
+        remove.parent_id = parent_id;
+        remove.index = index + 1;
+        remove.before = parent->children[index + 1];
+        result.operations.emplace_back(std::move(remove));
+        parent->children.erase(parent->children.begin() + static_cast<std::ptrdiff_t>(index + 1));
+        result.target = TextPosition{owner, offset, TextAffinity::Downstream};
+        return result;
+    }
+    if (!backward && index + 1 < parent->children.size()
+        && current.kind == BlockKind::Paragraph && current.inline_content.source.empty()) {
+        if (auto next = first_editable_position(parent->children[index + 1])) {
+            result.target = *next;
+            DocumentTreeEdit remove;
+            remove.kind = DocumentTreeEditKind::Remove;
+            remove.parent_id = parent_id;
+            remove.index = index;
+            remove.before = current;
+            result.operations.emplace_back(std::move(remove));
+            parent->children.erase(parent->children.begin() + static_cast<std::ptrdiff_t>(index));
+            return result;
+        }
+    }
+    return std::nullopt;
 }
 
-inline bool remove_atomic(BlockVec& blocks, NodeId id, NodeAllocator& allocator, const EditorDocument& owner, TextPosition& target) {
-    for (std::size_t index = 0; index < blocks.size(); ++index) {
-        if (blocks[index].id == id && atomic_block(blocks[index].kind)) {
-            if (index + 1 < blocks.size()) {
-                if (auto next = first_editable_position(blocks[index + 1])) target = *next;
-                else {
-                    blocks[index] = empty_paragraph(allocator, owner);
-                    target = {blocks[index].id, 0, TextAffinity::Downstream};
-                    return true;
-                }
-            } else if (index > 0) {
-                if (auto previous = last_editable_position(blocks[index - 1])) target = *previous;
-                else {
-                    blocks[index] = empty_paragraph(allocator, owner);
-                    target = {blocks[index].id, 0, TextAffinity::Downstream};
-                    return true;
-                }
-            } else {
-                blocks[index] = empty_paragraph(allocator, owner);
-                target = {blocks[index].id, 0, TextAffinity::Downstream};
-                return true;
-            }
-            blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index));
-            return true;
-        }
-        if (remove_atomic(blocks[index].children, id, allocator, owner, target)) return true;
+inline std::optional<RecordedBlockEdit> remove_atomic(
+    EditorDocument& document,
+    NodeId id,
+    NodeAllocator& allocator) {
+    auto path = block_path(document.root, id);
+    if (!path || path->empty()) return std::nullopt;
+    auto parent_path = *path;
+    const auto index = parent_path.back();
+    parent_path.pop_back();
+    auto* parent = block_at_path(document.root, parent_path);
+    if (!parent || index >= parent->children.size() || !atomic_block(parent->children[index].kind)) {
+        return std::nullopt;
     }
-    return false;
+
+    RecordedBlockEdit result;
+    bool replace = false;
+    if (index + 1 < parent->children.size()) {
+        if (auto next = first_editable_position(parent->children[index + 1])) result.target = *next;
+        else replace = true;
+    } else if (index > 0) {
+        if (auto previous = last_editable_position(parent->children[index - 1])) result.target = *previous;
+        else replace = true;
+    } else {
+        replace = true;
+    }
+
+    DocumentTreeEdit remove;
+    remove.kind = DocumentTreeEditKind::Remove;
+    remove.parent_id = parent->id;
+    remove.index = index;
+    remove.before = parent->children[index];
+    result.operations.emplace_back(std::move(remove));
+    parent->children.erase(parent->children.begin() + static_cast<std::ptrdiff_t>(index));
+    if (replace) {
+        auto paragraph = empty_paragraph(allocator, document);
+        result.target = {paragraph.id, 0, TextAffinity::Downstream};
+        DocumentTreeEdit insert;
+        insert.kind = DocumentTreeEditKind::Insert;
+        insert.parent_id = parent->id;
+        insert.index = index;
+        insert.after = paragraph;
+        result.operations.emplace_back(std::move(insert));
+        if (!insert_block(*parent, index, std::move(paragraph))) return std::nullopt;
+    }
+    return result;
 }
 
 inline bool remove_node(BlockVec& blocks, NodeId id) {

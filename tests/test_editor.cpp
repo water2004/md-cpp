@@ -366,6 +366,89 @@ suite editor_tests = [] {
     }
 };
 
+"block_boundary_deletes_record_local_source_and_tree_operations"_test = [] {
+    auto exercise = [](Editor& editor, TextSelection before, bool backward, std::string_view label) {
+        const auto before_markdown = editor.markdown_utf8();
+        editor.set_selection(before);
+        reset_core_operation_counters();
+        auto transaction = backward
+            ? editor.execute_document_delete_backward(editor.selection())
+            : editor.execute_document_delete_forward(editor.selection());
+        expect(fatal(bool(transaction.has_value()))) << label;
+        if (!transaction) return;
+        const auto counters = read_core_operation_counters();
+        expect(fatal(bool(counters.full_document_parses == 0u))) << label;
+        expect(fatal(bool(counters.full_document_serializations == 0u))) << label;
+        expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << label;
+        expect(fatal(bool(!transaction->operations.empty()))) << label;
+        const auto after_markdown = editor.markdown_utf8();
+        const auto after = editor.selection();
+        expect(fatal(bool(editor.undo()))) << label;
+        expect(fatal(bool(editor.markdown_utf8() == before_markdown))) << label;
+        expect(fatal(bool(editor.selection() == before))) << label;
+        expect(fatal(bool(editor.redo()))) << label;
+        expect(fatal(bool(editor.markdown_utf8() == after_markdown))) << label;
+        expect(fatal(bool(editor.selection() == after))) << label;
+    };
+
+    Editor backward("alpha\n\nbeta");
+    const auto second_id = backward.document().root.children[1].id;
+    exercise(
+        backward,
+        TextSelection::caret({second_id, 0, TextAffinity::Downstream}),
+        true,
+        "backward sibling join");
+
+    Editor forward("alpha\n\nbeta");
+    const auto first_id = forward.document().root.children.front().id;
+    exercise(
+        forward,
+        TextSelection::caret({first_id, 5, TextAffinity::Upstream}),
+        false,
+        "forward sibling join");
+
+    Editor callout_backward("> [!NOTE] title\n> body");
+    const auto& callout = callout_backward.document().root.children.front();
+    const auto body_id = callout.children.front().id;
+    exercise(
+        callout_backward,
+        TextSelection::caret({body_id, 0, TextAffinity::Downstream}),
+        true,
+        "parent inline join");
+
+    Editor callout_forward("> [!NOTE] title\n> body");
+    const auto callout_id = callout_forward.document().root.children.front().id;
+    exercise(
+        callout_forward,
+        TextSelection::caret({callout_id, 5, TextAffinity::Upstream}),
+        false,
+        "first child join");
+
+    Editor blank_after_block("> quoted\n\n\nnext");
+    const auto blank_after_id = blank_after_block.document().root.children[1].id;
+    exercise(
+        blank_after_block,
+        TextSelection::caret({blank_after_id, 0, TextAffinity::Downstream}),
+        true,
+        "blank after structural block");
+
+    Editor blank_before_block("first\n\n\n> quoted");
+    const auto blank_before_id = blank_before_block.document().root.children[1].id;
+    exercise(
+        blank_before_block,
+        TextSelection::caret({blank_before_id, 0, TextAffinity::Downstream}),
+        false,
+        "blank before structural block");
+
+    Editor atomic("---\n\nafter");
+    const auto atomic_id = atomic.document().root.children.front().id;
+    exercise(
+        atomic,
+        TextSelection::caret({atomic_id, 0, TextAffinity::Downstream}),
+        false,
+        "atomic removal");
+};
+
 "selection_replacement_composes_delete_and_insert_source_edits"_test = [] {
     Editor editor("alpha");
     const auto owner_id = first_text(editor).id;
