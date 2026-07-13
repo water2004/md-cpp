@@ -155,7 +155,6 @@ enum class RenderBlockKind {
 struct RenderBlock {
     RenderBlockKind kind = RenderBlockKind::Text;
     NodeId id{};
-    std::uint64_t source_fingerprint = 0;
     // Block-local editable span. Container-only blocks use an empty span owned
     // by the container; their visible descendants carry their own spans.
     TextSpan source_span;
