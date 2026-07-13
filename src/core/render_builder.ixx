@@ -11,6 +11,7 @@ import elmd.core.inline_document;
 import elmd.core.selection;
 import elmd.core.text_edit;
 import elmd.core.document;
+import elmd.core.document_text;
 import elmd.core.outline;
 import elmd.core.diagnostics;
 import elmd.core.utf;
@@ -28,11 +29,8 @@ inline RenderDiagnostic convert_diagnostic(const Diagnostic& d) {
 }
 
 inline std::size_t block_local_length(const BlockNode& block) {
+    if (const auto* document = editable_inline_document(block)) return document->source.size();
     switch (block.kind) {
-        case BlockKind::Paragraph:
-        case BlockKind::Heading:
-        case BlockKind::TableCell:
-            return block.inline_content.source.size();
         case BlockKind::CodeBlock:
             return block.code_text.size();
         case BlockKind::MathBlock:
@@ -41,8 +39,6 @@ inline std::size_t block_local_length(const BlockNode& block) {
         case BlockKind::UnsupportedMarkup:
         case BlockKind::LinkDefinition:
             return utf8_to_cps(block.raw).size();
-        case BlockKind::Callout:
-            return block.callout_title ? block.callout_title->source.size() : 0;
         case BlockKind::ImageBlock:
         case BlockKind::Toc:
         case BlockKind::ThematicBreak:
@@ -98,11 +94,9 @@ inline void push_marker(
 }
 
 struct Builder {
-    static bool owns_text_position(BlockKind kind) {
-        switch (kind) {
-            case BlockKind::Paragraph:
-            case BlockKind::Heading:
-            case BlockKind::TableCell:
+    static bool owns_text_position(const BlockNode& block) {
+        if (editable_inline_document(block)) return true;
+        switch (block.kind) {
             case BlockKind::CodeBlock:
             case BlockKind::MathBlock:
             case BlockKind::ImageBlock:
@@ -119,7 +113,7 @@ struct Builder {
     }
 
     std::optional<NodeId> first_editable_owner(const BlockNode& block) const {
-        if (owns_text_position(block.kind)) return block.id;
+        if (owns_text_position(block)) return block.id;
         for (auto const& child : block.children) {
             if (auto owner = first_editable_owner(child)) return owner;
         }
@@ -127,11 +121,11 @@ struct Builder {
     }
 
     std::optional<TextPosition> last_editable_position(const BlockNode& block) const {
-        if (owns_text_position(block.kind)) {
-            return TextPosition{block.id, block_local_length(block), TextAffinity::Upstream};
-        }
         for (auto child = block.children.rbegin(); child != block.children.rend(); ++child) {
             if (auto position = last_editable_position(*child)) return position;
+        }
+        if (owns_text_position(block)) {
+            return TextPosition{block.id, block_local_length(block), TextAffinity::Upstream};
         }
         return std::nullopt;
     }
@@ -754,24 +748,7 @@ inline RenderModel build_render_model(const EditorDocument& doc, const Outline& 
     RenderModel m; m.revision = doc.revision; m.blocks = std::move(blocks);
     m.outline = outline; m.diagnostics = std::move(diags);
     auto collect_editable = [&](auto& self, BlockNode const& block) -> void {
-        switch (block.kind) {
-            case BlockKind::Paragraph:
-            case BlockKind::Heading:
-            case BlockKind::TableCell:
-            case BlockKind::CodeBlock:
-            case BlockKind::MathBlock:
-            case BlockKind::ImageBlock:
-            case BlockKind::Toc:
-            case BlockKind::Frontmatter:
-            case BlockKind::ThematicBreak:
-            case BlockKind::LinkDefinition:
-            case BlockKind::UnsupportedMarkup:
-            case BlockKind::Extension:
-                m.editable_order.push_back(block.id);
-                break;
-            default:
-                break;
-        }
+        if (Builder::owns_text_position(block)) m.editable_order.push_back(block.id);
         for (auto const& child : block.children) self(self, child);
     };
     for (auto const& block : doc.root.children) collect_editable(collect_editable, block);

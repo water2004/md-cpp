@@ -851,6 +851,38 @@ suite render_layout_tests = [] {
     }
 };
 
+"callout_title_is_the_first_editable_owner_in_unified_flow"_test = [] {
+    auto parsed = parse_text(1, "> [!NOTE] _title_\n> body\n");
+    expect(fatal(bool(!parsed.document.root.children.empty())));
+    if (parsed.document.root.children.empty()) return;
+    auto const& callout = parsed.document.root.children.front();
+    expect(fatal(bool(callout.kind == BlockKind::Callout)));
+    expect(fatal(bool(callout.callout_title.has_value())));
+    expect(fatal(bool(!callout.children.empty())));
+    if (!callout.callout_title || callout.children.empty()) return;
+    auto const title_id = callout.id;
+    auto const body_id = callout.children.front().id;
+
+    auto model = build_render_model(parsed.document, parsed.outline);
+    expect(fatal(bool(model.editable_order.size() >= 2u)));
+    if (model.editable_order.size() < 2) return;
+    expect(fatal(bool(model.editable_order[0] == title_id)));
+    expect(fatal(bool(model.editable_order[1] == body_id)));
+    expect(fatal(bool(!model.blocks.empty())));
+    if (model.blocks.empty()) return;
+    expect(fatal(bool(model.blocks.front().flow_anchor_owner_id == title_id)));
+    expect(fatal(bool(model.blocks.front().source_span.container_id == title_id)));
+    expect(fatal(bool(model.blocks.front().source_span.source_range.end
+        == callout.callout_title->source.size())));
+    const auto title_source = std::ranges::any_of(
+        model.blocks.front().inline_items,
+        [&](auto const& item) {
+            return item.source_span.container_id == title_id
+                && !item.source_span.source_range.empty();
+        });
+    expect(fatal(bool(title_source)));
+};
+
 "generated_container_prefixes_anchor_carets_to_the_source_boundary"_test = [] {
     StubMeasurer measurer(8.0f);
     for (auto const& markdown : std::vector<std::string>{"> quoted\n", "> - nested\n"}) {
