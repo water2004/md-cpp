@@ -675,10 +675,14 @@ namespace winrt::ElMd
     DisplayInlineText BuildCodeBlockText(elmd::RenderBlock const& block, elmd::TextPosition caret, TreeSitterHighlighter& highlighter)
     {
         DisplayInlineText display;
-        auto editing = caret.container_id == block.id;
+        // An indented code block has no user-visible delimiter. Its leading
+        // indentation is structural Markdown syntax and must stay hidden even
+        // while the block owns the caret. content_to_source keeps every
+        // displayed boundary in the one authoritative source coordinate.
+        auto editingRawFence = caret.container_id == block.id && !block.code_indented;
         auto code = block.code_text;
-        if (!editing && !code.empty() && code.back() == U'\n') code.pop_back();
-        if (editing)
+        if (!editingRawFence && !code.empty() && code.back() == U'\n') code.pop_back();
+        if (editingRawFence)
         {
             AppendSourceText(
                 display,
@@ -703,12 +707,12 @@ namespace winrt::ElMd
             {
                 auto start = (std::min)(static_cast<std::size_t>(highlight.start), code.size());
                 auto end = (std::min)(start + static_cast<std::size_t>(highlight.length), code.size());
-                auto displayStart = editing
+                auto displayStart = editingRawFence
                     ? static_cast<std::uint32_t>(elmd::char_index_to_utf16(
                         block.raw_source,
                         block.content_to_source.empty() ? start : block.content_to_source[start]))
                     : static_cast<std::uint32_t>(elmd::char_index_to_utf16(code, start));
-                auto displayEnd = editing
+                auto displayEnd = editingRawFence
                     ? static_cast<std::uint32_t>(elmd::char_index_to_utf16(
                         block.raw_source,
                         block.content_to_source.empty() ? end : block.content_to_source[end]))
@@ -725,7 +729,7 @@ namespace winrt::ElMd
                 }
             }
         }
-        const auto endpoint = editing
+        const auto endpoint = editingRawFence
             ? block.raw_source.size()
             : (block.content_to_source.empty()
                 ? code.size()

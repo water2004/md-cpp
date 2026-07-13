@@ -274,13 +274,39 @@ suite render_layout_tests = [] {
 };
 
 "builds_indented_code_block_with_local_code_source"_test = [] {
-    auto m = build_model("    alpha\n    beta\n");
+    auto m = build_model("    **alpha**\n    _beta_ $gamma$\n");
     expect(fatal(bool((m.blocks.size()) == (1u))));
     expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Code)));
     expect(fatal(bool(m.blocks[0].code_indented)));
-    expect(fatal(bool((m.blocks[0].code_text) == (std::u32string(U"alpha\nbeta\n")))));
+    expect(fatal(bool((m.blocks[0].code_text) == (std::u32string(U"**alpha**\n_beta_ $gamma$\n")))));
+    expect(fatal(bool(m.blocks[0].inline_items.empty())));
     expect(fatal(bool((m.blocks[0].source_span.source_range.start) == (0u))));
     expect(fatal(bool((m.blocks[0].source_span.source_range.end) == (m.blocks[0].raw_source.size()))));
+};
+
+"nested_indented_code_keeps_markdown_markers_literal"_test = [] {
+    auto model = build_model(
+        "1. item\n"
+        "\n"
+        "       **bold** _italic_ $math$\n");
+    const auto* code = find_render_block(model.blocks.front(), RenderBlockKind::Code);
+    expect(fatal(bool(code != nullptr))) << "nested code node";
+    if (!code) return;
+    expect(fatal(bool(code->code_indented))) << "indented code kind";
+    auto literal = code->code_text;
+    if (!literal.empty() && literal.back() == U'\n') literal.pop_back();
+    expect(fatal(bool(literal == U"**bold** _italic_ $math$"))) << "literal code source";
+
+    std::u32string displayed;
+    for (const auto& item : model.blocks.front().inline_items) {
+        if (item.source_span.container_id != code->id
+            || item.kind != InlineRenderItem::Kind::Text) continue;
+        displayed += item.text;
+        expect(fatal(bool(item.style.code))) << "code style only";
+        expect(fatal(bool(!item.style.bold && !item.style.italic
+            && !item.style.link && !item.style.strikethrough))) << "no markdown inline style";
+    }
+    expect(fatal(bool(displayed == code->code_text))) << "displayed literal source";
 };
 
 "list_render_model_retains_nested_code_block_identity"_test = [] {
