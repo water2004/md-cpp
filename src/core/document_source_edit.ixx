@@ -78,6 +78,7 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
     document_edit_detail::NodeAllocator allocator(after);
     TextPosition target;
     std::optional<AppliedSourceEdit> source_edit;
+    std::vector<DocumentOperation> operations;
     if (auto exited = document_edit_detail::exit_empty_indented_code(after, selection.active, allocator)) {
         target = *exited;
     } else if (auto exited_quote = document_edit_detail::exit_empty_block_quote(after, selection.active, allocator)) {
@@ -97,14 +98,30 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
         source_edit = document_edit_detail::edit_inline(after, block->id, {offset, offset}, U"<br>", allocator);
         if (!source_edit) return std::nullopt;
         target = {block->id, offset + 4, TextAffinity::Downstream};
-    } else if (!document_edit_detail::split_direct(after.root.children, selection.active.container_id, selection.active.source_offset, after, allocator, target)) {
-        return std::nullopt;
+    } else {
+        auto split = document_edit_detail::split_direct(
+            after,
+            selection.active.container_id,
+            selection.active.source_offset,
+            allocator);
+        if (!split) return std::nullopt;
+        target = split->target;
+        operations = std::move(split->operations);
     }
     ++after.revision;
     if (source_edit) {
         return document_edit_detail::source_transaction(
             std::move(after),
             std::move(*source_edit),
+            selection,
+            TextSelection::caret(target),
+            document.revision,
+            DocumentTransactionReason::Structure);
+    }
+    if (!operations.empty()) {
+        return make_recorded_document_transaction(
+            std::move(after),
+            std::move(operations),
             selection,
             TextSelection::caret(target),
             document.revision,

@@ -237,46 +237,102 @@ inline std::optional<AppliedSourceEdit> erase_text(
     return edit_block_source(document, id, range, {}, allocator);
 }
 
-inline bool split_direct(
-    BlockVec& blocks,
+struct RecordedBlockEdit {
+    TextPosition target;
+    std::vector<DocumentOperation> operations;
+};
+
+inline void append_source_operation(
+    std::vector<DocumentOperation>& operations,
+    AppliedSourceEdit edit) {
+    operations.emplace_back(DocumentTextOperation{
+        std::move(edit.forward),
+        std::move(edit.inverse),
+    });
+}
+
+inline std::optional<RecordedBlockEdit> split_direct(
+    EditorDocument& document,
     NodeId id,
     std::size_t offset,
-    EditorDocument& document,
-    NodeAllocator& allocator,
-    TextPosition& target) {
-    for (std::size_t index = 0; index < blocks.size(); ++index) {
-        auto& block = blocks[index];
-        if (block.id == id && block.kind == BlockKind::Callout && block.callout_title) {
-            offset = (std::min)(offset, block.callout_title->source.size());
-            auto right_source = block.callout_title->source.substr(offset);
-            block.callout_title->source.erase(offset);
-            reparse(*block.callout_title, document, allocator);
-            if (block.callout_title->source.empty()) block.callout_title.reset();
+    NodeAllocator& allocator) {
+    auto path = block_path(document.root, id);
+    if (!path || path->empty()) return std::nullopt;
+    auto parent_path = *path;
+    const auto index = parent_path.back();
+    parent_path.pop_back();
+    auto* parent = block_at_path(document.root, parent_path);
+    auto* block = block_at_path(document.root, *path);
+    if (!parent || !block || index >= parent->children.size()) return std::nullopt;
 
-            BlockNode right;
-            right.id = allocator.allocate();
-            right.kind = BlockKind::Paragraph;
-            right.inline_content = make_inline(std::move(right_source), document, allocator);
-            target = TextPosition{right.id, 0, TextAffinity::Downstream};
-            block.children.insert(block.children.begin(), std::move(right));
-            return true;
+    RecordedBlockEdit result;
+    if (block->kind == BlockKind::Callout && block->callout_title) {
+        offset = (std::min)(offset, block->callout_title->source.size());
+        auto right_source = block->callout_title->source.substr(offset);
+        if (offset == 0) {
+            DocumentTreeEdit update;
+            update.kind = DocumentTreeEditKind::UpdatePayload;
+            update.before = document_transaction_detail::payload_shell(*block);
+            block->callout_title.reset();
+            update.after = document_transaction_detail::payload_shell(*block);
+            result.operations.emplace_back(std::move(update));
+        } else if (offset < block->callout_title->source.size()) {
+            auto edit = edit_inline(
+                document,
+                id,
+                {offset, block->callout_title->source.size()},
+                {},
+                allocator);
+            if (!edit) return std::nullopt;
+            append_source_operation(result.operations, std::move(*edit));
+            block = find_block(document.root, id);
+            if (!block) return std::nullopt;
         }
-        if (block.id == id && text_block(block.kind)) {
-            offset = (std::min)(offset, block.inline_content.source.size());
-            auto right_source = block.inline_content.source.substr(offset);
-            block.inline_content.source.erase(offset);
-            reparse(block.inline_content, document, allocator);
-            BlockNode right;
-            right.id = allocator.allocate();
-            right.kind = BlockKind::Paragraph;
-            right.inline_content = make_inline(std::move(right_source), document, allocator);
-            blocks.insert(blocks.begin() + static_cast<std::ptrdiff_t>(index + 1), std::move(right));
-            target = TextPosition{blocks[index + 1].id, 0, TextAffinity::Downstream};
-            return true;
-        }
-        if (split_direct(block.children, id, offset, document, allocator, target)) return true;
+
+        BlockNode right;
+        right.id = allocator.allocate();
+        right.kind = BlockKind::Paragraph;
+        right.inline_content = make_inline(std::move(right_source), document, allocator);
+        result.target = TextPosition{right.id, 0, TextAffinity::Downstream};
+        DocumentTreeEdit insert;
+        insert.kind = DocumentTreeEditKind::Insert;
+        insert.parent_id = block->id;
+        insert.index = 0;
+        insert.after = right;
+        result.operations.emplace_back(std::move(insert));
+        block->children.insert(block->children.begin(), std::move(right));
+        return result;
     }
-    return false;
+
+    if (!text_block(block->kind)) return std::nullopt;
+    offset = (std::min)(offset, block->inline_content.source.size());
+    auto right_source = block->inline_content.source.substr(offset);
+    if (offset < block->inline_content.source.size()) {
+        auto edit = edit_inline(
+            document,
+            id,
+            {offset, block->inline_content.source.size()},
+            {},
+            allocator);
+        if (!edit) return std::nullopt;
+        append_source_operation(result.operations, std::move(*edit));
+    }
+
+    BlockNode right;
+    right.id = allocator.allocate();
+    right.kind = BlockKind::Paragraph;
+    right.inline_content = make_inline(std::move(right_source), document, allocator);
+    result.target = TextPosition{right.id, 0, TextAffinity::Downstream};
+    DocumentTreeEdit insert;
+    insert.kind = DocumentTreeEditKind::Insert;
+    insert.parent_id = parent->id;
+    insert.index = index + 1;
+    insert.after = right;
+    result.operations.emplace_back(std::move(insert));
+    parent->children.insert(
+        parent->children.begin() + static_cast<std::ptrdiff_t>(index + 1),
+        std::move(right));
+    return result;
 }
 
 inline bool join_parent_inline_owner(

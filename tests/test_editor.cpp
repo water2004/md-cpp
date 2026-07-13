@@ -117,6 +117,57 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.redo())));
     expect(fatal(bool(editor.markdown_utf8() == "aXb")));
     expect(fatal(bool(editor.selection() == after_selection)));
+
+    Editor multiline("ab");
+    const auto multiline_before = caret(first_text(multiline), 1);
+    multiline.set_selection(multiline_before);
+    reset_core_operation_counters();
+    auto multiline_transaction = multiline.execute_document_paste_text(
+        multiline.selection(), U"X\nY");
+    expect(fatal(bool(multiline_transaction.has_value())));
+    if (!multiline_transaction) return;
+    const auto multiline_counters = read_core_operation_counters();
+    expect(fatal(bool(multiline_counters.full_document_parses == 0u)));
+    expect(fatal(bool(multiline_counters.full_document_serializations == 0u)));
+    expect(fatal(bool(multiline_counters.full_tree_transaction_diffs == 0u)));
+    expect(fatal(bool(multiline.markdown_utf8() == "aX\n\nYb")));
+    const auto multiline_after = multiline.selection();
+    expect(fatal(bool(multiline.undo())));
+    expect(fatal(bool(multiline.markdown_utf8() == "ab")));
+    expect(fatal(bool(multiline.selection() == multiline_before)));
+    expect(fatal(bool(multiline.redo())));
+    expect(fatal(bool(multiline.markdown_utf8() == "aX\n\nYb")));
+    expect(fatal(bool(multiline.selection() == multiline_after)));
+};
+
+"paragraph_splits_record_local_source_and_tree_edits"_test = [] {
+    const std::vector<std::string> cases{"ab", "> ab"};
+    for (const auto& markdown : cases) {
+        Editor editor(markdown);
+        const auto owner_id = first_text(editor).id;
+        const auto before_selection = TextSelection::caret(
+            {owner_id, 1, TextAffinity::Downstream});
+        const auto before_markdown = editor.markdown_utf8();
+        editor.set_selection(before_selection);
+        reset_core_operation_counters();
+        auto transaction = editor.execute_document_enter(editor.selection());
+        expect(fatal(bool(transaction.has_value()))) << markdown;
+        if (!transaction) continue;
+        const auto counters = read_core_operation_counters();
+        expect(fatal(bool(counters.full_document_parses == 0u))) << markdown;
+        expect(fatal(bool(counters.full_document_serializations == 0u))) << markdown;
+        expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << markdown;
+        expect(fatal(bool(transaction->operations.size() == 2u))) << markdown;
+        const auto after_markdown = editor.markdown_utf8();
+        const auto after_selection = editor.selection();
+
+        expect(fatal(bool(editor.undo()))) << markdown;
+        expect(fatal(bool(editor.markdown_utf8() == before_markdown))) << markdown;
+        expect(fatal(bool(editor.selection() == before_selection))) << markdown;
+        expect(fatal(bool(editor.redo()))) << markdown;
+        expect(fatal(bool(editor.markdown_utf8() == after_markdown))) << markdown;
+        expect(fatal(bool(editor.selection() == after_selection))) << markdown;
+    }
 };
 
 "selection_replacement_composes_delete_and_insert_source_edits"_test = [] {
@@ -261,7 +312,12 @@ suite editor_tests = [] {
     const auto before_selection = TextSelection::caret(
         {callout_id, 2, TextAffinity::Downstream});
     editor.set_selection(before_selection);
+    reset_core_operation_counters();
     expect(fatal(bool(editor.execute_document_enter(editor.selection()).has_value())));
+    const auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_parses == 0u)));
+    expect(fatal(bool(counters.full_document_serializations == 0u)));
+    expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
     const auto after_selection = editor.selection();
     expect(fatal(bool(after_selection.active.container_id != callout_id)));
     expect(fatal(bool(editor.markdown_utf8() == "> [!NOTE] ti\n> tle\n>\n> body")));
