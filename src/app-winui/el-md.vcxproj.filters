@@ -25,6 +25,7 @@
     <ClCompile Include="..\core\dialect.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\document.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\document_edit.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\document_block_reparse.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\document_edit_support.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\document_input_rules.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\document_source_edit.ixx"><Filter>Core Modules</Filter></ClCompile>
