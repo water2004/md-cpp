@@ -11,6 +11,7 @@ import elmd.core.ast;
 import elmd.core.block_tree;
 import elmd.core.document;
 import elmd.core.document_edit;
+import elmd.core.document_text;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
 import elmd.core.parser;
@@ -62,9 +63,8 @@ void expect_inline_lossless(const InlineDocument& inline_document) {
 void expect_document_valid(const EditorDocument& document) {
     expect(fatal(bool(validate_document(document).empty())));
     walk_blocks(document.root, [&](const BlockNode& node) {
-        if (node.kind == BlockKind::Paragraph || node.kind == BlockKind::Heading || node.kind == BlockKind::TableCell) {
-            expect_inline_lossless(node.inline_content);
-        }
+        if (const auto* inline_document = editable_inline_document(node))
+            expect_inline_lossless(*inline_document);
     });
 }
 
@@ -633,6 +633,154 @@ suite document_edit_tests = [] {
         expect(fatal(bool(forward->after.root.children[0].inline_content.source == U"alphabeta")));
         expect(fatal(bool(elmd::find_block(forward->after.root, second_id) == nullptr)));
     }
+};
+
+"callout_title_boundaries_use_tree_split_join_and_unwrap"_test = [] {
+    auto document = parse_document("> [!NOTE] title\n> body");
+    const auto callout_id = document.root.children.front().id;
+
+    auto entered_at_start = document_enter(
+        document,
+        TextSelection::caret({callout_id, 0, TextAffinity::Downstream}));
+    expect(fatal(bool(entered_at_start.has_value()))) << "enter at callout title start";
+    if (entered_at_start) {
+        auto const& callout = entered_at_start->after.root.children.front();
+        expect(fatal(bool(!callout.callout_title.has_value())));
+        expect(fatal(bool(callout.children.size() == 2u)));
+        if (callout.children.size() == 2u) {
+            expect(fatal(bool(callout.children[0].inline_content.source == U"title")));
+            expect(fatal(bool(callout.children[1].inline_content.source == U"body")));
+            expect(fatal(bool(entered_at_start->selection_after.active.container_id == callout.children[0].id)));
+            expect(fatal(bool(entered_at_start->selection_after.active.source_offset == 0u)));
+        }
+        expect_document_valid(entered_at_start->after);
+    }
+
+    auto entered = document_enter(
+        document,
+        TextSelection::caret({callout_id, 2, TextAffinity::Downstream}));
+    expect(fatal(bool(entered.has_value()))) << "enter callout title";
+    if (entered) {
+        auto const& callout = entered->after.root.children.front();
+        expect(fatal(bool(callout.kind == BlockKind::Callout)));
+        expect(fatal(bool(callout.callout_title.has_value())));
+        expect(fatal(bool(callout.callout_title && callout.callout_title->source == U"ti")));
+        expect(fatal(bool(callout.children.size() == 2u)));
+        if (callout.children.size() == 2) {
+            expect(fatal(bool(callout.children[0].inline_content.source == U"tle")));
+            expect(fatal(bool(callout.children[1].inline_content.source == U"body")));
+            expect(fatal(bool(entered->selection_after.active.container_id == callout.children[0].id)));
+        }
+        auto serialized = serialize_markdown(entered->after);
+        expect(fatal(bool(serialized == "> [!NOTE] ti\n> tle\n>\n> body"))) << serialized;
+        expect_document_valid(entered->after);
+    }
+
+    const auto body_id = document.root.children.front().children.front().id;
+    auto backward = document_delete_backward(
+        document,
+        TextSelection::caret({body_id, 0, TextAffinity::Downstream}));
+    expect(fatal(bool(backward.has_value()))) << "backspace first callout body";
+    if (backward) {
+        auto const& callout = backward->after.root.children.front();
+        expect(fatal(bool(callout.callout_title.has_value())));
+        expect(fatal(bool(callout.callout_title && callout.callout_title->source == U"titlebody")));
+        expect(fatal(bool(callout.children.empty())));
+        expect(fatal(bool(backward->selection_after.active.container_id == callout_id)));
+        expect(fatal(bool(backward->selection_after.active.source_offset == 5u)));
+        expect_document_valid(backward->after);
+    }
+
+    auto forward = document_delete_forward(
+        document,
+        TextSelection::caret({callout_id, 5, TextAffinity::Upstream}));
+    expect(fatal(bool(forward.has_value()))) << "delete after callout title";
+    if (forward) {
+        auto const& callout = forward->after.root.children.front();
+        expect(fatal(bool(callout.callout_title.has_value())));
+        expect(fatal(bool(callout.callout_title && callout.callout_title->source == U"titlebody")));
+        expect(fatal(bool(callout.children.empty())));
+        expect(fatal(bool(forward->selection_after.active.container_id == callout_id)));
+        expect(fatal(bool(forward->selection_after.active.source_offset == 5u)));
+        expect_document_valid(forward->after);
+    }
+
+    auto unwrapped = document_delete_backward(
+        document,
+        TextSelection::caret({callout_id, 0, TextAffinity::Downstream}));
+    expect(fatal(bool(unwrapped.has_value()))) << "backspace callout title start";
+    if (unwrapped) {
+        auto const& quote = unwrapped->after.root.children.front();
+        expect(fatal(bool(quote.kind == BlockKind::BlockQuote)));
+        expect(fatal(bool(quote.children.size() == 1u)));
+        if (quote.children.size() == 1) {
+            expect(fatal(bool(quote.children[0].id == callout_id)));
+            expect(fatal(bool(quote.children[0].inline_content.source == U"title\nbody")));
+        }
+        expect(fatal(bool(serialize_markdown(unwrapped->after) == "> title\n> body")));
+        expect_document_valid(unwrapped->after);
+    }
+};
+
+"callout_boundaries_are_independent_of_ancestor_depth"_test = [] {
+    auto nested = parse_document("- > [!NOTE] title\n  > body");
+    const BlockNode* callout = nullptr;
+    walk_blocks(nested.root, [&](const BlockNode& node) {
+        if (!callout && node.kind == BlockKind::Callout) callout = &node;
+    });
+    expect(fatal(bool(callout != nullptr)));
+    if (callout && callout->callout_title && !callout->children.empty()) {
+        const auto callout_id = callout->id;
+        const auto body_id = callout->children.front().id;
+        auto joined = document_delete_backward(
+            nested,
+            TextSelection::caret({body_id, 0, TextAffinity::Downstream}));
+        expect(fatal(bool(joined.has_value())));
+        if (joined) {
+            const auto* updated = find_block(joined->after.root, callout_id);
+            expect(fatal(bool(updated != nullptr)));
+            expect(fatal(bool(updated && updated->kind == BlockKind::Callout)));
+            expect(fatal(bool(updated && updated->callout_title.has_value())));
+            expect(fatal(bool(updated && updated->callout_title
+                && updated->callout_title->source == U"titlebody")));
+            expect(fatal(bool(updated && updated->children.empty())));
+            expect(fatal(bool(joined->after.root.children.front().kind == BlockKind::List)));
+            expect_document_valid(joined->after);
+        }
+
+        auto unwrapped = document_delete_backward(
+            nested,
+            TextSelection::caret({callout_id, 0, TextAffinity::Downstream}));
+        expect(fatal(bool(unwrapped.has_value())));
+        if (unwrapped) {
+            expect(fatal(bool(unwrapped->after.root.children.front().kind == BlockKind::List)));
+            const BlockNode* quote = nullptr;
+            walk_blocks(unwrapped->after.root, [&](const BlockNode& node) {
+                if (!quote && node.kind == BlockKind::BlockQuote) quote = &node;
+            });
+            expect(fatal(bool(quote != nullptr)));
+            expect(fatal(bool(find_block(unwrapped->after.root, callout_id) != nullptr)));
+            expect_document_valid(unwrapped->after);
+        }
+    }
+
+    auto untitled = parse_document("> [!NOTE]\n> body");
+    const auto body_id = first_editable(untitled).id;
+    auto remove_callout = document_delete_backward(
+        untitled,
+        TextSelection::caret({body_id, 0, TextAffinity::Downstream}));
+    expect(fatal(bool(remove_callout.has_value())));
+    if (!remove_callout) return;
+    expect(fatal(bool(remove_callout->after.root.children.front().kind == BlockKind::BlockQuote)));
+    expect(fatal(bool(remove_callout->selection_after.active.container_id == body_id)));
+
+    auto remove_quote = document_delete_backward(remove_callout->after, remove_callout->selection_after);
+    expect(fatal(bool(remove_quote.has_value())));
+    if (!remove_quote) return;
+    expect(fatal(bool(remove_quote->after.root.children.front().kind == BlockKind::Paragraph)));
+    expect(fatal(bool(remove_quote->after.root.children.front().id == body_id)));
+    expect(fatal(bool(remove_quote->after.root.children.front().inline_content.source == U"body")));
+    expect_document_valid(remove_quote->after);
 };
 
 "backspace_joins_later_text_children_before_unwrapping_containers"_test = [] {

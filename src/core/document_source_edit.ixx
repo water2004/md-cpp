@@ -240,7 +240,10 @@ inline std::optional<DocumentTransaction> document_delete_backward(const EditorD
         }
     } else if (auto unprefixed = document_input_rules::handle_backspace_at_start(after, target, allocator)) {
         target = *unprefixed;
-    } else if (!document_edit_detail::join_adjacent(after.root.children, target.container_id, true, after, allocator, target)) {
+    } else if (!document_edit_detail::join_parent_inline_owner(
+                   after, target.container_id, allocator, target)
+        && !document_edit_detail::join_adjacent(
+            after.root.children, target.container_id, true, after, allocator, target)) {
         if (!document_edit_detail::remove_atomic(after.root.children, target.container_id, allocator, after, target)) return std::nullopt;
     }
     ++after.revision;
@@ -272,7 +275,10 @@ inline std::optional<DocumentTransaction> document_delete_forward(const EditorDo
                        after, target.container_id, {target.source_offset, target.source_offset + 1}, allocator)) {
             return std::nullopt;
         }
-    } else if (!document_edit_detail::join_adjacent(after.root.children, target.container_id, false, after, allocator, target)) return std::nullopt;
+    } else if (!document_edit_detail::join_first_child_into_inline_owner(
+                   after, target.container_id, allocator, target)
+        && !document_edit_detail::join_adjacent(
+            after.root.children, target.container_id, false, after, allocator, target)) return std::nullopt;
     ++after.revision;
     if (inline_edit) {
         return document_edit_detail::source_transaction(

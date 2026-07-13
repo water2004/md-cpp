@@ -57,10 +57,10 @@ inline std::optional<TextPosition> first_editable_position(const BlockNode& bloc
 }
 
 inline std::optional<TextPosition> last_editable_position(const BlockNode& block) {
-    if (auto length = local_position_length(block)) return TextPosition{block.id, *length, TextAffinity::Upstream};
     for (auto child = block.children.rbegin(); child != block.children.rend(); ++child) {
         if (auto position = last_editable_position(*child)) return position;
     }
+    if (auto length = local_position_length(block)) return TextPosition{block.id, *length, TextAffinity::Upstream};
     return std::nullopt;
 }
 
@@ -228,6 +228,21 @@ inline bool split_direct(
     TextPosition& target) {
     for (std::size_t index = 0; index < blocks.size(); ++index) {
         auto& block = blocks[index];
+        if (block.id == id && block.kind == BlockKind::Callout && block.callout_title) {
+            offset = (std::min)(offset, block.callout_title->source.size());
+            auto right_source = block.callout_title->source.substr(offset);
+            block.callout_title->source.erase(offset);
+            reparse(*block.callout_title, document, allocator);
+            if (block.callout_title->source.empty()) block.callout_title.reset();
+
+            BlockNode right;
+            right.id = allocator.allocate();
+            right.kind = BlockKind::Paragraph;
+            right.inline_content = make_inline(std::move(right_source), document, allocator);
+            target = TextPosition{right.id, 0, TextAffinity::Downstream};
+            block.children.insert(block.children.begin(), std::move(right));
+            return true;
+        }
         if (block.id == id && text_block(block.kind)) {
             offset = (std::min)(offset, block.inline_content.source.size());
             auto right_source = block.inline_content.source.substr(offset);
@@ -244,6 +259,51 @@ inline bool split_direct(
         if (split_direct(block.children, id, offset, document, allocator, target)) return true;
     }
     return false;
+}
+
+inline bool join_parent_inline_owner(
+    EditorDocument& document,
+    NodeId child_id,
+    NodeAllocator& allocator,
+    TextPosition& target) {
+    auto path = block_path(document.root, child_id);
+    if (!path || path->size() < 2 || path->back() != 0) return false;
+    auto parent_path = *path;
+    parent_path.pop_back();
+    auto* parent = block_at_path(document.root, parent_path);
+    if (!parent || parent->children.empty()) return false;
+    auto* parent_inline = editable_inline_document(*parent);
+    auto* child_inline = editable_inline_document(parent->children.front());
+    if (!parent_inline || !child_inline) return false;
+
+    const auto offset = parent_inline->source.size();
+    parent_inline->source += child_inline->source;
+    reparse(*parent_inline, document, allocator);
+    parent->children.erase(parent->children.begin());
+    target = TextPosition{
+        parent->id,
+        offset,
+        offset == 0 ? TextAffinity::Downstream : TextAffinity::Upstream};
+    return true;
+}
+
+inline bool join_first_child_into_inline_owner(
+    EditorDocument& document,
+    NodeId parent_id,
+    NodeAllocator& allocator,
+    TextPosition& target) {
+    auto* parent = find_block(document.root, parent_id);
+    if (!parent || parent->children.empty()) return false;
+    auto* parent_inline = editable_inline_document(*parent);
+    auto* child_inline = editable_inline_document(parent->children.front());
+    if (!parent_inline || !child_inline) return false;
+
+    const auto offset = parent_inline->source.size();
+    parent_inline->source += child_inline->source;
+    reparse(*parent_inline, document, allocator);
+    parent->children.erase(parent->children.begin());
+    target = TextPosition{parent->id, offset, TextAffinity::Downstream};
+    return true;
 }
 
 inline std::optional<TextPosition> exit_empty_indented_code(

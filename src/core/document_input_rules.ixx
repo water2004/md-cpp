@@ -528,6 +528,63 @@ inline std::optional<TextPosition> remove_heading_prefix(
     return TextPosition{block->id, 0, TextAffinity::Downstream};
 }
 
+inline std::optional<TextPosition> remove_callout_prefix(
+    EditorDocument& document,
+    TextPosition position,
+    document_edit_detail::NodeAllocator& allocator) {
+    auto path = block_path(document.root, position.container_id);
+    if (!path || path->empty()) return std::nullopt;
+    auto* selected = block_at_path(document.root, *path);
+    if (!selected) return std::nullopt;
+
+    if (selected->kind == BlockKind::Callout && selected->callout_title) {
+        auto parent_path = *path;
+        const auto callout_index = parent_path.back();
+        parent_path.pop_back();
+        auto* parent = block_at_path(document.root, parent_path);
+        if (!parent || callout_index >= parent->children.size()) return std::nullopt;
+
+        auto original = std::move(parent->children[callout_index]);
+        BlockNode title;
+        title.id = original.id;
+        title.kind = BlockKind::Paragraph;
+        title.inline_content = std::move(*original.callout_title);
+        if (!original.children.empty()
+            && document_edit_detail::text_block(original.children.front().kind)) {
+            title.inline_content.source += U"\n" + original.children.front().inline_content.source;
+            document_edit_detail::reparse(title.inline_content, document, allocator);
+            original.children.erase(original.children.begin());
+        }
+
+        BlockNode quote;
+        quote.id = allocator.allocate();
+        quote.kind = BlockKind::BlockQuote;
+        quote.children.push_back(std::move(title));
+        quote.children.insert(
+            quote.children.end(),
+            std::make_move_iterator(original.children.begin()),
+            std::make_move_iterator(original.children.end()));
+        parent->children[callout_index] = std::move(quote);
+        return TextPosition{position.container_id, 0, TextAffinity::Downstream};
+    }
+
+    if (path->size() < 2) return std::nullopt;
+    auto callout_path = *path;
+    const auto child_index = callout_path.back();
+    callout_path.pop_back();
+    auto* callout = block_at_path(document.root, callout_path);
+    if (!callout || callout->kind != BlockKind::Callout || callout->callout_title
+        || child_index != 0) return std::nullopt;
+
+    auto children = std::move(callout->children);
+    const auto id = callout->id;
+    *callout = BlockNode{};
+    callout->id = id;
+    callout->kind = BlockKind::BlockQuote;
+    callout->children = std::move(children);
+    return TextPosition{position.container_id, 0, TextAffinity::Downstream};
+}
+
 inline BlockNode container_shell_from(const BlockNode& source, NodeId id) {
     auto result = source;
     result.id = id;
@@ -712,6 +769,7 @@ inline std::optional<TextPosition> handle_backspace_at_start(
     document_edit_detail::NodeAllocator& allocator) {
     if (position.source_offset != 0) return std::nullopt;
     if (auto heading = detail::remove_heading_prefix(document, position)) return heading;
+    if (auto callout = detail::remove_callout_prefix(document, position, allocator)) return callout;
     if (auto quote = detail::remove_quote_prefix(document, position)) return quote;
     return detail::remove_list_prefix(document, position, allocator);
 }

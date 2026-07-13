@@ -132,6 +132,25 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.markdown_utf8() == "> [!NOTE] _Xtitle_\n> body")));
 };
 
+"callout_title_tree_splits_restore_exactly_through_history"_test = [] {
+    Editor editor("> [!NOTE] title\n> body");
+    const auto callout_id = editor.document().root.children.front().id;
+    const auto before_selection = TextSelection::caret(
+        {callout_id, 2, TextAffinity::Downstream});
+    editor.set_selection(before_selection);
+    expect(fatal(bool(editor.execute_document_enter(editor.selection()).has_value())));
+    const auto after_selection = editor.selection();
+    expect(fatal(bool(after_selection.active.container_id != callout_id)));
+    expect(fatal(bool(editor.markdown_utf8() == "> [!NOTE] ti\n> tle\n>\n> body")));
+
+    expect(fatal(bool(editor.undo())));
+    expect(fatal(bool(editor.markdown_utf8() == "> [!NOTE] title\n> body")));
+    expect(fatal(bool(editor.selection() == before_selection)));
+    expect(fatal(bool(editor.redo())));
+    expect(fatal(bool(editor.markdown_utf8() == "> [!NOTE] ti\n> tle\n>\n> body")));
+    expect(fatal(bool(editor.selection() == after_selection)));
+};
+
 "inline_delete_and_format_record_their_text_edits_directly"_test = [] {
     Editor editor("alpha");
     editor.set_selection(caret(first_text(editor), 2));
