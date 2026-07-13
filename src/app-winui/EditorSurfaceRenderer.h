@@ -15,6 +15,7 @@ namespace winrt::ElMd
 {
     struct EditorSurfaceRenderer
     {
+        EditorSurfaceRenderer();
         ~EditorSurfaceRenderer();
 
         enum class Theme
@@ -53,7 +54,10 @@ namespace winrt::ElMd
         bool ScrollToPosition(elmd::TextPosition position);
 
     private:
+        struct PreparedDocument;
+
         void DrawDocument(detail::EditorRenderFrame const& frame);
+        void ClearPreparedDocument();
 
         void Invalidate();
 
@@ -82,7 +86,9 @@ namespace winrt::ElMd
         EditorStyleSheet styleSheet = CreateEditorStyleSheet(true);
         EditorInteractionMap interactionMap;
         std::vector<D2D1_RECT_F> nonInteractiveRegions;
-        std::uint64_t observedRemoteImageGeneration = 0;
+        std::unique_ptr<PreparedDocument> preparedDocument;
+        std::unordered_map<std::uint64_t, float> documentOwnerY;
+        std::uint64_t embeddedGeneration = 0;
         std::optional<D2D1_POINT_2F> pointerPosition;
         std::optional<TableAction> draggedTableAction;
         std::optional<std::size_t> tableDropIndex;

@@ -67,6 +67,7 @@ namespace winrt::ElMd
         std::vector<MathPreview> mathPreviews;
         std::vector<ImageOverlay> imageOverlays;
         std::vector<IndentOverlay> indentOverlays;
+        bool pendingMath = false;
     };
 
     std::wstring ToWide(std::u32string_view text);

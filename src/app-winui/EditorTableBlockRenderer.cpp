@@ -8,40 +8,32 @@ import elmd.core.types;
 
 namespace winrt::ElMd
 {
-    std::optional<float> EditorTableBlockRenderer::Render(
+    std::optional<EditorTableBlockRenderer::PreparedTable> EditorTableBlockRenderer::Prepare(
         elmd::RenderBlock const& block,
         elmd::TextPosition caret,
-        elmd::TextSelection selection,
-        float documentLeft,
-        float documentRight,
-        float top,
-        float scrollOffset,
+        float tableWidth,
         bool svgSupported,
         bool requestEmbedded,
         EditorRenderResources& resources,
         EditorStyleSheet const& styleSheet,
-        EditorInteractionMap& interactionMap,
         EditorTextLayoutEngine& textLayoutEngine,
         EditorInlineImageRenderer& inlineImageRenderer,
         MathJaxRenderer& mathJax,
-        SvgNormalizer& svgNormalizer,
-        EditorDrawMath const& drawMath,
-        EditorDrawMathFallback const& drawMathFallback)
+        SvgNormalizer& svgNormalizer)
     {
         auto modeledTable = block.row_count > 0 && block.column_count > 0 && !block.table_cells.empty();
         if (!modeledTable) return std::nullopt;
-        EditorVisualTable table;
+        PreparedTable prepared;
+        auto& table = prepared.visual;
         table.sourceSpans = block.table_cell_spans;
         table.editable = true;
         table.columnCount = block.column_count;
         table.rowCount = block.row_count;
-        auto tableWidth = (std::max)(1.0f, documentRight - documentLeft);
+        tableWidth = (std::max)(1.0f, tableWidth);
         auto columnWidth = tableWidth / static_cast<float>(table.columnCount);
         std::vector<float> rowHeights(table.rowCount, styleSheet.body.lineHeight + 16.0f);
-        std::vector<DisplayInlineText> displays;
-        std::vector<std::vector<EditorInlineImageRenderer::ImageDraw>> imageDraws;
-        displays.reserve(table.rowCount * table.columnCount);
-        imageDraws.reserve(table.rowCount * table.columnCount);
+        prepared.displays.reserve(table.rowCount * table.columnCount);
+        prepared.imageDraws.reserve(table.rowCount * table.columnCount);
         for (std::size_t row = 0; row < table.rowCount; ++row)
         {
             for (std::size_t column = 0; column < table.columnCount; ++column)
@@ -63,6 +55,7 @@ namespace winrt::ElMd
                     AppendGeneratedText(display, U"\u200B", {sourceSpan.container_id, sourceSpan.source_range.start, elmd::TextAffinity::Downstream}, elmd::InlineStyle::plain());
                     display.displayToSource.push_back({sourceSpan.container_id, sourceSpan.source_range.end, elmd::TextAffinity::Downstream});
                 }
+                prepared.pendingMath = prepared.pendingMath || display.pendingMath;
                 auto wide = ToWide(display.text);
                 auto layout = textLayoutEngine.Create(wide, resources.textFormat.Get(), (std::max)(1.0f, columnWidth - 20.0f));
                 auto cellTextHeight = styleSheet.body.lineHeight;
@@ -92,17 +85,17 @@ namespace winrt::ElMd
                 cell.displayToSource = std::move(display.displayToSource);
                 cell.textHeight = cellTextHeight;
                 cell.layout = std::move(layout);
-                displays.push_back(std::move(display));
-                imageDraws.push_back(std::move(images));
+                prepared.displays.push_back(std::move(display));
+                prepared.imageDraws.push_back(std::move(images));
                 table.cells.push_back(std::move(cell));
             }
         }
         table.columnBoundaries.reserve(table.columnCount + 1);
-        for (std::size_t column = 0; column <= table.columnCount; ++column) table.columnBoundaries.push_back(documentLeft + columnWidth * static_cast<float>(column));
+        for (std::size_t column = 0; column <= table.columnCount; ++column) table.columnBoundaries.push_back(columnWidth * static_cast<float>(column));
         table.rowBoundaries.reserve(table.rowCount + 1);
-        table.rowBoundaries.push_back(top);
+        table.rowBoundaries.push_back(0.0f);
         for (auto rowHeight : rowHeights) table.rowBoundaries.push_back(table.rowBoundaries.back() + rowHeight);
-        table.rect = D2D1::RectF(documentLeft, top, documentRight, table.rowBoundaries.back());
+        table.rect = D2D1::RectF(0.0f, 0.0f, tableWidth, table.rowBoundaries.back());
         for (auto& cell : table.cells)
         {
             cell.rect = D2D1::RectF(table.columnBoundaries[cell.column], table.rowBoundaries[cell.row], table.columnBoundaries[cell.column + 1], table.rowBoundaries[cell.row + 1]);
@@ -110,8 +103,42 @@ namespace winrt::ElMd
             cell.textOrigin = D2D1::Point2F(cell.rect.left + 10.0f, cell.rect.top + verticalInset);
             cell.textWidth = (std::max)(1.0f, cell.rect.right - cell.rect.left - 20.0f);
         }
+        prepared.height = table.rect.bottom;
+        return prepared;
+    }
+
+    void EditorTableBlockRenderer::Paint(
+        elmd::RenderBlock const& block,
+        PreparedTable const& prepared,
+        elmd::TextSelection selection,
+        float documentLeft,
+        float top,
+        float scrollOffset,
+        EditorRenderResources& resources,
+        EditorStyleSheet const& styleSheet,
+        EditorInteractionMap& interactionMap,
+        EditorInlineImageRenderer& inlineImageRenderer,
+        EditorDrawMath const& drawMath,
+        EditorDrawMathFallback const& drawMathFallback)
+    {
+        auto translatedTable = prepared.visual;
+        translatedTable.rect.left += documentLeft;
+        translatedTable.rect.right += documentLeft;
+        translatedTable.rect.top += top;
+        translatedTable.rect.bottom += top;
+        for (auto& boundary : translatedTable.columnBoundaries) boundary += documentLeft;
+        for (auto& boundary : translatedTable.rowBoundaries) boundary += top;
+        for (auto& cell : translatedTable.cells)
+        {
+            cell.rect.left += documentLeft;
+            cell.rect.right += documentLeft;
+            cell.rect.top += top;
+            cell.rect.bottom += top;
+            cell.textOrigin.x += documentLeft;
+            cell.textOrigin.y += top;
+        }
         auto tableIndex = interactionMap.tables.size();
-        interactionMap.tables.push_back(std::move(table));
+        interactionMap.tables.push_back(std::move(translatedTable));
         auto& visualTable = interactionMap.tables.back();
         EditorVisualBlock visualBlock;
         visualBlock.rect = visualTable.rect;
@@ -123,7 +150,7 @@ namespace winrt::ElMd
         for (std::size_t cellIndex = 0; cellIndex < visualTable.cells.size(); ++cellIndex)
         {
             auto& cell = visualTable.cells[cellIndex];
-            auto& display = displays[cellIndex];
+            auto const& display = prepared.displays[cellIndex];
             if (!selection.is_caret() && selection.anchor.container_id == cell.sourceSpan.container_id
                 && selection.active.container_id == cell.sourceSpan.container_id)
             {
@@ -149,7 +176,7 @@ namespace winrt::ElMd
                     }
                 }
                 resources.d2dContext->DrawTextLayout(cell.textOrigin, cell.layout.Get(), resources.textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
-                inlineImageRenderer.Draw(cell.layout.Get(), cell.textOrigin, imageDraws[cellIndex]);
+                inlineImageRenderer.Draw(cell.layout.Get(), cell.textOrigin, prepared.imageDraws[cellIndex]);
                 for (auto const& overlay : display.mathOverlays)
                 {
                     float pointX = 0.0f;
@@ -171,6 +198,5 @@ namespace winrt::ElMd
         }
         for (auto boundary : visualTable.columnBoundaries) resources.d2dContext->DrawLine(D2D1::Point2F(boundary, visualTable.rect.top), D2D1::Point2F(boundary, visualTable.rect.bottom), resources.mutedBrush.Get(), 1.0f);
         for (auto boundary : visualTable.rowBoundaries) resources.d2dContext->DrawLine(D2D1::Point2F(visualTable.rect.left, boundary), D2D1::Point2F(visualTable.rect.right, boundary), resources.mutedBrush.Get(), 1.0f);
-        return visualTable.rect.bottom;
     }
 }

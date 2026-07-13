@@ -435,6 +435,7 @@ namespace winrt::ElMd
             overlay.displayStart += offset;
             target.indentOverlays.push_back(std::move(overlay));
         }
+        target.pendingMath = target.pendingMath || source.pendingMath;
     }
 
     void AppendSourceText(DisplayInlineText& display, std::u32string_view sourceText, elmd::TextSpan sourceSpan, elmd::InlineStyle style, bool marker)
@@ -634,6 +635,7 @@ namespace winrt::ElMd
                 }
                 auto rawMath = mathJax.GetOrQueue(elmd::cps_to_utf8(item.text), false, fontSize, containerWidth, requestMath);
                 auto math = rawMath ? NormalizeMathJaxSvg(*rawMath, svgNormalizer, svgColor, fontSize, requestMath) : std::nullopt;
+                display.pendingMath = display.pendingMath || !rawMath || !math;
                 auto editing = CaretTouchesSpan(caret, item.source_span);
                 auto delimiterLength = item.display == elmd::MathDisplayMode::Block
                     ? std::size_t{0}
@@ -804,6 +806,7 @@ namespace winrt::ElMd
 
         auto rawMath = mathJax.GetOrQueue(elmd::cps_to_utf8(block.tex), true, fontSize, containerWidth, requestMath);
         auto math = rawMath ? NormalizeMathJaxSvg(*rawMath, svgNormalizer, svgColor, fontSize, requestMath) : std::nullopt;
+        display.pendingMath = !rawMath || !math;
         if (editing)
         {
             AppendSourceText(

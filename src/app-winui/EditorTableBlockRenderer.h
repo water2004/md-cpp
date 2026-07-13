@@ -18,23 +18,39 @@ namespace winrt::ElMd
 {
     struct EditorTableBlockRenderer
     {
-        static std::optional<float> Render(
+        struct PreparedTable
+        {
+            EditorVisualTable visual;
+            std::vector<DisplayInlineText> displays;
+            std::vector<std::vector<EditorInlineImageRenderer::ImageDraw>> imageDraws;
+            float height = 0.0f;
+            bool pendingMath = false;
+        };
+
+        static std::optional<PreparedTable> Prepare(
             elmd::RenderBlock const& block,
             elmd::TextPosition caret,
-            elmd::TextSelection selection,
-            float documentLeft,
-            float documentRight,
-            float top,
-            float scrollOffset,
+            float tableWidth,
             bool svgSupported,
             bool requestEmbedded,
             EditorRenderResources& resources,
             EditorStyleSheet const& styleSheet,
-            EditorInteractionMap& interactionMap,
             EditorTextLayoutEngine& textLayoutEngine,
             EditorInlineImageRenderer& inlineImageRenderer,
             MathJaxRenderer& mathJax,
-            SvgNormalizer& svgNormalizer,
+            SvgNormalizer& svgNormalizer);
+
+        static void Paint(
+            elmd::RenderBlock const& block,
+            PreparedTable const& prepared,
+            elmd::TextSelection selection,
+            float documentLeft,
+            float top,
+            float scrollOffset,
+            EditorRenderResources& resources,
+            EditorStyleSheet const& styleSheet,
+            EditorInteractionMap& interactionMap,
+            EditorInlineImageRenderer& inlineImageRenderer,
             EditorDrawMath const& drawMath,
             EditorDrawMathFallback const& drawMathFallback);
     };

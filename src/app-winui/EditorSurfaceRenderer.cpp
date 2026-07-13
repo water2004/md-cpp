@@ -12,6 +12,102 @@ import elmd.core.utf;
 
 namespace winrt::ElMd
 {
+    struct EditorSurfaceRenderer::PreparedDocument
+    {
+        struct MathPreview
+        {
+            DisplayInlineText display;
+            ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+            float height = 0.0f;
+        };
+
+        struct Block
+        {
+            DisplayInlineText display;
+            ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+            std::vector<EditorInlineImageRenderer::ImageDraw> images;
+            std::vector<MathPreview> mathPreviews;
+            std::optional<EditorTableBlockRenderer::PreparedTable> table;
+            std::vector<elmd::NodeId> owners;
+            float textHeight = 0.0f;
+            float height = 0.0f;
+            bool code = false;
+            bool containsMath = false;
+            bool containsImage = false;
+            bool embeddedRequested = false;
+            bool pendingMath = false;
+            bool valid = false;
+            std::uint64_t embeddedGeneration = 0;
+            std::uint64_t remoteImageGeneration = 0;
+        };
+
+        struct Placement
+        {
+            float top = 0.0f;
+            float bottom = 0.0f;
+        };
+
+        std::uint64_t modelRevision = 0;
+        elmd::TextSelection selection{};
+        float documentWidth = 0.0f;
+        float totalHeight = 0.0f;
+        Theme theme = Theme::Dark;
+        std::vector<Block> blocks;
+        std::vector<Placement> placements;
+        bool geometryValid = false;
+    };
+
+    namespace
+    {
+        bool SamePosition(elmd::TextPosition left, elmd::TextPosition right)
+        {
+            return left.container_id == right.container_id
+                && left.source_offset == right.source_offset
+                && left.affinity == right.affinity;
+        }
+
+        bool SameSelection(elmd::TextSelection left, elmd::TextSelection right)
+        {
+            return SamePosition(left.anchor, right.anchor)
+                && SamePosition(left.active, right.active);
+        }
+
+        bool InlineItemsContain(
+            std::vector<elmd::InlineRenderItem> const& items,
+            elmd::InlineRenderItem::Kind kind)
+        {
+            for (auto const& item : items)
+            {
+                if (item.kind == kind || InlineItemsContain(item.children, kind)) return true;
+            }
+            return false;
+        }
+
+        bool RenderBlockContainsMath(elmd::RenderBlock const& block)
+        {
+            if (block.kind == elmd::RenderBlockKind::Math
+                || InlineItemsContain(block.inline_items, elmd::InlineRenderItem::Kind::Math)) return true;
+            for (auto const& cell : block.table_cells)
+                if (InlineItemsContain(cell, elmd::InlineRenderItem::Kind::Math)) return true;
+            for (auto const& child : block.child_blocks)
+                if (RenderBlockContainsMath(child)) return true;
+            return false;
+        }
+
+        bool RenderBlockContainsImage(elmd::RenderBlock const& block)
+        {
+            if (block.kind == elmd::RenderBlockKind::Image
+                || InlineItemsContain(block.inline_items, elmd::InlineRenderItem::Kind::Image)) return true;
+            for (auto const& cell : block.table_cells)
+                if (InlineItemsContain(cell, elmd::InlineRenderItem::Kind::Image)) return true;
+            for (auto const& child : block.child_blocks)
+                if (RenderBlockContainsImage(child)) return true;
+            return false;
+        }
+    }
+
+    EditorSurfaceRenderer::EditorSurfaceRenderer() = default;
+
     EditorSurfaceRenderer::~EditorSurfaceRenderer()
     {
         renderCache.Detach();
@@ -32,6 +128,7 @@ namespace winrt::ElMd
         renderCache.ClearSvgDocuments();
         resources.RebuildTextFormats(styleSheet);
         resources.ResetBrushes();
+        ClearPreparedDocument();
     }
 
     void EditorSurfaceRenderer::ResetDocumentCaches()
@@ -40,6 +137,13 @@ namespace winrt::ElMd
         treeSitter.Clear();
         renderCache.ClearTextLayouts();
         renderCache.ClearSvgDocuments();
+        ClearPreparedDocument();
+    }
+
+    void EditorSurfaceRenderer::ClearPreparedDocument()
+    {
+        preparedDocument.reset();
+        documentOwnerY.clear();
     }
 
     void EditorSurfaceRenderer::SetInvalidateCallback(std::function<void()> callback)
@@ -68,7 +172,12 @@ namespace winrt::ElMd
         auto completion = [this, dispatcher]
         {
             if (mathInvalidationQueued.exchange(true)) return;
-            if (!dispatcher.TryEnqueue([this] { mathInvalidationQueued = false; Invalidate(); })) mathInvalidationQueued = false;
+            if (!dispatcher.TryEnqueue([this]
+                {
+                    mathInvalidationQueued = false;
+                    ++embeddedGeneration;
+                    Invalidate();
+                })) mathInvalidationQueued = false;
         };
         mathJax.SetCompletionCallback(completion);
         svgNormalizer.SetCompletionCallback(completion);
@@ -85,7 +194,11 @@ namespace winrt::ElMd
         struct ResetFlag { bool& value; ~ResetFlag() { value = false; } } reset{resizing};
         auto result = resources.Resize(panel, width, height);
         if (!result.resized) return;
-        if (result.widthChanged) renderCache.ClearTextLayouts();
+        if (result.widthChanged)
+        {
+            renderCache.ClearTextLayouts();
+            ClearPreparedDocument();
+        }
         scrollOffset = (std::min)(scrollOffset, MaximumScrollOffset());
         scrollTarget = (std::min)(scrollTarget, MaximumScrollOffset());
     }
@@ -340,60 +453,81 @@ namespace winrt::ElMd
             resources.d2dContext->DrawTextW(message, 38, resources.textFormat.Get(), D2D1::RectF(documentLeft, y, documentRight, y + 80.0f), resources.mutedBrush.Get());
         }
 
-        for (auto const& block : frame.renderModel.blocks)
+        auto remoteImageGeneration = renderCache.RemoteImageGeneration();
+        auto rebuildAll = !preparedDocument
+            || preparedDocument->modelRevision != frame.renderModel.revision
+            || !SameSelection(preparedDocument->selection, frame.selection)
+            || preparedDocument->documentWidth != documentWidth
+            || preparedDocument->theme != theme
+            || preparedDocument->blocks.size() != frame.renderModel.blocks.size();
+        if (rebuildAll)
         {
-            y += block.block_style.margin_top;
-            auto top = y;
-            // Keep expensive asynchronous renderers near the viewport. Cached
-            // results still paint outside this band, but opening a large math
-            // document no longer queues every formula in the file at once.
-            auto requestEmbedded = top < resources.surfaceHeightDip + 800.0f && top > -1200.0f;
+            preparedDocument = std::make_unique<PreparedDocument>();
+            preparedDocument->modelRevision = frame.renderModel.revision;
+            preparedDocument->selection = frame.selection;
+            preparedDocument->documentWidth = documentWidth;
+            preparedDocument->theme = theme;
+            preparedDocument->blocks.resize(frame.renderModel.blocks.size());
+            preparedDocument->placements.resize(frame.renderModel.blocks.size());
+        }
+        auto prepareBlock = [&](elmd::RenderBlock const& block, bool requestEmbedded)
+        {
+            PreparedDocument::Block prepared;
+            prepared.code = block.kind == elmd::RenderBlockKind::Code
+                || block.kind == elmd::RenderBlockKind::Frontmatter
+                || block.kind == elmd::RenderBlockKind::Unsupported;
+            prepared.containsMath = RenderBlockContainsMath(block);
+            prepared.containsImage = RenderBlockContainsImage(block);
+            prepared.embeddedRequested = requestEmbedded;
+            prepared.embeddedGeneration = embeddedGeneration;
+            prepared.remoteImageGeneration = remoteImageGeneration;
+            std::unordered_set<std::uint64_t> owners;
+            auto addOwner = [&](elmd::NodeId id)
+            {
+                if (id.v != 0 && owners.insert(id.v).second) prepared.owners.push_back(id);
+            };
+            addOwner(block.id);
+            addOwner(block.source_span.container_id);
             if (block.kind == elmd::RenderBlockKind::Table)
             {
-                auto bottom = EditorTableBlockRenderer::Render(block, caret, frame.selection, documentLeft, documentRight, y, scrollOffset, svgSupported, requestEmbedded, resources, styleSheet, interactionMap, textLayoutEngine, inlineImages, mathJax, svgNormalizer, drawMath, drawMathFallback);
-                if (bottom) { y = *bottom + block.block_style.margin_bottom + styleSheet.blockGap; continue; }
+                prepared.table = EditorTableBlockRenderer::Prepare(
+                    block,
+                    caret,
+                    documentWidth,
+                    svgSupported,
+                    requestEmbedded,
+                    resources,
+                    styleSheet,
+                    textLayoutEngine,
+                    inlineImages,
+                    mathJax,
+                    svgNormalizer);
+                if (prepared.table)
+                {
+                    for (auto const& span : block.table_cell_spans) addOwner(span.container_id);
+                    prepared.pendingMath = prepared.table->pendingMath;
+                    prepared.height = prepared.table->height;
+                    prepared.valid = true;
+                    return prepared;
+                }
             }
-            if (block.kind == elmd::RenderBlockKind::ThematicBreak)
-            {
-                auto height = 40.0f;
-                auto center = y + height * 0.5f;
-                resources.d2dContext->DrawLine(D2D1::Point2F(documentLeft, center), D2D1::Point2F(documentRight, center), resources.mutedBrush.Get(), 1.0f);
-                EditorVisualBlock visual;
-                visual.rect = D2D1::RectF(documentLeft, y, documentRight, y + height);
-                visual.textOrigin = D2D1::Point2F(documentLeft, y);
-                visual.textWidth = documentWidth;
-                visual.sourceSpan = block.source_span;
-                visual.documentY = y + scrollOffset;
-                visual.thematicBreak = true;
-                interactionMap.blocks.push_back(visual);
-                EditorVisualLine line;
-                line.blockIndex = interactionMap.blocks.size() - 1;
-                line.sourceSpans = {block.source_span};
-                line.rect = visual.rect;
-                interactionMap.lines.push_back(line);
-                y += height + block.block_style.margin_bottom + styleSheet.blockGap;
-                continue;
-            }
-
-            auto display = prepare(block, documentWidth, requestEmbedded);
-            applyNestedCodeHighlights(display, block);
-            auto code = block.kind == elmd::RenderBlockKind::Code || block.kind == elmd::RenderBlockKind::Frontmatter || block.kind == elmd::RenderBlockKind::Unsupported;
-            auto format = textLayoutEngine.FormatFor(code, display.ranges);
-            std::vector<EditorInlineImageRenderer::ImageDraw> images;
-            auto layout = textLayoutEngine.CreateFlow(display, format, documentWidth,
+            prepared.display = prepare(block, documentWidth, requestEmbedded);
+            applyNestedCodeHighlights(prepared.display, block);
+            prepared.pendingMath = prepared.display.pendingMath;
+            auto format = textLayoutEngine.FormatFor(prepared.code, prepared.display.ranges);
+            prepared.layout = textLayoutEngine.CreateFlow(
+                prepared.display,
+                format,
+                documentWidth,
                 [&](IDWriteTextLayout* candidate, DisplayInlineText const& candidateDisplay)
                 {
-                    images = inlineImages.Resolve(candidate, candidateDisplay.imageOverlays, documentWidth);
+                    prepared.images = inlineImages.Resolve(
+                        candidate,
+                        candidateDisplay.imageOverlays,
+                        documentWidth);
                 });
-            struct PreparedMathPreview
-            {
-                DisplayInlineText display;
-                ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
-                float height = 0.0f;
-            };
-            std::vector<PreparedMathPreview> mathPreviews;
-            mathPreviews.reserve(display.mathPreviews.size());
-            for (auto const& preview : display.mathPreviews)
+            prepared.mathPreviews.reserve(prepared.display.mathPreviews.size());
+            for (auto const& preview : prepared.display.mathPreviews)
             {
                 if (!preview.separateBlock) continue;
                 auto previewDisplay = BuildMathPreviewText(preview);
@@ -405,7 +539,7 @@ namespace winrt::ElMd
                 auto previewHeight = textLayoutEngine.MeasureHeight(
                     previewLayout.Get(),
                     styleSheet.body.lineHeight);
-                mathPreviews.push_back({
+                prepared.mathPreviews.push_back({
                     std::move(previewDisplay),
                     std::move(previewLayout),
                     previewHeight,
@@ -417,29 +551,176 @@ namespace winrt::ElMd
                     || block.kind == elmd::RenderBlockKind::Footnote);
             auto paddingTop = flowContainer ? 0.0f : block.block_style.padding_top;
             auto paddingBottom = flowContainer ? 0.0f : block.block_style.padding_bottom;
-            auto paddingLeft = flowContainer ? 0.0f : block.block_style.padding_left;
-            auto textHeight = textLayoutEngine.MeasureHeight(layout.Get(), textLayoutEngine.LineHeightFor(code, display.ranges));
+            prepared.textHeight = textLayoutEngine.MeasureHeight(
+                prepared.layout.Get(),
+                textLayoutEngine.LineHeightFor(prepared.code, prepared.display.ranges));
             auto previewHeight = 0.0f;
-            for (auto const& preview : mathPreviews) previewHeight += preview.height + 24.0f;
-            auto height = textHeight + previewHeight + paddingTop + paddingBottom;
-            auto origin = D2D1::Point2F(documentLeft + paddingLeft, y + paddingTop);
-            auto rect = D2D1::RectF(documentLeft, y, documentRight, y + height);
-            if (code || block.block_style.background) resources.d2dContext->FillRectangle(rect, resources.panelBrush.Get());
-            drawFlowDecorations(layout.Get(), origin, block, display);
-            drawSelection(layout.Get(), origin, display.displayToSource);
-            if (layout) resources.d2dContext->DrawTextLayout(origin, layout.Get(), code ? resources.codeBrush.Get() : resources.textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
-            inlineImages.Draw(layout.Get(), origin, images);
-            for (auto const& overlay : display.mathOverlays)
+            for (auto const& preview : prepared.mathPreviews)
+                previewHeight += preview.height + 24.0f;
+            prepared.height = prepared.textHeight + previewHeight + paddingTop + paddingBottom;
+            for (auto const& position : prepared.display.displayToSource) addOwner(position.container_id);
+            prepared.valid = true;
+            return prepared;
+        };
+
+        constexpr float viewportOverscan = 240.0f;
+        constexpr float embeddedOverscanBefore = 1200.0f;
+        constexpr float embeddedOverscanAfter = 800.0f;
+        auto requestEmbeddedAt = [&](float documentTop)
+        {
+            auto screenTop = documentTop - scrollOffset;
+            return screenTop < resources.surfaceHeightDip + embeddedOverscanAfter
+                && screenTop > -embeddedOverscanBefore;
+        };
+        auto rebuildGeometry = [&]
+        {
+            auto documentY = styleSheet.verticalPadding;
+            documentOwnerY.clear();
+            for (std::size_t index = 0; index < frame.renderModel.blocks.size(); ++index)
+            {
+                auto const& block = frame.renderModel.blocks[index];
+                auto& prepared = preparedDocument->blocks[index];
+                documentY += block.block_style.margin_top;
+                if (block.kind == elmd::RenderBlockKind::ThematicBreak)
+                {
+                    prepared = {};
+                    prepared.height = 40.0f;
+                    prepared.owners.push_back(block.id);
+                    prepared.valid = true;
+                }
+                else if (!prepared.valid)
+                {
+                    prepared = prepareBlock(block, requestEmbeddedAt(documentY));
+                }
+                auto& placement = preparedDocument->placements[index];
+                placement.top = documentY;
+                placement.bottom = documentY + prepared.height;
+                for (auto owner : prepared.owners) documentOwnerY[owner.v] = placement.top;
+                documentY = placement.bottom + block.block_style.margin_bottom + styleSheet.blockGap;
+            }
+            preparedDocument->totalHeight = documentY + styleSheet.verticalPadding;
+            preparedDocument->geometryValid = true;
+        };
+        if (!preparedDocument->geometryValid) rebuildGeometry();
+
+        auto firstIntersecting = [&](float documentTop)
+        {
+            return static_cast<std::size_t>(std::lower_bound(
+                preparedDocument->placements.begin(),
+                preparedDocument->placements.end(),
+                documentTop,
+                [](PreparedDocument::Placement const& placement, float value)
+                {
+                    return placement.bottom < value;
+                }) - preparedDocument->placements.begin());
+        };
+
+        auto embeddedTop = scrollOffset - embeddedOverscanBefore;
+        auto embeddedBottom = scrollOffset + resources.surfaceHeightDip + embeddedOverscanAfter;
+        auto geometryChanged = false;
+        for (auto index = firstIntersecting(embeddedTop); index < frame.renderModel.blocks.size(); ++index)
+        {
+            auto const& placement = preparedDocument->placements[index];
+            if (placement.top > embeddedBottom) break;
+            auto const& block = frame.renderModel.blocks[index];
+            if (block.kind == elmd::RenderBlockKind::ThematicBreak) continue;
+            auto& prepared = preparedDocument->blocks[index];
+            auto refreshForMath = prepared.pendingMath
+                && prepared.embeddedRequested
+                && prepared.embeddedGeneration != embeddedGeneration;
+            auto refreshForImages = prepared.containsImage
+                && prepared.embeddedRequested
+                && prepared.remoteImageGeneration != remoteImageGeneration;
+            auto enteredEmbeddedBand = !prepared.embeddedRequested
+                && (prepared.containsMath || prepared.containsImage);
+            if (!refreshForMath && !refreshForImages && !enteredEmbeddedBand) continue;
+            auto previousHeight = prepared.height;
+            prepared = prepareBlock(block, true);
+            geometryChanged = geometryChanged || prepared.height != previousHeight;
+        }
+        if (geometryChanged)
+        {
+            preparedDocument->geometryValid = false;
+            rebuildGeometry();
+        }
+
+        auto viewportTop = scrollOffset - viewportOverscan;
+        auto viewportBottom = scrollOffset + resources.surfaceHeightDip + viewportOverscan;
+        for (auto blockIndex = firstIntersecting(viewportTop); blockIndex < frame.renderModel.blocks.size(); ++blockIndex)
+        {
+            auto const& placement = preparedDocument->placements[blockIndex];
+            if (placement.top > viewportBottom) break;
+            auto const& block = frame.renderModel.blocks[blockIndex];
+            auto& prepared = preparedDocument->blocks[blockIndex];
+            auto top = placement.top - scrollOffset;
+            auto bottom = placement.bottom - scrollOffset;
+            auto documentY = placement.top;
+            if (block.kind == elmd::RenderBlockKind::ThematicBreak)
+            {
+                auto center = (top + bottom) * 0.5f;
+                resources.d2dContext->DrawLine(D2D1::Point2F(documentLeft, center), D2D1::Point2F(documentRight, center), resources.mutedBrush.Get(), 1.0f);
+                EditorVisualBlock visual;
+                visual.rect = D2D1::RectF(documentLeft, top, documentRight, bottom);
+                visual.textOrigin = D2D1::Point2F(documentLeft, top);
+                visual.textWidth = documentWidth;
+                visual.sourceSpan = block.source_span;
+                visual.documentY = documentY;
+                visual.thematicBreak = true;
+                interactionMap.blocks.push_back(visual);
+                EditorVisualLine line;
+                line.blockIndex = interactionMap.blocks.size() - 1;
+                line.sourceSpans = {block.source_span};
+                line.rect = visual.rect;
+                interactionMap.lines.push_back(line);
+                continue;
+            }
+            if (prepared.table)
+            {
+                EditorTableBlockRenderer::Paint(
+                    block,
+                    *prepared.table,
+                    frame.selection,
+                    documentLeft,
+                    top,
+                    scrollOffset,
+                    resources,
+                    styleSheet,
+                    interactionMap,
+                    inlineImages,
+                    drawMath,
+                    drawMathFallback);
+                continue;
+            }
+            auto flowContainer = !block.inline_items.empty()
+                && (block.kind == elmd::RenderBlockKind::Quote
+                    || block.kind == elmd::RenderBlockKind::Callout
+                    || block.kind == elmd::RenderBlockKind::Footnote);
+            auto paddingTop = flowContainer ? 0.0f : block.block_style.padding_top;
+            auto paddingLeft = flowContainer ? 0.0f : block.block_style.padding_left;
+            auto origin = D2D1::Point2F(documentLeft + paddingLeft, top + paddingTop);
+            auto rect = D2D1::RectF(documentLeft, top, documentRight, bottom);
+
+            if (prepared.code || block.block_style.background) resources.d2dContext->FillRectangle(rect, resources.panelBrush.Get());
+            drawFlowDecorations(prepared.layout.Get(), origin, block, prepared.display);
+            drawSelection(prepared.layout.Get(), origin, prepared.display.displayToSource);
+            if (prepared.layout)
+                resources.d2dContext->DrawTextLayout(
+                    origin,
+                    prepared.layout.Get(),
+                    prepared.code ? resources.codeBrush.Get() : resources.textBrush.Get(),
+                    D2D1_DRAW_TEXT_OPTIONS_CLIP);
+            inlineImages.Draw(prepared.layout.Get(), origin, prepared.images);
+            for (auto const& overlay : prepared.display.mathOverlays)
             {
                 FLOAT x = 0.0f, lineY = 0.0f;
                 DWRITE_HIT_TEST_METRICS metrics{};
-                if (!layout || FAILED(layout->HitTestTextPosition(overlay.displayStart, FALSE, &x, &lineY, &metrics))) continue;
+                if (!prepared.layout || FAILED(prepared.layout->HitTestTextPosition(overlay.displayStart, FALSE, &x, &lineY, &metrics))) continue;
                 auto mathOrigin = D2D1::Point2F(origin.x + x + overlay.leadingSpace, origin.y + metrics.top);
                 if (!drawMath(overlay.fragment, mathOrigin, styleSheet.textColor)) drawMathFallback(overlay.sourceSpan, mathOrigin);
                 interactionMap.mathHits.push_back({D2D1::RectF(mathOrigin.x, mathOrigin.y, mathOrigin.x + overlay.fragment.width, mathOrigin.y + overlay.fragment.height), overlay.sourceSpan, overlay.progressStart, overlay.progressEnd});
             }
-            auto previewTop = origin.y + textHeight;
-            for (auto const& preview : mathPreviews)
+            auto previewTop = origin.y + prepared.textHeight;
+            for (auto const& preview : prepared.mathPreviews)
             {
                 auto nonInteractiveTop = previewTop;
                 previewTop += 8.0f;
@@ -480,17 +761,16 @@ namespace winrt::ElMd
             visual.textOrigin = origin;
             visual.textWidth = documentWidth;
             visual.sourceSpan = block.source_span;
-            visual.documentY = top + scrollOffset;
-            visual.text = std::move(display.text);
-            visual.displayToSource = std::move(display.displayToSource);
-            visual.layout = std::move(layout);
+            visual.documentY = documentY;
+            visual.text = prepared.display.text;
+            visual.displayToSource = prepared.display.displayToSource;
+            visual.layout = prepared.layout;
             interactionMap.blocks.push_back(std::move(visual));
             interactionMap.AddBlockLines(interactionMap.blocks.size() - 1);
-            y += height + block.block_style.margin_bottom + styleSheet.blockGap;
         }
 
         EditorTableInteraction::Paint(resources, interactionMap, pointerPosition, draggedTableAction, tableDropIndex);
-        totalDocumentHeight = y + scrollOffset + styleSheet.verticalPadding;
+        totalDocumentHeight = preparedDocument->totalHeight;
         scrollOffset = (std::min)(scrollOffset, MaximumScrollOffset());
         scrollTarget = (std::min)(scrollTarget, MaximumScrollOffset());
         if (frame.selection.is_caret())
@@ -529,6 +809,15 @@ namespace winrt::ElMd
             auto margin = styleSheet.verticalPadding;
             if (bounds->top < margin) scrollOffset = (std::max)(0.0f, scrollOffset - (margin - bounds->top));
             else if (bounds->bottom > resources.surfaceHeightDip - margin) scrollOffset = (std::min)(MaximumScrollOffset(), scrollOffset + bounds->bottom - (resources.surfaceHeightDip - margin));
+            scrollTarget = scrollOffset;
+            return scrollOffset != previous;
+        }
+        if (auto owner = documentOwnerY.find(position.container_id.v); owner != documentOwnerY.end())
+        {
+            scrollOffset = (std::clamp)(
+                owner->second - styleSheet.verticalPadding,
+                0.0f,
+                MaximumScrollOffset());
             scrollTarget = scrollOffset;
             return scrollOffset != previous;
         }

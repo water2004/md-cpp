@@ -104,6 +104,7 @@ namespace winrt::ElMd
         DisplayInlineText SliceDisplay(DisplayInlineText const& source, UINT32 start, UINT32 end)
         {
             DisplayInlineText result;
+            result.pendingMath = source.pendingMath;
             const auto sourceLength = static_cast<UINT32>(elmd::utf16_len(source.text));
             start = (std::min)(start, sourceLength);
             end = (std::clamp)(end, start, sourceLength);
