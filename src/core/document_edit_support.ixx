@@ -371,7 +371,10 @@ inline bool join_adjacent(
                 reparse(blocks[index - 1].inline_content, document, allocator);
                 const auto owner = blocks[index - 1].id;
                 blocks.erase(blocks.begin() + static_cast<std::ptrdiff_t>(index));
-                target = TextPosition{owner, offset, TextAffinity::Upstream};
+                target = TextPosition{
+                    owner,
+                    offset,
+                    offset == 0 ? TextAffinity::Downstream : TextAffinity::Upstream};
                 return true;
             }
             if (backward && index > 0 && blocks[index].kind == BlockKind::Paragraph

@@ -240,6 +240,21 @@ suite document_edit_tests = [] {
     }
 };
 
+"block_start_backspace_semantics_do_not_depend_on_visual_affinity"_test = [] {
+    auto document = parse_document("> content");
+    const auto owner_id = first_editable(document).id;
+    auto deletion = document_delete_backward(
+        document,
+        TextSelection::caret({owner_id, 0, TextAffinity::Upstream}));
+    expect(fatal(bool(deletion.has_value())));
+    if (!deletion) return;
+    expect(fatal(bool(deletion->after.root.children.size() == 1u)));
+    expect(fatal(bool(deletion->after.root.children.front().kind == BlockKind::Paragraph)));
+    expect(fatal(bool(deletion->after.root.children.front().id == owner_id)));
+    expect(fatal(bool(deletion->selection_after.active.affinity == TextAffinity::Downstream)));
+    expect_document_valid(deletion->after);
+};
+
 "block_start_backspace_peels_nested_prefixes_from_inside_out"_test = [] {
     auto document = parse_document("");
     normalize_document(document);

@@ -704,16 +704,13 @@ inline std::optional<TextPosition> handle_enter(
 }
 
 // Structural prefixes live in the block tree, outside the editable leaf's
-// InlineDocument.source. Downstream offset zero is the position immediately
-// after those prefixes, so Backspace there removes exactly one innermost
-// structural layer instead of joining serialized blocks.
+// InlineDocument.source. At source offset zero, Backspace is therefore a
+// block-tree command (unwrap/outdent) regardless of visual text affinity.
 inline std::optional<TextPosition> handle_backspace_at_start(
     EditorDocument& document,
     TextPosition position,
     document_edit_detail::NodeAllocator& allocator) {
-    if (position.source_offset != 0 || position.affinity != TextAffinity::Downstream) {
-        return std::nullopt;
-    }
+    if (position.source_offset != 0) return std::nullopt;
     if (auto heading = detail::remove_heading_prefix(document, position)) return heading;
     if (auto quote = detail::remove_quote_prefix(document, position)) return quote;
     return detail::remove_list_prefix(document, position, allocator);
