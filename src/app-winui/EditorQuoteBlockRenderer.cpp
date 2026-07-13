@@ -87,7 +87,7 @@ namespace winrt::ElMd
                 AppendGeneratedText(display, U"\u200B", {child.id, 0, elmd::TextAffinity::Downstream}, elmd::InlineStyle::plain());
                 display.displayToSource.push_back({child.id, 0, elmd::TextAffinity::Downstream});
             }
-            auto format = code ? resources.codeFormat.Get() : resources.textFormat.Get();
+            auto format = textLayoutEngine.FormatFor(code, display.ranges);
             auto horizontalPadding = code ? 12.0f : 0.0f;
             auto verticalPadding = code ? 8.0f : 0.0f;
             auto textWidth = (std::max)(1.0f, contentRight - contentLeft - horizontalPadding * 2.0f);
@@ -95,7 +95,7 @@ namespace winrt::ElMd
             textLayoutEngine.ApplyStyles(layout.Get(), display.ranges);
             ApplyMathInlineObjects(layout.Get(), display.mathOverlays);
             auto images = inlineImageRenderer.Resolve(layout.Get(), display.imageOverlays, textWidth);
-            auto fallbackHeight = code ? styleSheet.code.lineHeight : styleSheet.body.lineHeight;
+            auto fallbackHeight = textLayoutEngine.LineHeightFor(code, display.ranges);
             auto fragmentHeight = textLayoutEngine.MeasureHeight(layout.Get(), fallbackHeight) + verticalPadding * 2.0f;
             QuoteFragment fragment;
             fragment.origin = D2D1::Point2F(contentLeft + horizontalPadding, cursorY + verticalPadding);

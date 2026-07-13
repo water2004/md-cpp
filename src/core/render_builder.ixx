@@ -88,6 +88,16 @@ inline void push_marker(std::vector<InlineRenderItem>& out, NodeId owner, std::s
 }
 
 struct Builder {
+    std::optional<NodeId> first_editable_owner(const BlockNode& block) const {
+        if (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading
+            || block.kind == BlockKind::TableCell || block.kind == BlockKind::CodeBlock
+            || block.kind == BlockKind::MathBlock) return block.id;
+        for (auto const& child : block.children) {
+            if (auto owner = first_editable_owner(child)) return owner;
+        }
+        return std::nullopt;
+    }
+
     void append_block_break(std::vector<InlineRenderItem>& out, NodeId owner, std::size_t source_offset = 0) {
         std::size_t cursor = source_offset;
         push_marker(out, owner, cursor, U"\n", MarkerRole::Structural);
@@ -160,6 +170,12 @@ struct Builder {
                 bool first = true;
                 for (auto const& child : block.children) {
                     if (!first) append_block_break(out, child.id, block_local_length(child));
+                    if (block.kind == BlockKind::BlockQuote) {
+                        auto owner = first_editable_owner(child).value_or(child.id);
+                        append_generated_indent(out, owner, 0, indent_columns);
+                        std::size_t cursor = 0;
+                        push_marker(out, owner, cursor, {}, MarkerRole::Structural, U"│ ");
+                    }
                     append_nested_block(out, child, depth + 1, indent_columns);
                     first = false;
                 }

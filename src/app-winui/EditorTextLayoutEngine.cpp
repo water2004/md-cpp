@@ -21,6 +21,40 @@ namespace winrt::ElMd
         return layout;
     }
 
+    IDWriteTextFormat* EditorTextLayoutEngine::FormatFor(bool code, std::vector<InlineStyleRange> const& ranges) const
+    {
+        if (code) return resources.codeFormat.Get();
+        for (auto const& range : ranges)
+        {
+            if (!range.style.heading_level) continue;
+            switch (*range.style.heading_level)
+            {
+                case 1: return resources.heading1Format.Get();
+                case 2: return resources.heading2Format.Get();
+                case 3: return resources.heading3Format.Get();
+                default: return resources.textFormat.Get();
+            }
+        }
+        return resources.textFormat.Get();
+    }
+
+    float EditorTextLayoutEngine::LineHeightFor(bool code, std::vector<InlineStyleRange> const& ranges) const
+    {
+        if (code) return styleSheet.code.lineHeight;
+        for (auto const& range : ranges)
+        {
+            if (!range.style.heading_level) continue;
+            switch (*range.style.heading_level)
+            {
+                case 1: return styleSheet.heading1.lineHeight;
+                case 2: return styleSheet.heading2.lineHeight;
+                case 3: return styleSheet.heading3.lineHeight;
+                default: return styleSheet.body.lineHeight;
+            }
+        }
+        return styleSheet.body.lineHeight;
+    }
+
     void EditorTextLayoutEngine::ApplyStyles(IDWriteTextLayout* layout, std::vector<InlineStyleRange> const& ranges) const
     {
         if (!layout) return;

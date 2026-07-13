@@ -214,15 +214,17 @@ namespace winrt::ElMd
 
         for (auto const& block : frame.renderModel.blocks)
         {
+            y += block.block_style.margin_top;
             auto top = y;
             if (block.kind == elmd::RenderBlockKind::Table)
             {
                 auto bottom = EditorTableBlockRenderer::Render(block, caret, frame.selection, documentLeft, documentRight, y, scrollOffset, svgSupported, true, resources, styleSheet, interactionMap, textLayoutEngine, inlineImages, mathJax, svgNormalizer, drawMath, drawMathFallback);
-                if (bottom) { y = *bottom + styleSheet.blockGap; continue; }
+                if (bottom) { y = *bottom + block.block_style.margin_bottom + styleSheet.blockGap; continue; }
             }
             if (block.kind == elmd::RenderBlockKind::Quote)
             {
-                y = EditorQuoteBlockRenderer::Render(block, caret, frame.selection, documentLeft, documentRight, y, scrollOffset, svgSupported, true, resources, styleSheet, interactionMap, textLayoutEngine, inlineImages, mathJax, svgNormalizer, drawMath, drawMathFallback) + styleSheet.blockGap;
+                y = EditorQuoteBlockRenderer::Render(block, caret, frame.selection, documentLeft, documentRight, y, scrollOffset, svgSupported, true, resources, styleSheet, interactionMap, textLayoutEngine, inlineImages, mathJax, svgNormalizer, drawMath, drawMathFallback)
+                    + block.block_style.margin_bottom + styleSheet.blockGap;
                 continue;
             }
             if (block.kind == elmd::RenderBlockKind::ThematicBreak)
@@ -243,18 +245,18 @@ namespace winrt::ElMd
                 line.sourceSpan = block.source_span;
                 line.rect = visual.rect;
                 interactionMap.lines.push_back(line);
-                y += height + styleSheet.blockGap;
+                y += height + block.block_style.margin_bottom + styleSheet.blockGap;
                 continue;
             }
 
             auto display = prepare(block, documentWidth);
             auto code = block.kind == elmd::RenderBlockKind::Code || block.kind == elmd::RenderBlockKind::Frontmatter || block.kind == elmd::RenderBlockKind::Unsupported;
-            auto format = code ? resources.codeFormat.Get() : resources.textFormat.Get();
+            auto format = textLayoutEngine.FormatFor(code, display.ranges);
             auto layout = textLayoutEngine.Create(ToWide(display.text), format, documentWidth);
             textLayoutEngine.ApplyStyles(layout.Get(), display.ranges);
             ApplyMathInlineObjects(layout.Get(), display.mathOverlays);
             auto images = inlineImages.Resolve(layout.Get(), display.imageOverlays, documentWidth);
-            auto height = textLayoutEngine.MeasureHeight(layout.Get(), code ? styleSheet.code.lineHeight : styleSheet.body.lineHeight);
+            auto height = textLayoutEngine.MeasureHeight(layout.Get(), textLayoutEngine.LineHeightFor(code, display.ranges));
             height += block.block_style.padding_top + block.block_style.padding_bottom;
             auto origin = D2D1::Point2F(documentLeft + block.block_style.padding_left, y + block.block_style.padding_top);
             auto rect = D2D1::RectF(documentLeft, y, documentRight, y + height);

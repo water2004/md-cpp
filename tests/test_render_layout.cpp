@@ -29,6 +29,18 @@ static RenderModel build_model(const std::string& src) {
 
 suite render_layout_tests = [] {
 
+"list_nested_quote_keeps_a_visible_quote_track"_test = [] {
+    auto model = build_model("- item\n  > quoted");
+    expect(fatal(bool(model.blocks.size() == 1u)));
+    expect(fatal(bool(model.blocks.front().kind == RenderBlockKind::Text)));
+    auto const& items = model.blocks.front().inline_items;
+    auto track = std::find_if(items.begin(), items.end(), [](auto const& item) {
+        return item.marker_role == MarkerRole::Structural && item.display_text == U"│ ";
+    });
+    expect(fatal(bool(track != items.end())));
+    if (track != items.end()) expect(fatal(bool(track->source_span.container_id != model.blocks.front().id)));
+};
+
 "test_empty_document_yields_editable_blank_model"_test = [] {
     EditorDocument doc = EditorDocument::empty(1);
     Outline o = Outline::empty(1);
