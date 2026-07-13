@@ -3,6 +3,15 @@
 
 namespace winrt::ElMd
 {
+    EditorRenderResources::~EditorRenderResources()
+    {
+        if (frameLatencyWaitableObject)
+        {
+            CloseHandle(frameLatencyWaitableObject);
+            frameLatencyWaitableObject = nullptr;
+        }
+    }
+
     float EditorRenderResources::CompositionScaleX(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const
     {
         return (std::max)(1.0f, panel.CompositionScaleX());
@@ -130,7 +139,13 @@ namespace winrt::ElMd
         desc.Scaling = DXGI_SCALING_STRETCH;
         desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
         desc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
+        desc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
         winrt::check_hresult(factory->CreateSwapChainForComposition(d3dDevice.Get(), &desc, nullptr, swapChain.GetAddressOf()));
+        ::Microsoft::WRL::ComPtr<IDXGISwapChain2> swapChain2;
+        winrt::check_hresult(swapChain.As(&swapChain2));
+        winrt::check_hresult(swapChain2->SetMaximumFrameLatency(1));
+        frameLatencyWaitableObject = swapChain2->GetFrameLatencyWaitableObject();
+        if (!frameLatencyWaitableObject) winrt::throw_hresult(E_FAIL);
         surfaceWidth = width;
         surfaceHeight = height;
         ApplySwapChainTransform();
@@ -151,7 +166,12 @@ namespace winrt::ElMd
             && newHeightDip == surfaceHeightDip && newScaleX == surfaceScaleX && newScaleY == surfaceScaleY) return {};
         EditorResizeResult result{ true, newWidthDip != surfaceWidthDip };
         ResetTargets();
-        if (FAILED(swapChain->ResizeBuffers(0, newWidth, newHeight, DXGI_FORMAT_UNKNOWN, 0))) return {};
+        if (FAILED(swapChain->ResizeBuffers(
+                0,
+                newWidth,
+                newHeight,
+                DXGI_FORMAT_UNKNOWN,
+                DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT))) return {};
         surfaceWidth = newWidth;
         surfaceHeight = newHeight;
         surfaceWidthDip = newWidthDip;

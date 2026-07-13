@@ -18,16 +18,26 @@ namespace winrt::ElMd
         void Stop();
 
     private:
+        struct FrameDispatchState;
+
         void Start();
-        void OnFrame(winrt::Windows::Foundation::IInspectable const&, winrt::Windows::Foundation::IInspectable const&);
+        void StartFrameScheduler(HANDLE frameLatencyWaitableObject);
+        void StopFrameScheduler();
+        void RequestFrame();
+        void OnFrame(std::uint64_t generation);
 
         EditorSurfaceRenderer* renderer = nullptr;
         winrt::Microsoft::UI::Xaml::Controls::Primitives::ScrollBar scrollBar{ nullptr };
         winrt::Microsoft::UI::Xaml::Controls::ColumnDefinition column{ nullptr };
         std::function<void()> render;
         winrt::event_token valueChangedToken{};
-        winrt::event_token renderingToken{};
         std::chrono::steady_clock::time_point lastFrame{};
+        std::shared_ptr<FrameDispatchState> frameDispatch;
+        std::jthread frameThread;
+        HANDLE frameRequestEvent = nullptr;
+        HANDLE schedulerStopEvent = nullptr;
+        std::uint64_t animationGeneration = 0;
+        float frameIntervalEstimate = 1.0f / 120.0f;
         bool attached = false;
         bool rendering = false;
         bool synchronizing = false;

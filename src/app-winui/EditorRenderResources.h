@@ -12,6 +12,8 @@ namespace winrt::ElMd
 
     struct EditorRenderResources
     {
+        ~EditorRenderResources();
+
         void Initialize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, EditorStyleSheet const& styleSheet);
         EditorResizeResult Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height);
         void RebuildTextFormats(EditorStyleSheet const& styleSheet);
@@ -51,6 +53,7 @@ namespace winrt::ElMd
         float surfaceHeightDip = 1.0f;
         float surfaceScaleX = 1.0f;
         float surfaceScaleY = 1.0f;
+        HANDLE frameLatencyWaitableObject = nullptr;
 
     private:
         float CompositionScaleX(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const;

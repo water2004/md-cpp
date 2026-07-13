@@ -51,6 +51,7 @@ namespace winrt::ElMd
         float ScrollOffset() const;
         float MaximumScrollOffset() const;
         float ViewportHeight() const;
+        HANDLE FrameLatencyWaitableObject() const;
         bool ScrollToPosition(elmd::TextPosition position);
 
     private:

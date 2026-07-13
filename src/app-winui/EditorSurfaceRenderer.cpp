@@ -781,13 +781,22 @@ namespace winrt::ElMd
     }
 
     void EditorSurfaceRenderer::ScrollBy(float delta) { SetScrollOffset(scrollOffset + delta); }
-    void EditorSurfaceRenderer::QueueScrollBy(float delta) { scrollTarget = (std::clamp)(scrollTarget + delta, 0.0f, MaximumScrollOffset()); }
+    void EditorSurfaceRenderer::QueueScrollBy(float delta)
+    {
+        if (!std::isfinite(delta) || delta == 0.0f) return;
+        auto pendingDistance = scrollTarget - scrollOffset;
+        if (pendingDistance * delta < 0.0f) scrollTarget = scrollOffset;
+        scrollTarget = (std::clamp)(scrollTarget + delta, 0.0f, MaximumScrollOffset());
+    }
 
     bool EditorSurfaceRenderer::AdvanceScrollAnimation(float elapsedSeconds)
     {
         auto distance = scrollTarget - scrollOffset;
         if (std::fabs(distance) < 0.25f) { scrollOffset = scrollTarget; return false; }
-        scrollOffset += distance * (1.0f - std::exp(-18.0f * (std::max)(0.0f, elapsedSeconds)));
+        constexpr float responseHalfLifeSeconds = 0.010f;
+        auto elapsed = (std::max)(0.0f, elapsedSeconds);
+        auto response = 1.0f - std::exp2(-elapsed / responseHalfLifeSeconds);
+        scrollOffset += distance * response;
         return true;
     }
 
@@ -795,6 +804,7 @@ namespace winrt::ElMd
     float EditorSurfaceRenderer::ScrollOffset() const { return scrollOffset; }
     float EditorSurfaceRenderer::MaximumScrollOffset() const { return (std::max)(0.0f, totalDocumentHeight - resources.surfaceHeightDip); }
     float EditorSurfaceRenderer::ViewportHeight() const { return resources.surfaceHeightDip; }
+    HANDLE EditorSurfaceRenderer::FrameLatencyWaitableObject() const { return resources.frameLatencyWaitableObject; }
     void EditorSurfaceRenderer::UpdatePointer(float x, float y) { pointerPosition = D2D1::Point2F(x, y); }
     void EditorSurfaceRenderer::ClearPointer() { pointerPosition.reset(); }
     void EditorSurfaceRenderer::SetTableDrag(std::optional<TableAction> action, std::optional<std::size_t> dropIndex) { draggedTableAction = std::move(action); tableDropIndex = dropIndex; }
