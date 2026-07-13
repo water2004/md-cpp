@@ -136,8 +136,13 @@ inline std::u32string serialize_block(const BlockNode& block) {
             return result + U")";
         }
         case BlockKind::Callout: {
-            std::u32string first = U"> [!" + utf8_to_cps(block.callout_kind) + U"]";
-            if (block.callout_title) first += U" " + block.callout_title->source;
+            std::u32string first = block.opening_marker.empty()
+                ? U"> [!" + utf8_to_cps(block.callout_kind) + U"]"
+                : block.opening_marker;
+            if (block.callout_title) {
+                if (block.opening_marker.empty()) first += U" ";
+                first += block.callout_title->source;
+            }
             auto body = serialize_blocks(block.children);
             if (body.empty()) return first;
             std::u32string result = first;

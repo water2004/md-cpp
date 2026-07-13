@@ -1400,6 +1400,11 @@ public:
         auto first_newline = inner.find(U'\n');
         auto first_line = first_newline == std::u32string::npos ? inner : inner.substr(0, first_newline);
         auto callout = try_parse_callout_from_line(first_line);
+        if (callout) {
+            callout->opening_marker = std::u32string(
+                std::u32string_view(cps).substr(start, content_start - start))
+                + callout->opening_marker;
+        }
         auto body_start = callout ? (first_newline == std::u32string::npos ? inner.size() : first_newline + 1) : 0;
         auto body = inner.substr(body_start);
         ParseInput nested_input(input->revision, cps_to_utf8(body), input->dialect);
@@ -1454,15 +1459,23 @@ public:
         return b;
     }
     std::optional<BlockNode> try_parse_callout_from_line(const std::u32string& line) {
-        auto trimmed = trim_cps_(line);
-        auto t = std::u32string(trimmed);
-        if (t.size() >= 2 && t[0] == '[' && t[1] == '!') {
+        std::size_t marker_start = 0;
+        while (marker_start < line.size()
+            && (line[marker_start] == U' ' || line[marker_start] == U'\t')) ++marker_start;
+        if (marker_start + 1 < line.size()
+            && line[marker_start] == U'[' && line[marker_start + 1] == U'!') {
             std::size_t kind_end = std::u32string::npos;
-            for (std::size_t i = 2; i < t.size(); ++i) if (t[i] == ']') { kind_end = i; break; }
+            for (std::size_t i = marker_start + 2; i < line.size(); ++i) {
+                if (line[i] == U']') { kind_end = i; break; }
+            }
             if (kind_end == std::u32string::npos) return std::nullopt;
-            std::u32string kind = substr_cps_(t, 2, kind_end - 2);
-            std::u32string title_part = (kind_end + 1 < t.size()) ? substr_cps_(t, kind_end + 1, std::u32string::npos) : U"";
-            title_part = trim_cps_(title_part);
+            std::u32string kind = substr_cps_(line, marker_start + 2, kind_end - marker_start - 2);
+            auto title_start = kind_end + 1;
+            if (title_start < line.size()
+                && (line[title_start] == U' ' || line[title_start] == U'\t')) ++title_start;
+            std::u32string title_part = title_start < line.size()
+                ? substr_cps_(line, title_start, std::u32string::npos)
+                : U"";
             std::optional<InlineDocument> title;
             if (!title_part.empty()) {
                 InlineDocument value;
@@ -1473,6 +1486,7 @@ public:
             // uppercase kind
             for (char32_t& c : kind) if (c >= 'a' && c <= 'z') c = static_cast<char32_t>(c - 'a' + 'A');
             BlockNode b; b.id = NodeId(0); b.kind = BlockKind::Callout; b.callout_kind = cps_to_utf8(kind); b.callout_title = std::move(title);
+            b.opening_marker = line.substr(0, title_start);
             return b;
         }
         return std::nullopt;

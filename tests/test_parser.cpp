@@ -239,6 +239,31 @@ suite parser_tests = [] {
     if (callout && callout->callout_title) expect_lossless(*callout->callout_title);
 };
 
+"callout_headers_preserve_exact_markers_and_title_whitespace"_test = [] {
+    struct Case {
+        std::string source;
+        std::optional<std::u32string> title;
+    };
+    for (const auto& test : std::vector<Case>{
+             {"> [!note]  title  \n> body", U" title  "},
+             {">[!NOTE]title\n> body", U"title"},
+             {"> [!NOTE] \n> body", std::nullopt},
+         }) {
+        const auto parsed = parse_text(1, test.source);
+        expect(fatal(bool(parsed.document.root.children.size() == 1u))) << test.source;
+        if (parsed.document.root.children.size() != 1) continue;
+        const auto& callout = parsed.document.root.children.front();
+        expect(fatal(bool(callout.kind == BlockKind::Callout))) << test.source;
+        expect(fatal(bool(!callout.opening_marker.empty()))) << test.source;
+        expect(fatal(bool(callout.callout_title.has_value() == test.title.has_value()))) << test.source;
+        if (test.title && callout.callout_title) {
+            expect(fatal(bool(callout.callout_title->source == *test.title))) << test.source;
+            expect_lossless(*callout.callout_title);
+        }
+        expect(fatal(bool(serialize_markdown(parsed.document) == test.source))) << test.source;
+    }
+};
+
 "tables_give_every_cell_its_own_inline_document"_test = [] {
     const auto parsed = parse_text(1,
         "| **A** | $B$ |\n"
