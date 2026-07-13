@@ -343,7 +343,7 @@ namespace winrt::ElMd
                 interactionMap.blocks.push_back(visual);
                 EditorVisualLine line;
                 line.blockIndex = interactionMap.blocks.size() - 1;
-                line.sourceSpan = block.source_span;
+                line.sourceSpans = {block.source_span};
                 line.rect = visual.rect;
                 interactionMap.lines.push_back(line);
                 y += height + block.block_style.margin_bottom + styleSheet.blockGap;

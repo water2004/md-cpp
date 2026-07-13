@@ -5,9 +5,19 @@ namespace winrt::ElMd
 {
     namespace
     {
-        bool Contains(elmd::TextSpan const& span, elmd::TextPosition position)
+        elmd::TextSpan const* SourceSpanFor(EditorVisualLine const& line, elmd::NodeId containerId)
         {
-            return span.container_id == position.container_id && span.source_range.covers(position.source_offset);
+            auto found = std::find_if(line.sourceSpans.begin(), line.sourceSpans.end(), [&](auto const& span)
+            {
+                return span.container_id == containerId;
+            });
+            return found == line.sourceSpans.end() ? nullptr : &*found;
+        }
+
+        bool Contains(EditorVisualLine const& line, elmd::TextPosition position)
+        {
+            auto span = SourceSpanFor(line, position.container_id);
+            return span && span->source_range.covers(position.source_offset);
         }
 
         std::size_t DisplayPositionForSource(
@@ -25,19 +35,93 @@ namespace winrt::ElMd
             return lastInContainer.value_or(0);
         }
 
-        elmd::TextSpan SpanFromMapping(
+        std::vector<elmd::TextSpan> SpansFromMapping(
             std::vector<elmd::TextPosition> const& mapping,
             std::size_t start,
             std::size_t end,
             elmd::TextSpan fallback)
         {
-            if (mapping.empty()) return fallback;
+            if (mapping.empty()) return {fallback};
             start = (std::min)(start, mapping.size() - 1);
             end = (std::min)(end, mapping.size() - 1);
-            auto const& first = mapping[start];
-            auto const& last = mapping[end];
-            if (first.container_id != last.container_id) return {first.container_id, {first.source_offset, first.source_offset}};
-            return {first.container_id, {(std::min)(first.source_offset, last.source_offset), (std::max)(first.source_offset, last.source_offset)}};
+            if (end < start) std::swap(start, end);
+
+            std::vector<elmd::TextSpan> spans;
+            auto add = [&](elmd::TextPosition position, bool allowNewContainer)
+            {
+                auto found = std::find_if(spans.begin(), spans.end(), [&](auto const& span)
+                {
+                    return span.container_id == position.container_id;
+                });
+                if (found == spans.end())
+                {
+                    if (allowNewContainer)
+                        spans.push_back({position.container_id, {position.source_offset, position.source_offset}});
+                    return;
+                }
+                found->source_range.start = (std::min)(found->source_range.start, position.source_offset);
+                found->source_range.end = (std::max)(found->source_range.end, position.source_offset);
+            };
+
+            if (start == end)
+            {
+                add(mapping[start], true);
+            }
+            else
+            {
+                // [start, end) contains the glyphs on this visual line. The
+                // mapping at end is a caret boundary: it may extend an existing
+                // container, but must not pull the next block onto this line.
+                for (auto index = start; index < end; ++index) add(mapping[index], true);
+                add(mapping[end], false);
+            }
+            if (spans.empty()) spans.push_back(fallback);
+            return spans;
+        }
+
+        std::optional<elmd::TextPosition> ResolveMappedPosition(
+            EditorVisualLine const& line,
+            std::vector<elmd::TextPosition> const& mapping,
+            std::size_t displayPosition)
+        {
+            if (line.sourceSpans.empty()) return std::nullopt;
+            if (mapping.empty())
+            {
+                auto const& span = line.sourceSpans.front();
+                return elmd::TextPosition{span.container_id, span.source_range.start, elmd::TextAffinity::Downstream};
+            }
+
+            auto first = (std::min)(static_cast<std::size_t>(line.displayStart), mapping.size() - 1);
+            auto last = (std::min)(static_cast<std::size_t>(line.displayEnd), mapping.size() - 1);
+            displayPosition = (std::clamp)(displayPosition, first, last);
+            auto resolve = [&](std::size_t index) -> std::optional<elmd::TextPosition>
+            {
+                auto position = mapping[index];
+                auto span = SourceSpanFor(line, position.container_id);
+                if (!span) return std::nullopt;
+                position.source_offset = (std::clamp)(position.source_offset, span->source_range.start, span->source_range.end);
+                return position;
+            };
+
+            if (auto direct = resolve(displayPosition)) return direct;
+            if (displayPosition >= last)
+            {
+                auto const& span = line.sourceSpans.back();
+                return elmd::TextPosition{span.container_id, span.source_range.end, elmd::TextAffinity::Upstream};
+            }
+            if (displayPosition <= first)
+            {
+                auto const& span = line.sourceSpans.front();
+                return elmd::TextPosition{span.container_id, span.source_range.start, elmd::TextAffinity::Downstream};
+            }
+
+            for (auto index = displayPosition; index > first; --index)
+                if (auto before = resolve(index - 1)) return before;
+            for (auto index = displayPosition + 1; index <= last; ++index)
+                if (auto after = resolve(index)) return after;
+
+            auto const& span = line.sourceSpans.front();
+            return elmd::TextPosition{span.container_id, span.source_range.start, elmd::TextAffinity::Downstream};
         }
     }
 
@@ -69,7 +153,7 @@ namespace winrt::ElMd
             auto visibleEnd = lineEnd >= metric.newlineLength ? lineEnd - metric.newlineLength : lineEnd;
             EditorVisualLine line;
             line.blockIndex = blockIndex;
-            line.sourceSpan = SpanFromMapping(block.displayToSource, textPosition, visibleEnd, block.sourceSpan);
+            line.sourceSpans = SpansFromMapping(block.displayToSource, textPosition, visibleEnd, block.sourceSpan);
             line.displayStart = textPosition;
             line.displayEnd = visibleEnd;
             line.wrapContinuation = lineIndex > 0 && previousNewlineLength == 0;
@@ -106,7 +190,7 @@ namespace winrt::ElMd
                         line.blockIndex = blockIndex;
                         line.tableIndex = tableIndex;
                         line.cellIndex = cellIndex;
-                        line.sourceSpan = SpanFromMapping(cell.displayToSource, textPosition, visibleEnd, cell.sourceSpan);
+                        line.sourceSpans = SpansFromMapping(cell.displayToSource, textPosition, visibleEnd, cell.sourceSpan);
                         line.displayStart = textPosition;
                         line.displayEnd = visibleEnd;
                         line.wrapContinuation = lineIndex > 0 && previousNewlineLength == 0;
@@ -124,7 +208,7 @@ namespace winrt::ElMd
         line.blockIndex = blockIndex;
         line.tableIndex = tableIndex;
         line.cellIndex = cellIndex;
-        line.sourceSpan = cell.sourceSpan;
+        line.sourceSpans = {cell.sourceSpan};
         line.displayEnd = static_cast<std::uint32_t>(cell.text.size());
         line.rect = cell.rect;
         lines.push_back(line);
@@ -136,7 +220,7 @@ namespace winrt::ElMd
         std::optional<std::size_t> last;
         for (std::size_t index = 0; index < lines.size(); ++index)
         {
-            if (!Contains(lines[index].sourceSpan, position)) continue;
+            if (!Contains(lines[index], position)) continue;
             if (!first) first = index;
             last = index;
         }
@@ -150,13 +234,14 @@ namespace winrt::ElMd
         bool upstream,
         float bodyLineHeight) const
     {
-        if (line.blockIndex >= blocks.size() || line.sourceSpan.container_id != position.container_id) return std::nullopt;
+        auto sourceSpan = SourceSpanFor(line, position.container_id);
+        if (line.blockIndex >= blocks.size() || !sourceSpan) return std::nullopt;
         auto const& block = blocks[line.blockIndex];
-        position.source_offset = (std::clamp)(position.source_offset, line.sourceSpan.source_range.start, line.sourceSpan.source_range.end);
+        position.source_offset = (std::clamp)(position.source_offset, sourceSpan->source_range.start, sourceSpan->source_range.end);
         if (block.thematicBreak)
         {
             auto lineHeight = (std::min)(bodyLineHeight, (line.rect.bottom - line.rect.top) * 0.46f);
-            auto top = position.source_offset <= line.sourceSpan.source_range.start ? line.rect.top : line.rect.bottom - lineHeight;
+            auto top = position.source_offset <= sourceSpan->source_range.start ? line.rect.top : line.rect.bottom - lineHeight;
             return D2D1::RectF(line.rect.left, top, line.rect.left + 2.0f, top + lineHeight);
         }
         IDWriteTextLayout* layout = block.layout.Get();
@@ -192,14 +277,18 @@ namespace winrt::ElMd
     {
         auto line = LineIndexFor(position, upstream);
         if (!line) return std::nullopt;
-        return elmd::TextPosition{lines[*line].sourceSpan.container_id, lines[*line].sourceSpan.source_range.start, elmd::TextAffinity::Downstream};
+        auto span = SourceSpanFor(lines[*line], position.container_id);
+        if (!span) return std::nullopt;
+        return elmd::TextPosition{span->container_id, span->source_range.start, elmd::TextAffinity::Downstream};
     }
 
     std::optional<elmd::TextPosition> EditorInteractionMap::VisualLineEnd(elmd::TextPosition position, bool upstream) const
     {
         auto line = LineIndexFor(position, upstream);
         if (!line) return std::nullopt;
-        return elmd::TextPosition{lines[*line].sourceSpan.container_id, lines[*line].sourceSpan.source_range.end, elmd::TextAffinity::Upstream};
+        auto span = SourceSpanFor(lines[*line], position.container_id);
+        if (!span) return std::nullopt;
+        return elmd::TextPosition{span->container_id, span->source_range.end, elmd::TextAffinity::Upstream};
     }
 
     std::optional<elmd::TextPosition> EditorInteractionMap::HitTest(float x, float y, bool* outUpstream) const
@@ -231,10 +320,12 @@ namespace winrt::ElMd
             if (distance == 0.0f) break;
         }
         auto const& line = lines[best];
-        if (line.blockIndex >= blocks.size()) return std::nullopt;
+        if (line.blockIndex >= blocks.size() || line.sourceSpans.empty()) return std::nullopt;
         auto const& block = blocks[line.blockIndex];
-        auto start = elmd::TextPosition{line.sourceSpan.container_id, line.sourceSpan.source_range.start, elmd::TextAffinity::Downstream};
-        auto end = elmd::TextPosition{line.sourceSpan.container_id, line.sourceSpan.source_range.end, elmd::TextAffinity::Upstream};
+        auto const& firstSpan = line.sourceSpans.front();
+        auto const& lastSpan = line.sourceSpans.back();
+        auto start = elmd::TextPosition{firstSpan.container_id, firstSpan.source_range.start, elmd::TextAffinity::Downstream};
+        auto end = elmd::TextPosition{lastSpan.container_id, lastSpan.source_range.end, elmd::TextAffinity::Upstream};
         if (block.thematicBreak) return y < (block.rect.top + block.rect.bottom) * 0.5f ? start : end;
         IDWriteTextLayout* layout = block.layout.Get();
         auto textOrigin = block.textOrigin;
@@ -253,13 +344,14 @@ namespace winrt::ElMd
         if (FAILED(layout->HitTestPoint(x - textOrigin.x, localY, &trailing, &inside, &metrics))) return start;
         auto displayPos = static_cast<std::size_t>(metrics.textPosition + (trailing ? metrics.length : 0));
         displayPos = (std::clamp)(displayPos, static_cast<std::size_t>(line.displayStart), static_cast<std::size_t>(line.displayEnd));
-        auto position = displayPos < mapping->size() ? (*mapping)[displayPos] : end;
-        position.source_offset = (std::clamp)(position.source_offset, line.sourceSpan.source_range.start, line.sourceSpan.source_range.end);
+        auto resolved = ResolveMappedPosition(line, *mapping, displayPos);
+        auto position = resolved.value_or(end);
         if (outUpstream)
         {
             auto nextWrap = best + 1 < lines.size() && lines[best + 1].blockIndex == line.blockIndex
                 && lines[best + 1].wrapContinuation && lines[best + 1].displayStart == line.displayEnd;
-            *outUpstream = position.source_offset == line.sourceSpan.source_range.end && nextWrap;
+            auto sourceSpan = SourceSpanFor(line, position.container_id);
+            *outUpstream = sourceSpan && position.source_offset == sourceSpan->source_range.end && nextWrap;
         }
         return position;
     }
@@ -280,8 +372,17 @@ namespace winrt::ElMd
             x = rect ? rect->left : lines[*current].rect.left;
             goalX = x;
         }
-        if (!down && *current == 0) return EditorCaretMove{{lines.front().sourceSpan.container_id, lines.front().sourceSpan.source_range.start, elmd::TextAffinity::Downstream}, false};
-        if (down && *current + 1 >= lines.size()) return EditorCaretMove{{lines.back().sourceSpan.container_id, lines.back().sourceSpan.source_range.end, elmd::TextAffinity::Upstream}, true};
+        if (lines.front().sourceSpans.empty() || lines.back().sourceSpans.empty()) return std::nullopt;
+        if (!down && *current == 0)
+        {
+            auto const& span = lines.front().sourceSpans.front();
+            return EditorCaretMove{{span.container_id, span.source_range.start, elmd::TextAffinity::Downstream}, false};
+        }
+        if (down && *current + 1 >= lines.size())
+        {
+            auto const& span = lines.back().sourceSpans.back();
+            return EditorCaretMove{{span.container_id, span.source_range.end, elmd::TextAffinity::Upstream}, true};
+        }
         auto targetIndex = down ? *current + 1 : *current - 1;
         auto const& currentLine = lines[*current];
         if (currentLine.tableIndex < tables.size() && currentLine.cellIndex < tables[currentLine.tableIndex].cells.size())
@@ -301,7 +402,9 @@ namespace winrt::ElMd
             }
         }
         auto const& target = lines[targetIndex];
-        auto targetPosition = elmd::TextPosition{target.sourceSpan.container_id, target.sourceSpan.source_range.start, elmd::TextAffinity::Downstream};
+        if (target.sourceSpans.empty()) return std::nullopt;
+        auto const& firstTargetSpan = target.sourceSpans.front();
+        auto targetPosition = elmd::TextPosition{firstTargetSpan.container_id, firstTargetSpan.source_range.start, elmd::TextAffinity::Downstream};
         auto const& block = blocks[target.blockIndex];
         IDWriteTextLayout* layout = block.layout.Get();
         auto textOrigin = block.textOrigin;
@@ -322,10 +425,12 @@ namespace winrt::ElMd
             {
                 auto displayPos = static_cast<std::size_t>(metrics.textPosition + (trailing ? metrics.length : 0));
                 displayPos = (std::clamp)(displayPos, static_cast<std::size_t>(target.displayStart), static_cast<std::size_t>(target.displayEnd));
-                if (displayPos < mapping->size()) targetPosition = (*mapping)[displayPos];
+                if (auto resolved = ResolveMappedPosition(target, *mapping, displayPos)) targetPosition = *resolved;
             }
         }
-        targetPosition.source_offset = (std::clamp)(targetPosition.source_offset, target.sourceSpan.source_range.start, target.sourceSpan.source_range.end);
+        auto targetSpan = SourceSpanFor(target, targetPosition.container_id);
+        if (!targetSpan) return std::nullopt;
+        targetPosition.source_offset = (std::clamp)(targetPosition.source_offset, targetSpan->source_range.start, targetSpan->source_range.end);
         auto downstreamLine = LineIndexFor(targetPosition, false);
         auto upstreamLine = LineIndexFor(targetPosition, true);
         auto newUpstream = (!downstreamLine || *downstreamLine != targetIndex) && upstreamLine && *upstreamLine == targetIndex;

@@ -22,7 +22,7 @@ namespace winrt::ElMd
         std::size_t blockIndex = 0;
         std::size_t tableIndex = (std::numeric_limits<std::size_t>::max)();
         std::size_t cellIndex = (std::numeric_limits<std::size_t>::max)();
-        elmd::TextSpan sourceSpan;
+        std::vector<elmd::TextSpan> sourceSpans;
         std::uint32_t displayStart = 0;
         std::uint32_t displayEnd = 0;
         bool wrapContinuation = false;
