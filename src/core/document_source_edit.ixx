@@ -58,8 +58,8 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
     TextPosition target;
     if (auto exited = document_edit_detail::exit_empty_indented_code(after, selection.active, allocator)) {
         target = *exited;
-    } else if (auto exited = document_edit_detail::exit_empty_block_quote(after, selection.active, allocator)) {
-        target = *exited;
+    } else if (auto exited_quote = document_edit_detail::exit_empty_block_quote(after, selection.active, allocator)) {
+        target = *exited_quote;
     } else if (auto* block = find_block(after.root, selection.active.container_id);
                block && (block->kind == BlockKind::CodeBlock || block->kind == BlockKind::MathBlock)) {
         auto inserted = document_edit_detail::insert_text(after, selection.active, U"\n", allocator);
@@ -183,7 +183,10 @@ inline std::optional<DocumentTransaction> document_insert_soft_break(const Edito
 inline std::optional<DocumentTransaction> document_delete_backward(const EditorDocument& document, const TextSelection& selection) {
     if (!selection.is_caret()) return document_delete_selection(document, selection);
     auto after = document; auto target = selection.active; document_edit_detail::NodeAllocator allocator(after);
-    if (target.source_offset > 0) {
+    auto const* selected_block = find_block(after.root, target.container_id);
+    if (selected_block && document_edit_detail::atomic_block(selected_block->kind)) {
+        if (!document_edit_detail::remove_atomic(after.root.children, target.container_id, allocator, after, target)) return std::nullopt;
+    } else if (target.source_offset > 0) {
         const std::size_t start = target.source_offset - 1, end = target.source_offset;
         if (!document_edit_detail::erase_text(after, target.container_id, {start, end}, allocator)) return std::nullopt;
         target.source_offset = start;
@@ -197,6 +200,12 @@ inline std::optional<DocumentTransaction> document_delete_backward(const EditorD
 inline std::optional<DocumentTransaction> document_delete_forward(const EditorDocument& document, const TextSelection& selection) {
     if (!selection.is_caret()) return document_delete_selection(document, selection);
     auto after = document; auto target = selection.active; document_edit_detail::NodeAllocator allocator(after);
+    auto const* selected_block = find_block(after.root, target.container_id);
+    if (selected_block && document_edit_detail::atomic_block(selected_block->kind)) {
+        if (!document_edit_detail::remove_atomic(after.root.children, target.container_id, allocator, after, target)) return std::nullopt;
+        ++after.revision;
+        return document_edit_detail::transaction(document, std::move(after), selection, TextSelection::caret(target), DocumentTransactionReason::Delete);
+    }
     const auto length = document_edit_detail::editable_length(after, target.container_id); if (!length) return std::nullopt;
     if (target.source_offset < *length) {
         if (!document_edit_detail::erase_text(after, target.container_id, {target.source_offset, target.source_offset + 1}, allocator)) return std::nullopt;

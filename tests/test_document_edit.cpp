@@ -249,6 +249,43 @@ suite document_edit_tests = [] {
     expect(fatal(bool(find_block(transaction->after.root, empty_id) == nullptr)));
 };
 
+"enter_exits_empty_quote_inside_arbitrary_ancestors"_test = [] {
+    auto document = parse_document("- item\n  > ");
+    expect(fatal(bool((document.root.children.size()) == (1u))));
+    if (document.root.children.empty()) return;
+    auto const& list = document.root.children.front();
+    expect(fatal(bool(list.kind == BlockKind::List)));
+    expect(fatal(bool(!list.children.empty())));
+    if (list.children.empty()) return;
+    auto const& item = list.children.front();
+    auto quote = std::find_if(item.children.begin(), item.children.end(), [](auto const& child) {
+        return child.kind == BlockKind::BlockQuote;
+    });
+    expect(fatal(bool(quote != item.children.end())));
+    if (quote == item.children.end() || quote->children.empty()) return;
+    auto const empty_id = quote->children.front().id;
+
+    auto transaction = document_enter(document, TextSelection::caret({empty_id, 0, TextAffinity::Downstream}));
+    expect(fatal(bool(transaction.has_value())));
+    if (!transaction) return;
+    expect(fatal(bool(find_block(transaction->after.root, empty_id) == nullptr)));
+    auto const* selected = find_block(transaction->after.root, transaction->selection_after.active.container_id);
+    expect(fatal(bool(selected != nullptr)));
+    if (selected) {
+        expect(fatal(bool(selected->kind == BlockKind::Paragraph)));
+        expect(fatal(bool(selected->inline_content.source.empty())));
+    }
+    auto const* updated_list = find_block(transaction->after.root, list.id);
+    expect(fatal(bool(updated_list != nullptr)));
+    expect(fatal(bool(updated_list && !updated_list->children.empty())));
+    if (updated_list && !updated_list->children.empty()) {
+        expect(fatal(bool(std::none_of(updated_list->children.front().children.begin(), updated_list->children.front().children.end(), [](auto const& child) {
+            return child.kind == BlockKind::BlockQuote;
+        }))));
+    }
+    expect_document_valid(transaction->after);
+};
+
 "backspace_and_delete_join_adjacent_blocks"_test = [] {
     auto document = parse_document("alpha\n\nbeta");
     const auto second_id = document.root.children[1].id;
@@ -316,6 +353,53 @@ suite document_edit_tests = [] {
     expect(fatal(bool(find_block(transaction->after.root, blank_id) == nullptr)));
     expect(fatal(bool(transaction->selection_after.active.container_id == quote_content_id)));
     expect(fatal(bool(transaction->selection_after.active.source_offset == 0u)));
+    expect_document_valid(transaction->after);
+};
+
+"blank_paragraph_navigation_includes_atomic_blocks"_test = [] {
+    auto after_image = parse_document("![alt](image.png)\n\n\nnext");
+    expect(fatal(bool((after_image.root.children.size()) == (3u))));
+    if (after_image.root.children.size() == 3u) {
+        auto const image_id = after_image.root.children[0].id;
+        auto const blank_id = after_image.root.children[1].id;
+        auto transaction = document_delete_backward(after_image, caret(after_image.root.children[1], 0));
+        expect(fatal(bool(transaction.has_value())));
+        if (transaction) {
+            expect(fatal(bool(find_block(transaction->after.root, blank_id) == nullptr)));
+            expect(fatal(bool(transaction->selection_after.active.container_id == image_id)));
+            expect(fatal(bool((transaction->selection_after.active.source_offset) == (1u))));
+            expect_document_valid(transaction->after);
+        }
+    }
+
+    auto before_break = parse_document("first\n\n\n---");
+    expect(fatal(bool((before_break.root.children.size()) == (3u))));
+    if (before_break.root.children.size() == 3u) {
+        auto const blank_id = before_break.root.children[1].id;
+        auto const break_id = before_break.root.children[2].id;
+        auto transaction = document_delete_forward(before_break, caret(before_break.root.children[1], 0));
+        expect(fatal(bool(transaction.has_value())));
+        if (transaction) {
+            expect(fatal(bool(find_block(transaction->after.root, blank_id) == nullptr)));
+            expect(fatal(bool(transaction->selection_after.active.container_id == break_id)));
+            expect(fatal(bool((transaction->selection_after.active.source_offset) == (0u))));
+            expect_document_valid(transaction->after);
+        }
+    }
+};
+
+"deleting_atomic_block_targets_editable_descendant_of_neighbor"_test = [] {
+    auto document = parse_document("![alt](image.png)\n\n> quoted");
+    expect(fatal(bool((document.root.children.size()) == (2u))));
+    if (document.root.children.size() != 2u) return;
+    auto const image_id = document.root.children[0].id;
+    auto const quote_content_id = document.root.children[1].children.front().id;
+    auto transaction = document_delete_forward(document, TextSelection::caret({image_id, 0, TextAffinity::Downstream}));
+    expect(fatal(bool(transaction.has_value())));
+    if (!transaction) return;
+    expect(fatal(bool(find_block(transaction->after.root, image_id) == nullptr)));
+    expect(fatal(bool(transaction->selection_after.active.container_id == quote_content_id)));
+    expect(fatal(bool((transaction->selection_after.active.source_offset) == (0u))));
     expect_document_valid(transaction->after);
 };
 

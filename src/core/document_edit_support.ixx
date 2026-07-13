@@ -41,9 +41,19 @@ inline bool atomic_block(BlockKind kind) {
         || kind == BlockKind::UnsupportedMarkup || kind == BlockKind::Extension;
 }
 
+inline std::optional<std::size_t> local_position_length(const BlockNode& block) {
+    if (text_block(block.kind) || block.kind == BlockKind::TableCell) return block.inline_content.source.size();
+    if (block.kind == BlockKind::CodeBlock) return block.code_text.size();
+    if (block.kind == BlockKind::MathBlock) return block.tex.size();
+    if (block.kind == BlockKind::Frontmatter || block.kind == BlockKind::LinkDefinition
+        || block.kind == BlockKind::UnsupportedMarkup) return utf8_to_cps(block.raw).size();
+    if (block.kind == BlockKind::ImageBlock || block.kind == BlockKind::Toc
+        || block.kind == BlockKind::ThematicBreak || block.kind == BlockKind::Extension) return 1;
+    return std::nullopt;
+}
+
 inline std::optional<TextPosition> first_editable_position(const BlockNode& block) {
-    if (text_block(block.kind) || block.kind == BlockKind::TableCell
-        || block.kind == BlockKind::CodeBlock || block.kind == BlockKind::MathBlock) {
+    if (local_position_length(block)) {
         return TextPosition{block.id, 0, TextAffinity::Downstream};
     }
     for (const auto& child : block.children) {
@@ -53,15 +63,7 @@ inline std::optional<TextPosition> first_editable_position(const BlockNode& bloc
 }
 
 inline std::optional<TextPosition> last_editable_position(const BlockNode& block) {
-    if (text_block(block.kind) || block.kind == BlockKind::TableCell) {
-        return TextPosition{block.id, block.inline_content.source.size(), TextAffinity::Upstream};
-    }
-    if (block.kind == BlockKind::CodeBlock) {
-        return TextPosition{block.id, block.code_text.size(), TextAffinity::Upstream};
-    }
-    if (block.kind == BlockKind::MathBlock) {
-        return TextPosition{block.id, block.tex.size(), TextAffinity::Upstream};
-    }
+    if (auto length = local_position_length(block)) return TextPosition{block.id, *length, TextAffinity::Upstream};
     for (auto child = block.children.rbegin(); child != block.children.rend(); ++child) {
         if (auto position = last_editable_position(*child)) return position;
     }
@@ -409,15 +411,21 @@ inline bool join_adjacent(
 inline bool remove_atomic(BlockVec& blocks, NodeId id, NodeAllocator& allocator, const EditorDocument& owner, TextPosition& target) {
     for (std::size_t index = 0; index < blocks.size(); ++index) {
         if (blocks[index].id == id && atomic_block(blocks[index].kind)) {
-            if (index + 1 < blocks.size()) target = {blocks[index + 1].id, 0, TextAffinity::Downstream};
-            else if (index > 0) {
-                const auto& previous = blocks[index - 1];
-                const auto length = text_block(previous.kind) ? previous.inline_content.source.size()
-                    : previous.kind == BlockKind::CodeBlock ? previous.code_text.size()
-                    : previous.kind == BlockKind::MathBlock ? previous.tex.size() : std::size_t{1};
-                target = {previous.id, length, TextAffinity::Upstream};
-            }
-            else {
+            if (index + 1 < blocks.size()) {
+                if (auto next = first_editable_position(blocks[index + 1])) target = *next;
+                else {
+                    blocks[index] = empty_paragraph(allocator, owner);
+                    target = {blocks[index].id, 0, TextAffinity::Downstream};
+                    return true;
+                }
+            } else if (index > 0) {
+                if (auto previous = last_editable_position(blocks[index - 1])) target = *previous;
+                else {
+                    blocks[index] = empty_paragraph(allocator, owner);
+                    target = {blocks[index].id, 0, TextAffinity::Downstream};
+                    return true;
+                }
+            } else {
                 blocks[index] = empty_paragraph(allocator, owner);
                 target = {blocks[index].id, 0, TextAffinity::Downstream};
                 return true;
