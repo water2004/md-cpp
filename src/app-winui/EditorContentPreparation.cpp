@@ -537,7 +537,7 @@ namespace winrt::ElMd
             }
             if (item.kind == elmd::InlineRenderItem::Kind::Marker && item.source_span.source_range.start == item.source_span.source_range.end && !item.display_text.empty())
             {
-                AppendGeneratedText(display, item.display_text, {item.source_span.container_id, item.source_span.source_range.start, elmd::TextAffinity::Downstream}, item.style);
+                AppendGeneratedText(display, item.display_text, {item.source_span.container_id, item.source_span.source_range.start, elmd::TextAffinity::Upstream}, item.style);
             }
             else
             {
@@ -641,6 +641,7 @@ namespace winrt::ElMd
         }
 
         std::optional<std::size_t> lastInContainer;
+        std::optional<std::size_t> exactFallback;
         for (std::size_t index = 0; index < displayToSource.size(); ++index)
         {
             if (displayToSource[index].container_id != sourcePosition.container_id)
@@ -648,11 +649,15 @@ namespace winrt::ElMd
                 continue;
             }
             lastInContainer = index;
-            if (displayToSource[index].source_offset >= sourcePosition.source_offset)
+            if (displayToSource[index].source_offset < sourcePosition.source_offset)
             {
-                return index;
+                continue;
             }
+            if (displayToSource[index].source_offset > sourcePosition.source_offset)
+                return exactFallback.value_or(index);
+            if (!exactFallback) exactFallback = index;
+            if (displayToSource[index].affinity == sourcePosition.affinity) return index;
         }
-        return lastInContainer.value_or(0);
+        return exactFallback.value_or(lastInContainer.value_or(0));
     }
 }

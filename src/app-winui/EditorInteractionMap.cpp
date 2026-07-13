@@ -26,13 +26,18 @@ namespace winrt::ElMd
         {
             if (mapping.empty()) return 0;
             std::optional<std::size_t> lastInContainer;
+            std::optional<std::size_t> exactFallback;
             for (std::size_t index = 0; index < mapping.size(); ++index)
             {
                 if (mapping[index].container_id != position.container_id) continue;
                 lastInContainer = index;
-                if (mapping[index].source_offset >= position.source_offset) return index;
+                if (mapping[index].source_offset < position.source_offset) continue;
+                if (mapping[index].source_offset > position.source_offset)
+                    return exactFallback.value_or(index);
+                if (!exactFallback) exactFallback = index;
+                if (mapping[index].affinity == position.affinity) return index;
             }
-            return lastInContainer.value_or(0);
+            return exactFallback.value_or(lastInContainer.value_or(0));
         }
 
         std::vector<elmd::TextSpan> SpansFromMapping(
