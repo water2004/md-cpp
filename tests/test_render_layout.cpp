@@ -39,7 +39,13 @@ suite render_layout_tests = [] {
     expect(fatal(bool(quote != model.blocks.front().child_blocks.end())));
     if (quote != model.blocks.front().child_blocks.end()) {
         expect(fatal(bool(quote->container_indent_columns == 2u)));
+        expect(fatal(bool(quote->container_marker_owner_id.v != 0u)));
         expect(fatal(bool(!quote->child_blocks.empty())));
+        auto marker = std::find_if(model.blocks.front().inline_items.begin(), model.blocks.front().inline_items.end(), [&](auto const& item) {
+            return item.marker_role == MarkerRole::ListBullet
+                && item.source_span.container_id == quote->container_marker_owner_id;
+        });
+        expect(fatal(bool(marker != model.blocks.front().inline_items.end())));
     }
     auto indent = std::find_if(model.blocks.front().inline_items.begin(), model.blocks.front().inline_items.end(), [](auto const& item) {
         return item.marker_role == MarkerRole::Structural && !item.display_text.empty()
@@ -222,6 +228,7 @@ suite render_layout_tests = [] {
     if (quote != list.child_blocks.end()) {
         expect(fatal(bool((quote->container_depth) == (1u))));
         expect(fatal(bool((quote->container_indent_columns) == (2u))));
+        expect(fatal(bool(quote->container_marker_owner_id.v != 0u)));
     }
 };
 

@@ -248,7 +248,18 @@ namespace winrt::ElMd
                     auto [displayStart, displayEnd] = *range;
                     if (!contentLeft)
                     {
-                        auto contentColumn = (std::min)(displayStart + quote.container_indent_columns, displayEnd);
+                        std::optional<std::size_t> ownerStart;
+                        auto limit = (std::min)(display.displayToSource.size(), elmd::utf16_len(display.text));
+                        for (std::size_t index = 0; index < limit; ++index)
+                        {
+                            if (display.displayToSource[index].container_id == quote.container_marker_owner_id)
+                            {
+                                ownerStart = index;
+                                break;
+                            }
+                        }
+                        if (!ownerStart) continue;
+                        auto contentColumn = (std::min)(*ownerStart + quote.container_indent_columns, displayEnd);
                         FLOAT x = 0.0f;
                         FLOAT lineY = 0.0f;
                         DWRITE_HIT_TEST_METRICS hit{};

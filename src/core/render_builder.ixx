@@ -405,11 +405,21 @@ struct Builder {
         return 2;
     }
 
-    void collect_nested_blocks(RenderBlock& parent, const BlockNode& child, std::size_t depth, std::size_t indent_columns) {
+    NodeId list_item_marker_owner(const BlockNode& item) const {
+        return item.children.empty() ? item.id : item.children.front().id;
+    }
+
+    void collect_nested_blocks(
+        RenderBlock& parent,
+        const BlockNode& child,
+        std::size_t depth,
+        std::size_t indent_columns,
+        NodeId container_marker_owner_id) {
         if (child.kind == BlockKind::CodeBlock || child.kind == BlockKind::BlockQuote) {
             auto rendered = build_block(child);
             rendered.container_depth = depth;
             rendered.container_indent_columns = indent_columns;
+            rendered.container_marker_owner_id = container_marker_owner_id;
             parent.child_blocks.push_back(std::move(rendered));
             return;
         }
@@ -417,7 +427,8 @@ struct Builder {
             for (std::size_t index = 0; index < child.children.size(); ++index) {
                 auto const& item = child.children[index];
                 auto next_indent = indent_columns + list_marker_columns(child, index);
-                for (auto const& nested : item.children) collect_nested_blocks(parent, nested, depth + 1, next_indent);
+                auto owner = list_item_marker_owner(item);
+                for (auto const& nested : item.children) collect_nested_blocks(parent, nested, depth + 1, next_indent, owner);
             }
             return;
         }
@@ -425,12 +436,13 @@ struct Builder {
             for (std::size_t index = 0; index < child.children.size(); ++index) {
                 auto const& item = child.children[index];
                 auto next_indent = indent_columns + list_marker_columns(child, index);
-                for (auto const& nested : item.children) collect_nested_blocks(parent, nested, depth + 1, next_indent);
+                auto owner = list_item_marker_owner(item);
+                for (auto const& nested : item.children) collect_nested_blocks(parent, nested, depth + 1, next_indent, owner);
             }
             return;
         }
         if (child.kind == BlockKind::Callout || child.kind == BlockKind::FootnoteDefinition) {
-            for (auto const& nested : child.children) collect_nested_blocks(parent, nested, depth, indent_columns);
+            for (auto const& nested : child.children) collect_nested_blocks(parent, nested, depth, indent_columns, container_marker_owner_id);
         }
     }
 
@@ -506,7 +518,8 @@ struct Builder {
                 for (std::size_t index = 0; index < b.children.size(); ++index) {
                     auto const& item = b.children[index];
                     auto indent = list_marker_columns(b, index);
-                    for (auto const& child : item.children) collect_nested_blocks(rb, child, 1, indent);
+                    auto owner = list_item_marker_owner(item);
+                    for (auto const& child : item.children) collect_nested_blocks(rb, child, 1, indent, owner);
                 }
                 return rb;
             }
@@ -516,7 +529,8 @@ struct Builder {
                 for (std::size_t index = 0; index < b.children.size(); ++index) {
                     auto const& item = b.children[index];
                     auto indent = list_marker_columns(b, index);
-                    for (auto const& child : item.children) collect_nested_blocks(rb, child, 1, indent);
+                    auto owner = list_item_marker_owner(item);
+                    for (auto const& child : item.children) collect_nested_blocks(rb, child, 1, indent, owner);
                 }
                 return rb;
             }

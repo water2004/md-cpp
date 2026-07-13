@@ -179,6 +179,7 @@ struct RenderBlock {
     std::size_t quote_depth = 0;
     std::size_t container_depth = 0;
     std::size_t container_indent_columns = 0;
+    NodeId container_marker_owner_id{};   // anchors the nested block to its list item's content column
     std::string callout_kind;
     std::optional<std::vector<InlineRenderItem>> callout_title;
     std::string footnote_label;
