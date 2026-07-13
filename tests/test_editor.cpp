@@ -449,6 +449,70 @@ suite editor_tests = [] {
         "atomic removal");
 };
 
+"structural_prefix_backspace_records_uniform_tree_operations"_test = [] {
+    auto exercise = [](Editor& editor, NodeId owner, std::string_view label) {
+        const auto before_markdown = editor.markdown_utf8();
+        const auto before = TextSelection::caret({owner, 0, TextAffinity::Downstream});
+        editor.set_selection(before);
+        reset_core_operation_counters();
+        auto transaction = editor.execute_document_delete_backward(editor.selection());
+        expect(fatal(bool(transaction.has_value()))) << label;
+        if (!transaction) return;
+        const auto counters = read_core_operation_counters();
+        expect(fatal(bool(counters.full_document_parses == 0u))) << label;
+        expect(fatal(bool(counters.full_document_serializations == 0u))) << label;
+        expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << label;
+        expect(fatal(bool(!transaction->operations.empty()))) << label;
+        const auto after_markdown = editor.markdown_utf8();
+        const auto after = editor.selection();
+        expect(fatal(bool(editor.undo()))) << label;
+        expect(fatal(bool(editor.markdown_utf8() == before_markdown))) << label;
+        expect(fatal(bool(editor.selection() == before))) << label;
+        expect(fatal(bool(editor.redo()))) << label;
+        expect(fatal(bool(editor.markdown_utf8() == after_markdown))) << label;
+        expect(fatal(bool(editor.selection() == after))) << label;
+    };
+
+    Editor heading("# title");
+    exercise(heading, heading.document().root.children.front().id, "heading");
+
+    Editor quote("> quote");
+    exercise(quote, quote.document().root.children.front().children.front().id, "quote");
+
+    Editor callout("> [!NOTE] title\n> body");
+    exercise(callout, callout.document().root.children.front().id, "callout title");
+
+    Editor untitled_callout("> [!NOTE]\n> body");
+    exercise(
+        untitled_callout,
+        untitled_callout.document().root.children.front().children.front().id,
+        "untitled callout");
+
+    for (auto markdown : {
+             std::string{"- item"},
+             std::string{"- one\n- two\n- three"},
+             std::string{"> - item"}}) {
+        Editor list(markdown);
+        const BlockNode* selected = nullptr;
+        walk_blocks(list.document().root, [&](const BlockNode& block) {
+            if (block.kind != BlockKind::Paragraph) return;
+            if (!selected || block.inline_content.source == U"two") selected = &block;
+        });
+        expect(fatal(bool(selected != nullptr))) << markdown;
+        if (selected) exercise(list, selected->id, markdown);
+    }
+
+    Editor nested_list("- parent\n  - child");
+    const BlockNode* nested_child = nullptr;
+    walk_blocks(nested_list.document().root, [&](const BlockNode& block) {
+        if (block.kind == BlockKind::Paragraph && block.inline_content.source == U"child") {
+            nested_child = &block;
+        }
+    });
+    expect(fatal(bool(nested_child != nullptr)));
+    if (nested_child) exercise(nested_list, nested_child->id, "nested list");
+};
+
 "selection_replacement_composes_delete_and_insert_source_edits"_test = [] {
     Editor editor("alpha");
     const auto owner_id = first_text(editor).id;

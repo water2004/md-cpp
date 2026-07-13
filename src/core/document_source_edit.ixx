@@ -290,7 +290,8 @@ inline std::optional<DocumentTransaction> document_delete_backward(const EditorD
             --target.source_offset;
         }
     } else if (auto unprefixed = document_input_rules::handle_backspace_at_start(after, target, allocator)) {
-        target = *unprefixed;
+        target = unprefixed->target;
+        operations = std::move(unprefixed->operations);
     } else if (auto joined_parent = document_edit_detail::join_parent_inline_owner(
                    after, target.container_id, allocator)) {
         target = joined_parent->target;
@@ -310,16 +311,14 @@ inline std::optional<DocumentTransaction> document_delete_backward(const EditorD
         return document_edit_detail::source_transaction(
             std::move(after), std::move(*source_edit), selection, TextSelection::caret(target), document.revision, DocumentTransactionReason::Delete);
     }
-    if (!operations.empty()) {
-        return make_recorded_document_transaction(
-            std::move(after),
-            std::move(operations),
-            selection,
-            TextSelection::caret(target),
-            document.revision,
-            DocumentTransactionReason::Delete);
-    }
-    return document_edit_detail::transaction(document, std::move(after), selection, TextSelection::caret(target), DocumentTransactionReason::Delete);
+    if (operations.empty()) return std::nullopt;
+    return make_recorded_document_transaction(
+        std::move(after),
+        std::move(operations),
+        selection,
+        TextSelection::caret(target),
+        document.revision,
+        DocumentTransactionReason::Delete);
 }
 
 inline std::optional<DocumentTransaction> document_delete_forward(const EditorDocument& document, const TextSelection& selection) {
