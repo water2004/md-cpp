@@ -1332,9 +1332,60 @@ suite editor_tests = [] {
     const auto second_id = table.children.front().children[1].id;
     editor.set_selection(TextSelection::caret({first_id, 0, TextAffinity::Downstream}));
     const auto had_undo = editor.has_undo();
+    reset_core_operation_counters();
     expect(fatal(bool(editor.execute_document_table_edit(editor.selection(), DocumentTableEdit::MoveCellNext).has_value())));
+    const auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
     expect(fatal(bool(editor.selection().active.container_id == second_id)));
     expect(fatal(bool(editor.has_undo() == had_undo)));
+};
+
+"table_structure_edits_record_rows_columns_and_payloads"_test = [] {
+    struct Case {
+        DocumentTableEdit edit;
+        std::size_t row;
+        std::size_t column;
+        TableAlignment alignment = TableAlignment::None;
+        std::size_t argument = 0;
+    };
+    const std::vector<Case> cases{
+        {DocumentTableEdit::InsertRowBelow, 1, 0},
+        {DocumentTableEdit::DeleteRow, 1, 0},
+        {DocumentTableEdit::MoveRowDown, 1, 0},
+        {DocumentTableEdit::MoveRowTo, 1, 0, TableAlignment::None, 2},
+        {DocumentTableEdit::InsertColumnRight, 1, 0},
+        {DocumentTableEdit::DeleteColumn, 1, 0},
+        {DocumentTableEdit::MoveColumnRight, 1, 0},
+        {DocumentTableEdit::MoveColumnTo, 1, 0, TableAlignment::None, 1},
+        {DocumentTableEdit::SetColumnAlignment, 1, 0, TableAlignment::Center},
+        {DocumentTableEdit::Normalize, 1, 0},
+    };
+    for (const auto& test : cases) {
+        Editor editor("| A | B |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |");
+        const auto& table = editor.document().root.children.front();
+        const auto owner = table.children[test.row].children[test.column].id;
+        const auto before = TextSelection::caret({owner, 0, TextAffinity::Downstream});
+        const auto before_markdown = editor.markdown_utf8();
+        editor.set_selection(before);
+        reset_core_operation_counters();
+        auto transaction = editor.execute_document_table_edit(
+            editor.selection(), test.edit, test.alignment, test.argument);
+        expect(fatal(bool(transaction.has_value()))) << static_cast<int>(test.edit);
+        if (!transaction) continue;
+        const auto counters = read_core_operation_counters();
+        expect(fatal(bool(counters.full_document_parses == 0u))) << static_cast<int>(test.edit);
+        expect(fatal(bool(counters.full_document_serializations == 0u))) << static_cast<int>(test.edit);
+        expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << static_cast<int>(test.edit);
+        expect(fatal(bool(!transaction->operations.empty()))) << static_cast<int>(test.edit);
+        const auto after_markdown = editor.markdown_utf8();
+        const auto after = editor.selection();
+        expect(fatal(bool(editor.undo()))) << static_cast<int>(test.edit);
+        expect(fatal(bool(editor.markdown_utf8() == before_markdown))) << static_cast<int>(test.edit);
+        expect(fatal(bool(editor.selection() == before))) << static_cast<int>(test.edit);
+        expect(fatal(bool(editor.redo()))) << static_cast<int>(test.edit);
+        expect(fatal(bool(editor.markdown_utf8() == after_markdown))) << static_cast<int>(test.edit);
+        expect(fatal(bool(editor.selection() == after))) << static_cast<int>(test.edit);
+    }
 };
 
 "derived_symbols_and_outline_refresh_after_structure_edits"_test = [] {

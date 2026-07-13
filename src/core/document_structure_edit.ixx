@@ -617,6 +617,46 @@ inline std::optional<DocumentTransaction> document_edit_table(
         return row;
     };
     auto target_id = cell_id;
+    const auto table_id = table->id;
+    const auto table_payload_before = document_transaction_detail::payload_shell(*table);
+    std::vector<DocumentOperation> operations;
+    bool payload_changed = false;
+    auto insert_node = [&](NodeId parent_id, std::size_t index, BlockNode node) {
+        auto* owner = find_block(after.root, parent_id);
+        if (!owner || index > owner->children.size()) return false;
+        DocumentTreeEdit insert;
+        insert.kind = DocumentTreeEditKind::Insert;
+        insert.parent_id = parent_id;
+        insert.index = index;
+        insert.after = node;
+        operations.emplace_back(std::move(insert));
+        return insert_block(*owner, index, std::move(node));
+    };
+    auto remove_node = [&](NodeId parent_id, std::size_t index) {
+        auto* owner = find_block(after.root, parent_id);
+        if (!owner || index >= owner->children.size()) return false;
+        DocumentTreeEdit remove;
+        remove.kind = DocumentTreeEditKind::Remove;
+        remove.parent_id = parent_id;
+        remove.index = index;
+        remove.before = owner->children[index];
+        operations.emplace_back(std::move(remove));
+        return remove_block(*owner, index).has_value();
+    };
+    auto move_node = [&](NodeId parent_id, std::size_t from, std::size_t to) {
+        auto* owner = find_block(after.root, parent_id);
+        if (!owner || from >= owner->children.size()) return false;
+        auto node = remove_block(*owner, from);
+        if (!node || to > owner->children.size()) return false;
+        DocumentTreeEdit move;
+        move.kind = DocumentTreeEditKind::Move;
+        move.parent_id = parent_id;
+        move.index = from;
+        move.other_parent_id = parent_id;
+        move.other_index = to;
+        operations.emplace_back(std::move(move));
+        return insert_block(*owner, to, std::move(*node));
+    };
     bool changed = true;
     switch (edit) {
         case DocumentTableEdit::MoveCellNext: {
@@ -634,34 +674,34 @@ inline std::optional<DocumentTransaction> document_edit_table(
             break;
         }
         case DocumentTableEdit::InsertRowAbove:
-            table->children.insert(table->children.begin() + static_cast<std::ptrdiff_t>(row_index), make_row());
+            if (!insert_node(table_id, row_index, make_row())) return std::nullopt;
             break;
         case DocumentTableEdit::InsertRowBelow:
-            table->children.insert(table->children.begin() + static_cast<std::ptrdiff_t>(row_index + 1), make_row());
+            if (!insert_node(table_id, row_index + 1, make_row())) return std::nullopt;
             break;
         case DocumentTableEdit::InsertRowAt: {
             const auto index = (std::min)(argument, table->children.size());
-            table->children.insert(table->children.begin() + static_cast<std::ptrdiff_t>(index), make_row());
+            if (!insert_node(table_id, index, make_row())) return std::nullopt;
             break;
         }
         case DocumentTableEdit::DeleteRow:
             if (row_index == 0 || table->children.size() <= 1) return std::nullopt;
-            table->children.erase(table->children.begin() + static_cast<std::ptrdiff_t>(row_index));
+            if (!remove_node(table_id, row_index)) return std::nullopt;
+            table = find_block(after.root, table_id);
+            if (!table) return std::nullopt;
             target_id = table->children[(std::min)(row_index - 1, table->children.size() - 1)].children[(std::min)(column, column_count - 1)].id;
             break;
         case DocumentTableEdit::MoveRowUp:
             if (row_index <= 1) return std::nullopt;
-            std::swap(table->children[row_index], table->children[row_index - 1]);
+            if (!move_node(table_id, row_index, row_index - 1)) return std::nullopt;
             break;
         case DocumentTableEdit::MoveRowDown:
             if (row_index == 0 || row_index + 1 >= table->children.size()) return std::nullopt;
-            std::swap(table->children[row_index], table->children[row_index + 1]);
+            if (!move_node(table_id, row_index, row_index + 1)) return std::nullopt;
             break;
         case DocumentTableEdit::MoveRowTo: {
             if (row_index == 0 || argument == 0 || argument >= table->children.size()) return std::nullopt;
-            auto row = remove_block(*table, row_index);
-            if (!row) return std::nullopt;
-            insert_block(*table, argument, std::move(*row));
+            if (!move_node(table_id, row_index, argument)) return std::nullopt;
             break;
         }
         case DocumentTableEdit::InsertColumnLeft:
@@ -670,55 +710,123 @@ inline std::optional<DocumentTransaction> document_edit_table(
             const auto index = edit == DocumentTableEdit::InsertColumnLeft ? column
                 : edit == DocumentTableEdit::InsertColumnRight ? column + 1
                 : (std::min)(argument, column_count);
-            for (auto& row : table->children) row.children.insert(row.children.begin() + static_cast<std::ptrdiff_t>(index), make_cell());
+            std::vector<NodeId> row_ids;
+            for (const auto& row : table->children) row_ids.push_back(row.id);
+            for (auto row_id : row_ids) {
+                if (!insert_node(row_id, index, make_cell())) return std::nullopt;
+            }
+            table = find_block(after.root, table_id);
+            if (!table) return std::nullopt;
             table->table_aligns.insert(table->table_aligns.begin() + static_cast<std::ptrdiff_t>((std::min)(index, table->table_aligns.size())), TableAlignment::None);
+            payload_changed = true;
             break;
         }
         case DocumentTableEdit::DeleteColumn:
             if (column_count <= 1) return std::nullopt;
-            for (auto& row : table->children) row.children.erase(row.children.begin() + static_cast<std::ptrdiff_t>(column));
+            {
+                std::vector<NodeId> row_ids;
+                for (const auto& row : table->children) row_ids.push_back(row.id);
+                for (auto row_id : row_ids) {
+                    if (!remove_node(row_id, column)) return std::nullopt;
+                }
+            }
+            table = find_block(after.root, table_id);
+            if (!table) return std::nullopt;
             if (column < table->table_aligns.size()) table->table_aligns.erase(table->table_aligns.begin() + static_cast<std::ptrdiff_t>(column));
+            payload_changed = true;
             target_id = table->children[row_index].children[(std::min)(column, column_count - 2)].id;
             break;
         case DocumentTableEdit::MoveColumnLeft:
             if (column == 0) return std::nullopt;
-            for (auto& row : table->children) std::swap(row.children[column], row.children[column - 1]);
+            {
+                std::vector<NodeId> row_ids;
+                for (const auto& row : table->children) row_ids.push_back(row.id);
+                for (auto row_id : row_ids) {
+                    if (!move_node(row_id, column, column - 1)) return std::nullopt;
+                }
+            }
+            table = find_block(after.root, table_id);
+            if (!table) return std::nullopt;
             if (column < table->table_aligns.size()) std::swap(table->table_aligns[column], table->table_aligns[column - 1]);
+            payload_changed = true;
             break;
         case DocumentTableEdit::MoveColumnRight:
             if (column + 1 >= column_count) return std::nullopt;
-            for (auto& row : table->children) std::swap(row.children[column], row.children[column + 1]);
+            {
+                std::vector<NodeId> row_ids;
+                for (const auto& row : table->children) row_ids.push_back(row.id);
+                for (auto row_id : row_ids) {
+                    if (!move_node(row_id, column, column + 1)) return std::nullopt;
+                }
+            }
+            table = find_block(after.root, table_id);
+            if (!table) return std::nullopt;
             if (column + 1 < table->table_aligns.size()) std::swap(table->table_aligns[column], table->table_aligns[column + 1]);
+            payload_changed = true;
             break;
         case DocumentTableEdit::MoveColumnTo: {
             if (argument >= column_count || argument == column) return std::nullopt;
-            for (auto& row : table->children) {
-                auto cell = remove_block(row, column);
-                if (!cell) return std::nullopt;
-                insert_block(row, argument, std::move(*cell));
+            std::vector<NodeId> row_ids;
+            for (const auto& row : table->children) row_ids.push_back(row.id);
+            for (auto row_id : row_ids) {
+                if (!move_node(row_id, column, argument)) return std::nullopt;
             }
+            table = find_block(after.root, table_id);
+            if (!table) return std::nullopt;
             auto value = table->table_aligns[column];
             table->table_aligns.erase(table->table_aligns.begin() + static_cast<std::ptrdiff_t>(column));
             table->table_aligns.insert(table->table_aligns.begin() + static_cast<std::ptrdiff_t>(argument), value);
+            payload_changed = true;
             break;
         }
         case DocumentTableEdit::SetColumnAlignment:
             if (column >= table->table_aligns.size()) table->table_aligns.resize(column_count, TableAlignment::None);
             table->table_aligns[column] = alignment;
+            payload_changed = true;
             break;
         case DocumentTableEdit::Normalize: {
             auto columns = (std::max)(std::size_t{1}, column_count);
-            for (auto& row : table->children) {
-                while (row.children.size() < columns) row.children.push_back(make_cell());
-                if (row.children.size() > columns) row.children.resize(columns);
+            std::vector<NodeId> row_ids;
+            for (const auto& row : table->children) row_ids.push_back(row.id);
+            for (auto row_id : row_ids) {
+                auto* row = find_block(after.root, row_id);
+                if (!row) return std::nullopt;
+                while (row->children.size() < columns) {
+                    if (!insert_node(row_id, row->children.size(), make_cell())) return std::nullopt;
+                    row = find_block(after.root, row_id);
+                    if (!row) return std::nullopt;
+                }
+                while (row->children.size() > columns) {
+                    if (!remove_node(row_id, row->children.size() - 1)) return std::nullopt;
+                    row = find_block(after.root, row_id);
+                    if (!row) return std::nullopt;
+                }
             }
+            table = find_block(after.root, table_id);
+            if (!table) return std::nullopt;
             table->table_aligns.resize(columns, TableAlignment::None);
+            payload_changed = true;
             break;
         }
     }
+    if (payload_changed) {
+        table = find_block(after.root, table_id);
+        if (!table) return std::nullopt;
+        DocumentTreeEdit update;
+        update.kind = DocumentTreeEditKind::UpdatePayload;
+        update.before = table_payload_before;
+        update.after = document_transaction_detail::payload_shell(*table);
+        operations.emplace_back(std::move(update));
+    }
     if (changed) ++after.revision;
     const auto target = TextSelection::caret(TextPosition{target_id, 0, TextAffinity::Downstream});
-    return document_edit_detail::transaction(document, std::move(after), selection, target, DocumentTransactionReason::Structure);
+    return make_recorded_document_transaction(
+        std::move(after),
+        std::move(operations),
+        selection,
+        target,
+        document.revision,
+        DocumentTransactionReason::Structure);
 }
 
 
