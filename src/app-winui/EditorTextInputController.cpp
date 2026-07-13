@@ -211,12 +211,10 @@ namespace winrt::ElMd
                 && text.substr(start, ToWide(pendingCharacterText_).size()) == ToWide(pendingCharacterText_))
             {
                 ClearPendingCharacterTextUpdate();
-                auto newSelection = args.NewSelection();
-                auto newStart = static_cast<std::size_t>((std::max)(0, newSelection.StartCaretPosition));
-                auto newEnd = static_cast<std::size_t>((std::max)(0, newSelection.EndCaretPosition));
-                session_->SetSelection(
-                    session_->PositionFromAcp((std::min)(newStart, length)),
-                    session_->PositionFromAcp((std::min)(newEnd, length)));
+                // The key path already applied a semantic editor transaction.
+                // Its block-local selection is authoritative; TSF's flat
+                // NewSelection was computed without knowledge of any marker
+                // conversion or tree move performed by that transaction.
                 if (render_) render_();
                 context_.NotifySelectionChanged(CurrentSelection());
                 knownLength_ = length;
@@ -238,15 +236,9 @@ namespace winrt::ElMd
                 return;
             }
             auto newLength = session_->AcpLength();
-            if (!isIncomingNewline)
-            {
-                auto newSelection = args.NewSelection();
-                auto newStart = static_cast<std::size_t>((std::max)(0, newSelection.StartCaretPosition));
-                auto newEnd = static_cast<std::size_t>((std::max)(0, newSelection.EndCaretPosition));
-                session_->SetSelection(
-                    session_->PositionFromAcp((std::min)(newStart, newLength)),
-                    session_->PositionFromAcp((std::min)(newEnd, newLength)));
-            }
+            // ExecuteCommand returns the post-edit TextPosition selected by
+            // the source/tree transaction. Never overwrite it with TSF's
+            // document-wide projection after the edit.
             if (render_) render_();
             context_.NotifySelectionChanged(CurrentSelection());
             knownLength_ = newLength;
