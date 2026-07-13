@@ -223,11 +223,12 @@ suite document_edit_tests = [] {
     if (!transaction) return;
     expect(fatal(bool(transaction->after.root.children.size() == 3u)));
     expect(fatal(bool(transaction->after.root.children[0].kind == BlockKind::CodeBlock)));
-    expect(fatal(bool(transaction->after.root.children[0].code_text == U"one\n")));
+    expect(fatal(bool(transaction->after.root.children[0].code_text == U"one")));
     expect(fatal(bool(transaction->after.root.children[1].kind == BlockKind::Paragraph)));
     expect(fatal(bool(transaction->after.root.children[2].kind == BlockKind::CodeBlock)));
     expect(fatal(bool(transaction->after.root.children[2].code_text == U"two")));
     expect(fatal(bool(transaction->selection_after.active.container_id == transaction->after.root.children[1].id)));
+    expect(fatal(bool(serialize_markdown(transaction->after).find("    one\n    \n") == std::string::npos)));
 };
 
 "enter_on_empty_quote_line_exits_the_quote"_test = [] {
@@ -241,9 +242,11 @@ suite document_edit_tests = [] {
     if (!transaction) return;
     expect(fatal(bool(transaction->after.root.children.size() == 2u)));
     expect(fatal(bool(transaction->after.root.children[0].kind == BlockKind::BlockQuote)));
+    expect(fatal(bool(transaction->after.root.children[0].children.size() == 1u)));
     expect(fatal(bool(transaction->after.root.children[1].kind == BlockKind::Paragraph)));
-    expect(fatal(bool(transaction->after.root.children[1].id == empty_id)));
-    expect(fatal(bool(transaction->selection_after.active.container_id == empty_id)));
+    expect(fatal(bool(transaction->after.root.children[1].id != empty_id)));
+    expect(fatal(bool(transaction->selection_after.active.container_id == transaction->after.root.children[1].id)));
+    expect(fatal(bool(find_block(transaction->after.root, empty_id) == nullptr)));
 };
 
 "backspace_and_delete_join_adjacent_blocks"_test = [] {

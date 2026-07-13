@@ -240,7 +240,13 @@ inline std::optional<TextPosition> exit_empty_indented_code(
         if (block->code_text[index] != U' ' && block->code_text[index] != U'\t') return std::nullopt;
     }
 
-    auto before = block->code_text.substr(0, line_start);
+    // The blank line is the exit trigger, not content that should survive in
+    // either code block. Remove its preceding line separator as well so the
+    // leading block does not retain a visually empty trailing line.
+    const auto before_end = line_start > 0 && block->code_text[line_start - 1] == U'\n'
+        ? line_start - 1
+        : line_start;
+    auto before = block->code_text.substr(0, before_end);
     auto after_start = line_end < block->code_text.size() ? line_end + 1 : line_end;
     auto after = block->code_text.substr(after_start);
     auto parent_path = *path;
@@ -297,7 +303,9 @@ inline std::optional<TextPosition> exit_empty_block_quote(
     const auto child_index = (*path)[*quote_depth];
     if (child_index >= quote.children.size()) return std::nullopt;
 
-    auto paragraph = std::move(quote.children[child_index]);
+    // Delete the quote's empty content node. A fresh paragraph outside the
+    // quote owns the caret; reparenting the trigger line would preserve it.
+    auto paragraph = empty_paragraph(allocator, document);
     const auto target = TextPosition{paragraph.id, 0, TextAffinity::Downstream};
     BlockVec trailing_children;
     trailing_children.insert(trailing_children.end(),
