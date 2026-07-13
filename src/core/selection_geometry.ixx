@@ -34,10 +34,26 @@ inline std::vector<VisualRun> visual_runs(const LayoutTree& tree) {
 }
 
 inline std::size_t visual_endpoint(const std::vector<VisualRun>& runs, const TextPosition& position) {
+    std::optional<std::size_t> first_source;
+    std::optional<std::size_t> last_source;
+    std::optional<std::size_t> first_suffix;
+    std::optional<std::size_t> last_prefix;
     for (std::size_t index = 0; index < runs.size(); ++index) {
-        const auto& span = runs[index].run->source_span;
-        if (span.container_id == position.container_id && span.source_range.covers(position.source_offset)) return index;
+        const auto& run = *runs[index].run;
+        const auto& span = run.source_span;
+        if (span.container_id != position.container_id || !span.source_range.covers(position.source_offset)) continue;
+        if (!run.generated_boundary_affinity) {
+            if (!first_source) first_source = index;
+            last_source = index;
+        } else if (*run.generated_boundary_affinity == TextAffinity::Downstream) {
+            last_prefix = index;
+        } else if (!first_suffix) {
+            first_suffix = index;
+        }
     }
+    if (first_source) return position.affinity == TextAffinity::Upstream ? *first_source : *last_source;
+    if (last_prefix) return *last_prefix;
+    if (first_suffix) return *first_suffix;
     for (std::size_t index = 0; index < runs.size(); ++index) {
         if (runs[index].run->source_span.container_id == position.container_id) return index;
     }
@@ -82,25 +98,54 @@ struct CaretGeometry {
 };
 
 inline std::optional<CaretGeometry> compute_caret_geometry(const LayoutTree& tree, TextPosition position) {
+    std::optional<CaretGeometry> first_source;
+    std::optional<CaretGeometry> last_source;
+    std::optional<CaretGeometry> first_suffix;
+    std::optional<CaretGeometry> last_prefix;
     for (const auto& block : tree.blocks) {
         for (const auto& child : block.children) if (child.kind == LayoutItem::Kind::Line) {
             for (const auto& run : child.line.runs) {
                 const auto& span = run.source_span;
                 if (span.container_id != position.container_id || !span.source_range.covers(position.source_offset)) continue;
+                CaretGeometry candidate;
+                candidate.position = position;
+                if (run.generated_boundary_affinity) {
+                    const auto x = *run.generated_boundary_affinity == TextAffinity::Downstream
+                        ? run.origin.x + run.width
+                        : run.origin.x;
+                    candidate.rect = LogicalRect(x, child.line.rect.y, 2.0f, child.line.rect.height);
+                    if (*run.generated_boundary_affinity == TextAffinity::Downstream) {
+                        last_prefix = candidate;
+                    } else if (!first_suffix) {
+                        first_suffix = candidate;
+                    }
+                    continue;
+                }
                 const auto length = span.source_range.length();
                 const auto ratio = length
                     ? static_cast<float>(position.source_offset - span.source_range.start) / static_cast<float>(length)
                     : 0.0f;
-                return CaretGeometry{position,
-                    LogicalRect(run.origin.x + ratio * run.width, child.line.rect.y, 2.0f, child.line.rect.height)};
+                candidate.rect = LogicalRect(
+                    run.origin.x + ratio * run.width,
+                    child.line.rect.y,
+                    2.0f,
+                    child.line.rect.height);
+                if (!first_source) first_source = candidate;
+                last_source = candidate;
             }
             if (child.line.runs.empty() && child.line.source_span.container_id == position.container_id
                 && child.line.source_span.source_range.start == position.source_offset) {
-                return CaretGeometry{position,
+                CaretGeometry candidate{
+                    position,
                     LogicalRect(child.line.rect.x, child.line.rect.y, 2.0f, child.line.rect.height)};
+                if (!first_source) first_source = candidate;
+                last_source = candidate;
             }
         }
     }
+    if (first_source) return position.affinity == TextAffinity::Upstream ? first_source : last_source;
+    if (last_prefix) return last_prefix;
+    if (first_suffix) return first_suffix;
     return std::nullopt;
 }
 

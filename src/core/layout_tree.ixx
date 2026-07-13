@@ -6,6 +6,7 @@ import elmd.core.ids;
 import elmd.core.dialect;
 import elmd.core.render_model;
 import elmd.core.text_measurer;
+import elmd.core.selection;
 import elmd.core.text_edit;
 
 export namespace elmd {
@@ -19,6 +20,7 @@ struct GlyphRunLayout {
     float width{};
     float height{};
     MarkerVisibility marker_visibility = MarkerVisibility::Always;
+    std::optional<TextAffinity> generated_boundary_affinity;
 };
 
 struct GlyphRunLayoutInit {

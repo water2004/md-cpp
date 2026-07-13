@@ -8,6 +8,7 @@ import elmd.core.dialect;
 import elmd.core.ast;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
+import elmd.core.selection;
 import elmd.core.text_edit;
 import elmd.core.document;
 import elmd.core.outline;
@@ -79,12 +80,19 @@ inline RenderBlock render_block_base(BlockKind k, NodeId id, std::size_t length,
     return b;
 }
 
-// Build a Marker inline item at the running cursor; advances `cursor`.
-inline void push_marker(std::vector<InlineRenderItem>& out, NodeId owner, std::size_t& cursor, std::u32string text,
-                        MarkerRole role = MarkerRole::Syntax, std::u32string display_text = {}) {
+// Build a generated marker anchored at a boundary in its owner's source.
+inline void push_marker(
+    std::vector<InlineRenderItem>& out,
+    NodeId owner,
+    std::size_t& cursor,
+    std::u32string text,
+    MarkerRole role,
+    TextAffinity boundary_affinity,
+    std::u32string display_text = {}) {
     InlineRenderItem m; m.kind = InlineRenderItem::Kind::Marker;
     m.source_span = {owner, {cursor, cursor}};
     m.text = std::move(text); m.display_text = std::move(display_text); m.marker_role = role;
+    m.generated_boundary_affinity = boundary_affinity;
     m.marker_style = MarkerStyle{true, {}}; m.visibility = MarkerVisibility::Always;
     out.push_back(std::move(m));
 }
@@ -130,7 +138,7 @@ struct Builder {
 
     void append_block_break(std::vector<InlineRenderItem>& out, NodeId owner, std::size_t source_offset = 0) {
         std::size_t cursor = source_offset;
-        push_marker(out, owner, cursor, U"\n", MarkerRole::Structural);
+        push_marker(out, owner, cursor, U"\n", MarkerRole::Structural, TextAffinity::Upstream);
     }
     void append_generated_indent(std::vector<InlineRenderItem>& out, NodeId owner, std::size_t source_offset, std::size_t columns) {
         if (columns == 0) return;
@@ -139,6 +147,7 @@ struct Builder {
         marker.source_span = {owner, {source_offset, source_offset}};
         marker.display_text = std::u32string(columns, U' ');
         marker.marker_role = MarkerRole::Structural;
+        marker.generated_boundary_affinity = TextAffinity::Downstream;
         marker.visibility = MarkerVisibility::Always;
         out.push_back(std::move(marker));
     }
@@ -293,6 +302,7 @@ struct Builder {
                         cursor,
                         marker,
                         tasks ? MarkerRole::TaskCheckbox : block.list_ordered ? MarkerRole::ListNumber : MarkerRole::ListBullet,
+                        TextAffinity::Downstream,
                         std::u32string(missing_indent, U' ') + display_marker);
 
                     FlowContext item_context{context.indent_columns + marker_columns, item_owner};
@@ -597,12 +607,28 @@ struct Builder {
                 }
                 InlineStyle s = InlineStyle::plain();
                 std::size_t cursor = 0;
-                if (!b.opening_marker.empty()) { cursor = 0; push_marker(rb.inline_items, b.id, cursor, b.opening_marker); rb.inline_items.back().marker_owner = b.id; }
+                if (!b.opening_marker.empty()) {
+                    cursor = 0;
+                    push_marker(
+                        rb.inline_items,
+                        b.id,
+                        cursor,
+                        b.opening_marker,
+                        MarkerRole::Syntax,
+                        TextAffinity::Downstream);
+                    rb.inline_items.back().marker_owner = b.id;
+                }
                 auto items = build_inline_document(b.inline_content, b.id, s);
                 for (auto& item : items) rb.inline_items.push_back(std::move(item));
                 if (!b.closing_marker.empty()) {
                     cursor = b.inline_content.source.size();
-                    push_marker(rb.inline_items, b.id, cursor, b.closing_marker);
+                    push_marker(
+                        rb.inline_items,
+                        b.id,
+                        cursor,
+                        b.closing_marker,
+                        MarkerRole::Syntax,
+                        TextAffinity::Upstream);
                     rb.inline_items.back().marker_owner = b.id;
                 }
                 return rb;
@@ -610,7 +636,10 @@ struct Builder {
             case BK::Heading: {
                 auto rb = base(BlockStyle::heading(b.level));
                 InlineStyle s = InlineStyle::plain(); s.heading_level = b.level;
-                auto append_heading_marker = [&](std::u32string const& text, std::size_t offset) {
+                auto append_heading_marker = [&](
+                    std::u32string const& text,
+                    std::size_t offset,
+                    TextAffinity boundary_affinity) {
                     if (text.empty()) return;
                     InlineRenderItem marker;
                     marker.kind = InlineRenderItem::Kind::Marker;
@@ -618,15 +647,19 @@ struct Builder {
                     marker.text = text;
                     marker.style = s;
                     marker.marker_role = MarkerRole::Heading;
+                    marker.generated_boundary_affinity = boundary_affinity;
                     marker.marker_owner = b.id;
                     marker.marker_style = MarkerStyle{true, {}};
                     marker.visibility = MarkerVisibility::WhenBlockFocused;
                     rb.inline_items.push_back(std::move(marker));
                 };
-                append_heading_marker(b.opening_marker, 0);
+                append_heading_marker(b.opening_marker, 0, TextAffinity::Downstream);
                 auto items = build_inline_document(b.inline_content, b.id, s);
                 for (auto& it : items) rb.inline_items.push_back(std::move(it));
-                append_heading_marker(b.closing_marker, b.inline_content.source.size());
+                append_heading_marker(
+                    b.closing_marker,
+                    b.inline_content.source.size(),
+                    TextAffinity::Upstream);
                 std::stable_sort(rb.inline_items.begin(), rb.inline_items.end(), [](auto const& left, auto const& right) {
                     return left.source_span.source_range.start < right.source_span.source_range.start;
                 });

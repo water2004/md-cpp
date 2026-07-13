@@ -9,6 +9,7 @@ import elmd.core.theme;
 import elmd.core.outline;
 import elmd.core.diagnostics;
 import elmd.core.ast; // for AST contents reused during build (children)
+import elmd.core.selection;
 import elmd.core.text_edit;
 
 export namespace elmd {
@@ -132,6 +133,10 @@ struct InlineRenderItem {
     MarkerStyle marker_style;
     MarkerVisibility visibility = MarkerVisibility::WhenCaretInsideNode;
     MarkerRole marker_role = MarkerRole::Syntax;
+    // Generated block markers have an empty source span. This records which
+    // visual edge of that marker is the actual source boundary: after a
+    // prefix (Downstream), before a suffix (Upstream).
+    std::optional<TextAffinity> generated_boundary_affinity;
     std::vector<InlineRenderItem> children; // Link children
 
     static InlineRenderItem plain_text(std::u32string t, TextSpan span) {

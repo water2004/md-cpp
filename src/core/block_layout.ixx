@@ -9,6 +9,7 @@ import elmd.core.text_measurer;
 import elmd.core.utf;
 import elmd.core.layout_tree;
 import elmd.core.outline;
+import elmd.core.selection;
 import elmd.core.text_edit;
 
 export namespace elmd {
@@ -42,7 +43,12 @@ inline std::pair<LayoutBlock, float> layout_text_block(const RenderBlock& rb, fl
         line_runs.clear();
         cur_x = margin_out_left;
     };
-    auto append_piece = [&](std::u32string text, TextSpan span, InlineStyle inline_style, MarkerVisibility visibility) {
+    auto append_piece = [&](
+        std::u32string text,
+        TextSpan span,
+        InlineStyle inline_style,
+        MarkerVisibility visibility,
+        std::optional<TextAffinity> generated_boundary_affinity = std::nullopt) {
         if (text.empty()) return;
         auto shape = measurer.measure(text, font_size, inline_style);
         auto width = visibility == MarkerVisibility::HiddenButEditable ? 0.0f : shape.width;
@@ -56,10 +62,16 @@ inline std::pair<LayoutBlock, float> layout_text_block(const RenderBlock& rb, fl
         run.width = width;
         run.height = line_height;
         run.marker_visibility = visibility;
+        run.generated_boundary_affinity = generated_boundary_affinity;
         cur_x += width;
         line_runs.push_back(std::move(run));
     };
-    auto append_text = [&](std::u32string text, TextSpan span, InlineStyle inline_style, MarkerVisibility visibility) {
+    auto append_text = [&](
+        std::u32string text,
+        TextSpan span,
+        InlineStyle inline_style,
+        MarkerVisibility visibility,
+        std::optional<TextAffinity> generated_boundary_affinity = std::nullopt) {
         std::size_t start = 0;
         while (start < text.size()) {
             auto newline = text.find(U'\n', start);
@@ -69,14 +81,24 @@ inline std::pair<LayoutBlock, float> layout_text_block(const RenderBlock& rb, fl
                 piece_span.source_range.start += start;
                 piece_span.source_range.end = span.source_range.start + end;
             }
-            append_piece(text.substr(start, end - start), piece_span, inline_style, visibility);
+            append_piece(
+                text.substr(start, end - start),
+                piece_span,
+                inline_style,
+                visibility,
+                generated_boundary_affinity);
             if (newline == std::u32string::npos) break;
             auto newline_span = span;
             if (span.source_range.length() == text.size()) {
                 newline_span.source_range.start = span.source_range.start + newline;
                 newline_span.source_range.end = newline_span.source_range.start + 1;
             }
-            append_piece(U"\n", newline_span, inline_style, MarkerVisibility::Always);
+            append_piece(
+                U"\n",
+                newline_span,
+                inline_style,
+                MarkerVisibility::Always,
+                generated_boundary_affinity);
             flush_line(true);
             start = newline + 1;
         }
@@ -92,7 +114,12 @@ inline std::pair<LayoutBlock, float> layout_text_block(const RenderBlock& rb, fl
             auto visibility = it.visibility == MarkerVisibility::Always
                 ? MarkerVisibility::Always
                 : marker_visibility_for(it.source_span, caret);
-            append_text(std::move(text), it.source_span, it.style, visibility);
+            append_text(
+                std::move(text),
+                it.source_span,
+                it.style,
+                visibility,
+                it.generated_boundary_affinity);
         }
     }
     if (!line_runs.empty()) runs.push_back(std::move(line_runs));

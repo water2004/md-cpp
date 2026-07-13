@@ -20,28 +20,38 @@ inline std::optional<HitTestResult> hit_test_line(const TextLineLayout& line, Lo
     for (const auto& run : line.runs) {
         float sx = run.origin.x, ex = run.origin.x + run.width;
         if (point.x >= sx && point.x < ex) {
+            if (run.generated_boundary_affinity) {
+                return HitTestResult{
+                    TextPosition{
+                        run.source_span.container_id,
+                        run.source_span.source_range.start,
+                        *run.generated_boundary_affinity},
+                    HitKind::Marker};
+            }
             float off = point.x - sx;
             float acc = 0;
             std::size_t char_index = run.glyphs.size();
+            auto affinity = TextAffinity::Upstream;
             for (std::size_t i = 0; i < run.glyphs.size(); ++i) {
                 if (off < acc + run.glyphs[i].advance) {
                     float mid = acc + run.glyphs[i].advance * 0.5f;
-                    char_index = (off < mid) ? i : i + 1;
+                    const bool before_glyph = off < mid;
+                    char_index = before_glyph ? i : i + 1;
+                    affinity = before_glyph ? TextAffinity::Downstream : TextAffinity::Upstream;
                     break;
                 }
                 acc += run.glyphs[i].advance;
             }
             std::size_t pos = run.source_span.source_range.start + std::min(char_index, run.glyphs.size());
             HitTestResult hr;
-            hr.position = TextPosition{run.source_span.container_id, pos,
-                (point.x > (sx + run.width * 0.5f)) ? TextAffinity::Downstream : TextAffinity::Upstream};
+            hr.position = TextPosition{run.source_span.container_id, pos, affinity};
             hr.hit_kind = (run.marker_visibility == MarkerVisibility::HiddenButEditable) ? HitKind::Marker : HitKind::Text;
             return hr;
         }
     }
     const auto span = line.runs.empty() ? line.source_span : line.runs.back().source_span;
     HitTestResult hr;
-    hr.position = TextPosition{span.container_id, span.source_range.end, TextAffinity::Downstream};
+    hr.position = TextPosition{span.container_id, span.source_range.end, TextAffinity::Upstream};
     hr.hit_kind = HitKind::LineEnd;
     return hr;
 }

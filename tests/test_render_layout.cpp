@@ -142,10 +142,17 @@ suite render_layout_tests = [] {
 "builds_heading_with_marker_and_text"_test = [] {
     auto m = build_model("# Title");
     expect(fatal(bool(!m.blocks.empty())));
-    for (const auto& it : m.blocks[0].inline_items)
+    bool has_opening = false;
+    for (const auto& it : m.blocks[0].inline_items) {
         expect(fatal(bool(it.source_span.source_range.end >= it.source_span.source_range.start)));
+        if (it.kind == InlineRenderItem::Kind::Marker && it.marker_role == MarkerRole::Heading) {
+            has_opening = true;
+            expect(fatal(bool(it.generated_boundary_affinity == TextAffinity::Downstream)));
+        }
+    }
     bool has_text = false;
     for (const auto& it : m.blocks[0].inline_items) if (it.kind == InlineRenderItem::Kind::Text) has_text = true;
+    expect(fatal(bool(has_opening)));
     expect(fatal(bool(has_text)));
 };
 
@@ -158,7 +165,10 @@ suite render_layout_tests = [] {
         expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Text)));
         for (auto const& item : m.blocks[0].inline_items) {
             if (item.kind == InlineRenderItem::Kind::Text && item.style.heading_level && *item.style.heading_level == 2) headingText = true;
-            if (item.kind == InlineRenderItem::Kind::Marker && item.marker_role == MarkerRole::Heading && item.text == U"\n-------") underline = true;
+            if (item.kind == InlineRenderItem::Kind::Marker && item.marker_role == MarkerRole::Heading && item.text == U"\n-------") {
+                underline = true;
+                expect(fatal(bool(item.generated_boundary_affinity == TextAffinity::Upstream)));
+            }
         }
     }
     expect(fatal(bool(headingText)));
@@ -838,6 +848,72 @@ suite render_layout_tests = [] {
         expect(fatal(bool(!tree.blocks[0].children[1].line.runs.empty())));
         if (!tree.blocks[0].children[0].line.runs.empty() && !tree.blocks[0].children[1].line.runs.empty())
             expect(fatal(bool(tree.blocks[0].children[1].line.runs.front().width > tree.blocks[0].children[0].line.runs.front().width)));
+    }
+};
+
+"generated_container_prefixes_anchor_carets_to_the_source_boundary"_test = [] {
+    StubMeasurer measurer(8.0f);
+    for (auto const& markdown : std::vector<std::string>{"> quoted\n", "> - nested\n"}) {
+        auto model = build_model(markdown);
+        expect(fatal(bool(!model.blocks.empty())));
+        if (model.blocks.empty()) continue;
+        auto const* leaf = first_render_leaf(model.blocks.front());
+        expect(fatal(bool(leaf != nullptr)));
+        if (!leaf) continue;
+        const auto owner = leaf->id;
+        auto tree = layout_blocks(
+            model.blocks,
+            600.0f,
+            1.0f,
+            measurer,
+            TextPosition{owner, 0, TextAffinity::Upstream},
+            LogicalPoint(0.0f, 0.0f),
+            Outline::empty(1));
+
+        const GlyphRunLayout* source_run = nullptr;
+        std::vector<std::pair<const GlyphRunLayout*, const TextLineLayout*>> prefixes;
+        for (auto const& block : tree.blocks) {
+            for (auto const& child : block.children) {
+                if (child.kind != LayoutItem::Kind::Line) continue;
+                for (auto const& run : child.line.runs) {
+                    if (run.source_span.container_id != owner
+                        || !run.source_span.source_range.covers(0)) continue;
+                    if (run.generated_boundary_affinity == TextAffinity::Downstream) {
+                        prefixes.push_back({&run, &child.line});
+                    } else if (!run.generated_boundary_affinity) {
+                        source_run = &run;
+                    }
+                }
+            }
+        }
+        expect(fatal(bool(source_run != nullptr)));
+        expect(fatal(bool(!prefixes.empty())));
+        if (!source_run || prefixes.empty()) continue;
+
+        auto upstream = compute_caret_geometry(
+            tree,
+            TextPosition{owner, 0, TextAffinity::Upstream});
+        auto downstream = compute_caret_geometry(
+            tree,
+            TextPosition{owner, 0, TextAffinity::Downstream});
+        expect(fatal(bool(upstream.has_value())));
+        expect(fatal(bool(downstream.has_value())));
+        if (upstream && downstream) {
+            expect(fatal(bool(std::fabs(upstream->rect.x - source_run->origin.x) < 0.001f)));
+            expect(fatal(bool(std::fabs(downstream->rect.x - source_run->origin.x) < 0.001f)));
+        }
+
+        for (auto const& [prefix, line] : prefixes) {
+            if (prefix->width <= 0.0f) continue;
+            auto hit = hit_test_layout_tree(
+                tree,
+                LogicalPoint(prefix->origin.x + prefix->width * 0.5f, line->rect.y + 1.0f));
+            expect(fatal(bool(hit.has_value())));
+            if (!hit) continue;
+            expect(fatal(bool(hit->position.container_id == owner)));
+            expect(fatal(bool(hit->position.source_offset == 0u)));
+            expect(fatal(bool(hit->position.affinity == TextAffinity::Downstream)));
+        }
     }
 };
 
