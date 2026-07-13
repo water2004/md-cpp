@@ -507,7 +507,9 @@ namespace winrt::ElMd
                 auto rawMath = mathJax.GetOrQueue(elmd::cps_to_utf8(item.text), false, fontSize, containerWidth, requestMath);
                 auto math = rawMath ? NormalizeMathJaxSvg(*rawMath, svgNormalizer, svgColor, fontSize, requestMath) : std::nullopt;
                 auto editing = CaretTouchesSpan(caret, item.source_span);
-                auto delimiterLength = item.math_delim == elmd::MathDelimiter::InlineParen ? std::size_t{2} : std::size_t{1};
+                auto delimiterLength = item.display == elmd::MathDisplayMode::Block
+                    ? std::size_t{0}
+                    : item.math_delim == elmd::MathDelimiter::InlineParen ? std::size_t{2} : std::size_t{1};
                 auto contentStart = (std::min)(item.source_span.source_range.start + delimiterLength, item.source_span.source_range.end);
                 auto contentEnd = item.source_span.source_range.end >= delimiterLength
                     ? (std::max)(contentStart, item.source_span.source_range.end - delimiterLength)

@@ -287,7 +287,6 @@ namespace winrt::ElMd
         {
             if (block.kind == elmd::RenderBlockKind::Image && block.link && block.source_span.container_id == position.container_id) return *block.link;
             if (auto link = scanItems(scanItems, block.inline_items)) return link;
-            if (block.callout_title) if (auto link = scanItems(scanItems, *block.callout_title)) return link;
             for (auto const& cell : block.table_cells) if (auto link = scanItems(scanItems, cell)) return link;
             for (auto const& child : block.child_blocks) if (auto link = self(self, child)) return link;
             return std::nullopt;
@@ -321,7 +320,6 @@ namespace winrt::ElMd
                 if (!block.alt.empty()) return block.alt;
             }
             if (auto tooltip = scanItems(scanItems, block.inline_items)) return tooltip;
-            if (block.callout_title) if (auto tooltip = scanItems(scanItems, *block.callout_title)) return tooltip;
             for (auto const& cell : block.table_cells) if (auto tooltip = scanItems(scanItems, cell)) return tooltip;
             for (auto const& child : block.child_blocks) if (auto tooltip = self(self, child)) return tooltip;
             return std::nullopt;

@@ -37,46 +37,63 @@ inline std::pair<LayoutBlock, float> layout_text_block(const RenderBlock& rb, fl
     float cur_x = margin_out_left;
     float max_width = viewport_width - origin.x - pad_left - style.padding_right * scale;
 
+    auto flush_line = [&](bool force) {
+        if (force || !line_runs.empty()) runs.push_back(std::move(line_runs));
+        line_runs.clear();
+        cur_x = margin_out_left;
+    };
+    auto append_piece = [&](std::u32string text, TextSpan span, InlineStyle inline_style, MarkerVisibility visibility) {
+        if (text.empty()) return;
+        auto shape = measurer.measure(text, font_size, inline_style);
+        auto width = visibility == MarkerVisibility::HiddenButEditable ? 0.0f : shape.width;
+        if (cur_x + width > max_width && cur_x > margin_out_left) flush_line(false);
+        GlyphRunLayout run;
+        run.source_span = span;
+        run.text = std::move(text);
+        run.glyphs = std::move(shape.glyphs);
+        run.style = inline_style;
+        run.origin = LogicalPoint(cur_x, 0.0f);
+        run.width = width;
+        run.height = line_height;
+        run.marker_visibility = visibility;
+        cur_x += width;
+        line_runs.push_back(std::move(run));
+    };
+    auto append_text = [&](std::u32string text, TextSpan span, InlineStyle inline_style, MarkerVisibility visibility) {
+        std::size_t start = 0;
+        while (start < text.size()) {
+            auto newline = text.find(U'\n', start);
+            auto end = newline == std::u32string::npos ? text.size() : newline;
+            auto piece_span = span;
+            if (span.source_range.length() == text.size()) {
+                piece_span.source_range.start += start;
+                piece_span.source_range.end = span.source_range.start + end;
+            }
+            append_piece(text.substr(start, end - start), piece_span, inline_style, visibility);
+            if (newline == std::u32string::npos) break;
+            auto newline_span = span;
+            if (span.source_range.length() == text.size()) {
+                newline_span.source_range.start = span.source_range.start + newline;
+                newline_span.source_range.end = newline_span.source_range.start + 1;
+            }
+            append_piece(U"\n", newline_span, inline_style, MarkerVisibility::Always);
+            flush_line(true);
+            start = newline + 1;
+        }
+    };
+
     for (const auto& it : rb.inline_items) {
         if (it.kind == InlineRenderItem::Kind::Text) {
-            auto shape = measurer.measure(it.text, font_size, it.style);
-            if (cur_x + shape.width > max_width && cur_x > margin_out_left) {
-                runs.push_back(std::move(line_runs));
-                line_runs.clear();
-                cur_x = pad_left;
-            }
-            GlyphRunLayout r;
-            r.source_span = it.source_span; r.text = it.text; r.glyphs = std::move(shape.glyphs);
-            r.style = it.style; r.origin = LogicalPoint(cur_x, 0.0f);
-            r.width = shape.width; r.height = line_height; r.marker_visibility = MarkerVisibility::Always;
-            cur_x += shape.width;
-            line_runs.push_back(std::move(r));
+            append_text(it.text, it.source_span, it.style, MarkerVisibility::Always);
         } else if (it.kind == InlineRenderItem::Kind::Math) {
-            std::u32string mt = U"$" + it.text + U"$";
-            auto shape = measurer.measure(mt, font_size, InlineStyle::plain());
-            if (cur_x + shape.width > max_width && cur_x > margin_out_left) {
-                runs.push_back(std::move(line_runs));
-                line_runs.clear();
-                cur_x = pad_left;
-            }
-            GlyphRunLayout r;
-            r.source_span = it.source_span; r.text = mt; r.glyphs = std::move(shape.glyphs);
-            r.style = InlineStyle::plain(); r.origin = LogicalPoint(cur_x, 0.0f);
-            r.width = shape.width; r.height = line_height;
-            r.marker_visibility = MarkerVisibility::Always;
-            cur_x += shape.width; line_runs.push_back(std::move(r));
+            append_text(U"$" + it.text + U"$", it.source_span, InlineStyle::plain(), MarkerVisibility::Always);
         } else if (it.kind == InlineRenderItem::Kind::Marker) {
-            auto shape = measurer.measure(it.text, font_size, InlineStyle::plain());
-            auto vis = marker_visibility_for(it.source_span, caret);
-            float marker_width = (vis == MarkerVisibility::HiddenButEditable) ? 0.0f : shape.width;
-            GlyphRunLayout r;
-            r.source_span = it.source_span; r.text = it.text; r.glyphs = std::move(shape.glyphs);
-            r.style = InlineStyle::plain(); r.origin = LogicalPoint(cur_x, 0.0f);
-            r.width = marker_width; r.height = line_height; r.marker_visibility = vis;
-            cur_x += marker_width;
-            line_runs.push_back(std::move(r));
+            auto text = it.display_text.empty() ? it.text : it.display_text;
+            auto visibility = it.visibility == MarkerVisibility::Always
+                ? MarkerVisibility::Always
+                : marker_visibility_for(it.source_span, caret);
+            append_text(std::move(text), it.source_span, it.style, visibility);
         }
-        (void)it;
     }
     if (!line_runs.empty()) runs.push_back(std::move(line_runs));
 
@@ -117,39 +134,6 @@ inline std::pair<LayoutBlock, float> layout_blank_block(const RenderBlock& rb, f
     item.line = std::move(line);
     block.children.push_back(std::move(item));
     return {std::move(block), line_height};
-}
-
-inline std::pair<LayoutBlock, float> layout_quote_block(const RenderBlock& rb, float y,
-                                                        float viewport_width, float scale,
-                                                        TextMeasurer& measurer,
-                                                        std::optional<TextPosition> caret,
-                                                        LogicalPoint origin) {
-    auto padding_top = rb.block_style.padding_top * scale;
-    auto padding_bottom = rb.block_style.padding_bottom * scale;
-    auto depth_inset = (rb.block_style.padding_left + 6.0f) * scale;
-    auto cursor = y + padding_top;
-    LayoutBlock result(rb.id, rb.source_span, {LayoutBlockKind::Quote}, rb.block_style);
-    for (std::size_t index = 0; index < rb.child_blocks.size(); ++index) {
-        auto const& child = rb.child_blocks[index];
-        if (index > 0) cursor += 8.0f * scale;
-        auto child_origin = LogicalPoint(origin.x + rb.block_style.padding_left * scale + child.quote_depth * depth_inset, origin.y);
-        auto child_width = (std::max)(1.0f, viewport_width - (child_origin.x - origin.x) - rb.block_style.padding_right * scale);
-        if (child.kind == RenderBlockKind::Blank) {
-            auto blank = layout_blank_block(child, cursor, child_width, scale, child_origin);
-            for (auto& item : blank.first.children) result.children.push_back(std::move(item));
-            cursor += blank.second;
-            continue;
-        }
-        auto text = child;
-        text.kind = RenderBlockKind::Text;
-        auto laid_out = layout_text_block(text, cursor, child_width, scale, measurer, caret, child_origin);
-        for (auto& item : laid_out.first.children) result.children.push_back(std::move(item));
-        cursor += laid_out.second;
-    }
-    if (rb.child_blocks.empty()) cursor += 24.0f * scale;
-    auto height = cursor - y + padding_bottom;
-    result.rect = LogicalRect(origin.x, y, viewport_width, height);
-    return {std::move(result), height};
 }
 
 inline std::pair<LayoutBlock, float> layout_thematic_break(const RenderBlock& rb, float y, float viewport_width, float scale, LogicalPoint origin) {
@@ -408,7 +392,10 @@ inline LayoutTree layout_blocks(const std::vector<RenderBlock>& blocks, float vi
                 pr = layout_blank_block(rb, y, viewport_width, scale, origin);
                 break;
             case RenderBlockKind::Quote:
-                pr = layout_quote_block(rb, y, viewport_width, scale, measurer, caret, origin);
+            case RenderBlockKind::Callout:
+            case RenderBlockKind::Footnote:
+                pr = layout_text_block(rb, y, viewport_width, scale, measurer, caret, origin);
+                if (rb.kind == RenderBlockKind::Quote) pr.first.kind.kind = LayoutBlockKind::Quote;
                 break;
             case RenderBlockKind::Code:
                 pr = layout_code_block(rb, y, viewport_width, scale, measurer);

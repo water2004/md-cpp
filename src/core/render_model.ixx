@@ -176,12 +176,10 @@ struct RenderBlock {
     // Image block (block-level, alt-only)
     // Quote / Callout / Footnote
     std::vector<RenderBlock> child_blocks;
-    std::size_t quote_depth = 0;
-    std::size_t container_depth = 0;
-    std::size_t container_indent_columns = 0;
-    NodeId container_marker_owner_id{};   // anchors the nested block to its list item's content column
+    // Cumulative display indentation from the flow root. Tree depth is carried
+    // by child_blocks itself rather than a second, manually maintained counter.
+    std::size_t flow_indent_columns = 0;
     std::string callout_kind;
-    std::optional<std::vector<InlineRenderItem>> callout_title;
     std::string footnote_label;
     // Frontmatter / Unsupported
     std::string raw;

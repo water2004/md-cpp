@@ -6,7 +6,6 @@ import elmd.core.utf;
 
 #include "EditorContentPreparation.h"
 #include "EditorInlineImageRenderer.h"
-#include "EditorQuoteBlockRenderer.h"
 #include "EditorSvgPainter.h"
 #include "EditorTableBlockRenderer.h"
 #include "EditorTextLayoutEngine.h"
@@ -170,16 +169,6 @@ namespace winrt::ElMd
                     AppendGeneratedText(display, elmd::utf8_to_cps(item->title_plain_text) + U"\n", {block.id, 0, elmd::TextAffinity::Downstream}, elmd::InlineStyle{.link = true});
                 }
             }
-            else if (block.kind == elmd::RenderBlockKind::Callout || block.kind == elmd::RenderBlockKind::Footnote)
-            {
-                if (block.callout_title)
-                    MergeDisplayText(display, BuildDisplayInlineText(*block.callout_title, caret, {block.id, 0, elmd::TextAffinity::Downstream}, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, width, svgSupported, requestEmbedded, block.id));
-                for (auto const& child : block.child_blocks)
-                {
-                    if (!display.text.empty()) AppendGeneratedText(display, U"\n", {child.id, 0, elmd::TextAffinity::Downstream}, elmd::InlineStyle::plain());
-                    MergeDisplayText(display, prepare(child, width, requestEmbedded));
-                }
-            }
             else
             {
                 auto raw = elmd::utf8_to_cps(block.raw.empty() ? block.reason_text : block.raw);
@@ -213,38 +202,61 @@ namespace winrt::ElMd
             }
         };
 
-        auto drawNestedBlocks = [&](IDWriteTextLayout* layout, D2D1_POINT_2F origin, elmd::RenderBlock const& parent, DisplayInlineText const& display)
+        auto applyNestedCodeHighlights = [&](DisplayInlineText& display, elmd::RenderBlock const& parent)
+        {
+            auto apply = [&](auto& self, elmd::RenderBlock const& block) -> void
+            {
+                if (block.kind == elmd::RenderBlockKind::Code && block.language && !block.code_text.empty())
+                {
+                    auto highlights = treeSitter.Highlight(*block.language, elmd::cps_to_utf8(block.code_text));
+                    for (auto const& highlight : highlights)
+                    {
+                        auto start = DisplayPositionForSource(display.displayToSource, {block.id, highlight.start, elmd::TextAffinity::Downstream});
+                        auto end = DisplayPositionForSource(display.displayToSource, {block.id, highlight.start + highlight.length, elmd::TextAffinity::Downstream});
+                        if (end <= start) continue;
+                        elmd::InlineStyle style = elmd::InlineStyle::plain();
+                        style.code = true;
+                        display.ranges.push_back({
+                            static_cast<UINT32>(start),
+                            static_cast<UINT32>(end - start),
+                            style,
+                            false,
+                            highlight.kind,
+                        });
+                    }
+                }
+                for (auto const& child : block.child_blocks) self(self, child);
+            };
+            for (auto const& child : parent.child_blocks) apply(apply, child);
+        };
+
+        auto drawFlowDecorations = [&](IDWriteTextLayout* layout, D2D1_POINT_2F origin, elmd::RenderBlock const& parent, DisplayInlineText const& display)
         {
             if (!layout || display.displayToSource.empty()) return;
             auto displayLimit = (std::min)(display.displayToSource.size(), elmd::utf16_len(display.text));
-            auto displayRange = [&](elmd::TextSpan span) -> std::optional<std::pair<std::size_t, std::size_t>>
+            auto displayRange = [&](elmd::RenderBlock const& nested) -> std::optional<std::pair<std::size_t, std::size_t>>
             {
+                std::unordered_set<std::uint64_t> owners;
+                auto collectOwners = [&](auto& self, elmd::RenderBlock const& block) -> void
+                {
+                    if (block.source_span.container_id.v != 0) owners.insert(block.source_span.container_id.v);
+                    for (auto const& child : block.child_blocks) self(self, child);
+                };
+                collectOwners(collectOwners, nested);
                 std::optional<std::size_t> first;
                 std::size_t last = 0;
                 for (std::size_t index = 0; index < displayLimit; ++index)
                 {
                     auto const& position = display.displayToSource[index];
-                    if (position.container_id != span.container_id
-                        || position.source_offset < span.source_range.start
-                        || position.source_offset >= span.source_range.end) continue;
+                    if (!owners.contains(position.container_id.v)) continue;
                     if (!first) first = index;
                     last = index + 1;
                 }
                 return first ? std::optional{std::pair{*first, last}} : std::nullopt;
             };
-            auto contentLeftFor = [&](elmd::RenderBlock const& nested, std::size_t displayEnd) -> std::optional<float>
+            auto contentLeftFor = [&](elmd::RenderBlock const& nested, std::pair<std::size_t, std::size_t> range) -> std::optional<float>
             {
-                std::optional<std::size_t> ownerStart;
-                for (std::size_t index = 0; index < displayLimit; ++index)
-                {
-                    if (display.displayToSource[index].container_id == nested.container_marker_owner_id)
-                    {
-                        ownerStart = index;
-                        break;
-                    }
-                }
-                if (!ownerStart) return std::nullopt;
-                auto contentColumn = (std::min)(*ownerStart + nested.container_indent_columns, displayEnd);
+                auto contentColumn = (std::min)(range.first + nested.flow_indent_columns, range.second);
                 FLOAT x = 0.0f;
                 FLOAT lineY = 0.0f;
                 DWRITE_HIT_TEST_METRICS hit{};
@@ -266,41 +278,42 @@ namespace winrt::ElMd
                 }
                 return true;
             };
-            for (auto const& nested : parent.child_blocks)
+            auto draw = [&](auto& self, elmd::RenderBlock const& nested, bool root) -> void
             {
-                if (nested.kind == elmd::RenderBlockKind::Code)
+                auto decorated = nested.kind == elmd::RenderBlockKind::Code
+                    || nested.kind == elmd::RenderBlockKind::Quote
+                    || nested.kind == elmd::RenderBlockKind::Callout
+                    || nested.kind == elmd::RenderBlockKind::Footnote;
+                if (decorated && !(root && nested.kind == elmd::RenderBlockKind::Code))
                 {
-                    auto range = displayRange(nested.content_span);
-                    if (!range) continue;
-                    auto contentLeft = contentLeftFor(nested, range->second);
-                    float top = (std::numeric_limits<float>::max)();
-                    float bottom = (std::numeric_limits<float>::lowest)();
-                    if (!contentLeft || !accumulateRange(*range, top, bottom)) continue;
-                    auto left = (std::clamp)(*contentLeft, origin.x, documentRight);
-                    resources.d2dContext->FillRectangle(
-                        D2D1::RectF(left, top - 4.0f, documentRight, bottom + 4.0f),
-                        resources.panelBrush.Get());
-                    continue;
+                    auto range = displayRange(nested);
+                    if (range) {
+                        auto contentLeft = contentLeftFor(nested, *range);
+                        float top = (std::numeric_limits<float>::max)();
+                        float bottom = (std::numeric_limits<float>::lowest)();
+                        if (contentLeft && accumulateRange(*range, top, bottom)) {
+                            auto left = (std::clamp)(*contentLeft, origin.x, documentRight);
+                            auto rect = D2D1::RectF(left, top - 4.0f, documentRight, bottom + 4.0f);
+                            auto brush = nested.kind == elmd::RenderBlockKind::Code
+                                || nested.kind == elmd::RenderBlockKind::Callout
+                                ? resources.panelBrush.Get()
+                                : resources.nestedQuoteBrush.Get();
+                            resources.d2dContext->FillRectangle(rect, brush);
+                            if (nested.kind == elmd::RenderBlockKind::Quote || nested.kind == elmd::RenderBlockKind::Callout) {
+                                auto borderWidth = nested.block_style.border_left ? nested.block_style.border_left->width : 3.0f;
+                                auto lineX = left + borderWidth * 0.5f;
+                                resources.d2dContext->DrawLine(
+                                    D2D1::Point2F(lineX, rect.top + 3.0f),
+                                    D2D1::Point2F(lineX, rect.bottom - 3.0f),
+                                    resources.mutedBrush.Get(),
+                                    borderWidth);
+                            }
+                        }
+                    }
                 }
-                if (nested.kind != elmd::RenderBlockKind::Quote || nested.child_blocks.empty()) continue;
-                float top = (std::numeric_limits<float>::max)();
-                float bottom = (std::numeric_limits<float>::lowest)();
-                std::optional<float> contentLeft;
-                bool measured = false;
-                for (auto const& child : nested.child_blocks)
-                {
-                    auto range = displayRange(child.content_span);
-                    if (!range) continue;
-                    if (!contentLeft) contentLeft = contentLeftFor(nested, range->second);
-                    measured = accumulateRange(*range, top, bottom) || measured;
-                }
-                if (!measured || !contentLeft) continue;
-                auto left = (std::clamp)(*contentLeft, origin.x, documentRight);
-                auto rect = D2D1::RectF(left, top - 4.0f, documentRight, bottom + 4.0f);
-                resources.d2dContext->FillRectangle(rect, resources.nestedQuoteBrush.Get());
-                auto lineX = left + 1.5f;
-                resources.d2dContext->DrawLine(D2D1::Point2F(lineX, rect.top + 3.0f), D2D1::Point2F(lineX, rect.bottom - 3.0f), resources.mutedBrush.Get(), 3.0f);
-            }
+                for (auto const& child : nested.child_blocks) self(self, child, false);
+            };
+            draw(draw, parent, true);
         };
 
         if (frame.renderModel.blocks.empty())
@@ -321,12 +334,6 @@ namespace winrt::ElMd
             {
                 auto bottom = EditorTableBlockRenderer::Render(block, caret, frame.selection, documentLeft, documentRight, y, scrollOffset, svgSupported, requestEmbedded, resources, styleSheet, interactionMap, textLayoutEngine, inlineImages, mathJax, svgNormalizer, drawMath, drawMathFallback);
                 if (bottom) { y = *bottom + block.block_style.margin_bottom + styleSheet.blockGap; continue; }
-            }
-            if (block.kind == elmd::RenderBlockKind::Quote)
-            {
-                y = EditorQuoteBlockRenderer::Render(block, caret, frame.selection, documentLeft, documentRight, y, scrollOffset, svgSupported, requestEmbedded, resources, styleSheet, interactionMap, textLayoutEngine, inlineImages, mathJax, svgNormalizer, treeSitter, drawMath, drawMathFallback)
-                    + block.block_style.margin_bottom + styleSheet.blockGap;
-                continue;
             }
             if (block.kind == elmd::RenderBlockKind::ThematicBreak)
             {
@@ -351,18 +358,26 @@ namespace winrt::ElMd
             }
 
             auto display = prepare(block, documentWidth, requestEmbedded);
+            applyNestedCodeHighlights(display, block);
             auto code = block.kind == elmd::RenderBlockKind::Code || block.kind == elmd::RenderBlockKind::Frontmatter || block.kind == elmd::RenderBlockKind::Unsupported;
             auto format = textLayoutEngine.FormatFor(code, display.ranges);
             auto layout = textLayoutEngine.Create(ToWide(display.text), format, documentWidth);
             textLayoutEngine.ApplyStyles(layout.Get(), display.ranges);
             ApplyMathInlineObjects(layout.Get(), display.mathOverlays);
             auto images = inlineImages.Resolve(layout.Get(), display.imageOverlays, documentWidth);
+            auto flowContainer = !block.inline_items.empty()
+                && (block.kind == elmd::RenderBlockKind::Quote
+                    || block.kind == elmd::RenderBlockKind::Callout
+                    || block.kind == elmd::RenderBlockKind::Footnote);
+            auto paddingTop = flowContainer ? 0.0f : block.block_style.padding_top;
+            auto paddingBottom = flowContainer ? 0.0f : block.block_style.padding_bottom;
+            auto paddingLeft = flowContainer ? 0.0f : block.block_style.padding_left;
             auto height = textLayoutEngine.MeasureHeight(layout.Get(), textLayoutEngine.LineHeightFor(code, display.ranges));
-            height += block.block_style.padding_top + block.block_style.padding_bottom;
-            auto origin = D2D1::Point2F(documentLeft + block.block_style.padding_left, y + block.block_style.padding_top);
+            height += paddingTop + paddingBottom;
+            auto origin = D2D1::Point2F(documentLeft + paddingLeft, y + paddingTop);
             auto rect = D2D1::RectF(documentLeft, y, documentRight, y + height);
             if (code || block.block_style.background) resources.d2dContext->FillRectangle(rect, resources.panelBrush.Get());
-            drawNestedBlocks(layout.Get(), origin, block, display);
+            drawFlowDecorations(layout.Get(), origin, block, display);
             drawSelection(layout.Get(), origin, display.displayToSource);
             if (layout) resources.d2dContext->DrawTextLayout(origin, layout.Get(), code ? resources.codeBrush.Get() : resources.textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
             inlineImages.Draw(layout.Get(), origin, images);

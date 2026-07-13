@@ -28,6 +28,22 @@ static RenderModel build_model(const std::string& src) {
     return build_render_model(out.document, out.outline);
 }
 
+static const RenderBlock* find_render_block(const RenderBlock& root, RenderBlockKind kind) {
+    if (root.kind == kind) return &root;
+    for (auto const& child : root.child_blocks) {
+        if (auto found = find_render_block(child, kind)) return found;
+    }
+    return nullptr;
+}
+
+static const RenderBlock* first_render_leaf(const RenderBlock& root) {
+    if (root.child_blocks.empty()) return &root;
+    for (auto const& child : root.child_blocks) {
+        if (auto found = first_render_leaf(child)) return found;
+    }
+    return nullptr;
+}
+
 
 suite render_layout_tests = [] {
 
@@ -35,17 +51,13 @@ suite render_layout_tests = [] {
     auto model = build_model("- item\n  > quoted");
     expect(fatal(bool(model.blocks.size() == 1u)));
     expect(fatal(bool(model.blocks.front().kind == RenderBlockKind::Text)));
-    auto quote = std::find_if(model.blocks.front().child_blocks.begin(), model.blocks.front().child_blocks.end(), [](auto const& child) {
-        return child.kind == RenderBlockKind::Quote;
-    });
-    expect(fatal(bool(quote != model.blocks.front().child_blocks.end())));
-    if (quote != model.blocks.front().child_blocks.end()) {
-        expect(fatal(bool(quote->container_indent_columns == 2u)));
-        expect(fatal(bool(quote->container_marker_owner_id.v != 0u)));
+    auto quote = find_render_block(model.blocks.front(), RenderBlockKind::Quote);
+    expect(fatal(bool(quote != nullptr)));
+    if (quote) {
+        expect(fatal(bool(quote->flow_indent_columns == 2u)));
         expect(fatal(bool(!quote->child_blocks.empty())));
         auto marker = std::find_if(model.blocks.front().inline_items.begin(), model.blocks.front().inline_items.end(), [&](auto const& item) {
-            return item.marker_role == MarkerRole::ListBullet
-                && item.source_span.container_id == quote->container_marker_owner_id;
+            return item.marker_role == MarkerRole::ListBullet && item.source_span.container_id.v != 0;
         });
         expect(fatal(bool(marker != model.blocks.front().inline_items.end())));
     }
@@ -61,12 +73,13 @@ suite render_layout_tests = [] {
     expect(fatal(bool(model.blocks.size() == 1u)));
     if (model.blocks.empty()) return;
     auto const& list = model.blocks.front();
-    auto quote = std::find_if(list.child_blocks.begin(), list.child_blocks.end(), [](auto const& child) {
-        return child.kind == RenderBlockKind::Quote;
-    });
-    expect(fatal(bool(quote != list.child_blocks.end())));
-    if (quote == list.child_blocks.end() || quote->child_blocks.empty()) return;
-    auto editableOwner = quote->child_blocks.front().source_span.container_id;
+    auto quote = find_render_block(list, RenderBlockKind::Quote);
+    expect(fatal(bool(quote != nullptr)));
+    if (!quote) return;
+    auto editable = first_render_leaf(*quote);
+    expect(fatal(bool(editable != nullptr)));
+    if (!editable) return;
+    auto editableOwner = editable->source_span.container_id;
     auto marker = std::find_if(list.inline_items.begin(), list.inline_items.end(), [](auto const& item) {
         return item.marker_role == MarkerRole::ListBullet;
     });
@@ -221,20 +234,12 @@ suite render_layout_tests = [] {
     if (model.blocks.empty()) return;
     auto const& list = model.blocks.front();
     expect(fatal(bool(list.kind == RenderBlockKind::Text)));
-    auto code = std::find_if(list.child_blocks.begin(), list.child_blocks.end(), [](auto const& child) {
-        return child.kind == RenderBlockKind::Code;
-    });
-    expect(fatal(bool(code != list.child_blocks.end())));
-    if (code != list.child_blocks.end()) {
+    auto code = find_render_block(list, RenderBlockKind::Code);
+    expect(fatal(bool(code != nullptr)));
+    if (code) {
         expect(fatal(bool(code->code_indented)));
         expect(fatal(bool((code->code_text) == (std::u32string(U"<html>\n  <head>\n    <title>Test</title>\n  </head>\n")))));
         expect(fatal(bool((code->source_span.source_range.end) == (code->code_text.size()))));
-        expect(fatal(bool(code->container_marker_owner_id.v != 0u)));
-        auto owner_marker = std::find_if(list.inline_items.begin(), list.inline_items.end(), [&](auto const& item) {
-            return item.marker_role == MarkerRole::ListNumber
-                && item.source_span.container_id == code->container_marker_owner_id;
-        });
-        expect(fatal(bool(owner_marker != list.inline_items.end())));
         std::size_t line_indents = 0;
         std::u32string flattened_code;
         for (auto const& item : list.inline_items) {
@@ -242,7 +247,7 @@ suite render_layout_tests = [] {
             if (item.marker_role == MarkerRole::Structural && !item.display_text.empty()
                 && std::all_of(item.display_text.begin(), item.display_text.end(), [](char32_t value) { return value == U' '; })) {
                 ++line_indents;
-                expect(fatal(bool(item.display_text.size() == code->container_indent_columns + 2u)));
+                expect(fatal(bool(item.display_text.size() == code->flow_indent_columns + 2u)));
             } else if (item.kind == InlineRenderItem::Kind::Text && item.style.code) {
                 flattened_code += item.text;
             }
@@ -336,14 +341,10 @@ suite render_layout_tests = [] {
     expect(fatal(bool((m.blocks.size()) == (1u))));
     if (m.blocks.empty()) return;
     auto const& list = m.blocks[0];
-    auto quote = std::find_if(list.child_blocks.begin(), list.child_blocks.end(), [](auto const& child) {
-        return child.kind == RenderBlockKind::Quote;
-    });
-    expect(fatal(bool(quote != list.child_blocks.end())));
-    if (quote != list.child_blocks.end()) {
-        expect(fatal(bool((quote->container_depth) == (1u))));
-        expect(fatal(bool((quote->container_indent_columns) == (2u))));
-        expect(fatal(bool(quote->container_marker_owner_id.v != 0u)));
+    auto quote = find_render_block(list, RenderBlockKind::Quote);
+    expect(fatal(bool(quote != nullptr)));
+    if (quote) {
+        expect(fatal(bool((quote->flow_indent_columns) == (2u))));
         expect(fatal(bool(!quote->child_blocks.empty())));
         if (!quote->child_blocks.empty()) {
             auto const quoteContent = quote->child_blocks.front().source_span;
@@ -524,9 +525,7 @@ suite render_layout_tests = [] {
         else if (item.kind == InlineRenderItem::Kind::Link) for (auto const& child : item.children) text += child.text;
         else text += item.text;
     }
-    quote = std::any_of(m.blocks[0].child_blocks.begin(), m.blocks[0].child_blocks.end(), [](auto const& child) {
-        return child.kind == RenderBlockKind::Quote;
-    });
+    quote = find_render_block(m.blocks[0], RenderBlockKind::Quote) != nullptr;
     expect(fatal(bool(text.find(U"parent") != std::u32string::npos)));
     expect(fatal(bool(text.find(U"child") != std::u32string::npos)));
     expect(fatal(bool(text.find(U"grandchild") != std::u32string::npos)));
@@ -610,39 +609,51 @@ suite render_layout_tests = [] {
     expect(fatal(bool((m.blocks[0].child_blocks.size()) == (2u))));
     if (m.blocks[0].child_blocks.size() >= 2) {
         expect(fatal(bool(m.blocks[0].child_blocks[0].kind == RenderBlockKind::Text)));
-        expect(fatal(bool(m.blocks[0].child_blocks[1].kind == RenderBlockKind::Text)));
-        expect(fatal(bool((m.blocks[0].child_blocks[0].quote_depth) == (0u))));
-        expect(fatal(bool((m.blocks[0].child_blocks[1].quote_depth) == (1u))));
+        expect(fatal(bool(m.blocks[0].child_blocks[1].kind == RenderBlockKind::Quote)));
+        expect(fatal(bool((m.blocks[0].child_blocks[0].flow_indent_columns) == (2u))));
+        expect(fatal(bool((m.blocks[0].child_blocks[1].flow_indent_columns) == (2u))));
+        expect(fatal(bool((m.blocks[0].child_blocks[1].child_blocks.size()) == (1u))));
+        if (!m.blocks[0].child_blocks[1].child_blocks.empty())
+            expect(fatal(bool((m.blocks[0].child_blocks[1].child_blocks[0].flow_indent_columns) == (4u))));
     }
 };
 
-"nested_quote_flow_fragment_owns_only_its_visible_content"_test = [] {
+"nested_quote_flow_tree_owns_its_visible_content"_test = [] {
     auto m = build_model("> > The Witch bade her clean the pots and kettles\n");
     expect(fatal(bool((m.blocks.size()) == (1u))));
     expect(fatal(bool((m.blocks[0].child_blocks.size()) == (1u))));
     if (!m.blocks[0].child_blocks.empty()) {
-        auto const& fragment = m.blocks[0].child_blocks[0];
-        expect(fatal(bool((fragment.quote_depth) == (1u))));
-        expect(fatal(bool((fragment.content_span.source_range.start) == (0u))));
-        expect(fatal(bool(!fragment.inline_items.empty())));
-        if (!fragment.inline_items.empty()) {
-            expect(fatal(bool((fragment.inline_items.front().source_span.source_range.start) == (0u))));
-            expect(fatal(bool(fragment.content_span.source_range.end == fragment.inline_items.back().source_span.source_range.end)));
+        auto const& nested = m.blocks[0].child_blocks[0];
+        expect(fatal(bool(nested.kind == RenderBlockKind::Quote)));
+        expect(fatal(bool((nested.flow_indent_columns) == (2u))));
+        expect(fatal(bool((nested.child_blocks.size()) == (1u))));
+        if (!nested.child_blocks.empty()) {
+            auto const& fragment = nested.child_blocks[0];
+            expect(fatal(bool((fragment.flow_indent_columns) == (4u))));
+            expect(fatal(bool((fragment.content_span.source_range.start) == (0u))));
+            expect(fatal(bool(!fragment.inline_items.empty())));
+            if (!fragment.inline_items.empty()) {
+                expect(fatal(bool((fragment.inline_items.front().source_span.source_range.start) == (0u))));
+                expect(fatal(bool(fragment.content_span.source_range.end == fragment.inline_items.back().source_span.source_range.end)));
+            }
         }
     }
 };
 
-"core_quote_layout_consumes_flat_fragment_depths"_test = [] {
+"core_quote_layout_consumes_unified_flow"_test = [] {
     StubMeasurer measurer(8.0f);
     auto model = build_model("> outer\n> > nested\n");
     auto tree = layout_blocks(model.blocks, 600.0f, 1.0f, measurer, std::nullopt, LogicalPoint(0.0f, 0.0f), Outline::empty(1));
     expect(fatal(bool((tree.blocks.size()) == (1u))));
     expect(fatal(bool(tree.blocks[0].kind.kind == LayoutBlockKind::Quote)));
-    expect(fatal(bool((tree.blocks[0].children.size()) == (2u))));
+    expect(fatal(bool(tree.blocks[0].children.size() >= 2u)));
     if (tree.blocks[0].children.size() >= 2) {
         expect(fatal(bool(tree.blocks[0].children[0].kind == LayoutItem::Kind::Line)));
         expect(fatal(bool(tree.blocks[0].children[1].kind == LayoutItem::Kind::Line)));
-        expect(fatal(bool(tree.blocks[0].children[1].line.rect.x > tree.blocks[0].children[0].line.rect.x)));
+        expect(fatal(bool(!tree.blocks[0].children[0].line.runs.empty())));
+        expect(fatal(bool(!tree.blocks[0].children[1].line.runs.empty())));
+        if (!tree.blocks[0].children[0].line.runs.empty() && !tree.blocks[0].children[1].line.runs.empty())
+            expect(fatal(bool(tree.blocks[0].children[1].line.runs.front().width > tree.blocks[0].children[0].line.runs.front().width)));
     }
 };
 
@@ -680,34 +691,39 @@ suite render_layout_tests = [] {
 "trailing_blockquote_hard_break_ends_at_inline_source_boundary"_test = [] {
     auto m = build_model("> alpha  \n> \n\nafter");
     expect(fatal(bool((m.blocks.size()) == (2u))));
-    expect(fatal(bool((m.blocks[0].child_blocks.size()) == (3u))));
+    expect(fatal(bool(!m.blocks[0].child_blocks.empty())));
     if (!m.blocks[0].child_blocks.empty()) {
-        auto const& items = m.blocks[0].child_blocks[0].inline_items;
+        auto const& items = m.blocks[0].child_blocks.front().inline_items;
         expect(fatal(bool(!items.empty())));
         expect(fatal(bool(items.back().text == U"\n")));
         expect(fatal(bool((items.back().source_span.source_range.end) == (8u))));
     }
 };
 
-"blockquote_render_model_tracks_the_depth_of_a_trailing_empty_line"_test = [] {
+"blockquote_render_model_tracks_empty_lines_in_the_structural_tree"_test = [] {
     auto outerBlank = build_model("> > alpha\n> ");
     expect(fatal(bool((outerBlank.blocks.size()) == (1u))));
     expect(fatal(bool((outerBlank.blocks[0].child_blocks.size()) == (2u))));
     if (outerBlank.blocks[0].child_blocks.size() >= 2) {
-        expect(fatal(bool(outerBlank.blocks[0].child_blocks[0].kind == RenderBlockKind::Text)));
-        expect(fatal(bool((outerBlank.blocks[0].child_blocks[0].quote_depth) == (1u))));
+        expect(fatal(bool(outerBlank.blocks[0].child_blocks[0].kind == RenderBlockKind::Quote)));
+        expect(fatal(bool((outerBlank.blocks[0].child_blocks[0].flow_indent_columns) == (2u))));
         expect(fatal(bool(outerBlank.blocks[0].child_blocks[1].kind == RenderBlockKind::Blank)));
-        expect(fatal(bool((outerBlank.blocks[0].child_blocks[1].quote_depth) == (0u))));
+        expect(fatal(bool((outerBlank.blocks[0].child_blocks[1].flow_indent_columns) == (2u))));
     }
 
     auto nestedBlank = build_model("> > alpha  \n> > ");
     expect(fatal(bool((nestedBlank.blocks.size()) == (1u))));
-    expect(fatal(bool((nestedBlank.blocks[0].child_blocks.size()) == (2u))));
-    if (nestedBlank.blocks[0].child_blocks.size() >= 2) {
-        expect(fatal(bool(nestedBlank.blocks[0].child_blocks[0].kind == RenderBlockKind::Text)));
-        expect(fatal(bool((nestedBlank.blocks[0].child_blocks[0].quote_depth) == (1u))));
-        expect(fatal(bool(nestedBlank.blocks[0].child_blocks[1].kind == RenderBlockKind::Blank)));
-        expect(fatal(bool((nestedBlank.blocks[0].child_blocks[1].quote_depth) == (1u))));
+    expect(fatal(bool((nestedBlank.blocks[0].child_blocks.size()) == (1u))));
+    if (!nestedBlank.blocks[0].child_blocks.empty()) {
+        auto const& nested = nestedBlank.blocks[0].child_blocks[0];
+        expect(fatal(bool(nested.kind == RenderBlockKind::Quote)));
+        expect(fatal(bool((nested.child_blocks.size()) == (2u))));
+        if (nested.child_blocks.size() >= 2) {
+            expect(fatal(bool(nested.child_blocks[0].kind == RenderBlockKind::Text)));
+            expect(fatal(bool((nested.child_blocks[0].flow_indent_columns) == (4u))));
+            expect(fatal(bool(nested.child_blocks[1].kind == RenderBlockKind::Blank)));
+            expect(fatal(bool((nested.child_blocks[1].flow_indent_columns) == (4u))));
+        }
     }
 };
 

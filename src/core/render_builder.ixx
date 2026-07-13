@@ -40,6 +40,8 @@ inline std::size_t block_local_length(const BlockNode& block) {
         case BlockKind::UnsupportedMarkup:
         case BlockKind::LinkDefinition:
             return utf8_to_cps(block.raw).size();
+        case BlockKind::Callout:
+            return block.callout_title ? block.callout_title->source.size() : 0;
         case BlockKind::ImageBlock:
         case BlockKind::Toc:
         case BlockKind::ThematicBreak:
@@ -88,10 +90,28 @@ inline void push_marker(std::vector<InlineRenderItem>& out, NodeId owner, std::s
 }
 
 struct Builder {
+    static bool owns_text_position(BlockKind kind) {
+        switch (kind) {
+            case BlockKind::Paragraph:
+            case BlockKind::Heading:
+            case BlockKind::TableCell:
+            case BlockKind::CodeBlock:
+            case BlockKind::MathBlock:
+            case BlockKind::ImageBlock:
+            case BlockKind::Toc:
+            case BlockKind::Frontmatter:
+            case BlockKind::ThematicBreak:
+            case BlockKind::LinkDefinition:
+            case BlockKind::UnsupportedMarkup:
+            case BlockKind::Extension:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     std::optional<NodeId> first_editable_owner(const BlockNode& block) const {
-        if (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading
-            || block.kind == BlockKind::TableCell || block.kind == BlockKind::CodeBlock
-            || block.kind == BlockKind::MathBlock) return block.id;
+        if (owns_text_position(block.kind)) return block.id;
         for (auto const& child : block.children) {
             if (auto owner = first_editable_owner(child)) return owner;
         }
@@ -99,9 +119,7 @@ struct Builder {
     }
 
     std::optional<TextPosition> last_editable_position(const BlockNode& block) const {
-        if (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading
-            || block.kind == BlockKind::TableCell || block.kind == BlockKind::CodeBlock
-            || block.kind == BlockKind::MathBlock) {
+        if (owns_text_position(block.kind)) {
             return TextPosition{block.id, block_local_length(block), TextAffinity::Upstream};
         }
         for (auto child = block.children.rbegin(); child != block.children.rend(); ++child) {
@@ -125,18 +143,25 @@ struct Builder {
         out.push_back(std::move(marker));
     }
 
-    void append_nested_code_contents(
+    void append_flow_code_contents(
         std::vector<InlineRenderItem>& out,
         const BlockNode& block,
-        std::size_t indent_columns) {
+        std::size_t indent_columns,
+        std::size_t emitted_columns) {
         constexpr std::size_t content_padding_columns = 2;
+        auto append_line_indent = [&](std::size_t source_offset, bool first_line) {
+            auto desired = indent_columns + content_padding_columns;
+            auto existing = first_line ? emitted_columns : std::size_t{0};
+            append_generated_indent(out, block.id, source_offset, desired > existing ? desired - existing : 0);
+        };
         if (block.code_text.empty()) {
-            append_generated_indent(out, block.id, 0, indent_columns + content_padding_columns);
+            append_line_indent(0, true);
             return;
         }
         std::size_t line_start = 0;
+        bool first_line = true;
         while (line_start < block.code_text.size()) {
-            append_generated_indent(out, block.id, line_start, indent_columns + content_padding_columns);
+            append_line_indent(line_start, first_line);
             auto newline = block.code_text.find(U'\n', line_start);
             auto line_end = newline == std::u32string::npos ? block.code_text.size() : newline + 1;
             auto item = InlineRenderItem::plain_text(
@@ -145,144 +170,251 @@ struct Builder {
             item.style.code = true;
             out.push_back(std::move(item));
             line_start = line_end;
+            first_line = false;
         }
         if (block.code_text.back() == U'\n') {
             append_generated_indent(out, block.id, block.code_text.size(), indent_columns + content_padding_columns);
         }
     }
-    void append_list_contents(std::vector<InlineRenderItem>& out, const BlockNode& list, std::size_t depth, std::size_t indent_columns = 0) {
-        auto append_items = [&](const BlockVec& items, bool tasks) {
-            for (std::size_t index = 0; index < items.size(); ++index) {
-                auto const& item = items[index];
-                const auto owner = first_editable_owner(item).value_or(item.id);
-                std::size_t cursor = 0;
-                auto marker = item.marker;
-                if (marker.empty()) {
-                    if (tasks) marker = item.checked ? U"- [x] " : U"- [ ] ";
-                    else if (list.list_ordered) marker = utf8_to_cps(std::to_string(list.list_start + index)) + std::u32string(1, list.list_delimiter) + U" ";
-                    else marker = U"- ";
-                }
-                if (tasks) {
-                    auto display = std::u32string(indent_columns, U' ') + (marker.empty() ? U"- [ ] " : marker);
-                    push_marker(out, owner, cursor, marker, MarkerRole::TaskCheckbox, std::move(display));
-                } else if (list.list_ordered) {
-                    auto display = std::u32string(indent_columns, U' ') + utf8_to_cps(std::to_string(list.list_start + index)) + std::u32string(1, list.list_delimiter) + U" ";
-                    push_marker(out, owner, cursor, marker, MarkerRole::ListNumber, std::move(display));
-                } else {
-                    push_marker(out, owner, cursor, marker, MarkerRole::ListBullet, std::u32string(indent_columns, U' ') + U"\u2022 ");
-                }
-                for (std::size_t child_index = 0; child_index < item.children.size(); ++child_index) {
-                    auto const& child = item.children[child_index];
-                    if (child_index > 0) {
-                        auto previous = last_editable_position(item.children[child_index - 1])
+
+    struct FlowContext {
+        std::size_t indent_columns = 0;
+    };
+
+    std::size_t list_marker_columns(const BlockNode& list, std::size_t index) const {
+        if (list.kind == BlockKind::TaskList) return 6;
+        if (list.list_ordered) return std::to_string(list.list_start + index).size() + 2;
+        return 2;
+    }
+
+    NodeId list_item_marker_owner(const BlockNode& item) const {
+        return first_editable_owner(item).value_or(item.id);
+    }
+
+    BlockStyle flow_container_style(BlockKind kind, std::string_view callout_kind = {}) const {
+        switch (kind) {
+            case BlockKind::BlockQuote: return BlockStyle::blockquote();
+            case BlockKind::Callout: return BlockStyle::callout(callout_kind);
+            case BlockKind::FootnoteDefinition: return BlockStyle::footnote();
+            case BlockKind::List:
+            case BlockKind::TaskList: return BlockStyle::list();
+            default: return BlockStyle::paragraph();
+        }
+    }
+
+    RenderBlock make_flow_container(const BlockNode& block, FlowContext context) {
+        auto rendered = render_block_base(
+            block.kind,
+            block.id,
+            block_local_length(block),
+            flow_container_style(block.kind, block.callout_kind));
+        rendered.flow_indent_columns = context.indent_columns;
+        if (block.kind == BlockKind::Callout) {
+            rendered.callout_kind = block.callout_kind;
+        } else if (block.kind == BlockKind::FootnoteDefinition) {
+            rendered.footnote_label = block.footnote_label;
+        }
+        return rendered;
+    }
+
+    void append_missing_indent(
+        std::vector<InlineRenderItem>& out,
+        NodeId owner,
+        std::size_t source_offset,
+        std::size_t desired_columns,
+        std::size_t emitted_columns) {
+        append_generated_indent(
+            out,
+            owner,
+            source_offset,
+            desired_columns > emitted_columns ? desired_columns - emitted_columns : 0);
+    }
+
+    RenderBlock append_flow_block(
+        std::vector<InlineRenderItem>& out,
+        const BlockNode& block,
+        FlowContext context,
+        std::size_t emitted_columns = 0) {
+        auto owner = first_editable_owner(block).value_or(block.id);
+        switch (block.kind) {
+            case BlockKind::Document:
+            case BlockKind::ListItem:
+            case BlockKind::TaskListItem: {
+                auto rendered = make_flow_container(block, context);
+                for (std::size_t index = 0; index < block.children.size(); ++index) {
+                    if (index > 0) {
+                        auto previous = last_editable_position(block.children[index - 1])
                             .value_or(TextPosition{owner, 0, TextAffinity::Upstream});
                         append_block_break(out, previous.container_id, previous.source_offset);
                     }
-                    auto marker_columns = tasks ? std::size_t{6}
-                        : list.list_ordered ? std::to_string(list.list_start + index).size() + 2
-                        : std::size_t{2};
-                    append_nested_block(out, child, depth + 1, indent_columns + marker_columns);
-                    if (child_index > 0 && child.kind == BlockKind::Paragraph
-                        && child.inline_content.source.empty()) {
-                        append_generated_indent(out, child.id, 0, indent_columns + marker_columns);
-                    }
+                    rendered.child_blocks.push_back(append_flow_block(
+                        out,
+                        block.children[index],
+                        FlowContext{context.indent_columns},
+                        index == 0 ? emitted_columns : 0));
                 }
-                if (index + 1 < items.size()) {
-                    auto previous = last_editable_position(item)
-                        .value_or(TextPosition{owner, 0, TextAffinity::Upstream});
-                    append_block_break(out, previous.container_id, previous.source_offset);
-                }
-            }
-        };
-        append_items(list.children, list.kind == BlockKind::TaskList);
-    }
-    void append_nested_block(std::vector<InlineRenderItem>& out, const BlockNode& block, std::size_t depth, std::size_t indent_columns) {
-        switch (block.kind) {
-            case BlockKind::Paragraph:
-            case BlockKind::Heading: {
-                InlineStyle style = InlineStyle::plain();
-                if (block.kind == BlockKind::Heading) style.heading_level = block.level;
-                auto items = build_inline_document(block.inline_content, block.id, style);
-                out.insert(out.end(), std::make_move_iterator(items.begin()), std::make_move_iterator(items.end()));
-                return;
+                return rendered;
             }
             case BlockKind::List:
-            case BlockKind::TaskList:
-                append_list_contents(out, block, depth, indent_columns);
-                return;
+            case BlockKind::TaskList: {
+                auto rendered = make_flow_container(block, context);
+                const bool tasks = block.kind == BlockKind::TaskList;
+                for (std::size_t index = 0; index < block.children.size(); ++index) {
+                    auto const& item = block.children[index];
+                    auto item_owner = list_item_marker_owner(item);
+                    if (index > 0) {
+                        auto previous = last_editable_position(block.children[index - 1])
+                            .value_or(TextPosition{item_owner, 0, TextAffinity::Upstream});
+                        append_block_break(out, previous.container_id, previous.source_offset);
+                    }
+                    auto marker = item.marker;
+                    if (marker.empty()) {
+                        if (tasks) marker = item.checked ? U"- [x] " : U"- [ ] ";
+                        else if (block.list_ordered) marker = utf8_to_cps(std::to_string(block.list_start + index)) + std::u32string(1, block.list_delimiter) + U" ";
+                        else marker = U"- ";
+                    }
+                    auto marker_columns = list_marker_columns(block, index);
+                    auto missing_indent = context.indent_columns > (index == 0 ? emitted_columns : 0)
+                        ? context.indent_columns - (index == 0 ? emitted_columns : 0)
+                        : 0;
+                    auto display_marker = tasks
+                        ? marker
+                        : block.list_ordered
+                            ? utf8_to_cps(std::to_string(block.list_start + index)) + std::u32string(1, block.list_delimiter) + U" "
+                            : U"\u2022 ";
+                    std::size_t cursor = 0;
+                    push_marker(
+                        out,
+                        item_owner,
+                        cursor,
+                        marker,
+                        tasks ? MarkerRole::TaskCheckbox : block.list_ordered ? MarkerRole::ListNumber : MarkerRole::ListBullet,
+                        std::u32string(missing_indent, U' ') + display_marker);
+
+                    FlowContext item_context{context.indent_columns + marker_columns};
+                    auto item_rendered = make_flow_container(item, item_context);
+                    for (std::size_t child_index = 0; child_index < item.children.size(); ++child_index) {
+                        if (child_index > 0) {
+                            auto previous = last_editable_position(item.children[child_index - 1])
+                                .value_or(TextPosition{item_owner, 0, TextAffinity::Upstream});
+                            append_block_break(out, previous.container_id, previous.source_offset);
+                        }
+                        item_rendered.child_blocks.push_back(append_flow_block(
+                            out,
+                            item.children[child_index],
+                            item_context,
+                            child_index == 0 ? context.indent_columns + marker_columns : 0));
+                    }
+                    rendered.child_blocks.push_back(std::move(item_rendered));
+                }
+                return rendered;
+            }
             case BlockKind::BlockQuote:
             case BlockKind::Callout:
             case BlockKind::FootnoteDefinition: {
-                for (std::size_t child_index = 0; child_index < block.children.size(); ++child_index) {
-                    auto const& child = block.children[child_index];
-                    if (child_index > 0) {
-                        auto previous = last_editable_position(block.children[child_index - 1])
-                            .value_or(TextPosition{first_editable_owner(child).value_or(child.id), 0, TextAffinity::Upstream});
+                auto rendered = make_flow_container(block, context);
+                auto content_indent = context.indent_columns + 2;
+                std::size_t child_start = 0;
+                if (block.kind == BlockKind::Callout && block.callout_title) {
+                    append_missing_indent(out, block.id, 0, content_indent, emitted_columns);
+                    auto title = build_inline_document(*block.callout_title, block.id, InlineStyle::plain());
+                    out.insert(out.end(), title.begin(), title.end());
+                    if (!block.children.empty()) {
+                        append_block_break(out, block.id, block.callout_title->source.size());
+                    }
+                    child_start = 1;
+                }
+                for (std::size_t index = 0; index < block.children.size(); ++index) {
+                    if (index > 0) {
+                        auto previous = last_editable_position(block.children[index - 1])
+                            .value_or(TextPosition{owner, 0, TextAffinity::Upstream});
                         append_block_break(out, previous.container_id, previous.source_offset);
                     }
-                    if (block.kind == BlockKind::BlockQuote) {
-                        auto owner = first_editable_owner(child).value_or(child.id);
-                        append_generated_indent(out, owner, 0, indent_columns + 2);
-                    }
-                    append_nested_block(out, child, depth + 1, indent_columns);
+                    rendered.child_blocks.push_back(append_flow_block(
+                        out,
+                        block.children[index],
+                        FlowContext{content_indent},
+                        index == 0 && child_start == 0 ? emitted_columns : 0));
                 }
-                return;
+                return rendered;
             }
-            case BlockKind::CodeBlock: {
-                append_nested_code_contents(out, block, indent_columns);
-                return;
-            }
+            default:
+                break;
+        }
+
+        auto rendered = build_block(block);
+        switch (block.kind) {
+            case BlockKind::Paragraph:
+            case BlockKind::Heading:
+            case BlockKind::TableCell:
+                append_missing_indent(out, owner, 0, context.indent_columns, emitted_columns);
+                out.insert(out.end(), rendered.inline_items.begin(), rendered.inline_items.end());
+                break;
+            case BlockKind::CodeBlock:
+                append_flow_code_contents(out, block, context.indent_columns, emitted_columns);
+                break;
             case BlockKind::MathBlock: {
+                append_missing_indent(out, owner, 0, context.indent_columns, emitted_columns);
                 InlineRenderItem item;
                 item.kind = InlineRenderItem::Kind::Math;
                 item.id = block.id;
                 item.source_span = {block.id, {0, block.tex.size()}};
+                item.source_text = block.tex;
                 item.text = block.tex;
                 item.display = MathDisplayMode::Block;
                 item.math_delim = block.math_delim;
                 out.push_back(std::move(item));
-                return;
+                break;
             }
             case BlockKind::ImageBlock: {
+                append_missing_indent(out, owner, 0, context.indent_columns, emitted_columns);
                 InlineRenderItem item;
                 item.kind = InlineRenderItem::Kind::Image;
                 item.id = block.id;
-                item.source_span = {block.id, {0, 0}};
+                item.source_span = {block.id, {0, block_local_length(block)}};
                 item.src = block.src;
                 item.alt = block.image_alt;
                 item.title = block.image_title;
                 item.image_width = block.image_width;
                 item.image_height = block.image_height;
                 out.push_back(std::move(item));
-                return;
+                break;
             }
             case BlockKind::Table: {
-                auto append_cell = [&](BlockNode const& cell) {
-                    auto items = build_inline_document(cell.inline_content, cell.id, InlineStyle::plain());
-                    out.insert(out.end(), std::make_move_iterator(items.begin()), std::make_move_iterator(items.end()));
-                };
+                append_missing_indent(out, owner, 0, context.indent_columns, emitted_columns);
                 bool first_cell = true;
-                for (const auto& row : block.children) for (const auto& cell : row.children) {
-                    if (!first_cell) append_block_break(out, cell.id, 0);
-                    append_cell(cell);
-                    first_cell = false;
+                for (const auto& row : block.children) {
+                    for (const auto& cell : row.children) {
+                        if (!first_cell) append_block_break(out, cell.id, 0);
+                        auto items = build_inline_document(cell.inline_content, cell.id, InlineStyle::plain());
+                        out.insert(out.end(), items.begin(), items.end());
+                        first_cell = false;
+                    }
                 }
-                return;
+                break;
             }
-            case BlockKind::UnsupportedMarkup: {
+            case BlockKind::Frontmatter:
+            case BlockKind::LinkDefinition:
+            case BlockKind::UnsupportedMarkup:
+            case BlockKind::Extension: {
+                append_missing_indent(out, owner, 0, context.indent_columns, emitted_columns);
                 auto raw = utf8_to_cps(block.raw);
-                auto item = InlineRenderItem::plain_text(raw, {block.id, {0, raw.size()}});
-                out.push_back(std::move(item));
-                return;
+                out.push_back(InlineRenderItem::plain_text(raw, {block.id, {0, raw.size()}}));
+                break;
             }
-            case BlockKind::ThematicBreak: {
-                auto item = InlineRenderItem::plain_text(U"\u2014", {block.id, {0, 0}});
-                out.push_back(std::move(item));
-                return;
-            }
+            case BlockKind::ThematicBreak:
+                append_missing_indent(out, owner, 0, context.indent_columns, emitted_columns);
+                out.push_back(InlineRenderItem::plain_text(U"\u2014", {block.id, {0, block_local_length(block)}}));
+                break;
+            case BlockKind::Toc:
+                append_missing_indent(out, owner, 0, context.indent_columns, emitted_columns);
+                out.push_back(InlineRenderItem::plain_text(U"contents", {block.id, {0, block_local_length(block)}}));
+                break;
             default:
-                return;
+                break;
         }
+        rendered.flow_indent_columns = context.indent_columns;
+        return rendered;
     }
     std::vector<InlineRenderItem> build_inline_document(
         const InlineDocument& document,
@@ -445,60 +577,14 @@ struct Builder {
         return output;
     }
 
-    std::size_t list_marker_columns(const BlockNode& list, std::size_t index) const {
-        if (list.kind == BlockKind::TaskList) return 6;
-        if (list.list_ordered) return std::to_string(list.list_start + index).size() + 2;
-        return 2;
-    }
-
-    NodeId list_item_marker_owner(const BlockNode& item) const {
-        return first_editable_owner(item).value_or(item.id);
-    }
-
-    void collect_nested_blocks(
-        RenderBlock& parent,
-        const BlockNode& child,
-        std::size_t depth,
-        std::size_t indent_columns,
-        NodeId container_marker_owner_id) {
-        if (child.kind == BlockKind::CodeBlock || child.kind == BlockKind::BlockQuote) {
-            auto rendered = build_block(child);
-            rendered.container_depth = depth;
-            rendered.container_indent_columns = indent_columns;
-            rendered.container_marker_owner_id = container_marker_owner_id;
-            parent.child_blocks.push_back(std::move(rendered));
-            return;
-        }
-        if (child.kind == BlockKind::List) {
-            for (std::size_t index = 0; index < child.children.size(); ++index) {
-                auto const& item = child.children[index];
-                auto next_indent = indent_columns + list_marker_columns(child, index);
-                auto owner = list_item_marker_owner(item);
-                for (auto const& nested : item.children) collect_nested_blocks(parent, nested, depth + 1, next_indent, owner);
-            }
-            return;
-        }
-        if (child.kind == BlockKind::TaskList) {
-            for (std::size_t index = 0; index < child.children.size(); ++index) {
-                auto const& item = child.children[index];
-                auto next_indent = indent_columns + list_marker_columns(child, index);
-                auto owner = list_item_marker_owner(item);
-                for (auto const& nested : item.children) collect_nested_blocks(parent, nested, depth + 1, next_indent, owner);
-            }
-            return;
-        }
-        if (child.kind == BlockKind::Callout || child.kind == BlockKind::FootnoteDefinition) {
-            for (auto const& nested : child.children) collect_nested_blocks(parent, nested, depth, indent_columns, container_marker_owner_id);
-        }
-    }
-
     RenderBlock build_block(const BlockNode& b) {
         using BK = BlockKind;
         auto base = [&](BlockStyle style) {
             return render_block_base(b.kind, b.id, block_local_length(b), std::move(style));
         };
         switch (b.kind) {
-            case BK::Paragraph: {
+            case BK::Paragraph:
+            case BK::TableCell: {
                 auto rb = base(BlockStyle::paragraph());
                 if (b.inline_content.source.empty() && b.opening_marker.empty() && b.closing_marker.empty()) {
                     rb.kind = RenderBlockKind::Blank;
@@ -541,43 +627,14 @@ struct Builder {
                 });
                 return rb;
             }
-            case BK::BlockQuote: {
-                auto rb = base(BlockStyle::blockquote());
-                std::function<void(const BlockNode&, std::size_t)> append_quote;
-                append_quote = [&](const BlockNode& quote, std::size_t depth) {
-                    for (const auto& child : quote.children) {
-                        if (child.kind == BlockKind::BlockQuote) {
-                            append_quote(child, depth + 1);
-                            continue;
-                        }
-                        auto rendered = build_block(child);
-                        rendered.quote_depth = depth;
-                        rb.child_blocks.push_back(std::move(rendered));
-                    }
-                };
-                append_quote(b, 0);
-                return rb;
-            }
-            case BK::List: {
-                auto rb = base(BlockStyle::list());
-                append_list_contents(rb.inline_items, b, 0);
-                for (std::size_t index = 0; index < b.children.size(); ++index) {
-                    auto const& item = b.children[index];
-                    auto indent = list_marker_columns(b, index);
-                    auto owner = list_item_marker_owner(item);
-                    for (auto const& child : item.children) collect_nested_blocks(rb, child, 1, indent, owner);
-                }
-                return rb;
-            }
-            case BK::TaskList: {
-                auto rb = base(BlockStyle::list());
-                append_list_contents(rb.inline_items, b, 0);
-                for (std::size_t index = 0; index < b.children.size(); ++index) {
-                    auto const& item = b.children[index];
-                    auto indent = list_marker_columns(b, index);
-                    auto owner = list_item_marker_owner(item);
-                    for (auto const& child : item.children) collect_nested_blocks(rb, child, 1, indent, owner);
-                }
+            case BK::BlockQuote:
+            case BK::List:
+            case BK::TaskList:
+            case BK::Callout:
+            case BK::FootnoteDefinition: {
+                std::vector<InlineRenderItem> flow_items;
+                auto rb = append_flow_block(flow_items, b, FlowContext{0});
+                rb.inline_items = std::move(flow_items);
                 return rb;
             }
             case BK::CodeBlock: {
@@ -613,23 +670,6 @@ struct Builder {
                 auto rb = base(BlockStyle::image());
                 rb.alt = b.image_alt; rb.src = b.src; rb.title = b.image_title; rb.link = b.image_link;
                 rb.image_width = b.image_width; rb.image_height = b.image_height;
-                return rb;
-            }
-            case BK::Callout: {
-                auto rb = base(BlockStyle::callout(b.callout_kind));
-                rb.callout_kind = b.callout_kind;
-                if (b.callout_title) {
-                    std::vector<InlineRenderItem> items;
-                    items = build_inline_document(*b.callout_title, b.id, InlineStyle::plain());
-                    rb.callout_title = std::move(items);
-                }
-                for (const auto& ch : b.children) rb.child_blocks.push_back(build_block(ch));
-                return rb;
-            }
-            case BK::FootnoteDefinition: {
-                auto rb = base(BlockStyle::footnote());
-                rb.footnote_label = b.footnote_label;
-                for (const auto& ch : b.children) rb.child_blocks.push_back(build_block(ch));
                 return rb;
             }
             case BK::Toc: {
