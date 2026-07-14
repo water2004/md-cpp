@@ -564,6 +564,30 @@ suite editor_tests = [] {
             "nested quote");
     }
 
+    Editor footnote("body[^1]\n\n[^1]: first");
+    const BlockNode* definition = nullptr;
+    walk_blocks(footnote.document().root, [&](const BlockNode& block) {
+        if (!definition && block.kind == BlockKind::FootnoteDefinition) definition = &block;
+    });
+    expect(fatal(bool(definition != nullptr)));
+    if (definition && definition->children.size() == 1u) {
+        auto const definition_id = definition->id;
+        auto const content_id = definition->children.front().id;
+        footnote.set_selection(TextSelection::caret({content_id, 5, TextAffinity::Downstream}));
+        expect(fatal(bool(footnote.execute_document_enter(footnote.selection()).has_value())));
+
+        auto const* opened_definition = find_block(footnote.document().root, definition_id);
+        expect(fatal(bool(opened_definition != nullptr)));
+        expect(fatal(bool(opened_definition && opened_definition->children.size() == 2u)));
+        if (opened_definition && opened_definition->children.size() == 2u) {
+            auto const empty_id = opened_definition->children.back().id;
+            exercise(
+                footnote,
+                TextSelection::caret({empty_id, 0, TextAffinity::Downstream}),
+                "footnote");
+        }
+    }
+
     Editor code("    one\n\n    two");
     const BlockNode* code_block = nullptr;
     walk_blocks(code.document().root, [&](const BlockNode& block) {

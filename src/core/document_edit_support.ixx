@@ -545,7 +545,7 @@ inline std::optional<RecordedBlockEdit> exit_complete_raw_block_at_end(
     return result;
 }
 
-inline std::optional<RecordedBlockEdit> exit_empty_block_quote(
+inline std::optional<RecordedBlockEdit> exit_empty_flow_container(
     EditorDocument& document,
     TextPosition position,
     NodeAllocator& allocator) {
@@ -554,96 +554,106 @@ inline std::optional<RecordedBlockEdit> exit_empty_block_quote(
     auto* selected = block_at_path(document.root, *path);
     if (!selected || selected->kind != BlockKind::Paragraph || !selected->inline_content.source.empty()) return std::nullopt;
 
-    std::optional<std::size_t> quote_depth;
+    std::optional<std::size_t> container_depth;
     for (std::size_t depth = path->size(); depth > 0; --depth) {
         BlockPath candidate(path->begin(), path->begin() + static_cast<std::ptrdiff_t>(depth));
         auto const* ancestor = block_at_path(document.root, candidate);
-        if (ancestor && ancestor->kind == BlockKind::BlockQuote) { quote_depth = depth; break; }
+        if (ancestor && (ancestor->kind == BlockKind::BlockQuote
+            || ancestor->kind == BlockKind::FootnoteDefinition)) {
+            container_depth = depth;
+            break;
+        }
     }
-    if (!quote_depth || path->size() != *quote_depth + 1) return std::nullopt;
+    if (!container_depth || path->size() != *container_depth + 1) return std::nullopt;
 
-    BlockPath quote_path(path->begin(), path->begin() + static_cast<std::ptrdiff_t>(*quote_depth));
-    auto parent_path = quote_path;
-    const auto quote_index = parent_path.back();
+    BlockPath container_path(path->begin(), path->begin() + static_cast<std::ptrdiff_t>(*container_depth));
+    auto parent_path = container_path;
+    const auto container_index = parent_path.back();
     parent_path.pop_back();
     auto* parent = block_at_path(document.root, parent_path);
-    if (!parent || quote_index >= parent->children.size()) return std::nullopt;
-    auto& quote = parent->children[quote_index];
-    const auto child_index = (*path)[*quote_depth];
-    if (child_index >= quote.children.size()) return std::nullopt;
+    if (!parent || container_index >= parent->children.size()) return std::nullopt;
+    auto& container = parent->children[container_index];
+    const auto child_index = (*path)[*container_depth];
+    if (child_index >= container.children.size()) return std::nullopt;
+    // A quote can split around an empty child. A footnote definition is one
+    // semantic item and cannot be duplicated with the same label, so it exits
+    // only from its trailing empty child.
+    if (container.kind == BlockKind::FootnoteDefinition
+        && child_index + 1 != container.children.size()) return std::nullopt;
 
-    // Delete the quote's empty content node. A fresh paragraph outside the
-    // quote owns the caret; reparenting the trigger line would preserve it.
+    // Delete the container's empty content node. A fresh paragraph outside
+    // the container owns the caret; reparenting the trigger line would
+    // preserve container membership instead of exiting it.
     auto paragraph = empty_paragraph(allocator, document);
     RecordedBlockEdit result;
     result.target = TextPosition{paragraph.id, 0, TextAffinity::Downstream};
     const auto parent_id = parent->id;
-    const auto quote_id = quote.id;
-    const auto trailing_count = quote.children.size() - child_index - 1;
+    const auto container_id = container.id;
+    const auto trailing_count = container.children.size() - child_index - 1;
 
     DocumentTreeEdit insert_paragraph;
     insert_paragraph.kind = DocumentTreeEditKind::Insert;
     insert_paragraph.parent_id = parent_id;
-    insert_paragraph.index = quote_index + 1;
+    insert_paragraph.index = container_index + 1;
     insert_paragraph.after = paragraph;
     result.operations.emplace_back(std::move(insert_paragraph));
-    if (!insert_block(*parent, quote_index + 1, std::move(paragraph))) return std::nullopt;
+    if (!insert_block(*parent, container_index + 1, std::move(paragraph))) return std::nullopt;
 
     std::optional<NodeId> trailing_id;
     if (trailing_count > 0) {
-        auto* current_quote = find_block(document.root, quote_id);
-        if (!current_quote) return std::nullopt;
-        auto trailing = document_transaction_detail::payload_shell(*current_quote);
+        auto* current_container = find_block(document.root, container_id);
+        if (!current_container) return std::nullopt;
+        auto trailing = document_transaction_detail::payload_shell(*current_container);
         trailing.id = allocator.allocate();
         trailing_id = trailing.id;
         DocumentTreeEdit insert_trailing;
         insert_trailing.kind = DocumentTreeEditKind::Insert;
         insert_trailing.parent_id = parent_id;
-        insert_trailing.index = quote_index + 2;
+        insert_trailing.index = container_index + 2;
         insert_trailing.after = trailing;
         result.operations.emplace_back(std::move(insert_trailing));
         parent = find_block(document.root, parent_id);
-        if (!parent || !insert_block(*parent, quote_index + 2, std::move(trailing))) return std::nullopt;
+        if (!parent || !insert_block(*parent, container_index + 2, std::move(trailing))) return std::nullopt;
 
         for (std::size_t target_index = 0; target_index < trailing_count; ++target_index) {
-            auto* source_quote = find_block(document.root, quote_id);
-            auto* trailing_quote = find_block(document.root, *trailing_id);
-            if (!source_quote || !trailing_quote || child_index + 1 >= source_quote->children.size()) {
+            auto* source_container = find_block(document.root, container_id);
+            auto* trailing_container = find_block(document.root, *trailing_id);
+            if (!source_container || !trailing_container || child_index + 1 >= source_container->children.size()) {
                 return std::nullopt;
             }
             DocumentTreeEdit move;
             move.kind = DocumentTreeEditKind::Move;
-            move.parent_id = quote_id;
+            move.parent_id = container_id;
             move.index = child_index + 1;
             move.other_parent_id = *trailing_id;
             move.other_index = target_index;
-            auto child = remove_block(*source_quote, child_index + 1);
-            if (!child || !insert_block(*trailing_quote, target_index, std::move(*child))) return std::nullopt;
+            auto child = remove_block(*source_container, child_index + 1);
+            if (!child || !insert_block(*trailing_container, target_index, std::move(*child))) return std::nullopt;
             result.operations.emplace_back(std::move(move));
         }
     }
 
-    auto* current_quote = find_block(document.root, quote_id);
-    if (!current_quote || child_index >= current_quote->children.size()) return std::nullopt;
+    auto* current_container = find_block(document.root, container_id);
+    if (!current_container || child_index >= current_container->children.size()) return std::nullopt;
     DocumentTreeEdit remove_trigger;
     remove_trigger.kind = DocumentTreeEditKind::Remove;
-    remove_trigger.parent_id = quote_id;
+    remove_trigger.parent_id = container_id;
     remove_trigger.index = child_index;
-    remove_trigger.before = current_quote->children[child_index];
+    remove_trigger.before = current_container->children[child_index];
     result.operations.emplace_back(std::move(remove_trigger));
-    current_quote->children.erase(
-        current_quote->children.begin() + static_cast<std::ptrdiff_t>(child_index));
+    current_container->children.erase(
+        current_container->children.begin() + static_cast<std::ptrdiff_t>(child_index));
 
-    if (current_quote->children.empty()) {
+    if (current_container->children.empty()) {
         parent = find_block(document.root, parent_id);
-        if (!parent || quote_index >= parent->children.size()) return std::nullopt;
-        DocumentTreeEdit remove_quote;
-        remove_quote.kind = DocumentTreeEditKind::Remove;
-        remove_quote.parent_id = parent_id;
-        remove_quote.index = quote_index;
-        remove_quote.before = parent->children[quote_index];
-        result.operations.emplace_back(std::move(remove_quote));
-        parent->children.erase(parent->children.begin() + static_cast<std::ptrdiff_t>(quote_index));
+        if (!parent || container_index >= parent->children.size()) return std::nullopt;
+        DocumentTreeEdit remove_container;
+        remove_container.kind = DocumentTreeEditKind::Remove;
+        remove_container.parent_id = parent_id;
+        remove_container.index = container_index;
+        remove_container.before = parent->children[container_index];
+        result.operations.emplace_back(std::move(remove_container));
+        parent->children.erase(parent->children.begin() + static_cast<std::ptrdiff_t>(container_index));
     }
     return result;
 }

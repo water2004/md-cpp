@@ -144,12 +144,12 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
             operations.end(),
             std::make_move_iterator(exited_raw->operations.begin()),
             std::make_move_iterator(exited_raw->operations.end()));
-    } else if (auto exited_quote = document_edit_detail::exit_empty_block_quote(after, current.active, allocator)) {
-        target = exited_quote->target;
+    } else if (auto exited_container = document_edit_detail::exit_empty_flow_container(after, current.active, allocator)) {
+        target = exited_container->target;
         operations.insert(
             operations.end(),
-            std::make_move_iterator(exited_quote->operations.begin()),
-            std::make_move_iterator(exited_quote->operations.end()));
+            std::make_move_iterator(exited_container->operations.begin()),
+            std::make_move_iterator(exited_container->operations.end()));
     } else if (auto handled = document_input_rules::handle_enter(after, current.active, allocator)) {
         target = handled->target;
         operations.insert(

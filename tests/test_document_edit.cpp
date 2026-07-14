@@ -683,6 +683,45 @@ suite document_edit_tests = [] {
     expect(fatal(bool(find_block(transaction->after.root, empty_id) == nullptr)));
 };
 
+"enter_on_trailing_empty_footnote_line_exits_the_definition"_test = [] {
+    auto document = parse_document("body[^1]\n\n[^1]: first");
+    expect(fatal(bool(document.root.children.size() == 2u)));
+    if (document.root.children.size() != 2u) return;
+    auto const& definition = document.root.children[1];
+    expect(fatal(bool(definition.kind == BlockKind::FootnoteDefinition)));
+    expect(fatal(bool(definition.children.size() == 1u)));
+    if (definition.children.size() != 1u) return;
+
+    auto const first_id = definition.children.front().id;
+    auto opened = document_enter(
+        document,
+        TextSelection::caret({first_id, 5, TextAffinity::Downstream}));
+    expect(fatal(bool(opened.has_value())));
+    if (!opened) return;
+
+    auto const* opened_definition = find_block(opened->after.root, definition.id);
+    expect(fatal(bool(opened_definition != nullptr)));
+    expect(fatal(bool(opened_definition && opened_definition->children.size() == 2u)));
+    if (!opened_definition || opened_definition->children.size() != 2u) return;
+    auto const empty_id = opened_definition->children.back().id;
+    expect(fatal(bool(opened_definition->children.back().inline_content.source.empty())));
+
+    auto exited = document_enter(
+        opened->after,
+        TextSelection::caret({empty_id, 0, TextAffinity::Downstream}));
+    expect(fatal(bool(exited.has_value())));
+    if (!exited) return;
+
+    expect(fatal(bool(exited->after.root.children.size() == 3u)));
+    expect(fatal(bool(exited->after.root.children[1].kind == BlockKind::FootnoteDefinition)));
+    expect(fatal(bool(exited->after.root.children[1].children.size() == 1u)));
+    expect(fatal(bool(exited->after.root.children[2].kind == BlockKind::Paragraph)));
+    expect(fatal(bool(exited->after.root.children[2].inline_content.source.empty())));
+    expect(fatal(bool(exited->selection_after.active.container_id == exited->after.root.children[2].id)));
+    expect(fatal(bool(find_block(exited->after.root, empty_id) == nullptr)));
+    expect_document_valid(exited->after);
+};
+
 "enter_exits_empty_quote_inside_arbitrary_ancestors"_test = [] {
     auto document = parse_document("- item\n  > ");
     expect(fatal(bool((document.root.children.size()) == (1u))));
