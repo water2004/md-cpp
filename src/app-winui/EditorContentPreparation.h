@@ -31,17 +31,14 @@ namespace winrt::ElMd
             float progressStart = 0.0f;
             float progressEnd = 1.0f;
             bool strikethrough = false;
+            bool displayMath = false;
         };
 
         struct MathPreview
         {
             MathJaxSvg svg;
-            std::uint32_t displayStart = 0;
-            std::uint32_t displayLength = 0;
-            elmd::TextSpan sourceSpan;
             elmd::TextSpan contentSpan;
             bool strikethrough = false;
-            bool separateBlock = false;
         };
 
         struct ImageOverlay

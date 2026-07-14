@@ -34,6 +34,8 @@ namespace winrt::ElMd
         std::vector<float> rowHeights(table.rowCount, styleSheet.body.lineHeight + 16.0f);
         prepared.displays.reserve(table.rowCount * table.columnCount);
         prepared.imageDraws.reserve(table.rowCount * table.columnCount);
+        prepared.mathPreviews.reserve(table.rowCount * table.columnCount);
+        prepared.textHeights.reserve(table.rowCount * table.columnCount);
         for (std::size_t row = 0; row < table.rowCount; ++row)
         {
             for (std::size_t column = 0; column < table.columnCount; ++column)
@@ -73,9 +75,34 @@ namespace winrt::ElMd
                     if (SUCCEEDED(layout->GetMetrics(&metrics)))
                     {
                         cellTextHeight = metrics.height;
-                        rowHeights[row] = (std::max)(rowHeights[row], metrics.height + 16.0f);
                     }
                 }
+                std::vector<PreparedTable::MathPreview> previews;
+                auto previewHeight = 0.0f;
+                previews.reserve(display.mathPreviews.size());
+                for (auto const& preview : display.mathPreviews)
+                {
+                    auto previewDisplay = BuildMathPreviewText(preview);
+                    auto previewLayout = textLayoutEngine.CreateFlow(
+                        previewDisplay,
+                        resources.textFormat.Get(),
+                        (std::max)(1.0f, columnWidth - 36.0f),
+                        {});
+                    if (previewLayout && preview.svg.display)
+                        previewLayout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                    auto height = textLayoutEngine.MeasureHeight(
+                        previewLayout.Get(),
+                        styleSheet.body.lineHeight);
+                    previewHeight += height + 24.0f;
+                    previews.push_back({
+                        std::move(previewDisplay),
+                        std::move(previewLayout),
+                        height,
+                    });
+                }
+                rowHeights[row] = (std::max)(
+                    rowHeights[row],
+                    cellTextHeight + previewHeight + 16.0f);
                 auto images = inlineImageRenderer.Resolve(layout.Get(), display.imageOverlays, (std::max)(1.0f, columnWidth - 20.0f));
                 EditorVisualTableCell cell;
                 cell.sourceSpan = sourceSpan;
@@ -83,10 +110,12 @@ namespace winrt::ElMd
                 cell.column = column;
                 cell.text = std::move(display.text);
                 cell.displayToSource = std::move(display.displayToSource);
-                cell.textHeight = cellTextHeight;
+                cell.textHeight = cellTextHeight + previewHeight;
                 cell.layout = std::move(layout);
                 prepared.displays.push_back(std::move(display));
                 prepared.imageDraws.push_back(std::move(images));
+                prepared.mathPreviews.push_back(std::move(previews));
+                prepared.textHeights.push_back(cellTextHeight);
                 table.cells.push_back(std::move(cell));
             }
         }
@@ -119,7 +148,8 @@ namespace winrt::ElMd
         EditorInteractionMap& interactionMap,
         EditorInlineImageRenderer& inlineImageRenderer,
         EditorDrawMath const& drawMath,
-        EditorDrawMathFallback const& drawMathFallback)
+        EditorDrawMathFallback const& drawMathFallback,
+        std::vector<D2D1_RECT_F>& nonInteractiveRegions)
     {
         auto translatedTable = prepared.visual;
         translatedTable.rect.left += documentLeft;
@@ -192,6 +222,52 @@ namespace winrt::ElMd
                         resources.d2dContext->DrawLine(D2D1::Point2F(cell.textOrigin.x + pointX, strikeY), D2D1::Point2F(mathX + overlay.fragment.width, strikeY), resources.textBrush.Get(), 1.5f);
                     }
                     interactionMap.mathHits.push_back(EditorVisualMathHit{D2D1::RectF(mathX, mathY, mathX + overlay.fragment.width, mathY + overlay.fragment.height), overlay.sourceSpan, overlay.progressStart, overlay.progressEnd});
+                }
+            }
+            if (cellIndex < prepared.mathPreviews.size()
+                && cellIndex < prepared.textHeights.size())
+            {
+                auto previewTop = cell.textOrigin.y + prepared.textHeights[cellIndex];
+                for (auto const& preview : prepared.mathPreviews[cellIndex])
+                {
+                    auto nonInteractiveTop = previewTop;
+                    previewTop += 8.0f;
+                    auto previewRect = D2D1::RectF(
+                        cell.rect.left + 6.0f,
+                        previewTop,
+                        cell.rect.right - 6.0f,
+                        previewTop + preview.height + 16.0f);
+                    resources.d2dContext->FillRectangle(previewRect, resources.nestedQuoteBrush.Get());
+                    auto previewOrigin = D2D1::Point2F(previewRect.left + 8.0f, previewRect.top + 8.0f);
+                    if (preview.layout)
+                        resources.d2dContext->DrawTextLayout(
+                            previewOrigin,
+                            preview.layout.Get(),
+                            resources.textBrush.Get(),
+                            D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                    for (auto const& overlay : preview.display.mathOverlays)
+                    {
+                        float pointX = 0.0f;
+                        float pointY = 0.0f;
+                        DWRITE_HIT_TEST_METRICS metrics{};
+                        if (!preview.layout || FAILED(preview.layout->HitTestTextPosition(
+                                overlay.displayStart,
+                                FALSE,
+                                &pointX,
+                                &pointY,
+                                &metrics))) continue;
+                        auto mathOrigin = D2D1::Point2F(
+                            previewOrigin.x + pointX + overlay.leadingSpace,
+                            previewOrigin.y + metrics.top);
+                        if (!drawMath(overlay.fragment, mathOrigin, styleSheet.textColor))
+                            drawMathFallback(overlay.sourceSpan, mathOrigin);
+                    }
+                    nonInteractiveRegions.push_back(D2D1::RectF(
+                        previewRect.left,
+                        nonInteractiveTop,
+                        previewRect.right,
+                        previewRect.bottom));
+                    previewTop = previewRect.bottom;
                 }
             }
             interactionMap.AddTableCellLines(visualBlockIndex, tableIndex, cellIndex);

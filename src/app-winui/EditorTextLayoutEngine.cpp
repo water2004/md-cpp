@@ -74,11 +74,6 @@ namespace winrt::ElMd
                 else if (range.start + range.length > position) ++range.length;
             }
             for (auto& overlay : display.mathOverlays) if (overlay.displayStart >= position) ++overlay.displayStart;
-            for (auto& preview : display.mathPreviews)
-            {
-                if (preview.displayStart >= position) ++preview.displayStart;
-                else if (preview.displayStart + preview.displayLength > position) ++preview.displayLength;
-            }
             for (auto& overlay : display.imageOverlays) if (overlay.displayStart >= position) ++overlay.displayStart;
             for (auto& overlay : display.indentOverlays) if (overlay.displayStart >= position) ++overlay.displayStart;
         }

@@ -245,6 +245,67 @@ namespace winrt::ElMd
             constexpr wchar_t label[] = L"formula";
             resources.d2dContext->DrawTextW(label, 7, resources.codeFormat.Get(), D2D1::RectF(origin.x, origin.y, documentRight, origin.y + styleSheet.code.lineHeight), resources.textBrush.Get());
         };
+        struct PositionedMath
+        {
+            DisplayInlineText::MathOverlay const* overlay = nullptr;
+            float localX = 0.0f;
+            float localTop = 0.0f;
+        };
+        auto positionMath = [](IDWriteTextLayout* layout, std::vector<DisplayInlineText::MathOverlay> const& overlays, float width)
+        {
+            std::vector<PositionedMath> positioned;
+            if (!layout) return positioned;
+            positioned.reserve(overlays.size());
+            for (auto const& overlay : overlays)
+            {
+                FLOAT x = 0.0f;
+                FLOAT lineY = 0.0f;
+                DWRITE_HIT_TEST_METRICS metrics{};
+                if (FAILED(layout->HitTestTextPosition(overlay.displayStart, FALSE, &x, &lineY, &metrics))) continue;
+                positioned.push_back({&overlay, x + overlay.leadingSpace, metrics.top});
+            }
+            auto sameSpan = [](elmd::TextSpan const& left, elmd::TextSpan const& right)
+            {
+                return left.container_id == right.container_id
+                    && left.source_range.start == right.source_range.start
+                    && left.source_range.end == right.source_range.end;
+            };
+            std::vector<bool> centered(positioned.size(), false);
+            for (std::size_t index = 0; index < positioned.size(); ++index)
+            {
+                auto const* overlay = positioned[index].overlay;
+                if (!overlay || !overlay->displayMath || centered[index]) continue;
+                auto left = positioned[index].localX;
+                auto right = left + overlay->fragment.width;
+                auto lineInset = positioned[index].localX - overlay->leadingSpace;
+                std::vector<std::size_t> line{index};
+                for (std::size_t other = index + 1; other < positioned.size(); ++other)
+                {
+                    auto const* candidate = positioned[other].overlay;
+                    if (!candidate || !candidate->displayMath
+                        || !sameSpan(candidate->sourceSpan, overlay->sourceSpan)
+                        || std::fabs(positioned[other].localTop - positioned[index].localTop) > 0.5f) continue;
+                    left = (std::min)(left, positioned[other].localX);
+                    right = (std::max)(right, positioned[other].localX + candidate->fragment.width);
+                    lineInset = (std::min)(
+                        lineInset,
+                        positioned[other].localX - candidate->leadingSpace);
+                    line.push_back(other);
+                }
+                auto lineWidth = right - left;
+                auto availableWidth = (std::max)(0.0f, width - lineInset);
+                auto desiredLeft = lineWidth <= availableWidth
+                    ? lineInset + (availableWidth - lineWidth) * 0.5f
+                    : lineInset;
+                auto shift = desiredLeft - left;
+                for (auto member : line)
+                {
+                    positioned[member].localX += shift;
+                    centered[member] = true;
+                }
+            }
+            return positioned;
+        };
 
         std::function<DisplayInlineText(elmd::RenderBlock const&, float, bool)> prepare;
         prepare = [&](elmd::RenderBlock const& block, float width, bool requestEmbedded) -> DisplayInlineText
@@ -511,30 +572,38 @@ namespace winrt::ElMd
                     return prepared;
                 }
             }
-            prepared.display = prepare(block, documentWidth, requestEmbedded);
+            auto flowContainer = !block.inline_items.empty()
+                && (block.kind == elmd::RenderBlockKind::Quote
+                    || block.kind == elmd::RenderBlockKind::Callout
+                    || block.kind == elmd::RenderBlockKind::Footnote);
+            auto paddingTop = flowContainer ? 0.0f : block.block_style.padding_top;
+            auto paddingBottom = flowContainer ? 0.0f : block.block_style.padding_bottom;
+            auto paddingLeft = flowContainer ? 0.0f : block.block_style.padding_left;
+            auto paddingRight = flowContainer ? 0.0f : block.block_style.padding_right;
+            auto contentWidth = (std::max)(1.0f, documentWidth - paddingLeft - paddingRight);
+            prepared.display = prepare(block, contentWidth, requestEmbedded);
             applyNestedCodeHighlights(prepared.display, block);
             prepared.pendingMath = prepared.display.pendingMath;
             auto format = textLayoutEngine.FormatFor(prepared.code, prepared.display.ranges);
             prepared.layout = textLayoutEngine.CreateFlow(
                 prepared.display,
                 format,
-                documentWidth,
+                contentWidth,
                 [&](IDWriteTextLayout* candidate, DisplayInlineText const& candidateDisplay)
                 {
                     prepared.images = inlineImages.Resolve(
                         candidate,
                         candidateDisplay.imageOverlays,
-                        documentWidth);
+                        contentWidth);
                 });
             prepared.mathPreviews.reserve(prepared.display.mathPreviews.size());
             for (auto const& preview : prepared.display.mathPreviews)
             {
-                if (!preview.separateBlock) continue;
                 auto previewDisplay = BuildMathPreviewText(preview);
                 auto previewLayout = textLayoutEngine.CreateFlow(
                     previewDisplay,
                     resources.textFormat.Get(),
-                    (std::max)(1.0f, documentWidth - 16.0f),
+                    (std::max)(1.0f, contentWidth - 16.0f),
                     {});
                 auto previewHeight = textLayoutEngine.MeasureHeight(
                     previewLayout.Get(),
@@ -545,12 +614,6 @@ namespace winrt::ElMd
                     previewHeight,
                 });
             }
-            auto flowContainer = !block.inline_items.empty()
-                && (block.kind == elmd::RenderBlockKind::Quote
-                    || block.kind == elmd::RenderBlockKind::Callout
-                    || block.kind == elmd::RenderBlockKind::Footnote);
-            auto paddingTop = flowContainer ? 0.0f : block.block_style.padding_top;
-            auto paddingBottom = flowContainer ? 0.0f : block.block_style.padding_bottom;
             prepared.textHeight = textLayoutEngine.MeasureHeight(
                 prepared.layout.Get(),
                 textLayoutEngine.LineHeightFor(prepared.code, prepared.display.ranges));
@@ -688,7 +751,8 @@ namespace winrt::ElMd
                     interactionMap,
                     inlineImages,
                     drawMath,
-                    drawMathFallback);
+                    drawMathFallback,
+                    nonInteractiveRegions);
                 continue;
             }
             auto flowContainer = !block.inline_items.empty()
@@ -697,6 +761,8 @@ namespace winrt::ElMd
                     || block.kind == elmd::RenderBlockKind::Footnote);
             auto paddingTop = flowContainer ? 0.0f : block.block_style.padding_top;
             auto paddingLeft = flowContainer ? 0.0f : block.block_style.padding_left;
+            auto paddingRight = flowContainer ? 0.0f : block.block_style.padding_right;
+            auto contentWidth = (std::max)(1.0f, documentWidth - paddingLeft - paddingRight);
             auto origin = D2D1::Point2F(documentLeft + paddingLeft, top + paddingTop);
             auto rect = D2D1::RectF(documentLeft, top, documentRight, bottom);
 
@@ -710,12 +776,15 @@ namespace winrt::ElMd
                     prepared.code ? resources.codeBrush.Get() : resources.textBrush.Get(),
                     D2D1_DRAW_TEXT_OPTIONS_CLIP);
             inlineImages.Draw(prepared.layout.Get(), origin, prepared.images);
-            for (auto const& overlay : prepared.display.mathOverlays)
+            for (auto const& positioned : positionMath(
+                    prepared.layout.Get(),
+                    prepared.display.mathOverlays,
+                    contentWidth))
             {
-                FLOAT x = 0.0f, lineY = 0.0f;
-                DWRITE_HIT_TEST_METRICS metrics{};
-                if (!prepared.layout || FAILED(prepared.layout->HitTestTextPosition(overlay.displayStart, FALSE, &x, &lineY, &metrics))) continue;
-                auto mathOrigin = D2D1::Point2F(origin.x + x + overlay.leadingSpace, origin.y + metrics.top);
+                auto const& overlay = *positioned.overlay;
+                auto mathOrigin = D2D1::Point2F(
+                    origin.x + positioned.localX,
+                    origin.y + positioned.localTop);
                 if (!drawMath(overlay.fragment, mathOrigin, styleSheet.textColor)) drawMathFallback(overlay.sourceSpan, mathOrigin);
                 interactionMap.mathHits.push_back({D2D1::RectF(mathOrigin.x, mathOrigin.y, mathOrigin.x + overlay.fragment.width, mathOrigin.y + overlay.fragment.height), overlay.sourceSpan, overlay.progressStart, overlay.progressEnd});
             }
@@ -727,7 +796,7 @@ namespace winrt::ElMd
                 auto previewRect = D2D1::RectF(
                     documentLeft + paddingLeft,
                     previewTop,
-                    documentRight - block.block_style.padding_right,
+                    documentLeft + paddingLeft + contentWidth,
                     previewTop + preview.height + 16.0f);
                 resources.d2dContext->FillRectangle(previewRect, resources.nestedQuoteBrush.Get());
                 auto previewOrigin = D2D1::Point2F(previewRect.left + 8.0f, previewRect.top + 8.0f);
@@ -737,15 +806,16 @@ namespace winrt::ElMd
                         preview.layout.Get(),
                         resources.textBrush.Get(),
                         D2D1_DRAW_TEXT_OPTIONS_CLIP);
-                for (auto const& overlay : preview.display.mathOverlays)
+                auto previewContentWidth = (std::max)(1.0f, previewRect.right - previewRect.left - 16.0f);
+                for (auto const& positioned : positionMath(
+                        preview.layout.Get(),
+                        preview.display.mathOverlays,
+                        previewContentWidth))
                 {
-                    FLOAT x = 0.0f, lineY = 0.0f;
-                    DWRITE_HIT_TEST_METRICS metrics{};
-                    if (!preview.layout || FAILED(preview.layout->HitTestTextPosition(
-                            overlay.displayStart, FALSE, &x, &lineY, &metrics))) continue;
+                    auto const& overlay = *positioned.overlay;
                     auto mathOrigin = D2D1::Point2F(
-                        previewOrigin.x + x + overlay.leadingSpace,
-                        previewOrigin.y + metrics.top);
+                        previewOrigin.x + positioned.localX,
+                        previewOrigin.y + positioned.localTop);
                     if (!drawMath(overlay.fragment, mathOrigin, styleSheet.textColor))
                         drawMathFallback(overlay.sourceSpan, mathOrigin);
                 }
@@ -759,7 +829,7 @@ namespace winrt::ElMd
             EditorVisualBlock visual;
             visual.rect = rect;
             visual.textOrigin = origin;
-            visual.textWidth = documentWidth;
+            visual.textWidth = contentWidth;
             visual.sourceSpan = block.source_span;
             visual.documentY = documentY;
             visual.text = prepared.display.text;

@@ -153,7 +153,8 @@ namespace winrt::ElMd
     class MathInlineObject final : public ::Microsoft::WRL::RuntimeClass<::Microsoft::WRL::RuntimeClassFlags<::Microsoft::WRL::ClassicCom>, IDWriteInlineObject>
     {
     public:
-        MathInlineObject(float width, float height, float baseline) : width(width), height(height), baseline(baseline) {}
+        MathInlineObject(float width, float height, float baseline, bool breakBefore = false)
+            : width(width), height(height), baseline(baseline), breakBefore(breakBefore) {}
 
         IFACEMETHODIMP Draw(void*, IDWriteTextRenderer*, FLOAT, FLOAT, BOOL, BOOL, IUnknown*) override
         {
@@ -180,7 +181,7 @@ namespace winrt::ElMd
         IFACEMETHODIMP GetBreakConditions(DWRITE_BREAK_CONDITION* before, DWRITE_BREAK_CONDITION* after) override
         {
             if (!before || !after) return E_POINTER;
-            *before = DWRITE_BREAK_CONDITION_NEUTRAL;
+            *before = breakBefore ? DWRITE_BREAK_CONDITION_CAN_BREAK : DWRITE_BREAK_CONDITION_NEUTRAL;
             *after = DWRITE_BREAK_CONDITION_NEUTRAL;
             return S_OK;
         }
@@ -189,6 +190,7 @@ namespace winrt::ElMd
         float width;
         float height;
         float baseline;
+        bool breakBefore;
     };
 
     class IndentInlineObject final : public ::Microsoft::WRL::RuntimeClass<::Microsoft::WRL::RuntimeClassFlags<::Microsoft::WRL::ClassicCom>, IDWriteInlineObject>
@@ -422,7 +424,6 @@ namespace winrt::ElMd
         }
         for (auto& preview : source.mathPreviews)
         {
-            preview.displayStart += offset;
             target.mathPreviews.push_back(std::move(preview));
         }
         for (auto& overlay : source.imageOverlays)
@@ -524,7 +525,16 @@ namespace winrt::ElMd
             auto fragmentStart = math.width > 0.0f ? progress / math.width : 0.0f;
             progress += fragment.breakSpace + fragment.width;
             auto fragmentEnd = math.width > 0.0f ? progress / math.width : 1.0f;
-            display.mathOverlays.push_back(DisplayInlineText::MathOverlay{ start, fragment, fragment.breakSpace, sourceSpan, fragmentStart, fragmentEnd, style.strikethrough });
+            display.mathOverlays.push_back(DisplayInlineText::MathOverlay{
+                start,
+                fragment,
+                fragment.breakSpace,
+                sourceSpan,
+                fragmentStart,
+                fragmentEnd,
+                style.strikethrough,
+                math.display,
+            });
         }
     }
 
@@ -536,7 +546,11 @@ namespace winrt::ElMd
         {
             auto const& fragment = overlay.fragment;
             auto baseline = (std::clamp)(fragment.height + fragment.verticalAlign, 0.0f, fragment.height);
-            auto object = ::Microsoft::WRL::Make<MathInlineObject>(overlay.leadingSpace + fragment.width, fragment.height, baseline);
+            auto object = ::Microsoft::WRL::Make<MathInlineObject>(
+                overlay.leadingSpace + fragment.width,
+                fragment.height,
+                baseline,
+                fragment.breakBefore);
             if (object)
             {
                 layout->SetInlineObject(object.Get(), DWRITE_TEXT_RANGE{ overlay.displayStart, 1 });
@@ -564,12 +578,14 @@ namespace winrt::ElMd
     DisplayInlineText BuildMathPreviewText(DisplayInlineText::MathPreview const& preview)
     {
         DisplayInlineText display;
+        auto style = elmd::InlineStyle::plain();
+        style.strikethrough = preview.strikethrough;
         AppendMathFragments(
             display,
             preview.svg,
             preview.contentSpan,
             false,
-            elmd::InlineStyle::plain());
+            style);
         display.displayToSource.push_back({
             preview.contentSpan.container_id,
             preview.contentSpan.source_range.end,
@@ -633,7 +649,13 @@ namespace winrt::ElMd
                     AppendSourceText(display, item.source_text, item.source_span, item.style, false);
                     continue;
                 }
-                auto rawMath = mathJax.GetOrQueue(elmd::cps_to_utf8(item.text), false, fontSize, containerWidth, requestMath);
+                auto displayMath = item.display == elmd::MathDisplayMode::Block;
+                auto rawMath = mathJax.GetOrQueue(
+                    elmd::cps_to_utf8(item.text),
+                    displayMath,
+                    fontSize,
+                    containerWidth,
+                    requestMath);
                 auto math = rawMath ? NormalizeMathJaxSvg(*rawMath, svgNormalizer, svgColor, fontSize, requestMath) : std::nullopt;
                 display.pendingMath = display.pendingMath || !rawMath || !math;
                 auto editing = CaretTouchesSpan(caret, item.source_span);
@@ -652,13 +674,9 @@ namespace winrt::ElMd
 
                 if (editing)
                 {
-                    auto displayStart = static_cast<std::uint32_t>(elmd::utf16_len(display.text));
                     AppendSourceText(display, item.source_text, item.source_span, item.style, false);
                     display.mathPreviews.push_back(DisplayInlineText::MathPreview{
                         *math,
-                        displayStart,
-                        static_cast<std::uint32_t>(elmd::utf16_len(item.source_text)),
-                        item.source_span,
                         elmd::TextSpan{item.source_span.container_id, {contentStart, contentEnd}},
                         item.style.strikethrough,
                     });
@@ -821,12 +839,8 @@ namespace winrt::ElMd
             if (math && static_cast<bool>(*math))
                 display.mathPreviews.push_back(DisplayInlineText::MathPreview{
                     *math,
-                    0,
-                    0,
-                    span,
                     span,
                     false,
-                    true,
                 });
         }
         else if (!math || !static_cast<bool>(*math))

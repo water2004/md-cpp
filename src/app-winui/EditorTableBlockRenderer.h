@@ -20,9 +20,18 @@ namespace winrt::ElMd
     {
         struct PreparedTable
         {
+            struct MathPreview
+            {
+                DisplayInlineText display;
+                ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+                float height = 0.0f;
+            };
+
             EditorVisualTable visual;
             std::vector<DisplayInlineText> displays;
             std::vector<std::vector<EditorInlineImageRenderer::ImageDraw>> imageDraws;
+            std::vector<std::vector<MathPreview>> mathPreviews;
+            std::vector<float> textHeights;
             float height = 0.0f;
             bool pendingMath = false;
         };
@@ -52,6 +61,7 @@ namespace winrt::ElMd
             EditorInteractionMap& interactionMap,
             EditorInlineImageRenderer& inlineImageRenderer,
             EditorDrawMath const& drawMath,
-            EditorDrawMathFallback const& drawMathFallback);
+            EditorDrawMathFallback const& drawMathFallback,
+            std::vector<D2D1_RECT_F>& nonInteractiveRegions);
     };
 }
