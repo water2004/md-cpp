@@ -335,6 +335,19 @@ struct Builder {
                 auto rendered = make_flow_container(block, context, parent_indent_columns);
                 auto content_indent = context.indent_columns + 2;
                 std::size_t child_start = 0;
+                if (block.kind == BlockKind::FootnoteDefinition && !block.footnote_label.empty()) {
+                    append_missing_indent(out, owner, 0, context.indent_columns, emitted_columns);
+                    InlineRenderItem label;
+                    label.kind = InlineRenderItem::Kind::Marker;
+                    label.source_span = {owner, {0, 0}};
+                    label.display_text = utf8_to_cps(block.footnote_label) + U". ";
+                    label.footnote_label = block.footnote_label;
+                    label.marker_role = MarkerRole::FootnoteLabel;
+                    label.generated_boundary_affinity = TextAffinity::Downstream;
+                    label.visibility = MarkerVisibility::Always;
+                    label.style.link = true;
+                    out.push_back(std::move(label));
+                }
                 if (block.kind == BlockKind::Callout && block.callout_title) {
                     append_missing_indent(out, block.id, 0, content_indent, emitted_columns);
                     auto title = build_inline_document(*block.callout_title, block.id, InlineStyle::plain());
@@ -354,8 +367,28 @@ struct Builder {
                         out,
                         block.children[index],
                         FlowContext{content_indent},
-                        index == 0 && child_start == 0 ? emitted_columns : 0,
+                        index == 0 && child_start == 0
+                            ? block.kind == BlockKind::FootnoteDefinition && !block.footnote_label.empty()
+                                ? context.indent_columns
+                                : emitted_columns
+                            : 0,
                         context.indent_columns));
+                }
+                if (block.kind == BlockKind::FootnoteDefinition && !block.footnote_label.empty()) {
+                    const auto backlink_position = last_editable_position(block)
+                        .value_or(TextPosition{owner, 0, TextAffinity::Upstream});
+                    InlineRenderItem backlink;
+                    backlink.kind = InlineRenderItem::Kind::Marker;
+                    backlink.source_span = {
+                        backlink_position.container_id,
+                        {backlink_position.source_offset, backlink_position.source_offset}};
+                    backlink.display_text = U" ↩";
+                    backlink.footnote_label = block.footnote_label;
+                    backlink.marker_role = MarkerRole::FootnoteBacklink;
+                    backlink.generated_boundary_affinity = TextAffinity::Upstream;
+                    backlink.visibility = MarkerVisibility::Always;
+                    backlink.style.link = true;
+                    out.push_back(std::move(backlink));
                 }
                 return rendered;
             }
@@ -576,9 +609,17 @@ struct Builder {
                     case K::HardBreak:
                         append_text(U"\n", node.range, style);
                         break;
-                    case K::FootnoteRef:
-                        append_text(U"[^" + utf8_to_cps(node.label) + U"]", node.range, InlineStyle{.link = true});
+                    case K::FootnoteRef: {
+                        InlineRenderItem item;
+                        item.kind = InlineRenderItem::Kind::FootnoteReference;
+                        item.id = node.id;
+                        item.source_span = source_span(node.range);
+                        item.text = utf8_to_cps(node.label);
+                        item.footnote_label = node.label;
+                        item.style.link = true;
+                        target.push_back(std::move(item));
                         break;
+                    }
                     case K::WikiLink:
                         append_text(utf8_to_cps(node.alias.value_or(node.target)), node.range, InlineStyle{.link = true});
                         break;

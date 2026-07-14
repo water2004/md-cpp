@@ -16,7 +16,16 @@ export namespace elmd {
 
 enum class MathDisplayMode { Inline, Block };
 enum class MarkerVisibility { Always, WhenCaretInsideNode, WhenBlockFocused, HiddenButEditable };
-enum class MarkerRole { Syntax, Heading, ListBullet, ListNumber, TaskCheckbox, Structural };
+enum class MarkerRole {
+    Syntax,
+    Heading,
+    ListBullet,
+    ListNumber,
+    TaskCheckbox,
+    FootnoteLabel,
+    FootnoteBacklink,
+    Structural,
+};
 
 struct MathDiagnostic {
     enum class Sev { Info, Warning, Error };
@@ -118,7 +127,7 @@ struct BlockStyle {
 };
 
 struct InlineRenderItem {
-    enum class Kind { Text, Math, Image, Link, Marker };
+    enum class Kind { Text, Math, Image, Link, FootnoteReference, Marker };
     Kind kind = Kind::Text;
     TextSpan source_span;
     std::u32string source_text;          // exact source spelling for this span
@@ -130,6 +139,7 @@ struct InlineRenderItem {
     MathDisplayMode display = MathDisplayMode::Inline; // Math
     MathDelimiter math_delim = MathDelimiter::InlineDollar;
     std::string href, src, alt;            // Image/Link
+    std::string footnote_label;            // FootnoteReference / generated footnote controls
     std::optional<std::string> title;
     std::optional<float> image_width;
     std::optional<float> image_height;

@@ -1510,10 +1510,36 @@ suite render_layout_tests = [] {
         if (item.kind == InlineRenderItem::Kind::Link) {
             link = !item.children.empty() && item.href == "https://example.com";
         }
-        if (item.kind == InlineRenderItem::Kind::Text && item.text == U"[^note]") footnote = true;
+        if (item.kind == InlineRenderItem::Kind::FootnoteReference
+            && item.footnote_label == "note"
+            && item.source_text == U"[^note]") footnote = true;
     }
     expect(fatal(bool(link)));
     expect(fatal(bool(footnote)));
+};
+
+"footnote_definitions_expose_generated_non_source_label_and_backlink_controls"_test = [] {
+    auto model = build_model("text[^note]\n\n[^note]: source\n");
+    expect(fatal(bool(model.blocks.size() == 2u)));
+    if (model.blocks.size() != 2u) return;
+    auto const& definition = model.blocks[1];
+    expect(fatal(bool(definition.kind == RenderBlockKind::Footnote)));
+    bool label = false;
+    bool backlink = false;
+    for (auto const& item : definition.inline_items) {
+        if (item.kind != InlineRenderItem::Kind::Marker) continue;
+        if (item.marker_role == MarkerRole::FootnoteLabel) {
+            label = item.footnote_label == "note"
+                && item.source_span.source_range.empty()
+                && item.display_text == U"note. ";
+        }
+        if (item.marker_role == MarkerRole::FootnoteBacklink) {
+            backlink = item.footnote_label == "note"
+                && item.source_span.source_range.empty();
+        }
+    }
+    expect(fatal(label));
+    expect(fatal(backlink));
 };
 
 }; // suite render_layout_tests
