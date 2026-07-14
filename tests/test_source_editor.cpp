@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <random>
 #include <string>
 
 #include "elmd_test.hpp"
@@ -103,6 +104,16 @@ suite source_editor_tests = [] {
     expect(fatal(bool(editor.source_offset_from_position(projected.active) == 6u)));
 };
 
+"source horizontal movement collapses selections at their visual edge"_test = [] {
+    SourceEditor editor(U"abcdef");
+    editor.set_selection({5, 2});
+    editor.move_left();
+    expect(fatal(bool(editor.selection() == SourceSelection::caret(2))));
+    editor.set_selection({2, 5});
+    editor.move_right();
+    expect(fatal(bool(editor.selection() == SourceSelection::caret(5))));
+};
+
 "source line indentation is one reversible selection-preserving transaction"_test = [] {
     SourceEditor editor(U"one\ntwo\nthree");
     editor.set_selection({1, 7, TextAffinity::Downstream, TextAffinity::Upstream});
@@ -130,6 +141,50 @@ suite source_editor_tests = [] {
     expect(fatal(editor.indent()));
     expect(fatal(bool(editor.source() == U"val    ue")));
     expect(fatal(bool(editor.selection() == SourceSelection::caret(7))));
+};
+
+"random source edits preserve the flat source and render projection"_test = [] {
+    SourceEditor editor(U"# start\n\ntext");
+    auto initial = editor.source();
+    std::mt19937 random(0x5eedu);
+    std::u32string alphabet = U"ab*_`$\\&\U0001f642";
+    for (std::size_t step = 0; step < 300; ++step) {
+        switch (random() % 7) {
+            case 0: editor.insert_text(std::u32string(1, alphabet[random() % alphabet.size()])); break;
+            case 1: editor.insert_newline(); break;
+            case 2: editor.delete_backward(); break;
+            case 3: editor.delete_forward(); break;
+            case 4: editor.move_left(false); break;
+            case 5: editor.move_right(false); break;
+            case 6: {
+                auto first = static_cast<std::size_t>(random() % (editor.source().size() + 1));
+                auto second = static_cast<std::size_t>(random() % (editor.source().size() + 1));
+                editor.set_selection({first, second});
+                break;
+            }
+        }
+        auto selection = editor.selection();
+        expect(fatal(selection.anchor <= editor.source().size()));
+        expect(fatal(selection.active <= editor.source().size()));
+        std::u32string fromLines;
+        for (auto const& line : editor.lines()) {
+            fromLines += line.text;
+            if (line.has_newline) fromLines.push_back(U'\n');
+        }
+        expect(fatal(bool(fromLines == editor.source())));
+        auto model = build_source_render_model(editor);
+        std::u32string visible;
+        for (std::size_t index = 0; index < model.blocks.size(); ++index) {
+            if (index) visible.push_back(U'\n');
+            for (auto const& item : model.blocks[index].inline_items) visible += item.text;
+        }
+        expect(fatal(bool(visible == editor.source())));
+        auto projected = editor.projected_selection();
+        expect(fatal(bool(editor.source_offset_from_position(projected.anchor) == selection.anchor)));
+        expect(fatal(bool(editor.source_offset_from_position(projected.active) == selection.active)));
+    }
+    while (editor.has_undo()) expect(fatal(editor.undo()));
+    expect(fatal(bool(editor.source() == initial)));
 };
 
 };

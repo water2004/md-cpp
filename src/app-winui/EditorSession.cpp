@@ -290,6 +290,7 @@ namespace winrt::ElMd
             RebuildRenderModel();
             return true;
         }
+        auto previousDocumentRevision = core_->editor.revision();
         if (command.kind == elmd::CommandKind::Undo)
         {
             auto undone = core_->editor.undo();
@@ -319,8 +320,11 @@ namespace winrt::ElMd
             }
         }
 
-        revision_ = core_->editor.revision();
-        RebuildRenderModel();
+        if (core_->editor.revision() != previousDocumentRevision)
+        {
+            ++revision_;
+            RebuildRenderModel();
+        }
         return true;
     }
 

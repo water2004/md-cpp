@@ -338,8 +338,14 @@ public:
     }
 
     void select_all() { selection_ = {0, source_.size(), TextAffinity::Downstream, TextAffinity::Upstream}; }
-    void move_left(bool extend = false) { move_to_(selection_.active == 0 ? 0 : selection_.active - 1, extend); }
-    void move_right(bool extend = false) { move_to_((std::min)(source_.size(), selection_.active + 1), extend); }
+    void move_left(bool extend = false) {
+        if (!extend && !selection_.is_caret()) { move_to_(selection_.ordered_range().start, false); return; }
+        move_to_(selection_.active == 0 ? 0 : selection_.active - 1, extend);
+    }
+    void move_right(bool extend = false) {
+        if (!extend && !selection_.is_caret()) { move_to_(selection_.ordered_range().end, false); return; }
+        move_to_((std::min)(source_.size(), selection_.active + 1), extend);
+    }
     void move_document_start(bool extend = false) { move_to_(0, extend); }
     void move_document_end(bool extend = false) { move_to_(source_.size(), extend); }
 
