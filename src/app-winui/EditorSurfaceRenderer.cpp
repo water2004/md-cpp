@@ -784,84 +784,21 @@ namespace winrt::ElMd
     void EditorSurfaceRenderer::QueueScrollBy(float delta)
     {
         if (!std::isfinite(delta) || delta == 0.0f) return;
-        auto now = std::chrono::steady_clock::now();
-        auto inputPeriod = lastScrollInput.time_since_epoch().count() == 0
-            ? 0.0f
-            : std::chrono::duration<float>(now - lastScrollInput).count();
-        auto continuesRun = lastScrollDelta * delta > 0.0f
-            && inputPeriod >= 0.001f
-            && inputPeriod <= 0.12f;
-        if (continuesRun)
-        {
-            if (scrollInputRunLength <= 1) scrollInputPeriodSeconds = inputPeriod;
-            else scrollInputPeriodSeconds += (inputPeriod - scrollInputPeriodSeconds) * 0.25f;
-            ++scrollInputRunLength;
-            continuousScrollInput = scrollInputRunLength >= 2;
-        }
-        else
-        {
-            scrollInputPeriodSeconds = 0.0f;
-            scrollInputRunLength = 1;
-            continuousScrollInput = false;
-        }
-        lastScrollInput = now;
-        lastScrollDelta = delta;
-
         auto pendingDistance = scrollTarget - scrollOffset;
         if (pendingDistance * delta < 0.0f) scrollTarget = scrollOffset;
         scrollTarget = (std::clamp)(scrollTarget + delta, 0.0f, MaximumScrollOffset());
-        if (continuousScrollInput && scrollInputPeriodSeconds > 0.0f)
-        {
-            auto period = (std::max)(scrollInputPeriodSeconds, 0.001f);
-            auto baseSpeed = std::fabs(delta) / period;
-            auto desiredBacklog = std::fabs(delta) * 1.25f;
-            auto backlogError = std::fabs(scrollTarget - scrollOffset) - desiredBacklog;
-            continuousScrollSpeed = (std::clamp)(
-                baseSpeed + backlogError / (period * 2.0f),
-                baseSpeed * 0.5f,
-                baseSpeed * 2.0f);
-        }
-        else
-        {
-            continuousScrollSpeed = 0.0f;
-        }
     }
 
     bool EditorSurfaceRenderer::AdvanceScrollAnimation(float elapsedSeconds)
     {
         auto distance = scrollTarget - scrollOffset;
         auto elapsed = (std::max)(0.0f, elapsedSeconds);
-        auto continuousInputActive = false;
-        if (continuousScrollInput && scrollInputPeriodSeconds > 0.0f)
-        {
-            auto inputAge = std::chrono::duration<float>(
-                std::chrono::steady_clock::now() - lastScrollInput).count();
-            auto sequenceTimeout = (std::max)(0.05f, scrollInputPeriodSeconds * 2.5f);
-            if (inputAge <= sequenceTimeout)
-            {
-                continuousInputActive = true;
-                if (std::fabs(distance) < 0.25f)
-                {
-                    scrollOffset = scrollTarget;
-                    return true;
-                }
-                auto step = (std::min)(
-                    std::fabs(distance),
-                    continuousScrollSpeed * elapsed);
-                scrollOffset += std::copysign(step, distance);
-                return std::fabs(scrollTarget - scrollOffset) >= 0.25f;
-            }
-            continuousScrollInput = false;
-            scrollInputRunLength = 0;
-            scrollInputPeriodSeconds = 0.0f;
-            continuousScrollSpeed = 0.0f;
-        }
-        if (std::fabs(distance) < 0.25f)
+        if (std::fabs(distance) < 0.1f)
         {
             scrollOffset = scrollTarget;
-            return continuousInputActive;
+            return false;
         }
-        constexpr float responseHalfLifeSeconds = 0.010f;
+        constexpr float responseHalfLifeSeconds = 0.040f;
         auto response = 1.0f - std::exp2(-elapsed / responseHalfLifeSeconds);
         scrollOffset += distance * response;
         return true;
@@ -871,12 +808,6 @@ namespace winrt::ElMd
     {
         scrollOffset = (std::clamp)(value, 0.0f, MaximumScrollOffset());
         scrollTarget = scrollOffset;
-        lastScrollInput = {};
-        scrollInputPeriodSeconds = 0.0f;
-        lastScrollDelta = 0.0f;
-        scrollInputRunLength = 0;
-        continuousScrollInput = false;
-        continuousScrollSpeed = 0.0f;
     }
     float EditorSurfaceRenderer::ScrollOffset() const { return scrollOffset; }
     float EditorSurfaceRenderer::MaximumScrollOffset() const { return (std::max)(0.0f, totalDocumentHeight - resources.surfaceHeightDip); }
