@@ -5,6 +5,7 @@
 import elmd.core.editor;
 import elmd.core.command;
 import elmd.core.render_model;
+import elmd.core.source_editor;
 
 namespace winrt::ElMd
 {
@@ -13,6 +14,7 @@ namespace winrt::ElMd
         struct EditorSessionCore
         {
             elmd::Editor editor;
+            std::optional<elmd::SourceEditor> sourceEditor;
             elmd::RenderModel renderModel;
             std::wstring baseDirectory;
         };
@@ -30,6 +32,10 @@ namespace winrt::ElMd
         void Open(winrt::Windows::Storage::StorageFile const& file, winrt::hstring const& text);
         void SaveAs(winrt::Windows::Storage::StorageFile const& file);
         void SetText(winrt::hstring const& text);
+        bool IsSourceMode() const;
+        bool EnterSourceMode();
+        bool ExitSourceMode();
+        bool ToggleSourceMode();
         bool ExecuteCommand(elmd::Command const& command);
         void SetSelection(elmd::TextPosition anchor, elmd::TextPosition active);
         void SetSelection(elmd::TextSelection selection);

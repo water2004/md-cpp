@@ -300,6 +300,16 @@ public:
         return replace({selection_.active, selection_.active + 1}, {});
     }
 
+    bool outdent_line() {
+        auto const* line = line_for_offset_(selection_.active);
+        if (!line) return false;
+        std::size_t count = 0;
+        while (count < line->text.size() && count < 4 && line->text[count] == U' ') ++count;
+        if (count == 0 && !line->text.empty() && line->text.front() == U'\t') count = 1;
+        if (count == 0) return false;
+        return replace({line->source_start, line->source_start + count}, {});
+    }
+
     bool undo() {
         if (undo_.empty()) return false;
         auto transaction = undo_.back();

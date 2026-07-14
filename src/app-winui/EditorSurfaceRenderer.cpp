@@ -31,6 +31,9 @@ namespace winrt::ElMd
             std::vector<elmd::NodeId> owners;
             float textHeight = 0.0f;
             float height = 0.0f;
+            elmd::NodeId sourceId{};
+            std::uint64_t presentationKey = 0;
+            bool sourceMode = false;
             bool code = false;
             bool containsMath = false;
             bool containsImage = false;
@@ -609,12 +612,15 @@ namespace winrt::ElMd
         auto remoteImageGeneration = renderCache.RemoteImageGeneration();
         auto rebuildAll = !preparedDocument
             || preparedDocument->modelRevision != frame.renderModel.revision
-            || !SameSelection(preparedDocument->selection, frame.selection)
+            || (!frame.renderModel.blocks.empty()
+                && !frame.renderModel.blocks.front().source_mode
+                && !SameSelection(preparedDocument->selection, frame.selection))
             || preparedDocument->documentWidth != documentWidth
             || preparedDocument->theme != theme
             || preparedDocument->blocks.size() != frame.renderModel.blocks.size();
         if (rebuildAll)
         {
+            auto previous = std::move(preparedDocument);
             preparedDocument = std::make_unique<PreparedDocument>();
             preparedDocument->modelRevision = frame.renderModel.revision;
             preparedDocument->selection = frame.selection;
@@ -622,10 +628,36 @@ namespace winrt::ElMd
             preparedDocument->theme = theme;
             preparedDocument->blocks.resize(frame.renderModel.blocks.size());
             preparedDocument->placements.resize(frame.renderModel.blocks.size());
+            if (previous
+                && previous->documentWidth == documentWidth
+                && previous->theme == theme)
+            {
+                std::unordered_map<std::uint64_t, std::size_t> previousById;
+                previousById.reserve(previous->blocks.size());
+                for (std::size_t index = 0; index < previous->blocks.size(); ++index)
+                {
+                    auto const& block = previous->blocks[index];
+                    if (block.sourceMode && block.valid) previousById.emplace(block.sourceId.v, index);
+                }
+                for (std::size_t index = 0; index < frame.renderModel.blocks.size(); ++index)
+                {
+                    auto const& source = frame.renderModel.blocks[index];
+                    if (!source.source_mode) continue;
+                    auto found = previousById.find(source.id.v);
+                    if (found == previousById.end()) continue;
+                    auto& candidate = previous->blocks[found->second];
+                    if (candidate.presentationKey != source.presentation_key) continue;
+                    preparedDocument->blocks[index] = std::move(candidate);
+                }
+            }
         }
+        preparedDocument->selection = frame.selection;
         auto prepareBlock = [&](elmd::RenderBlock const& block, bool requestEmbedded)
         {
             PreparedDocument::Block prepared;
+            prepared.sourceId = block.id;
+            prepared.presentationKey = block.presentation_key;
+            prepared.sourceMode = block.source_mode;
             prepared.code = block.kind == elmd::RenderBlockKind::Code
                 || block.kind == elmd::RenderBlockKind::Frontmatter
                 || block.kind == elmd::RenderBlockKind::Unsupported;
@@ -673,9 +705,28 @@ namespace winrt::ElMd
             auto paddingRight = flowContainer ? 0.0f : block.block_style.padding_right;
             auto contentWidth = (std::max)(1.0f, documentWidth - paddingLeft - paddingRight);
             prepared.display = prepare(block, contentWidth, requestEmbedded);
+            if (block.source_mode && block.source_code && block.language && !prepared.display.text.empty())
+            {
+                auto highlights = treeSitter.Highlight(*block.language, elmd::cps_to_utf8(prepared.display.text));
+                for (auto const& highlight : highlights)
+                {
+                    auto start = (std::min)(static_cast<std::size_t>(highlight.start), prepared.display.text.size());
+                    auto end = (std::min)(start + static_cast<std::size_t>(highlight.length), prepared.display.text.size());
+                    auto displayStart = elmd::char_index_to_utf16(prepared.display.text, start);
+                    auto displayEnd = elmd::char_index_to_utf16(prepared.display.text, end);
+                    if (displayEnd <= displayStart) continue;
+                    prepared.display.ranges.push_back({
+                        static_cast<UINT32>(displayStart),
+                        static_cast<UINT32>(displayEnd - displayStart),
+                        elmd::InlineStyle::plain(),
+                        false,
+                        highlight.kind,
+                    });
+                }
+            }
             applyNestedCodeHighlights(prepared.display, block);
             prepared.pendingMath = prepared.display.pendingMath;
-            auto format = textLayoutEngine.FormatFor(prepared.code, prepared.display.ranges);
+            auto format = textLayoutEngine.FormatFor(prepared.code || prepared.sourceMode, prepared.display.ranges);
             prepared.layout = textLayoutEngine.CreateFlow(
                 prepared.display,
                 format,
@@ -707,7 +758,7 @@ namespace winrt::ElMd
             }
             prepared.textHeight = textLayoutEngine.MeasureHeight(
                 prepared.layout.Get(),
-                textLayoutEngine.LineHeightFor(prepared.code, prepared.display.ranges));
+                textLayoutEngine.LineHeightFor(prepared.code || prepared.sourceMode, prepared.display.ranges));
             auto previewHeight = 0.0f;
             for (auto const& preview : prepared.mathPreviews)
                 previewHeight += preview.height + 24.0f;
@@ -750,7 +801,8 @@ namespace winrt::ElMd
                 placement.top = documentY;
                 placement.bottom = documentY + prepared.height;
                 for (auto owner : prepared.owners) documentOwnerY[owner.v] = placement.top;
-                documentY = placement.bottom + block.block_style.margin_bottom + styleSheet.blockGap;
+                documentY = placement.bottom + block.block_style.margin_bottom
+                    + (block.source_mode ? 0.0f : styleSheet.blockGap);
             }
             preparedDocument->totalHeight = documentY + styleSheet.verticalPadding;
             preparedDocument->geometryValid = true;

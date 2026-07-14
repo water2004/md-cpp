@@ -2,12 +2,37 @@
 #include "EditorSession.h"
 
 import elmd.core.render_model;
+import elmd.core.source_style;
 import elmd.core.utf;
 
 #include "EditorContentPreparation.h"
 
 namespace winrt::ElMd
 {
+    namespace
+    {
+        SyntaxHighlightKind SourceSyntax(elmd::SourceSyntaxKind kind)
+        {
+            using K = elmd::SourceSyntaxKind;
+            switch (kind)
+            {
+                case K::Marker: return SyntaxHighlightKind::Operator;
+                case K::Heading: return SyntaxHighlightKind::Keyword;
+                case K::Emphasis: return SyntaxHighlightKind::Property;
+                case K::Strong: return SyntaxHighlightKind::Type;
+                case K::Strikethrough: return SyntaxHighlightKind::Comment;
+                case K::Link: return SyntaxHighlightKind::Property;
+                case K::Code: return SyntaxHighlightKind::String;
+                case K::Math: return SyntaxHighlightKind::Number;
+                case K::Escape: return SyntaxHighlightKind::Preprocessor;
+                case K::Entity: return SyntaxHighlightKind::Constant;
+                case K::Error: return SyntaxHighlightKind::Preprocessor;
+                case K::None: return SyntaxHighlightKind::None;
+            }
+            return SyntaxHighlightKind::None;
+        }
+    }
+
     std::wstring ToWide(std::u32string_view text)
     {
         std::wstring wide;
@@ -824,7 +849,13 @@ namespace winrt::ElMd
             }
             else
             {
+                auto rangeStart = display.ranges.size();
                 AppendDisplayText(display, InlineText(item), item.source_span, item.style, item.kind == elmd::InlineRenderItem::Kind::Marker);
+                auto syntax = SourceSyntax(item.source_syntax);
+                for (auto rangeIndex = rangeStart; rangeIndex < display.ranges.size(); ++rangeIndex)
+                {
+                    display.ranges[rangeIndex].syntax = syntax;
+                }
             }
         }
         if (!display.text.empty() && display.text.back() == U'\n') AppendGeneratedText(display, U"\u200B", sourceEnd, elmd::InlineStyle::plain());
