@@ -521,28 +521,6 @@ inline std::optional<DocumentTransaction> document_insert_atomic_block(const Edi
         DocumentTransactionReason::Structure);
 }
 
-inline std::optional<DocumentTransaction> document_insert_footnote(const EditorDocument& document, const TextSelection& selection, std::string label) {
-    auto after = document; document_edit_detail::NodeAllocator allocator(after);
-    BlockNode footnote; footnote.id = allocator.allocate(); footnote.kind = BlockKind::FootnoteDefinition; footnote.footnote_label = std::move(label); footnote.children.push_back(document_edit_detail::empty_paragraph(allocator, after));
-    const auto target = TextPosition{footnote.children.front().id, 0, TextAffinity::Downstream};
-    DocumentTreeEdit insert;
-    insert.kind = DocumentTreeEditKind::Insert;
-    insert.parent_id = after.root.id;
-    insert.index = after.root.children.size();
-    insert.after = footnote;
-    std::vector<DocumentOperation> operations;
-    operations.emplace_back(std::move(insert));
-    after.root.children.push_back(std::move(footnote));
-    ++after.revision;
-    return make_recorded_document_transaction(
-        std::move(after),
-        std::move(operations),
-        selection,
-        TextSelection::caret(target),
-        document.revision,
-        DocumentTransactionReason::Structure);
-}
-
 inline std::optional<DocumentTransaction> document_indent_list_item(const EditorDocument& document, const TextSelection& selection) {
     auto after = document;
     auto path = block_path(after.root, selection.active.container_id);

@@ -240,8 +240,18 @@ public:
         return transaction;
     }
 
-    std::optional<DocumentTransaction> execute_document_insert_footnote(TextSelection selection, const Command& command) {
-        auto transaction = document_insert_footnote(document_, selection, cps_to_utf8(command.text));
+    std::optional<DocumentTransaction> execute_document_insert_footnote(TextSelection selection, const Command&) {
+        auto transaction = document_insert_footnote(document_, selection);
+        if (!transaction) return std::nullopt;
+        apply_document_transaction_(*transaction);
+        return transaction;
+    }
+
+    std::optional<DocumentTransaction> execute_document_create_footnote_definition(
+        TextSelection selection,
+        std::string label) {
+        auto transaction = document_create_footnote_definition(
+            document_, selection, std::move(label));
         if (!transaction) return std::nullopt;
         apply_document_transaction_(*transaction);
         return transaction;

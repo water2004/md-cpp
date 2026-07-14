@@ -12,6 +12,7 @@ import elmd.core.block_source;
 import elmd.core.block_tree;
 import elmd.core.document;
 import elmd.core.document_edit;
+import elmd.core.document_symbols;
 import elmd.core.document_text;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
@@ -545,6 +546,65 @@ suite document_edit_tests = [] {
     expect(fatal(bool(transaction->after.root.children[1].inline_content.source == U"ha**")));
     expect(fatal(bool(transaction->selection_after.active.container_id == transaction->after.root.children[1].id)));
     expect_document_valid(transaction->after);
+};
+
+"footnote_commands_resolve_labels_and_record_source_plus_tree_edits"_test = [] {
+    auto document = parse_document("body[^1]\n\n[^3]: existing");
+    const auto& owner = first_editable(document);
+    const auto before = range(owner, 0, 4);
+    auto inserted = document_insert_footnote(document, before);
+    expect(fatal(bool(inserted.has_value())));
+    if (!inserted) return;
+
+    expect(fatal(bool(inserted->operations.size() == 2u)));
+    expect(fatal(bool(std::holds_alternative<DocumentTextOperation>(inserted->operations[0]))));
+    expect(fatal(bool(std::holds_alternative<DocumentTreeEdit>(inserted->operations[1]))));
+    expect(fatal(bool(inserted->after.root.children.size() == 3u)));
+    expect(fatal(bool(inserted->after.root.children[0].inline_content.source == U"body[^2][^1]")));
+    const auto& definition = inserted->after.root.children.back();
+    expect(fatal(bool(definition.kind == BlockKind::FootnoteDefinition)));
+    expect(fatal(bool(definition.footnote_label == "2")));
+    expect(fatal(bool(definition.children.size() == 1u)));
+    expect(fatal(bool(inserted->selection_after.active.container_id == definition.children.front().id)));
+    expect(fatal(bool(inserted->selection_after.active.source_offset == 0u)));
+    expect(fatal(bool(serialize_markdown(inserted->after) ==
+        "body[^2][^1]\n\n[^3]: existing\n\n[^2]: ")));
+
+    const auto symbols = build_document_symbol_index(inserted->after);
+    expect(fatal(bool(symbols.footnotes.size() == 2u)));
+    expect(fatal(bool(symbols.footnote_references.size() == 2u)));
+    const auto resolution = resolve_footnote_reference(
+        symbols,
+        {owner.id, 6, TextAffinity::Downstream});
+    expect(fatal(bool(resolution.has_value())));
+    if (resolution) {
+        expect(fatal(bool(resolution->label == "2")));
+        expect(fatal(bool(resolution->definition.has_value())));
+    }
+    expect_document_valid(inserted->after);
+};
+
+"missing_footnote_definitions_are_created_semantically_without_duplicates"_test = [] {
+    auto document = parse_document("body[^missing]");
+    const auto& owner = first_editable(document);
+    const auto before = caret(owner, owner.inline_content.source.size());
+    auto created = document_create_footnote_definition(document, before, "missing");
+    expect(fatal(bool(created.has_value())));
+    if (!created) return;
+    expect(fatal(bool(created->operations.size() == 1u)));
+    expect(fatal(bool(created->after.root.children.size() == 2u)));
+    expect(fatal(bool(created->after.root.children.back().kind == BlockKind::FootnoteDefinition)));
+    expect(fatal(bool(created->after.root.children.back().footnote_label == "missing")));
+    expect(fatal(bool(footnote_definition_target(created->after, "missing").has_value())));
+    const auto reference = first_footnote_reference_target(created->after, "missing");
+    expect(fatal(bool(reference.has_value())));
+    if (reference) {
+        expect(fatal(bool(reference->container_id == owner.id)));
+        expect(fatal(bool(reference->source_offset == 4u)));
+    }
+    expect(fatal(bool(!document_create_footnote_definition(
+        created->after, created->selection_after, "missing").has_value())));
+    expect_document_valid(created->after);
 };
 
 "enter_edits_code_math_and_table_cell_sources"_test = [] {

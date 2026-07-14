@@ -180,6 +180,9 @@
     <ClCompile Include="..\core\document_clipboard.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\core\document_footnotes.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\core\document_input_rules.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>

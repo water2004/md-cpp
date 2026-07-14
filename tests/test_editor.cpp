@@ -77,6 +77,36 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.selection() == after_selection)));
 };
 
+"footnote_insert_is_one_exact_source_and_tree_history_transaction"_test = [] {
+    Editor editor("body");
+    const auto before = range(first_text(editor), 0, 4);
+    editor.set_selection(before);
+    Command command;
+    command.kind = CommandKind::InsertFootnote;
+    reset_core_operation_counters();
+    const auto transaction = editor.execute_document_insert_footnote(editor.selection(), command);
+    expect(fatal(bool(transaction.has_value()))) << "transaction";
+    if (!transaction) return;
+    const auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_parses == 0u))) << "full parse";
+    expect(fatal(bool(counters.full_document_serializations == 0u))) << "full serialize";
+    expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << "tree diff";
+    expect(fatal(bool(counters.inline_reparses == 2u))) << "edited owner plus new definition body";
+    expect(fatal(bool(transaction->operations.size() == 2u))) << "operations";
+    expect(fatal(bool(editor.markdown_utf8() == "body[^1]\n\n[^1]: "))) << "insert markdown";
+    expect(fatal(bool(editor.symbols().footnotes.size() == 1u))) << "definition symbols";
+    expect(fatal(bool(editor.symbols().footnote_references.size() == 1u))) << "reference symbols";
+    const auto after = editor.selection();
+    expect(fatal(bool(after.active.container_id == editor.document().root.children.back().children.front().id))) << "definition selection";
+    expect(fatal(bool(editor.undo()))) << "undo";
+    expect(fatal(bool(editor.markdown_utf8() == "body"))) << "undo markdown";
+    expect(fatal(bool(editor.selection() == before))) << "undo selection";
+    expect(fatal(bool(editor.redo()))) << "redo";
+    expect(fatal(bool(editor.markdown_utf8() == "body[^1]\n\n[^1]: "))) << "redo markdown";
+    expect(fatal(bool(editor.selection() == after))) << "redo selection";
+    expect(fatal(bool(validate_document(editor.document()).empty()))) << "redo document invariants";
+};
+
 "normal_source_edits_never_parse_or_serialize_the_full_document"_test = [] {
     Editor editor("**alpha**\n\nbeta");
     editor.set_selection(caret(first_text(editor), 3));

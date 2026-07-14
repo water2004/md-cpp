@@ -5,8 +5,10 @@ import std;
 import elmd.core.ast;
 import elmd.core.block_source;
 import elmd.core.document;
+import elmd.core.document_text;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
+import elmd.core.ids;
 import elmd.core.symbols;
 import elmd.core.utf;
 
@@ -17,6 +19,7 @@ namespace document_symbols_detail {
 inline void collect_inline_symbols(
     const InlineDocument& document,
     const InlineCstNodes& nodes,
+    NodeId container_id,
     DocumentSymbolIndex& symbols) {
     for (const auto& node : nodes) {
         if (node.kind == InlineCstKind::Link || node.kind == InlineCstKind::Autolink) {
@@ -26,8 +29,15 @@ inline void collect_inline_symbols(
             symbols.links.push_back(LinkSymbol{node.id, node.href, cps_to_utf8(label)});
         } else if (node.kind == InlineCstKind::Image) {
             symbols.images.push_back(ImageSymbol{node.id, node.href, node.alt});
+        } else if (node.kind == InlineCstKind::FootnoteRef) {
+            symbols.footnote_references.push_back(FootnoteReferenceSymbol{
+                node.id,
+                container_id,
+                node.range,
+                node.label,
+            });
         }
-        collect_inline_symbols(document, node.children, symbols);
+        collect_inline_symbols(document, node.children, container_id, symbols);
     }
 }
 
@@ -48,8 +58,8 @@ inline void collect_block_symbols(const BlockNode& block, DocumentSymbolIndex& s
             : std::size_t{1} + static_cast<std::size_t>(std::count(code.begin(), code.end(), U'\n'));
         symbols.code_blocks.push_back(CodeBlockSymbol{block.id, block.block_source.tree.language, lines});
     }
-    if (block.kind == BlockKind::Paragraph || block.kind == BlockKind::Heading || block.kind == BlockKind::TableCell) {
-        collect_inline_symbols(block.inline_content, block.inline_content.tree.nodes, symbols);
+    if (const auto* inline_document = editable_inline_document(block)) {
+        collect_inline_symbols(*inline_document, inline_document->tree.nodes, block.id, symbols);
     }
     for (const auto& child : block.children) collect_block_symbols(child, symbols);
 }
