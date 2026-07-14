@@ -88,4 +88,33 @@ suite source_editor_tests = [] {
     expect(fatal(bool(editor.source_offset_from_position(projected.active) == 6u)));
 };
 
+"source line indentation is one reversible selection-preserving transaction"_test = [] {
+    SourceEditor editor(U"one\ntwo\nthree");
+    editor.set_selection({1, 7, TextAffinity::Downstream, TextAffinity::Upstream});
+    expect(fatal(editor.indent()));
+    expect(fatal(bool(editor.source() == U"    one\n    two\nthree")));
+    expect(fatal(bool(editor.selection().anchor == 5u)));
+    expect(fatal(bool(editor.selection().active == 15u)));
+    expect(fatal(editor.undo()));
+    expect(fatal(bool(editor.source() == U"one\ntwo\nthree")));
+    expect(fatal(bool(editor.selection().anchor == 1u)));
+    expect(fatal(bool(editor.selection().active == 7u)));
+    expect(fatal(editor.redo()));
+    expect(fatal(editor.outdent()));
+    expect(fatal(bool(editor.source() == U"one\ntwo\nthree")));
+    expect(fatal(bool(editor.selection().anchor == 1u)));
+    expect(fatal(bool(editor.selection().active == 7u)));
+};
+
+"source caret tab inserts text while shift tab keeps its column"_test = [] {
+    SourceEditor editor(U"    value");
+    editor.set_selection(SourceSelection::caret(7));
+    expect(fatal(editor.outdent()));
+    expect(fatal(bool(editor.source() == U"value")));
+    expect(fatal(bool(editor.selection() == SourceSelection::caret(3))));
+    expect(fatal(editor.indent()));
+    expect(fatal(bool(editor.source() == U"val    ue")));
+    expect(fatal(bool(editor.selection() == SourceSelection::caret(7))));
+};
+
 };

@@ -271,19 +271,36 @@ public:
 
     bool replace(SourceRange range, std::u32string replacement) {
         if (!range.valid_for(source_.size())) return false;
+        auto target = range.start + replacement.size();
+        return replace_with_selection_(range, std::move(replacement), SourceSelection::caret(target));
+    }
+
+    bool indent() {
+        if (selection_.is_caret()) return insert_text(U"    ");
+        return transform_line_prefixes_(true);
+    }
+
+    bool outdent() {
+        return transform_line_prefixes_(false);
+    }
+
+private:
+    bool replace_with_selection_(SourceRange range, std::u32string replacement, SourceSelection selection_after) {
+        if (!range.valid_for(source_.size())) return false;
         SourceEditTransaction transaction;
         transaction.range_before = range;
         transaction.inserted = std::move(replacement);
         transaction.removed = source_.substr(range.start, range.length());
         transaction.selection_before = selection_;
-        auto target = range.start + transaction.inserted.size();
-        transaction.selection_after = SourceSelection::caret(target);
+        transaction.selection_after = selection_after;
         apply_(transaction, true);
         undo_.push_back(transaction);
         committed_edits_.push_back(transaction);
         redo_.clear();
         return true;
     }
+
+public:
 
     bool insert_text(std::u32string_view text) { return replace_selection(std::u32string{text}); }
     bool insert_newline() { return replace_selection(U"\n"); }
@@ -298,16 +315,6 @@ public:
         if (!selection_.is_caret()) return replace_selection({});
         if (selection_.active >= source_.size()) return false;
         return replace({selection_.active, selection_.active + 1}, {});
-    }
-
-    bool outdent_line() {
-        auto const* line = line_for_offset_(selection_.active);
-        if (!line) return false;
-        std::size_t count = 0;
-        while (count < line->text.size() && count < 4 && line->text[count] == U' ') ++count;
-        if (count == 0 && !line->text.empty() && line->text.front() == U'\t') count = 1;
-        if (count == 0) return false;
-        return replace({line->source_start, line->source_start + count}, {});
     }
 
     bool undo() {
@@ -398,6 +405,63 @@ private:
         --found;
         if (found->has_newline && offset > found->source_end() && found + 1 != lines_.end()) ++found;
         return &*found;
+    }
+
+    std::size_t line_index_for_offset_(std::size_t offset) const {
+        auto const* line = line_for_offset_(offset);
+        return line ? static_cast<std::size_t>(line - lines_.data()) : 0;
+    }
+
+    bool transform_line_prefixes_(bool indenting) {
+        if (lines_.empty()) return false;
+        auto ordered = selection_.ordered_range();
+        auto first = line_index_for_offset_(ordered.start);
+        auto last = line_index_for_offset_(ordered.end);
+        if (!ordered.empty() && last > first && ordered.end == lines_[last].source_start) --last;
+
+        std::vector<std::size_t> changed(lines_.size(), 0);
+        std::u32string replacement;
+        for (auto index = first; index <= last; ++index) {
+            if (index != first) replacement.push_back(U'\n');
+            auto const& line = lines_[index];
+            if (indenting) {
+                changed[index] = 4;
+                replacement += U"    ";
+                replacement += line.text;
+                continue;
+            }
+            std::size_t remove = 0;
+            while (remove < line.text.size() && remove < 4 && line.text[remove] == U' ') ++remove;
+            if (remove == 0 && !line.text.empty() && line.text.front() == U'\t') remove = 1;
+            changed[index] = remove;
+            replacement.append(line.text, remove);
+        }
+        if (!indenting && std::ranges::all_of(changed.begin() + static_cast<std::ptrdiff_t>(first),
+            changed.begin() + static_cast<std::ptrdiff_t>(last + 1), [](auto value) { return value == 0; })) return false;
+
+        auto transform_offset = [&](std::size_t offset) {
+            auto result = offset;
+            for (auto index = first; index <= last; ++index) {
+                auto start = lines_[index].source_start;
+                if (indenting) {
+                    if (start <= offset) result += 4;
+                } else if (start < offset) {
+                    auto removedBefore = (std::min)(changed[index], offset - start);
+                    result -= removedBefore;
+                }
+            }
+            return result;
+        };
+        SourceSelection after{
+            transform_offset(selection_.anchor),
+            transform_offset(selection_.active),
+            selection_.anchor_affinity,
+            selection_.active_affinity,
+        };
+        return replace_with_selection_(
+            {lines_[first].source_start, lines_[last].source_end()},
+            std::move(replacement),
+            after);
     }
 
     void apply_(SourceEditTransaction const& transaction, bool forward) {

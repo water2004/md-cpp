@@ -177,8 +177,8 @@ namespace winrt::ElMd
                 case CommandKind::MoveLineEnd: editor.move_line_end(command.extend_selection); return true;
                 case CommandKind::MoveDocumentStart: editor.move_document_start(command.extend_selection); return true;
                 case CommandKind::MoveDocumentEnd: editor.move_document_end(command.extend_selection); return true;
-                case CommandKind::IndentListItem: return editor.insert_text(U"    ");
-                case CommandKind::OutdentListItem: return editor.outdent_line();
+                case CommandKind::IndentListItem: return editor.indent();
+                case CommandKind::OutdentListItem: return editor.outdent();
                 default: return false;
             }
         }
