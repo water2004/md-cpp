@@ -189,7 +189,7 @@ namespace winrt::ElMd
 
     std::string EditorSession::SelectedTextUtf8() const
     {
-        return elmd::cps_to_utf8(core_->editor.selected_text_cps());
+        return elmd::cps_to_utf8(core_->editor.selected_markdown_cps());
     }
 
     bool EditorSession::HasFile() const

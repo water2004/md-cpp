@@ -1285,6 +1285,53 @@ suite editor_tests = [] {
     expect(fatal(bool(marked.selected_text_cps() == U"*one*")));
 };
 
+"clipboard_copy_preserves_exact_inline_source_and_recursive_block_structure"_test = [] {
+    Editor marked("**one**");
+    const auto marked_id = first_text(marked).id;
+    marked.set_selection({
+        {marked_id, 1, TextAffinity::Downstream},
+        {marked_id, 6, TextAffinity::Upstream}});
+    expect(fatal(bool(marked.selected_markdown_cps() == U"*one*"))) << "same owner";
+
+    Editor into_list("foo\n\n- one\n- two");
+    const auto& first = into_list.document().root.children.front();
+    const auto& list = into_list.document().root.children.back();
+    const auto& second_item_text = list.children[1].children.front();
+    into_list.set_selection({
+        {first.id, 1, TextAffinity::Downstream},
+        {second_item_text.id, 1, TextAffinity::Upstream}});
+    expect(fatal(bool(into_list.selected_markdown_cps() == U"oo\n\n- one\n- t"))) << "into list";
+
+    Editor out_of_list("- bar\n\nfoo");
+    const auto& leading_list = out_of_list.document().root.children.front();
+    const auto& item_text = leading_list.children.front().children.front();
+    const auto& trailing = out_of_list.document().root.children.back();
+    out_of_list.set_selection({
+        {item_text.id, 2, TextAffinity::Downstream},
+        {trailing.id, 1, TextAffinity::Upstream}});
+    const auto out_of_list_copy = out_of_list.selected_markdown_cps();
+    expect(fatal(bool(out_of_list_copy == U"- r\n\nf")))
+        << "out of list: " << cps_to_utf8(out_of_list_copy);
+
+    Editor nested("> alpha\n>\n> - beta\n>   - gamma\n\nomega");
+    const auto fragments = document_text_fragments(nested.document());
+    expect(fatal(bool(fragments.size() >= 4u))) << "nested fragment count";
+    if (fragments.size() < 4u) return;
+    const auto gamma = std::ranges::find_if(fragments, [](const auto& fragment) {
+        return fragment.text == U"gamma";
+    });
+    expect(fatal(bool(gamma != fragments.end()))) << "nested gamma owner";
+    if (gamma == fragments.end()) return;
+    nested.set_selection({
+        {fragments[0].container_id, 2, TextAffinity::Downstream},
+        {gamma->container_id, 3, TextAffinity::Upstream}});
+    const auto copied = nested.selected_markdown_cps();
+    expect(fatal(bool(copied.starts_with(U"> ")))) << "nested quote prefix";
+    expect(fatal(bool(copied.find(U"- beta") != std::u32string::npos))) << "nested list";
+    expect(fatal(bool(copied.find(U"- gam") != std::u32string::npos))) << "nested list boundary";
+    expect(fatal(bool(copied.find(U"gamma") == std::u32string::npos))) << "nested truncation";
+};
+
 "format_undo_redo_preserve_original_marker_spelling"_test = [] {
     Editor editor("value");
     editor.set_selection(range(first_text(editor), 0, 5));

@@ -183,6 +183,14 @@ inline std::u32string serialize_blocks(const BlockVec& blocks) {
 
 }
 
+// Serialize an already-structured Markdown fragment without treating it as a
+// complete-document save. Clipboard copy and local block reparse use this
+// path so normal editing never increments the full-document serialization
+// counter or invents a trailing newline owned by the document.
+inline std::u32string serialize_markdown_fragment(const BlockVec& blocks) {
+    return serializer_detail::serialize_blocks(blocks);
+}
+
 inline std::u32string serialize_markdown_cps(const EditorDocument& document) {
     record_full_document_serialization();
     auto result = serializer_detail::serialize_blocks(document.root.children);

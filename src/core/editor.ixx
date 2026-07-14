@@ -44,6 +44,9 @@ public:
     std::u32string selected_text_cps() const {
         return document_selected_text(document_, selection_).value_or(std::u32string{});
     }
+    std::u32string selected_markdown_cps() const {
+        return document_selected_markdown(document_, selection_).value_or(std::u32string{});
+    }
     std::uint64_t revision() const { return document_.revision; }
     void set_selection(TextSelection selection) {
         const auto anchor_length = document_edit_detail::editable_length(document_, selection.anchor.container_id);
