@@ -3,6 +3,7 @@
 
 import elmd.core.editor;
 import elmd.core.document_text;
+import elmd.core.document_footnotes;
 import elmd.core.render_builder;
 import elmd.core.render_model;
 import elmd.core.utf;
@@ -265,6 +266,21 @@ namespace winrt::ElMd
     elmd::RenderModel const& EditorSession::RenderModel() const
     {
         return core_->renderModel;
+    }
+
+    std::optional<elmd::TextPosition> EditorSession::FootnoteDefinitionTarget(std::string_view label) const
+    {
+        return elmd::footnote_definition_target(core_->editor.document(), label);
+    }
+
+    std::optional<elmd::TextPosition> EditorSession::FirstFootnoteReferenceTarget(std::string_view label) const
+    {
+        return elmd::first_footnote_reference_target(core_->editor.document(), label);
+    }
+
+    std::string EditorSession::FootnotePreview(std::string_view label) const
+    {
+        return elmd::footnote_preview(core_->editor.document(), label, 240);
     }
 
     std::wstring const& EditorSession::BaseDirectory() const

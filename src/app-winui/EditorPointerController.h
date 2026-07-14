@@ -11,6 +11,7 @@ namespace winrt::ElMd
         using ExecuteCommand = std::function<bool(elmd::Command const&)>;
         using Render = std::function<void()>;
         using OpenLink = std::function<void(std::string)>;
+        using OpenFootnote = std::function<void(EditorSurfaceRenderer::FootnoteHit, winrt::Windows::Foundation::Point)>;
         using ResetCaretGoal = std::function<void()>;
 
         void Attach(
@@ -21,6 +22,7 @@ namespace winrt::ElMd
             ExecuteCommand executeCommand,
             Render render,
             OpenLink openLink,
+            OpenFootnote openFootnote,
             ResetCaretGoal resetCaretGoal);
         void Detach();
         void PointerPressed(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
@@ -41,6 +43,7 @@ namespace winrt::ElMd
         ExecuteCommand executeCommand_;
         Render render_;
         OpenLink openLink_;
+        OpenFootnote openFootnote_;
         ResetCaretGoal resetCaretGoal_;
         bool selecting_ = false;
         std::optional<std::string> hoverTooltip_;

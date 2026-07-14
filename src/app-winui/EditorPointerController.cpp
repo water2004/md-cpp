@@ -13,6 +13,7 @@ namespace winrt::ElMd
         ExecuteCommand executeCommand,
         Render render,
         OpenLink openLink,
+        OpenFootnote openFootnote,
         ResetCaretGoal resetCaretGoal)
     {
         Detach();
@@ -23,6 +24,7 @@ namespace winrt::ElMd
         executeCommand_ = std::move(executeCommand);
         render_ = std::move(render);
         openLink_ = std::move(openLink);
+        openFootnote_ = std::move(openFootnote);
         resetCaretGoal_ = std::move(resetCaretGoal);
     }
 
@@ -40,6 +42,7 @@ namespace winrt::ElMd
         executeCommand_ = {};
         render_ = {};
         openLink_ = {};
+        openFootnote_ = {};
         resetCaretGoal_ = {};
         surface_ = nullptr;
         textInput_ = nullptr;
@@ -101,6 +104,12 @@ namespace winrt::ElMd
             elmd::Command command;
             command.kind = elmd::CommandKind::ToggleTaskCheckbox;
             if (executeCommand_) executeCommand_(command);
+            args.Handled(true);
+            return;
+        }
+        if (auto footnote = renderer_->FootnoteAt(static_cast<float>(point.X), static_cast<float>(point.Y)))
+        {
+            if (openFootnote_) openFootnote_(std::move(*footnote), point);
             args.Handled(true);
             return;
         }

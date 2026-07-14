@@ -26,6 +26,10 @@ namespace winrt::ElMd::implementation
         winrt::ElMd::EditorSurfaceRenderer::Theme CurrentRendererTheme();
         void RegisterCommandHandlers();
         bool ExecuteEditorCommand(elmd::Command const& command);
+        void ShowFootnoteFlyout(
+            winrt::ElMd::EditorSurfaceRenderer::FootnoteHit const& hit,
+            winrt::Windows::Foundation::Point position);
+        void NavigateToFootnote(elmd::TextPosition position);
         void HandlePointerWheel(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
         void SetStatus(winrt::hstring const& text);
         HWND WindowHandle();
@@ -39,6 +43,7 @@ namespace winrt::ElMd::implementation
         winrt::ElMd::EditorKeyboardController keyboardController;
         winrt::ElMd::EditorDocumentController documentController;
         winrt::ElMd::EditorSidebarController sidebarController;
+        winrt::Microsoft::UI::Xaml::Controls::Flyout footnoteFlyout{ nullptr };
     };
 }
 

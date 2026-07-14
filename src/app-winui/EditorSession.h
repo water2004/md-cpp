@@ -49,6 +49,9 @@ namespace winrt::ElMd
         std::size_t AcpOffset(elmd::TextPosition position) const;
         elmd::TextPosition PositionFromAcp(std::size_t offset, elmd::TextAffinity affinity = elmd::TextAffinity::Downstream) const;
         elmd::RenderModel const& RenderModel() const;
+        std::optional<elmd::TextPosition> FootnoteDefinitionTarget(std::string_view label) const;
+        std::optional<elmd::TextPosition> FirstFootnoteReferenceTarget(std::string_view label) const;
+        std::string FootnotePreview(std::string_view label) const;
         std::wstring const& BaseDirectory() const;
         detail::EditorRenderFrame RenderFrame() const;
 

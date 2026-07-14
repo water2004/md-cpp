@@ -52,6 +52,7 @@ namespace winrt::ElMd::implementation
             [this](elmd::Command const& command) { return ExecuteEditorCommand(command); },
             [this] { RenderEditorSurface(); },
             [this](std::string href) { documentController.OpenLink(std::move(href)); },
+            [this](auto hit, auto position) { ShowFootnoteFlyout(hit, position); },
             [this] { keyboardController.ResetCaretGoal(); });
 
         Closed([this](auto const&, auto const&)
@@ -368,6 +369,86 @@ namespace winrt::ElMd::implementation
         if (editorRenderer.ScrollToPosition(editorSession.Selection().active)) RenderEditorSurface();
         textInputController.NotifyTextChanged(oldTextLength);
         return true;
+    }
+
+    void MainWindow::NavigateToFootnote(elmd::TextPosition position)
+    {
+        editorSession.SetSelection(position, position);
+        textInputController.NotifySelectionChanged();
+        editorRenderer.ScrollToPosition(position);
+        RenderEditorSurface();
+        EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Programmatic);
+    }
+
+    void MainWindow::ShowFootnoteFlyout(
+        winrt::ElMd::EditorSurfaceRenderer::FootnoteHit const& hit,
+        Windows::Foundation::Point position)
+    {
+        using namespace Microsoft::UI::Xaml;
+        using namespace Microsoft::UI::Xaml::Controls;
+        using namespace Microsoft::UI::Xaml::Controls::Primitives;
+
+        if (footnoteFlyout) footnoteFlyout.Hide();
+        footnoteFlyout = Flyout();
+
+        StackPanel panel;
+        panel.Spacing(8.0);
+        panel.MaxWidth(360.0);
+
+        TextBlock heading;
+        heading.Text(L"[^" + winrt::to_hstring(hit.label) + L"]");
+        heading.FontWeight(Windows::UI::Text::FontWeights::SemiBold());
+        panel.Children().Append(heading);
+
+        const auto isReference = hit.kind == winrt::ElMd::EditorFootnoteControlKind::Reference;
+        auto target = isReference
+            ? editorSession.FootnoteDefinitionTarget(hit.label)
+            : editorSession.FirstFootnoteReferenceTarget(hit.label);
+        TextBlock preview;
+        preview.TextWrapping(TextWrapping::Wrap);
+        preview.IsTextSelectionEnabled(false);
+        if (isReference)
+        {
+            auto text = editorSession.FootnotePreview(hit.label);
+            preview.Text(target
+                ? text.empty() ? L"Empty footnote definition." : winrt::to_hstring(text)
+                : L"This reference has no definition.");
+        }
+        else
+        {
+            preview.Text(target ? L"Return to the first reference." : L"This definition has no reference.");
+        }
+        panel.Children().Append(preview);
+
+        Button action;
+        if (target)
+        {
+            action.Content(winrt::box_value(isReference ? L"Go to definition" : L"Back to reference"));
+            action.Click([this, target = *target](auto const&, auto const&)
+            {
+                if (footnoteFlyout) footnoteFlyout.Hide();
+                NavigateToFootnote(target);
+            });
+        }
+        else if (isReference)
+        {
+            action.Content(winrt::box_value(L"Create definition"));
+            action.Click([this, label = hit.label](auto const&, auto const&)
+            {
+                if (footnoteFlyout) footnoteFlyout.Hide();
+                elmd::Command command;
+                command.kind = elmd::CommandKind::CreateFootnoteDefinition;
+                command.footnote_label = label;
+                ExecuteEditorCommand(command);
+            });
+        }
+        if (target || isReference) panel.Children().Append(action);
+
+        footnoteFlyout.Content(panel);
+        FlyoutShowOptions options;
+        options.Position(winrt::box_value(position).as<Windows::Foundation::IReference<Windows::Foundation::Point>>());
+        options.ShowMode(FlyoutShowMode::Standard);
+        footnoteFlyout.ShowAt(EditorSurface(), options);
     }
 
     void MainWindow::HandlePointerWheel(Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
