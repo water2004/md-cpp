@@ -116,6 +116,7 @@ namespace winrt::ElMd
         lines.clear();
         tables.clear();
         mathHits.clear();
+        taskCheckboxHits.clear();
         blocks.reserve(blockCapacity);
     }
 
@@ -337,6 +338,16 @@ namespace winrt::ElMd
         if (sourceSpan && position.source_offset == sourceSpan->source_range.end && nextWrap)
             position.affinity = elmd::TextAffinity::Upstream;
         return position;
+    }
+
+    std::optional<elmd::TextPosition> EditorInteractionMap::TaskCheckboxAt(float x, float y) const
+    {
+        for (auto hit = taskCheckboxHits.rbegin(); hit != taskCheckboxHits.rend(); ++hit)
+        {
+            if (x >= hit->rect.left && x <= hit->rect.right
+                && y >= hit->rect.top && y <= hit->rect.bottom) return hit->sourcePosition;
+        }
+        return std::nullopt;
     }
 
     std::optional<elmd::TextPosition> EditorInteractionMap::MoveCaretVertically(

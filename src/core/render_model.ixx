@@ -136,6 +136,7 @@ struct InlineRenderItem {
     MarkerStyle marker_style;
     MarkerVisibility visibility = MarkerVisibility::WhenCaretInsideNode;
     MarkerRole marker_role = MarkerRole::Syntax;
+    bool task_checked = false;           // TaskCheckbox marker semantic state
     // Generated block markers have an empty source span. This records which
     // visual edge of that marker is the actual source boundary: after a
     // prefix (Downstream), before a suffix (Upstream).

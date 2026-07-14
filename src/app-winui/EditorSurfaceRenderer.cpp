@@ -245,6 +245,58 @@ namespace winrt::ElMd
             constexpr wchar_t label[] = L"formula";
             resources.d2dContext->DrawTextW(label, 7, resources.codeFormat.Get(), D2D1::RectF(origin.x, origin.y, documentRight, origin.y + styleSheet.code.lineHeight), resources.textBrush.Get());
         };
+        auto drawTaskCheckboxes = [&](IDWriteTextLayout* layout, D2D1_POINT_2F origin, std::vector<DisplayInlineText::TaskCheckboxOverlay> const& overlays)
+        {
+            if (!layout) return;
+            for (auto const& overlay : overlays)
+            {
+                FLOAT x = 0.0f;
+                FLOAT lineY = 0.0f;
+                DWRITE_HIT_TEST_METRICS metrics{};
+                if (FAILED(layout->HitTestTextPosition(overlay.displayStart, FALSE, &x, &lineY, &metrics))) continue;
+                auto objectRect = D2D1::RectF(
+                    origin.x + x,
+                    origin.y + metrics.top,
+                    origin.x + x + overlay.advance,
+                    origin.y + metrics.top + overlay.height);
+                auto boxTop = objectRect.top + (overlay.height - overlay.boxSize) * 0.5f;
+                auto boxRect = D2D1::RectF(
+                    objectRect.left + 0.5f,
+                    boxTop,
+                    objectRect.left + 0.5f + overlay.boxSize,
+                    boxTop + overlay.boxSize);
+                auto hovered = pointerPosition
+                    && pointerPosition->x >= objectRect.left && pointerPosition->x <= objectRect.right
+                    && pointerPosition->y >= objectRect.top && pointerPosition->y <= objectRect.bottom;
+                auto rounded = D2D1::RoundedRect(boxRect, 3.0f, 3.0f);
+                if (overlay.checked)
+                    resources.d2dContext->FillRoundedRectangle(rounded, resources.accentBrush.Get());
+                else if (hovered)
+                    resources.d2dContext->FillRoundedRectangle(rounded, resources.selectionBrush.Get());
+                resources.d2dContext->DrawRoundedRectangle(
+                    rounded,
+                    overlay.checked || hovered ? resources.accentBrush.Get() : resources.mutedBrush.Get(),
+                    hovered ? 2.0f : 1.5f);
+                if (overlay.checked)
+                {
+                    auto left = boxRect.left + overlay.boxSize * 0.23f;
+                    auto middleX = boxRect.left + overlay.boxSize * 0.43f;
+                    auto middleY = boxRect.top + overlay.boxSize * 0.70f;
+                    auto right = boxRect.right - overlay.boxSize * 0.18f;
+                    resources.d2dContext->DrawLine(
+                        D2D1::Point2F(left, boxRect.top + overlay.boxSize * 0.52f),
+                        D2D1::Point2F(middleX, middleY),
+                        resources.canvasBrush.Get(),
+                        2.0f);
+                    resources.d2dContext->DrawLine(
+                        D2D1::Point2F(middleX, middleY),
+                        D2D1::Point2F(right, boxRect.top + overlay.boxSize * 0.29f),
+                        resources.canvasBrush.Get(),
+                        2.0f);
+                }
+                interactionMap.taskCheckboxHits.push_back({objectRect, overlay.sourcePosition});
+            }
+        };
         struct PositionedMath
         {
             DisplayInlineText::MathOverlay const* overlay = nullptr;
@@ -775,6 +827,7 @@ namespace winrt::ElMd
                     prepared.layout.Get(),
                     prepared.code ? resources.codeBrush.Get() : resources.textBrush.Get(),
                     D2D1_DRAW_TEXT_OPTIONS_CLIP);
+            drawTaskCheckboxes(prepared.layout.Get(), origin, prepared.display.taskCheckboxOverlays);
             inlineImages.Draw(prepared.layout.Get(), origin, prepared.images);
             for (auto const& positioned : positionMath(
                     prepared.layout.Get(),
@@ -927,6 +980,7 @@ namespace winrt::ElMd
                 return std::nullopt;
         return interactionMap.HitTest(x, y);
     }
+    std::optional<elmd::TextPosition> EditorSurfaceRenderer::TaskCheckboxAt(float x, float y) const { return interactionMap.TaskCheckboxAt(x, y); }
     std::optional<D2D1_RECT_F> EditorSurfaceRenderer::CaretBounds(elmd::TextPosition position) const { return interactionMap.CaretBounds(position, styleSheet.body.lineHeight); }
     std::optional<elmd::TextPosition> EditorSurfaceRenderer::MoveCaretVertically(elmd::TextPosition position, bool down, float& goalX) const { return interactionMap.MoveCaretVertically(position, down, goalX, styleSheet.body.lineHeight); }
     std::optional<elmd::TextPosition> EditorSurfaceRenderer::VisualLineStart(elmd::TextPosition position) const { return interactionMap.VisualLineStart(position); }

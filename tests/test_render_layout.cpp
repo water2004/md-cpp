@@ -593,6 +593,45 @@ suite render_layout_tests = [] {
     for (auto const& marker : display_markers) expect(fatal(bool(marker == U"\u2022 ")));
 };
 
+"task_list_markers_expose_checkbox_state_without_losing_source_spelling"_test = [] {
+    auto model = build_model("- [ ] pending\n- [x] complete\n- [X] complete too\n");
+    expect(fatal(bool(model.blocks.size() == 1u)));
+    if (model.blocks.empty()) return;
+    std::vector<InlineRenderItem const*> markers;
+    for (auto const& item : model.blocks.front().inline_items) {
+        if (item.kind == InlineRenderItem::Kind::Marker
+            && item.marker_role == MarkerRole::TaskCheckbox) markers.push_back(&item);
+    }
+    expect(fatal(bool(markers.size() == 3u)));
+    if (markers.size() != 3u) return;
+    expect(fatal(bool(markers[0]->text == U"- [ ] ")));
+    expect(fatal(bool(markers[1]->text == U"- [x] ")));
+    expect(fatal(bool(markers[2]->text == U"- [X] ")));
+    expect(fatal(bool(!markers[0]->task_checked)));
+    expect(fatal(bool(markers[1]->task_checked)));
+    expect(fatal(bool(markers[2]->task_checked)));
+    for (auto const* marker : markers) {
+        expect(fatal(bool(marker->source_span.source_range.empty())));
+        expect(fatal(bool(marker->generated_boundary_affinity == TextAffinity::Downstream)));
+    }
+};
+
+"nested_task_lists_keep_checkbox_projection_state_in_the_unified_flow"_test = [] {
+    auto model = build_model("> - [x] parent\n>   - [ ] child\n");
+    expect(fatal(bool(model.blocks.size() == 1u)));
+    if (model.blocks.empty()) return;
+    std::vector<bool> states;
+    for (auto const& item : model.blocks.front().inline_items) {
+        if (item.kind == InlineRenderItem::Kind::Marker
+            && item.marker_role == MarkerRole::TaskCheckbox) states.push_back(item.task_checked);
+    }
+    expect(fatal(bool(states.size() == 2u)));
+    if (states.size() == 2u) {
+        expect(fatal(bool(states[0])));
+        expect(fatal(bool(!states[1])));
+    }
+};
+
 "list_inline_math_reaches_the_render_model_with_exact_ranges"_test = [] {
     auto m = build_model("- before $x^2$ after\n- next $y$\n");
     expect(fatal(bool((m.blocks.size()) == (1u))));

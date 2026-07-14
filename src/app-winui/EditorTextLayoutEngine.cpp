@@ -76,6 +76,7 @@ namespace winrt::ElMd
             for (auto& overlay : display.mathOverlays) if (overlay.displayStart >= position) ++overlay.displayStart;
             for (auto& overlay : display.imageOverlays) if (overlay.displayStart >= position) ++overlay.displayStart;
             for (auto& overlay : display.indentOverlays) if (overlay.displayStart >= position) ++overlay.displayStart;
+            for (auto& overlay : display.taskCheckboxOverlays) if (overlay.displayStart >= position) ++overlay.displayStart;
         }
 
         void InsertIndent(DisplayInlineText& display, UINT32 position, float width)
@@ -141,6 +142,12 @@ namespace winrt::ElMd
                 overlay.displayStart -= start;
                 result.imageOverlays.push_back(std::move(overlay));
             }
+            for (auto overlay : source.taskCheckboxOverlays)
+            {
+                if (overlay.displayStart < start || overlay.displayStart >= end) continue;
+                overlay.displayStart -= start;
+                result.taskCheckboxOverlays.push_back(std::move(overlay));
+            }
             return result;
         }
 
@@ -166,6 +173,7 @@ namespace winrt::ElMd
             ApplyStyles(layout.Get(), value.ranges);
             ApplyMathInlineObjects(layout.Get(), value.mathOverlays);
             ApplyIndentInlineObjects(layout.Get(), value.indentOverlays);
+            ApplyTaskCheckboxInlineObjects(layout.Get(), value.taskCheckboxOverlays);
             if (configure) configure(layout.Get(), value);
             return layout;
         };
@@ -210,6 +218,7 @@ namespace winrt::ElMd
             auto contentLayout = Create(ToWide(content.text), format, (std::max)(1.0f, width - indent.width));
             ApplyStyles(contentLayout.Get(), content.ranges);
             ApplyMathInlineObjects(contentLayout.Get(), content.mathOverlays);
+            ApplyTaskCheckboxInlineObjects(contentLayout.Get(), content.taskCheckboxOverlays);
             if (configure) configure(contentLayout.Get(), content);
             if (!contentLayout) continue;
             UINT32 lineCount = 0;

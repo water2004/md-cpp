@@ -35,6 +35,7 @@ namespace winrt::ElMd
         using TableAction = EditorTableAction;
 
         std::optional<elmd::TextPosition> HitTest(float x, float y) const;
+        std::optional<elmd::TextPosition> TaskCheckboxAt(float x, float y) const;
         std::optional<D2D1_RECT_F> CaretBounds(elmd::TextPosition position) const;
         std::optional<elmd::TextPosition> MoveCaretVertically(elmd::TextPosition position, bool down, float& goalX) const;
         std::optional<elmd::TextPosition> VisualLineStart(elmd::TextPosition position) const;

@@ -436,6 +436,11 @@ namespace winrt::ElMd
             overlay.displayStart += offset;
             target.indentOverlays.push_back(std::move(overlay));
         }
+        for (auto& overlay : source.taskCheckboxOverlays)
+        {
+            overlay.displayStart += offset;
+            target.taskCheckboxOverlays.push_back(std::move(overlay));
+        }
         target.pendingMath = target.pendingMath || source.pendingMath;
     }
 
@@ -565,6 +570,15 @@ namespace winrt::ElMd
         if (object) layout->SetInlineObject(object.Get(), DWRITE_TEXT_RANGE{ displayStart, 1 });
     }
 
+    void ApplyTaskCheckboxInlineObjects(
+        IDWriteTextLayout* layout,
+        std::vector<DisplayInlineText::TaskCheckboxOverlay> const& overlays)
+    {
+        if (!layout) return;
+        for (auto const& overlay : overlays)
+            ApplyInlinePlaceholder(layout, overlay.displayStart, overlay.advance, overlay.height, overlay.baseline);
+    }
+
     void ApplyIndentInlineObjects(IDWriteTextLayout* layout, std::vector<DisplayInlineText::IndentOverlay> const& overlays)
     {
         if (!layout) return;
@@ -687,15 +701,52 @@ namespace winrt::ElMd
             }
             if (item.kind == elmd::InlineRenderItem::Kind::Marker && item.source_span.source_range.empty())
             {
+                auto markerPosition = elmd::TextPosition{
+                    item.source_span.container_id,
+                    item.source_span.source_range.start,
+                    item.generated_boundary_affinity.value_or(elmd::TextAffinity::Upstream),
+                };
+                if (item.marker_role == elmd::MarkerRole::TaskCheckbox)
+                {
+                    auto const& markerText = item.display_text.empty() ? item.text : item.display_text;
+                    auto prefixLength = markerText.size() >= item.text.size()
+                        && std::equal(item.text.rbegin(), item.text.rend(), markerText.rbegin())
+                        ? markerText.size() - item.text.size()
+                        : std::size_t{0};
+                    if (prefixLength > 0)
+                    {
+                        AppendGeneratedText(
+                            display,
+                            markerText.substr(0, prefixLength),
+                            markerPosition,
+                            item.style,
+                            EditorDisplayPositionKind::BoundaryDecoration);
+                    }
+                    auto displayStart = static_cast<std::uint32_t>(elmd::utf16_len(display.text));
+                    AppendGeneratedText(
+                        display,
+                        U"\uFFFC",
+                        markerPosition,
+                        item.style,
+                        EditorDisplayPositionKind::BoundaryDecoration);
+                    auto boxSize = (std::clamp)(fontSize * 0.86f, 14.0f, 18.0f);
+                    auto height = (std::max)(boxSize, fontSize * 1.2f);
+                    display.taskCheckboxOverlays.push_back({
+                        displayStart,
+                        markerPosition,
+                        item.task_checked,
+                        boxSize + (std::max)(7.0f, fontSize * 0.42f),
+                        height,
+                        fontSize * 0.95f,
+                        boxSize,
+                    });
+                    continue;
+                }
                 auto const& markerText = item.display_text.empty() ? item.text : item.display_text;
                 AppendGeneratedText(
                     display,
                     markerText,
-                    {
-                        item.source_span.container_id,
-                        item.source_span.source_range.start,
-                        item.generated_boundary_affinity.value_or(elmd::TextAffinity::Upstream),
-                    },
+                    markerPosition,
                     item.style,
                     EditorDisplayPositionKind::BoundaryDecoration);
             }

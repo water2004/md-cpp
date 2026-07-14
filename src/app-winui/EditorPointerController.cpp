@@ -94,6 +94,16 @@ namespace winrt::ElMd
             return;
         }
 
+        if (auto checkbox = renderer_->TaskCheckboxAt(static_cast<float>(point.X), static_cast<float>(point.Y)))
+        {
+            session_->SetSelection(*checkbox, *checkbox);
+            if (textInput_) textInput_->NotifySelectionChanged();
+            elmd::Command command;
+            command.kind = elmd::CommandKind::ToggleTaskCheckbox;
+            if (executeCommand_) executeCommand_(command);
+            args.Handled(true);
+            return;
+        }
         auto hit = renderer_->HitTest(static_cast<float>(point.X), static_cast<float>(point.Y));
         if (!hit) return;
         if ((args.KeyModifiers() & winrt::Windows::System::VirtualKeyModifiers::Control) == winrt::Windows::System::VirtualKeyModifiers::Control)
@@ -104,11 +114,6 @@ namespace winrt::ElMd
                 args.Handled(true);
                 return;
             }
-        }
-        if (TryToggleTaskCheckboxAt(*hit))
-        {
-            args.Handled(true);
-            return;
         }
         selecting_ = true;
         anchor_ = *hit;
@@ -242,29 +247,6 @@ namespace winrt::ElMd
             {position.container_id, end, elmd::TextAffinity::Downstream});
         if (textInput_) textInput_->NotifySelectionChanged();
         return true;
-    }
-
-    bool EditorPointerController::TryToggleTaskCheckboxAt(elmd::TextPosition position)
-    {
-        if (!session_) return false;
-        bool taskMarker = false;
-        auto scan = [&](auto& self, auto const& blocks) -> void {
-            for (auto const& block : blocks) {
-                for (auto const& item : block.inline_items) {
-                    if (item.marker_role == elmd::MarkerRole::TaskCheckbox
-                        && item.source_span.container_id == position.container_id
-                        && item.source_span.source_range.covers(position.source_offset)) taskMarker = true;
-                }
-                self(self, block.child_blocks);
-            }
-        };
-        scan(scan, session_->RenderModel().blocks);
-        if (!taskMarker) return false;
-        session_->SetSelection(position, position);
-        if (textInput_) textInput_->NotifySelectionChanged();
-        elmd::Command command;
-        command.kind = elmd::CommandKind::ToggleTaskCheckbox;
-        return executeCommand_ && executeCommand_(command);
     }
 
     std::optional<std::string> EditorPointerController::LinkAtPosition(elmd::TextPosition position) const

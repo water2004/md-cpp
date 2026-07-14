@@ -308,6 +308,7 @@ struct Builder {
                         tasks ? MarkerRole::TaskCheckbox : block.list_ordered ? MarkerRole::ListNumber : MarkerRole::ListBullet,
                         TextAffinity::Downstream,
                         std::u32string(missing_indent, U' ') + display_marker);
+                    if (tasks) out.back().task_checked = item.checked;
 
                     FlowContext item_context{context.indent_columns + marker_columns};
                     auto item_rendered = make_flow_container(item, item_context, context.indent_columns);

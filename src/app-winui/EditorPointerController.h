@@ -31,7 +31,6 @@ namespace winrt::ElMd
 
     private:
         bool SelectWordAt(elmd::TextPosition position);
-        bool TryToggleTaskCheckboxAt(elmd::TextPosition position);
         std::optional<std::string> LinkAtPosition(elmd::TextPosition position) const;
         std::optional<std::string> TooltipAtPosition(elmd::TextPosition position) const;
 

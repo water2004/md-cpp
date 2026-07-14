@@ -57,6 +57,17 @@ namespace winrt::ElMd
             float width = 0.0f;
         };
 
+        struct TaskCheckboxOverlay
+        {
+            std::uint32_t displayStart = 0;
+            elmd::TextPosition sourcePosition;
+            bool checked = false;
+            float advance = 0.0f;
+            float height = 0.0f;
+            float baseline = 0.0f;
+            float boxSize = 0.0f;
+        };
+
         std::u32string text;
         EditorDisplayMapping displayToSource;
         std::vector<InlineStyleRange> ranges;
@@ -64,6 +75,7 @@ namespace winrt::ElMd
         std::vector<MathPreview> mathPreviews;
         std::vector<ImageOverlay> imageOverlays;
         std::vector<IndentOverlay> indentOverlays;
+        std::vector<TaskCheckboxOverlay> taskCheckboxOverlays;
         bool pendingMath = false;
     };
 
@@ -92,6 +104,7 @@ namespace winrt::ElMd
     void ApplyInlinePlaceholder(IDWriteTextLayout* layout, UINT32 displayStart, float width, float height, float baseline);
     void ApplyMathInlineObjects(IDWriteTextLayout* layout, std::vector<DisplayInlineText::MathOverlay> const& overlays);
     void ApplyIndentInlineObjects(IDWriteTextLayout* layout, std::vector<DisplayInlineText::IndentOverlay> const& overlays);
+    void ApplyTaskCheckboxInlineObjects(IDWriteTextLayout* layout, std::vector<DisplayInlineText::TaskCheckboxOverlay> const& overlays);
     DisplayInlineText BuildMathPreviewText(DisplayInlineText::MathPreview const& preview);
     DisplayInlineText BuildDisplayInlineText(
         std::vector<elmd::InlineRenderItem> const& items,
