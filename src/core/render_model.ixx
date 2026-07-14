@@ -11,6 +11,7 @@ import elmd.core.diagnostics;
 import elmd.core.ast; // for AST contents reused during build (children)
 import elmd.core.selection;
 import elmd.core.text_edit;
+import elmd.core.source_style;
 
 export namespace elmd {
 
@@ -155,6 +156,7 @@ struct InlineRenderItem {
     std::optional<float> image_width;
     std::optional<float> image_height;
     MarkerStyle marker_style;
+    SourceSyntaxKind source_syntax = SourceSyntaxKind::None;
     MarkerVisibility visibility = MarkerVisibility::WhenCaretInsideNode;
     MarkerRole marker_role = MarkerRole::Syntax;
     bool task_checked = false;           // TaskCheckbox marker semantic state
@@ -182,6 +184,9 @@ struct RenderBlock {
     TextSpan source_span;
     TextSpan content_span;
     BlockStyle block_style;
+    bool source_mode = false;
+    bool source_code = false;
+    std::uint64_t presentation_key = 0;
 
     // TextBlock
     std::vector<InlineRenderItem> inline_items;
