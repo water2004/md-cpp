@@ -137,7 +137,9 @@ namespace winrt::ElMd
                 return text;
             }
             case elmd::InlineRenderItem::Kind::FootnoteReference:
-                return elmd::utf8_to_cps(item.footnote_label);
+                return item.display_text.empty()
+                    ? elmd::utf8_to_cps(item.footnote_label)
+                    : item.display_text;
         }
         return {};
     }
@@ -150,6 +152,30 @@ namespace winrt::ElMd
             text += InlineText(item);
         }
         return text;
+    }
+
+    std::u32string FootnoteSuperscript(std::u32string_view number)
+    {
+        std::u32string result;
+        result.reserve(number.size());
+        for (auto value : number)
+        {
+            switch (value)
+            {
+                case U'0': result.push_back(U'\u2070'); break;
+                case U'1': result.push_back(U'\u00b9'); break;
+                case U'2': result.push_back(U'\u00b2'); break;
+                case U'3': result.push_back(U'\u00b3'); break;
+                case U'4': result.push_back(U'\u2074'); break;
+                case U'5': result.push_back(U'\u2075'); break;
+                case U'6': result.push_back(U'\u2076'); break;
+                case U'7': result.push_back(U'\u2077'); break;
+                case U'8': result.push_back(U'\u2078'); break;
+                case U'9': result.push_back(U'\u2079'); break;
+                default: result.push_back(value); break;
+            }
+        }
+        return result;
     }
 
     class MathInlineObject final : public ::Microsoft::WRL::RuntimeClass<::Microsoft::WRL::RuntimeClassFlags<::Microsoft::WRL::ClassicCom>, IDWriteInlineObject>
@@ -709,7 +735,10 @@ namespace winrt::ElMd
             if (item.kind == elmd::InlineRenderItem::Kind::FootnoteReference)
             {
                 auto displayStart = static_cast<std::uint32_t>(elmd::utf16_len(display.text));
-                auto label = elmd::utf8_to_cps(item.footnote_label);
+                auto ordinal = item.display_text.empty()
+                    ? elmd::utf8_to_cps(item.footnote_label)
+                    : item.display_text;
+                auto label = FootnoteSuperscript(ordinal);
                 AppendGeneratedText(
                     display,
                     label,
@@ -717,7 +746,9 @@ namespace winrt::ElMd
                     item.style,
                     EditorDisplayPositionKind::BoundaryDecoration);
                 auto displayLength = static_cast<std::uint32_t>(elmd::utf16_len(label));
-                if (!display.ranges.empty()) display.ranges.back().footnoteControl = true;
+                if (!display.ranges.empty()) {
+                    display.ranges.back().footnoteControl = EditorFootnoteControlKind::Reference;
+                }
                 display.footnoteOverlays.push_back({
                     displayStart,
                     displayLength,
@@ -777,19 +808,18 @@ namespace winrt::ElMd
                     markerPosition,
                     item.style,
                     EditorDisplayPositionKind::BoundaryDecoration);
-                if (item.marker_role == elmd::MarkerRole::FootnoteLabel
-                    || item.marker_role == elmd::MarkerRole::FootnoteBacklink)
+                if (item.marker_role == elmd::MarkerRole::FootnoteLabel)
                 {
                     auto displayLength = static_cast<std::uint32_t>(elmd::utf16_len(markerText));
-                    if (!display.ranges.empty()) display.ranges.back().footnoteControl = true;
+                    if (!display.ranges.empty()) {
+                        display.ranges.back().footnoteControl = EditorFootnoteControlKind::DefinitionLabel;
+                    }
                     display.footnoteOverlays.push_back({
                         displayStart,
                         displayLength,
                         item.source_span,
                         item.footnote_label,
-                        item.marker_role == elmd::MarkerRole::FootnoteLabel
-                            ? EditorFootnoteControlKind::DefinitionLabel
-                            : EditorFootnoteControlKind::Backlink});
+                        EditorFootnoteControlKind::DefinitionLabel});
                 }
             }
             else

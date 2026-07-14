@@ -18,7 +18,7 @@ namespace winrt::ElMd
         elmd::InlineStyle style;
         bool marker = false;
         SyntaxHighlightKind syntax = SyntaxHighlightKind::None;
-        bool footnoteControl = false;
+        std::optional<EditorFootnoteControlKind> footnoteControl;
     };
 
     struct DisplayInlineText

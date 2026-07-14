@@ -15,7 +15,6 @@ namespace winrt::ElMd
     {
         Reference,
         DefinitionLabel,
-        Backlink,
     };
 
     struct EditorDisplayPosition : elmd::TextPosition

@@ -567,7 +567,8 @@ namespace winrt::ElMd
                     || nested.kind == elmd::RenderBlockKind::Quote
                     || nested.kind == elmd::RenderBlockKind::Callout
                     || nested.kind == elmd::RenderBlockKind::Footnote;
-                if (decorated && !(root && nested.kind == elmd::RenderBlockKind::Code))
+                if (decorated && !(root && (nested.kind == elmd::RenderBlockKind::Code
+                    || nested.kind == elmd::RenderBlockKind::Footnote)))
                 {
                     auto range = displayRange(nested);
                     if (range) {
@@ -665,8 +666,7 @@ namespace winrt::ElMd
             }
             auto flowContainer = !block.inline_items.empty()
                 && (block.kind == elmd::RenderBlockKind::Quote
-                    || block.kind == elmd::RenderBlockKind::Callout
-                    || block.kind == elmd::RenderBlockKind::Footnote);
+                    || block.kind == elmd::RenderBlockKind::Callout);
             auto paddingTop = flowContainer ? 0.0f : block.block_style.padding_top;
             auto paddingBottom = flowContainer ? 0.0f : block.block_style.padding_bottom;
             auto paddingLeft = flowContainer ? 0.0f : block.block_style.padding_left;
@@ -848,8 +848,7 @@ namespace winrt::ElMd
             }
             auto flowContainer = !block.inline_items.empty()
                 && (block.kind == elmd::RenderBlockKind::Quote
-                    || block.kind == elmd::RenderBlockKind::Callout
-                    || block.kind == elmd::RenderBlockKind::Footnote);
+                    || block.kind == elmd::RenderBlockKind::Callout);
             auto paddingTop = flowContainer ? 0.0f : block.block_style.padding_top;
             auto paddingLeft = flowContainer ? 0.0f : block.block_style.padding_left;
             auto paddingRight = flowContainer ? 0.0f : block.block_style.padding_right;
