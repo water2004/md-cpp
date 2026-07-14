@@ -11,6 +11,7 @@ namespace winrt::ElMd
             EditorSurfaceRenderer& renderer,
             winrt::Microsoft::UI::Xaml::Controls::Primitives::ScrollBar const& scrollBar,
             winrt::Microsoft::UI::Xaml::Controls::ColumnDefinition const& column,
+            HWND windowHandle,
             std::function<void()> render);
         void Detach();
         void Sync();
@@ -35,6 +36,8 @@ namespace winrt::ElMd
         std::jthread frameThread;
         HANDLE frameRequestEvent = nullptr;
         HANDLE schedulerStopEvent = nullptr;
+        HANDLE framePacingTimer = nullptr;
+        HWND windowHandle = nullptr;
         std::uint64_t animationGeneration = 0;
         bool attached = false;
         bool rendering = false;

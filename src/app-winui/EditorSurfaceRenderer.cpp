@@ -830,8 +830,8 @@ namespace winrt::ElMd
     bool EditorSurfaceRenderer::AdvanceScrollAnimation(float elapsedSeconds)
     {
         auto distance = scrollTarget - scrollOffset;
-        if (std::fabs(distance) < 0.25f) { scrollOffset = scrollTarget; return false; }
         auto elapsed = (std::max)(0.0f, elapsedSeconds);
+        auto continuousInputActive = false;
         if (continuousScrollInput && scrollInputPeriodSeconds > 0.0f)
         {
             auto inputAge = std::chrono::duration<float>(
@@ -839,6 +839,12 @@ namespace winrt::ElMd
             auto sequenceTimeout = (std::max)(0.05f, scrollInputPeriodSeconds * 2.5f);
             if (inputAge <= sequenceTimeout)
             {
+                continuousInputActive = true;
+                if (std::fabs(distance) < 0.25f)
+                {
+                    scrollOffset = scrollTarget;
+                    return true;
+                }
                 auto step = (std::min)(
                     std::fabs(distance),
                     continuousScrollSpeed * elapsed);
@@ -849,6 +855,11 @@ namespace winrt::ElMd
             scrollInputRunLength = 0;
             scrollInputPeriodSeconds = 0.0f;
             continuousScrollSpeed = 0.0f;
+        }
+        if (std::fabs(distance) < 0.25f)
+        {
+            scrollOffset = scrollTarget;
+            return continuousInputActive;
         }
         constexpr float responseHalfLifeSeconds = 0.010f;
         auto response = 1.0f - std::exp2(-elapsed / responseHalfLifeSeconds);
@@ -941,7 +952,7 @@ namespace winrt::ElMd
         auto ended = resources.d2dContext->EndDraw();
         if (ended == D2DERR_RECREATE_TARGET) { resources.ResetTargets(); return; }
         if (FAILED(ended)) return;
-        auto presented = resources.swapChain->Present(1, 0);
+        auto presented = resources.swapChain->Present(0, 0);
         if (presented == DXGI_ERROR_DEVICE_REMOVED || presented == DXGI_ERROR_DEVICE_RESET) resources.ResetTargets();
     }
 }

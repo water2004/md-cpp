@@ -3,6 +3,82 @@
 
 namespace winrt::ElMd
 {
+    namespace
+    {
+        float DisplayRefreshInterval(HWND window)
+        {
+            if (!window) return 1.0f / 60.0f;
+            auto monitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+            MONITORINFOEXW info{};
+            info.cbSize = sizeof(info);
+            if (monitor && GetMonitorInfoW(monitor, &info))
+            {
+                auto queryFlags = static_cast<UINT32>(
+                    QDC_ONLY_ACTIVE_PATHS
+                    | QDC_VIRTUAL_MODE_AWARE
+                    | QDC_VIRTUAL_REFRESH_RATE_AWARE);
+                for (auto attempt = 0; attempt < 3; ++attempt)
+                {
+                    UINT32 pathCount = 0;
+                    UINT32 modeCount = 0;
+                    if (GetDisplayConfigBufferSizes(queryFlags, &pathCount, &modeCount) != ERROR_SUCCESS) break;
+                    std::vector<DISPLAYCONFIG_PATH_INFO> paths(pathCount);
+                    std::vector<DISPLAYCONFIG_MODE_INFO> modes(modeCount);
+                    auto result = QueryDisplayConfig(
+                        queryFlags,
+                        &pathCount,
+                        paths.data(),
+                        &modeCount,
+                        modes.data(),
+                        nullptr);
+                    if (result == ERROR_INSUFFICIENT_BUFFER) continue;
+                    if (result != ERROR_SUCCESS) break;
+                    paths.resize(pathCount);
+                    modes.resize(modeCount);
+                    for (auto const& path : paths)
+                    {
+                        DISPLAYCONFIG_SOURCE_DEVICE_NAME sourceName{};
+                        sourceName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+                        sourceName.header.size = sizeof(sourceName);
+                        sourceName.header.adapterId = path.sourceInfo.adapterId;
+                        sourceName.header.id = path.sourceInfo.id;
+                        if (DisplayConfigGetDeviceInfo(&sourceName.header) != ERROR_SUCCESS
+                            || _wcsicmp(sourceName.viewGdiDeviceName, info.szDevice) != 0) continue;
+                        for (auto const& modeInfo : modes)
+                        {
+                            if (modeInfo.infoType != DISPLAYCONFIG_MODE_INFO_TYPE_TARGET
+                                || modeInfo.id != path.targetInfo.id
+                                || modeInfo.adapterId.HighPart != path.targetInfo.adapterId.HighPart
+                                || modeInfo.adapterId.LowPart != path.targetInfo.adapterId.LowPart) continue;
+                            auto const& physicalRate = modeInfo.targetMode.targetVideoSignalInfo.vSyncFreq;
+                            if (physicalRate.Denominator == 0) break;
+                            auto physicalHertz = static_cast<float>(physicalRate.Numerator)
+                                / static_cast<float>(physicalRate.Denominator);
+                            if (physicalHertz >= 30.0f && physicalHertz <= 500.0f)
+                                return 1.0f / physicalHertz;
+                            break;
+                        }
+                        auto const& rate = path.targetInfo.refreshRate;
+                        if (rate.Denominator == 0) break;
+                        auto hertz = static_cast<float>(rate.Numerator)
+                            / static_cast<float>(rate.Denominator);
+                        if (hertz >= 30.0f && hertz <= 500.0f) return 1.0f / hertz;
+                        break;
+                    }
+                    break;
+                }
+            }
+            DEVMODEW mode{};
+            mode.dmSize = sizeof(mode);
+            if (!monitor
+                || info.szDevice[0] == L'\0'
+                || !EnumDisplaySettingsW(info.szDevice, ENUM_CURRENT_SETTINGS, &mode)
+                || mode.dmDisplayFrequency < 30
+                || mode.dmDisplayFrequency > 500) return 1.0f / 60.0f;
+            return 1.0f / static_cast<float>(mode.dmDisplayFrequency);
+        }
+    }
+
     struct EditorScrollController::FrameDispatchState
     {
         std::atomic_bool attached = false;
@@ -11,7 +87,7 @@ namespace winrt::ElMd
         std::atomic_uint64_t requestedFrameId = 0;
         std::atomic_uint64_t frameSequence = 0;
         std::atomic_uint64_t outstandingFrameId = 0;
-        std::atomic<float> frameIntervalSeconds = 1.0f / 120.0f;
+        std::atomic<float> targetFrameIntervalSeconds = 1.0f / 60.0f;
         EditorScrollController* owner = nullptr;
         winrt::Microsoft::UI::Dispatching::DispatcherQueue dispatcher{ nullptr };
     };
@@ -25,12 +101,14 @@ namespace winrt::ElMd
         EditorSurfaceRenderer& value,
         winrt::Microsoft::UI::Xaml::Controls::Primitives::ScrollBar const& bar,
         winrt::Microsoft::UI::Xaml::Controls::ColumnDefinition const& valueColumn,
+        HWND valueWindowHandle,
         std::function<void()> renderCallback)
     {
         Detach();
         renderer = &value;
         scrollBar = bar;
         column = valueColumn;
+        windowHandle = valueWindowHandle;
         render = std::move(renderCallback);
         StartFrameScheduler(value.FrameLatencyWaitableObject());
         valueChangedToken = scrollBar.ValueChanged([this](auto const&, winrt::Microsoft::UI::Xaml::Controls::Primitives::RangeBaseValueChangedEventArgs const& args)
@@ -52,6 +130,7 @@ namespace winrt::ElMd
         renderer = nullptr;
         scrollBar = nullptr;
         column = nullptr;
+        windowHandle = nullptr;
         render = {};
     }
 
@@ -86,6 +165,10 @@ namespace winrt::ElMd
 
     void EditorScrollController::Start()
     {
+        if (frameDispatch)
+            frameDispatch->targetFrameIntervalSeconds.store(
+                DisplayRefreshInterval(windowHandle),
+                std::memory_order_release);
         if (rendering)
         {
             RequestFrame();
@@ -126,6 +209,21 @@ namespace winrt::ElMd
             frameRequestEvent = nullptr;
             winrt::throw_hresult(error);
         }
+        framePacingTimer = CreateWaitableTimerExW(
+            nullptr,
+            nullptr,
+            CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+            TIMER_ALL_ACCESS);
+        if (!framePacingTimer) framePacingTimer = CreateWaitableTimerW(nullptr, FALSE, nullptr);
+        if (!framePacingTimer)
+        {
+            auto error = HRESULT_FROM_WIN32(GetLastError());
+            CloseHandle(frameRequestEvent);
+            CloseHandle(schedulerStopEvent);
+            frameRequestEvent = nullptr;
+            schedulerStopEvent = nullptr;
+            winrt::throw_hresult(error);
+        }
         frameDispatch = std::make_shared<FrameDispatchState>();
         frameDispatch->owner = this;
         frameDispatch->dispatcher = scrollBar.DispatcherQueue();
@@ -133,16 +231,15 @@ namespace winrt::ElMd
         auto state = frameDispatch;
         auto requestEvent = frameRequestEvent;
         auto stopEvent = schedulerStopEvent;
-        frameThread = std::jthread([state, requestEvent, stopEvent, frameLatencyWaitableObject](std::stop_token stopToken)
+        auto pacingTimer = framePacingTimer;
+        frameThread = std::jthread([state, requestEvent, stopEvent, pacingTimer, frameLatencyWaitableObject](std::stop_token stopToken)
         {
             std::stop_callback stopCallback(stopToken, [stopEvent] { SetEvent(stopEvent); });
             HANDLE requestHandles[] = { stopEvent, requestEvent };
             HANDLE frameHandles[] = { stopEvent, frameLatencyWaitableObject };
+            HANDLE pacingHandles[] = { stopEvent, pacingTimer };
             auto lastRequestId = std::uint64_t{0};
-            auto lastFrameSignal = std::chrono::steady_clock::time_point{};
-            std::array<float, 16> frameIntervals{};
-            auto frameIntervalCount = std::size_t{0};
-            auto nextFrameInterval = std::size_t{0};
+            auto previousSubmission = std::chrono::steady_clock::time_point{};
             while (!stopToken.stop_requested())
             {
                 if (WaitForMultipleObjects(2, requestHandles, FALSE, INFINITE) != WAIT_OBJECT_0 + 1) break;
@@ -151,23 +248,25 @@ namespace winrt::ElMd
                 if (frameId == 0 || frameId == lastRequestId) continue;
                 lastRequestId = frameId;
                 if (WaitForMultipleObjects(2, frameHandles, FALSE, INFINITE) != WAIT_OBJECT_0 + 1) break;
-                auto frameSignal = std::chrono::steady_clock::now();
-                if (lastFrameSignal.time_since_epoch().count() != 0)
+                auto now = std::chrono::steady_clock::now();
+                auto targetInterval = std::chrono::duration<float>(
+                    state->targetFrameIntervalSeconds.load(std::memory_order_acquire));
+                if (previousSubmission.time_since_epoch().count() != 0)
                 {
-                    auto interval = std::chrono::duration<float>(frameSignal - lastFrameSignal).count();
-                    if (interval >= 1.0f / 500.0f && interval <= 1.0f / 30.0f)
+                    auto deadline = previousSubmission + targetInterval;
+                    if (now < deadline)
                     {
-                        frameIntervals[nextFrameInterval] = interval;
-                        nextFrameInterval = (nextFrameInterval + 1) % frameIntervals.size();
-                        frameIntervalCount = (std::min)(frameIntervalCount + 1, frameIntervals.size());
-                        auto sortedIntervals = frameIntervals;
-                        std::sort(sortedIntervals.begin(), sortedIntervals.begin() + frameIntervalCount);
-                        state->frameIntervalSeconds.store(
-                            sortedIntervals[frameIntervalCount / 2],
-                            std::memory_order_release);
+                        auto waitDuration = std::chrono::duration_cast<std::chrono::nanoseconds>(deadline - now).count();
+                        LARGE_INTEGER dueTime{};
+                        dueTime.QuadPart = -(std::max)(std::int64_t{1}, waitDuration / 100);
+                        if (!SetWaitableTimer(pacingTimer, &dueTime, 0, nullptr, nullptr, FALSE)) break;
+                        if (WaitForMultipleObjects(2, pacingHandles, FALSE, INFINITE) != WAIT_OBJECT_0 + 1) break;
+                        now = std::chrono::steady_clock::now();
                     }
+                    else if (now - previousSubmission > targetInterval * 2.0f)
+                        previousSubmission = {};
                 }
-                lastFrameSignal = frameSignal;
+                previousSubmission = now;
                 if (!state->attached.load(std::memory_order_acquire)) break;
                 auto queued = state->dispatcher.TryEnqueue(
                     winrt::Microsoft::UI::Dispatching::DispatcherQueuePriority::High,
@@ -212,8 +311,10 @@ namespace winrt::ElMd
         }
         if (frameRequestEvent) CloseHandle(frameRequestEvent);
         if (schedulerStopEvent) CloseHandle(schedulerStopEvent);
+        if (framePacingTimer) CloseHandle(framePacingTimer);
         frameRequestEvent = nullptr;
         schedulerStopEvent = nullptr;
+        framePacingTimer = nullptr;
         frameDispatch.reset();
     }
 
@@ -245,8 +346,8 @@ namespace winrt::ElMd
             return;
         }
         auto frameInterval = frameDispatch
-            ? frameDispatch->frameIntervalSeconds.load(std::memory_order_acquire)
-            : 1.0f / 120.0f;
+            ? frameDispatch->targetFrameIntervalSeconds.load(std::memory_order_acquire)
+            : 1.0f / 60.0f;
         auto active = renderer->AdvanceScrollAnimation(
             (std::clamp)(frameInterval, 1.0f / 240.0f, 1.0f / 30.0f));
         if (render) render();

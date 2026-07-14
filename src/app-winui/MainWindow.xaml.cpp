@@ -397,7 +397,7 @@ namespace winrt::ElMd::implementation
         UpdateTheme();
         editorRenderer.SetInvalidateCallback([this] { RenderEditorSurface(); });
         editorRenderer.Initialize(EditorSurface());
-        scrollController.Attach(editorRenderer, EditorScrollBar(), EditorScrollBarColumn(), [this] { RenderEditorSurface(); });
+        scrollController.Attach(editorRenderer, EditorScrollBar(), EditorScrollBarColumn(), WindowHandle(), [this] { RenderEditorSurface(); });
         RenderEditorSurface();
         EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Programmatic);
     }
