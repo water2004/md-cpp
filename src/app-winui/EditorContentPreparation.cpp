@@ -136,6 +136,8 @@ namespace winrt::ElMd
                 }
                 return text;
             }
+            case elmd::InlineRenderItem::Kind::FootnoteReference:
+                return elmd::utf8_to_cps(item.footnote_label);
         }
         return {};
     }
@@ -441,6 +443,11 @@ namespace winrt::ElMd
             overlay.displayStart += offset;
             target.taskCheckboxOverlays.push_back(std::move(overlay));
         }
+        for (auto& overlay : source.footnoteOverlays)
+        {
+            overlay.displayStart += offset;
+            target.footnoteOverlays.push_back(std::move(overlay));
+        }
         target.pendingMath = target.pendingMath || source.pendingMath;
     }
 
@@ -699,6 +706,26 @@ namespace winrt::ElMd
                 AppendMathFragments(display, *math, {item.source_span.container_id, {contentStart, contentEnd}}, false, item.style);
                 continue;
             }
+            if (item.kind == elmd::InlineRenderItem::Kind::FootnoteReference)
+            {
+                auto displayStart = static_cast<std::uint32_t>(elmd::utf16_len(display.text));
+                auto label = elmd::utf8_to_cps(item.footnote_label);
+                AppendGeneratedText(
+                    display,
+                    label,
+                    {item.source_span.container_id, item.source_span.source_range.start, elmd::TextAffinity::Downstream},
+                    item.style,
+                    EditorDisplayPositionKind::BoundaryDecoration);
+                auto displayLength = static_cast<std::uint32_t>(elmd::utf16_len(label));
+                if (!display.ranges.empty()) display.ranges.back().footnoteControl = true;
+                display.footnoteOverlays.push_back({
+                    displayStart,
+                    displayLength,
+                    item.source_span,
+                    item.footnote_label,
+                    EditorFootnoteControlKind::Reference});
+                continue;
+            }
             if (item.kind == elmd::InlineRenderItem::Kind::Marker && item.source_span.source_range.empty())
             {
                 auto markerPosition = elmd::TextPosition{
@@ -743,12 +770,27 @@ namespace winrt::ElMd
                     continue;
                 }
                 auto const& markerText = item.display_text.empty() ? item.text : item.display_text;
+                auto displayStart = static_cast<std::uint32_t>(elmd::utf16_len(display.text));
                 AppendGeneratedText(
                     display,
                     markerText,
                     markerPosition,
                     item.style,
                     EditorDisplayPositionKind::BoundaryDecoration);
+                if (item.marker_role == elmd::MarkerRole::FootnoteLabel
+                    || item.marker_role == elmd::MarkerRole::FootnoteBacklink)
+                {
+                    auto displayLength = static_cast<std::uint32_t>(elmd::utf16_len(markerText));
+                    if (!display.ranges.empty()) display.ranges.back().footnoteControl = true;
+                    display.footnoteOverlays.push_back({
+                        displayStart,
+                        displayLength,
+                        item.source_span,
+                        item.footnote_label,
+                        item.marker_role == elmd::MarkerRole::FootnoteLabel
+                            ? EditorFootnoteControlKind::DefinitionLabel
+                            : EditorFootnoteControlKind::Backlink});
+                }
             }
             else
             {

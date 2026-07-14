@@ -11,6 +11,13 @@ namespace winrt::ElMd
         BoundaryDecoration,
     };
 
+    enum class EditorFootnoteControlKind
+    {
+        Reference,
+        DefinitionLabel,
+        Backlink,
+    };
+
     struct EditorDisplayPosition : elmd::TextPosition
     {
         EditorDisplayPositionKind kind = EditorDisplayPositionKind::Source;

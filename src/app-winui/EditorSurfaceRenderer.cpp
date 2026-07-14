@@ -297,6 +297,45 @@ namespace winrt::ElMd
                 interactionMap.taskCheckboxHits.push_back({objectRect, overlay.sourcePosition});
             }
         };
+        auto registerFootnotes = [&](IDWriteTextLayout* layout, D2D1_POINT_2F origin, std::vector<DisplayInlineText::FootnoteOverlay> const& overlays)
+        {
+            if (!layout) return;
+            for (auto const& overlay : overlays)
+            {
+                UINT32 count = 0;
+                auto result = layout->HitTestTextRange(
+                    overlay.displayStart,
+                    overlay.displayLength,
+                    origin.x,
+                    origin.y,
+                    nullptr,
+                    0,
+                    &count);
+                if (result != E_NOT_SUFFICIENT_BUFFER || count == 0) continue;
+                std::vector<DWRITE_HIT_TEST_METRICS> metrics(count);
+                if (FAILED(layout->HitTestTextRange(
+                        overlay.displayStart,
+                        overlay.displayLength,
+                        origin.x,
+                        origin.y,
+                        metrics.data(),
+                        count,
+                        &count))) continue;
+                for (UINT32 index = 0; index < count; ++index)
+                {
+                    auto const& metric = metrics[index];
+                    interactionMap.footnoteHits.push_back({
+                        D2D1::RectF(
+                            metric.left,
+                            metric.top,
+                            metric.left + metric.width,
+                            metric.top + metric.height),
+                        overlay.sourceSpan,
+                        overlay.label,
+                        overlay.kind});
+                }
+            }
+        };
         struct PositionedMath
         {
             DisplayInlineText::MathOverlay const* overlay = nullptr;
@@ -828,6 +867,7 @@ namespace winrt::ElMd
                     prepared.code ? resources.codeBrush.Get() : resources.textBrush.Get(),
                     D2D1_DRAW_TEXT_OPTIONS_CLIP);
             drawTaskCheckboxes(prepared.layout.Get(), origin, prepared.display.taskCheckboxOverlays);
+            registerFootnotes(prepared.layout.Get(), origin, prepared.display.footnoteOverlays);
             inlineImages.Draw(prepared.layout.Get(), origin, prepared.images);
             for (auto const& positioned : positionMath(
                     prepared.layout.Get(),
@@ -981,6 +1021,7 @@ namespace winrt::ElMd
         return interactionMap.HitTest(x, y);
     }
     std::optional<elmd::TextPosition> EditorSurfaceRenderer::TaskCheckboxAt(float x, float y) const { return interactionMap.TaskCheckboxAt(x, y); }
+    std::optional<EditorSurfaceRenderer::FootnoteHit> EditorSurfaceRenderer::FootnoteAt(float x, float y) const { return interactionMap.FootnoteAt(x, y); }
     std::optional<D2D1_RECT_F> EditorSurfaceRenderer::CaretBounds(elmd::TextPosition position) const { return interactionMap.CaretBounds(position, styleSheet.body.lineHeight); }
     std::optional<elmd::TextPosition> EditorSurfaceRenderer::MoveCaretVertically(elmd::TextPosition position, bool down, float& goalX) const { return interactionMap.MoveCaretVertically(position, down, goalX, styleSheet.body.lineHeight); }
     std::optional<elmd::TextPosition> EditorSurfaceRenderer::VisualLineStart(elmd::TextPosition position) const { return interactionMap.VisualLineStart(position); }

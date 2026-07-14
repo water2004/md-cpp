@@ -345,7 +345,6 @@ struct Builder {
                     label.marker_role = MarkerRole::FootnoteLabel;
                     label.generated_boundary_affinity = TextAffinity::Downstream;
                     label.visibility = MarkerVisibility::Always;
-                    label.style.link = true;
                     out.push_back(std::move(label));
                 }
                 if (block.kind == BlockKind::Callout && block.callout_title) {
@@ -387,7 +386,6 @@ struct Builder {
                     backlink.marker_role = MarkerRole::FootnoteBacklink;
                     backlink.generated_boundary_affinity = TextAffinity::Upstream;
                     backlink.visibility = MarkerVisibility::Always;
-                    backlink.style.link = true;
                     out.push_back(std::move(backlink));
                 }
                 return rendered;
@@ -616,7 +614,6 @@ struct Builder {
                         item.source_span = source_span(node.range);
                         item.text = utf8_to_cps(node.label);
                         item.footnote_label = node.label;
-                        item.style.link = true;
                         target.push_back(std::move(item));
                         break;
                     }

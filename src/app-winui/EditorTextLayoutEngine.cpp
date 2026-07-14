@@ -77,6 +77,7 @@ namespace winrt::ElMd
             for (auto& overlay : display.imageOverlays) if (overlay.displayStart >= position) ++overlay.displayStart;
             for (auto& overlay : display.indentOverlays) if (overlay.displayStart >= position) ++overlay.displayStart;
             for (auto& overlay : display.taskCheckboxOverlays) if (overlay.displayStart >= position) ++overlay.displayStart;
+            for (auto& overlay : display.footnoteOverlays) if (overlay.displayStart >= position) ++overlay.displayStart;
         }
 
         void InsertIndent(DisplayInlineText& display, UINT32 position, float width)
@@ -147,6 +148,14 @@ namespace winrt::ElMd
                 if (overlay.displayStart < start || overlay.displayStart >= end) continue;
                 overlay.displayStart -= start;
                 result.taskCheckboxOverlays.push_back(std::move(overlay));
+            }
+            for (auto overlay : source.footnoteOverlays)
+            {
+                auto overlayEnd = overlay.displayStart + overlay.displayLength;
+                if (overlayEnd <= start || overlay.displayStart >= end) continue;
+                overlay.displayStart = (std::max)(overlay.displayStart, start) - start;
+                overlay.displayLength = (std::min)(overlayEnd, end) - (std::max)(overlayEnd - overlay.displayLength, start);
+                result.footnoteOverlays.push_back(std::move(overlay));
             }
             return result;
         }
@@ -311,6 +320,12 @@ namespace winrt::ElMd
                 layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, textRange);
             }
             if (range.marker && !range.style.heading_level) layout->SetFontSize(styleSheet.body.size * 0.82f, textRange);
+            if (range.footnoteControl)
+            {
+                layout->SetFontSize(styleSheet.body.size * 0.72f, textRange);
+                layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, textRange);
+                if (resources.accentBrush) layout->SetDrawingEffect(resources.accentBrush.Get(), textRange);
+            }
             auto syntaxIndex = static_cast<std::size_t>(range.syntax);
             if (range.syntax != SyntaxHighlightKind::None && syntaxIndex < resources.syntaxBrushes.size() && resources.syntaxBrushes[syntaxIndex])
             {

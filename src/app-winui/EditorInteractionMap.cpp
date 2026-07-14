@@ -117,6 +117,7 @@ namespace winrt::ElMd
         tables.clear();
         mathHits.clear();
         taskCheckboxHits.clear();
+        footnoteHits.clear();
         blocks.reserve(blockCapacity);
     }
 
@@ -346,6 +347,16 @@ namespace winrt::ElMd
         {
             if (x >= hit->rect.left && x <= hit->rect.right
                 && y >= hit->rect.top && y <= hit->rect.bottom) return hit->sourcePosition;
+        }
+        return std::nullopt;
+    }
+
+    std::optional<EditorVisualFootnoteHit> EditorInteractionMap::FootnoteAt(float x, float y) const
+    {
+        for (auto hit = footnoteHits.rbegin(); hit != footnoteHits.rend(); ++hit)
+        {
+            if (x >= hit->rect.left && x <= hit->rect.right
+                && y >= hit->rect.top && y <= hit->rect.bottom) return *hit;
         }
         return std::nullopt;
     }

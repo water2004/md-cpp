@@ -206,6 +206,41 @@ namespace winrt::ElMd
                     }
                 }
                 resources.d2dContext->DrawTextLayout(cell.textOrigin, cell.layout.Get(), resources.textBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                for (auto const& overlay : display.footnoteOverlays)
+                {
+                    UINT32 count = 0;
+                    auto result = cell.layout->HitTestTextRange(
+                        overlay.displayStart,
+                        overlay.displayLength,
+                        cell.textOrigin.x,
+                        cell.textOrigin.y,
+                        nullptr,
+                        0,
+                        &count);
+                    if (result != E_NOT_SUFFICIENT_BUFFER || count == 0) continue;
+                    std::vector<DWRITE_HIT_TEST_METRICS> metrics(count);
+                    if (FAILED(cell.layout->HitTestTextRange(
+                            overlay.displayStart,
+                            overlay.displayLength,
+                            cell.textOrigin.x,
+                            cell.textOrigin.y,
+                            metrics.data(),
+                            count,
+                            &count))) continue;
+                    for (UINT32 index = 0; index < count; ++index)
+                    {
+                        auto const& metric = metrics[index];
+                        interactionMap.footnoteHits.push_back({
+                            D2D1::RectF(
+                                metric.left,
+                                metric.top,
+                                metric.left + metric.width,
+                                metric.top + metric.height),
+                            overlay.sourceSpan,
+                            overlay.label,
+                            overlay.kind});
+                    }
+                }
                 inlineImageRenderer.Draw(cell.layout.Get(), cell.textOrigin, prepared.imageDraws[cellIndex]);
                 for (auto const& overlay : display.mathOverlays)
                 {

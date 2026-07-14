@@ -71,6 +71,16 @@ namespace winrt::ElMd
         elmd::TextPosition sourcePosition;
     };
 
+    struct EditorVisualFootnoteHit
+    {
+        using Kind = EditorFootnoteControlKind;
+
+        D2D1_RECT_F rect{};
+        elmd::TextSpan sourceSpan;
+        std::string label;
+        Kind kind = Kind::Reference;
+    };
+
     struct EditorInteractionMap
     {
         void Clear(std::size_t blockCapacity);
@@ -78,6 +88,7 @@ namespace winrt::ElMd
         void AddTableCellLines(std::size_t blockIndex, std::size_t tableIndex, std::size_t cellIndex);
         std::optional<elmd::TextPosition> HitTest(float x, float y) const;
         std::optional<elmd::TextPosition> TaskCheckboxAt(float x, float y) const;
+        std::optional<EditorVisualFootnoteHit> FootnoteAt(float x, float y) const;
         std::optional<D2D1_RECT_F> CaretBounds(elmd::TextPosition position, float bodyLineHeight) const;
         std::optional<elmd::TextPosition> MoveCaretVertically(elmd::TextPosition position, bool down, float& goalX, float bodyLineHeight) const;
         std::optional<elmd::TextPosition> VisualLineStart(elmd::TextPosition position) const;
@@ -88,6 +99,7 @@ namespace winrt::ElMd
         std::vector<EditorVisualTable> tables;
         std::vector<EditorVisualMathHit> mathHits;
         std::vector<EditorVisualTaskCheckboxHit> taskCheckboxHits;
+        std::vector<EditorVisualFootnoteHit> footnoteHits;
 
     private:
         std::optional<std::size_t> LineIndexFor(elmd::TextPosition position) const;

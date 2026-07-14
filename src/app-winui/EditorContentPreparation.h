@@ -18,6 +18,7 @@ namespace winrt::ElMd
         elmd::InlineStyle style;
         bool marker = false;
         SyntaxHighlightKind syntax = SyntaxHighlightKind::None;
+        bool footnoteControl = false;
     };
 
     struct DisplayInlineText
@@ -68,6 +69,15 @@ namespace winrt::ElMd
             float boxSize = 0.0f;
         };
 
+        struct FootnoteOverlay
+        {
+            std::uint32_t displayStart = 0;
+            std::uint32_t displayLength = 0;
+            elmd::TextSpan sourceSpan;
+            std::string label;
+            EditorFootnoteControlKind kind = EditorFootnoteControlKind::Reference;
+        };
+
         std::u32string text;
         EditorDisplayMapping displayToSource;
         std::vector<InlineStyleRange> ranges;
@@ -76,6 +86,7 @@ namespace winrt::ElMd
         std::vector<ImageOverlay> imageOverlays;
         std::vector<IndentOverlay> indentOverlays;
         std::vector<TaskCheckboxOverlay> taskCheckboxOverlays;
+        std::vector<FootnoteOverlay> footnoteOverlays;
         bool pendingMath = false;
     };
 
