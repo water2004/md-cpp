@@ -206,51 +206,6 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
         DocumentTransactionReason::Structure);
 }
 
-inline std::optional<DocumentTransaction> document_paste_text(const EditorDocument& document, const TextSelection& selection, std::u32string_view text) {
-    if (text.empty()) return std::nullopt;
-    std::u32string normalized;
-    for (std::size_t index = 0; index < text.size(); ++index) {
-        if (text[index] == U'\r') { if (index + 1 < text.size() && text[index + 1] == U'\n') ++index; normalized.push_back(U'\n'); }
-        else normalized.push_back(text[index]);
-    }
-    auto working = document;
-    auto current = selection;
-    std::vector<DocumentOperation> operations;
-    auto apply_step = [&](DocumentTransaction step) {
-        operations.insert(
-            operations.end(),
-            std::make_move_iterator(step.operations.begin()),
-            std::make_move_iterator(step.operations.end()));
-        working = std::move(step.after);
-        current = step.selection_after;
-    };
-    if (!current.is_caret()) {
-        auto deletion = document_delete_selection(working, current); if (!deletion) return std::nullopt;
-        apply_step(std::move(*deletion));
-    }
-    std::size_t start = 0;
-    while (start <= normalized.size()) {
-        const auto end = normalized.find(U'\n', start);
-        const auto segment_end = end == std::u32string::npos ? normalized.size() : end;
-        if (segment_end > start) {
-            auto insertion = document_insert_text(working, current, std::u32string_view(normalized).substr(start, segment_end - start));
-            if (!insertion) return std::nullopt;
-            apply_step(std::move(*insertion));
-        }
-        if (end == std::u32string::npos) break;
-        auto split = document_enter(working, current); if (!split) return std::nullopt;
-        apply_step(std::move(*split));
-        start = end + 1;
-    }
-    return make_recorded_document_transaction(
-        std::move(working),
-        std::move(operations),
-        selection,
-        current,
-        document.revision,
-        DocumentTransactionReason::Paste);
-}
-
 inline std::u32string format_marker(InlineFormat format) {
     switch (format) {
         case InlineFormat::Emphasis: return U"*";

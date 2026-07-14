@@ -1003,15 +1003,62 @@ suite document_edit_tests = [] {
     expect_document_valid(transaction->after);
 };
 
-"paste_normalizes_newlines_and_builds_blocks"_test = [] {
+"paste_normalizes_newlines_and_parses_clipboard_markdown"_test = [] {
     auto document = parse_document("ab");
     auto transaction = document_paste_text(document, caret(first_editable(document), 1), U"X\r\nY");
+    expect(fatal(bool(transaction.has_value())));
+    if (!transaction) return;
+    expect(fatal(bool(transaction->after.root.children.size() == 1u)));
+    expect(fatal(bool(transaction->after.root.children[0].inline_content.source == U"aX\nYb")));
+    expect_document_valid(transaction->after);
+};
+
+"paste_semantically_merges_fragment_head_and_anchor_tail"_test = [] {
+    auto document = parse_document("ab");
+    auto transaction = document_paste_text(
+        document,
+        caret(first_editable(document), 1),
+        U"X\n\nY");
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     expect(fatal(bool(transaction->after.root.children.size() == 2u)));
     expect(fatal(bool(transaction->after.root.children[0].inline_content.source == U"aX")));
     expect(fatal(bool(transaction->after.root.children[1].inline_content.source == U"Yb")));
+    expect(fatal(bool(transaction->selection_after.active.container_id
+        == transaction->after.root.children[1].id)));
+    expect(fatal(bool(transaction->selection_after.active.source_offset == 1u)));
     expect_document_valid(transaction->after);
+};
+
+"paste_uses_literal_semantics_for_raw_blocks_and_table_cells"_test = [] {
+    auto code = parse_document("```cpp\nabc\n```");
+    auto code_paste = document_paste_text(
+        code,
+        caret(code.root.children.front(), 7),
+        U"# h\r\n- item");
+    expect(fatal(bool(code_paste.has_value())));
+    if (code_paste) {
+        expect(fatal(bool(code_paste->after.root.children.size() == 1u)));
+        expect(fatal(bool(code_paste->after.root.children.front().kind == BlockKind::CodeBlock)));
+        expect(fatal(bool(code_paste->after.root.children.front().block_source.source
+            == U"```cpp\n# h\n- itemabc\n```")));
+        expect_document_valid(code_paste->after);
+    }
+
+    auto table = parse_document("| a | b |\n| --- | --- |\n| c | d |");
+    auto* first_cell = &table.root.children.front().children.front().children.front();
+    auto cell_paste = document_paste_text(
+        table,
+        TextSelection{
+            {first_cell->id, 0, TextAffinity::Downstream},
+            {first_cell->id, first_cell->inline_content.source.size(), TextAffinity::Upstream}},
+        U"  x\r\ny  ");
+    expect(fatal(bool(cell_paste.has_value())));
+    if (cell_paste) {
+        const auto& cell = cell_paste->after.root.children.front().children.front().children.front();
+        expect(fatal(bool(cell.inline_content.source == U"x<br>y")));
+        expect_document_valid(cell_paste->after);
+    }
 };
 
 "paragraph_heading_conversion_preserves_inline_source"_test = [] {
