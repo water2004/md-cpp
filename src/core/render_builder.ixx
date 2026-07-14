@@ -13,6 +13,7 @@ import elmd.core.selection;
 import elmd.core.text_edit;
 import elmd.core.document;
 import elmd.core.document_text;
+import elmd.core.document_symbols;
 import elmd.core.outline;
 import elmd.core.diagnostics;
 import elmd.core.utf;
@@ -94,6 +95,15 @@ inline void push_marker(
 }
 
 struct Builder {
+    std::unordered_map<std::string, std::size_t> footnote_ordinals;
+
+    std::u32string footnote_display_label(std::string_view label) const {
+        auto found = footnote_ordinals.find(std::string(label));
+        return found == footnote_ordinals.end()
+            ? utf8_to_cps(label)
+            : utf8_to_cps(std::to_string(found->second));
+    }
+
     static bool owns_text_position(const BlockNode& block) {
         if (editable_inline_document(block)) return true;
         switch (block.kind) {
@@ -340,7 +350,7 @@ struct Builder {
                     InlineRenderItem label;
                     label.kind = InlineRenderItem::Kind::Marker;
                     label.source_span = {owner, {0, 0}};
-                    label.display_text = utf8_to_cps(block.footnote_label) + U". ";
+                    label.display_text = footnote_display_label(block.footnote_label) + U". ";
                     label.footnote_label = block.footnote_label;
                     label.marker_role = MarkerRole::FootnoteLabel;
                     label.generated_boundary_affinity = TextAffinity::Downstream;
@@ -372,21 +382,6 @@ struct Builder {
                                 : emitted_columns
                             : 0,
                         context.indent_columns));
-                }
-                if (block.kind == BlockKind::FootnoteDefinition && !block.footnote_label.empty()) {
-                    const auto backlink_position = last_editable_position(block)
-                        .value_or(TextPosition{owner, 0, TextAffinity::Upstream});
-                    InlineRenderItem backlink;
-                    backlink.kind = InlineRenderItem::Kind::Marker;
-                    backlink.source_span = {
-                        backlink_position.container_id,
-                        {backlink_position.source_offset, backlink_position.source_offset}};
-                    backlink.display_text = U" ↩";
-                    backlink.footnote_label = block.footnote_label;
-                    backlink.marker_role = MarkerRole::FootnoteBacklink;
-                    backlink.generated_boundary_affinity = TextAffinity::Upstream;
-                    backlink.visibility = MarkerVisibility::Always;
-                    out.push_back(std::move(backlink));
                 }
                 return rendered;
             }
@@ -613,6 +608,7 @@ struct Builder {
                         item.id = node.id;
                         item.source_span = source_span(node.range);
                         item.text = utf8_to_cps(node.label);
+                        item.display_text = footnote_display_label(node.label);
                         item.footnote_label = node.label;
                         target.push_back(std::move(item));
                         break;
@@ -800,6 +796,22 @@ struct Builder {
 
 inline RenderModel build_render_model(const EditorDocument& doc, const Outline& outline) {
     Builder bd;
+    const auto symbols = build_document_symbol_index(doc);
+    std::size_t next_footnote_ordinal = 1;
+    auto assign_footnote_ordinal = [&](std::string const& label) {
+        if (!bd.footnote_ordinals.contains(label)) {
+            bd.footnote_ordinals.emplace(label, next_footnote_ordinal++);
+        }
+    };
+    // Number by first reference, as rendered Markdown does. Keep unreferenced
+    // definitions visible and stable by assigning their numbers afterwards in
+    // source order; their source labels remain authoritative and unchanged.
+    for (auto const& reference : symbols.footnote_references) {
+        assign_footnote_ordinal(reference.label);
+    }
+    for (auto const& definition : symbols.footnotes) {
+        assign_footnote_ordinal(definition.label);
+    }
     std::vector<RenderBlock> blocks;
     blocks.reserve(doc.root.children.size());
     for (const auto& block : doc.root.children) {

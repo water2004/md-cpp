@@ -1518,28 +1518,50 @@ suite render_layout_tests = [] {
     expect(fatal(bool(footnote)));
 };
 
-"footnote_definitions_expose_generated_non_source_label_and_backlink_controls"_test = [] {
+"footnote_definitions_are_numbered_item_blocks_without_generated_backlinks"_test = [] {
     auto model = build_model("text[^note]\n\n[^note]: source\n");
     expect(fatal(bool(model.blocks.size() == 2u)));
     if (model.blocks.size() != 2u) return;
     auto const& definition = model.blocks[1];
     expect(fatal(bool(definition.kind == RenderBlockKind::Footnote)));
     bool label = false;
-    bool backlink = false;
     for (auto const& item : definition.inline_items) {
         if (item.kind != InlineRenderItem::Kind::Marker) continue;
         if (item.marker_role == MarkerRole::FootnoteLabel) {
             label = item.footnote_label == "note"
                 && item.source_span.source_range.empty()
-                && item.display_text == U"note. ";
-        }
-        if (item.marker_role == MarkerRole::FootnoteBacklink) {
-            backlink = item.footnote_label == "note"
-                && item.source_span.source_range.empty();
+                && item.display_text == U"1. ";
         }
     }
     expect(fatal(label));
-    expect(fatal(backlink));
+    expect(fatal(bool(definition.block_style.background.has_value())));
+    expect(fatal(bool(definition.child_blocks.size() == 1u)));
+};
+
+"footnote_numbers_follow_first_reference_order_and_reuse_repeated_labels"_test = [] {
+    auto model = build_model(
+        "first[^z] second[^a] repeat[^z]\n\n"
+        "[^a]: A\n\n"
+        "[^z]: Z\n");
+    expect(fatal(bool(model.blocks.size() == 3u)));
+    if (model.blocks.size() != 3u) return;
+
+    std::vector<std::u32string> references;
+    for (auto const& item : model.blocks[0].inline_items) {
+        if (item.kind == InlineRenderItem::Kind::FootnoteReference) {
+            references.push_back(item.display_text);
+        }
+    }
+    expect(fatal(bool(references == std::vector<std::u32string>{U"1", U"2", U"1"})));
+
+    auto definition_label = [](RenderBlock const& block) {
+        for (auto const& item : block.inline_items) {
+            if (item.marker_role == MarkerRole::FootnoteLabel) return item.display_text;
+        }
+        return std::u32string{};
+    };
+    expect(fatal(bool(definition_label(model.blocks[1]) == U"2. ")));
+    expect(fatal(bool(definition_label(model.blocks[2]) == U"1. ")));
 };
 
 }; // suite render_layout_tests

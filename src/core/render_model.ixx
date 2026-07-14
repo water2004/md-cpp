@@ -23,7 +23,6 @@ enum class MarkerRole {
     ListNumber,
     TaskCheckbox,
     FootnoteLabel,
-    FootnoteBacklink,
     Structural,
 };
 
@@ -117,7 +116,19 @@ struct BlockStyle {
         s.padding_top = 8; s.padding_bottom = 8; s.padding_left = 12; s.padding_right = 12;
         return s;
     }
-    static BlockStyle footnote() { BlockStyle s; s.margin_top = 4; s.margin_bottom = 4; s.padding_left = 8; return s; }
+    static BlockStyle footnote() {
+        BlockStyle s;
+        s.margin_top = 8;
+        s.margin_bottom = 8;
+        s.padding_top = 8;
+        s.padding_bottom = 8;
+        s.padding_left = 12;
+        s.padding_right = 12;
+        // A definition is one list item container whose children may contain
+        // paragraphs, lists, quotes, code, and other block content.
+        s.background = Color{};
+        return s;
+    }
     static BlockStyle unsupported() {
         BlockStyle s; s.margin_top = 8; s.margin_bottom = 8; s.padding_left = 12;
         s.padding_top = 4; s.padding_bottom = 4;
