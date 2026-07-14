@@ -30,6 +30,7 @@ namespace winrt::ElMd::implementation
             [this]
             {
                 Title(L"el-md - " + editorSession.DisplayName());
+                UpdateSourceModeUi();
                 sidebarController.Refresh();
                 RenderEditorSurface();
             },
@@ -69,6 +70,11 @@ namespace winrt::ElMd::implementation
         {
             auto checked = SidebarButton().IsChecked();
             SetSidebarExpanded(checked && checked.Value());
+        });
+
+        SourceModeButton().Click([this](auto const&, auto const&)
+        {
+            ToggleSourceMode();
         });
 
         EditorSurface().Loaded([this](auto const&, auto const&)
@@ -340,6 +346,61 @@ namespace winrt::ElMd::implementation
         });
     }
 
+    winrt::hstring MainWindow::DocumentStatus() const
+    {
+        auto status = editorSession.DisplayName()
+            + L" | " + winrt::to_hstring(editorSession.TextView().size())
+            + L" chars | rev " + winrt::to_hstring(editorSession.Revision());
+        if (editorSession.IsSourceMode()) status = status + L" | Source";
+        return status;
+    }
+
+    void MainWindow::UpdateSourceModeUi()
+    {
+        auto source = editorSession.IsSourceMode();
+        SourceModeButton().IsChecked(source);
+        BoldButton().IsEnabled(!source);
+        ItalicButton().IsEnabled(!source);
+        StrikeButton().IsEnabled(!source);
+        InlineCodeButton().IsEnabled(!source);
+        Heading1Button().IsEnabled(!source);
+        Heading2Button().IsEnabled(!source);
+        QuoteButton().IsEnabled(!source);
+        UnorderedListButton().IsEnabled(!source);
+        OrderedListButton().IsEnabled(!source);
+        TaskListButton().IsEnabled(!source);
+        CodeBlockButton().IsEnabled(!source);
+        TableButton().IsEnabled(!source);
+        InlineMathButton().IsEnabled(!source);
+        BlockMathButton().IsEnabled(!source);
+        LinkButton().IsEnabled(!source);
+        ImageButton().IsEnabled(!source);
+        FootnoteButton().IsEnabled(!source);
+        CalloutButton().IsEnabled(!source);
+        TocButton().IsEnabled(!source);
+    }
+
+    void MainWindow::ToggleSourceMode()
+    {
+        auto oldTextLength = editorSession.AcpLength();
+        if (!editorSession.ToggleSourceMode())
+        {
+            UpdateSourceModeUi();
+            return;
+        }
+        keyboardController.ResetCaretGoal();
+        editorRenderer.ResetDocumentCaches();
+        UpdateSourceModeUi();
+        auto status = DocumentStatus();
+        lastCommand = status;
+        StatusText().Text(status);
+        sidebarController.Refresh();
+        textInputController.NotifyTextChanged(oldTextLength);
+        RenderEditorSurface();
+        if (editorRenderer.ScrollToPosition(editorSession.Selection().active)) RenderEditorSurface();
+        EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Programmatic);
+    }
+
     void MainWindow::InitializeTextInput()
     {
         textInputController.Attach(
@@ -361,7 +422,7 @@ namespace winrt::ElMd::implementation
             return false;
         }
 
-        auto status = editorSession.DisplayName() + L" | " + winrt::to_hstring(editorSession.TextView().size()) + L" chars | rev " + winrt::to_hstring(editorSession.Revision());
+        auto status = DocumentStatus();
         lastCommand = status;
         StatusText().Text(status);
         sidebarController.Refresh();

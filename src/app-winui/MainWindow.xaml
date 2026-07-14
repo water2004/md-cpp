@@ -71,6 +71,17 @@
             <ScrollBar x:Name="EditorScrollBar" Grid.Column="1" Orientation="Vertical" IndicatorMode="MouseIndicator" Background="{ThemeResource LayerFillColorDefaultBrush}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Width="16" Minimum="0" SmallChange="48" IsTabStop="False"/>
         </Grid>
 
-        <TextBlock x:Name="StatusText" Grid.Row="2" Grid.ColumnSpan="2" Padding="12,6" Text="Ready"/>
+        <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto">
+            <TextBlock x:Name="StatusText" Padding="12,6" Text="Ready"/>
+            <ToggleButton
+                x:Name="SourceModeButton"
+                Grid.Column="1"
+                Margin="4,2,8,2"
+                Padding="8,2"
+                MinWidth="36"
+                FontFamily="Consolas"
+                Content="&lt;/&gt;"
+                ToolTipService.ToolTip="Source mode"/>
+        </Grid>
     </Grid>
 </Window>

@@ -25,6 +25,9 @@ namespace winrt::ElMd::implementation
         void UpdateTheme();
         winrt::ElMd::EditorSurfaceRenderer::Theme CurrentRendererTheme();
         void RegisterCommandHandlers();
+        void ToggleSourceMode();
+        void UpdateSourceModeUi();
+        winrt::hstring DocumentStatus() const;
         bool ExecuteEditorCommand(elmd::Command const& command);
         void ShowFootnoteFlyout(
             winrt::ElMd::EditorSurfaceRenderer::FootnoteHit const& hit,
