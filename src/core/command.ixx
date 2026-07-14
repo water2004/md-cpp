@@ -17,7 +17,7 @@ enum class CommandKind {
     ToggleUnorderedList, ToggleOrderedList, ToggleTaskList, ToggleTaskCheckbox, ToggleBlockQuote,
     IndentListItem, OutdentListItem,
     InsertCodeBlock, InsertMathInline, InsertMathBlock,
-    InsertTable, InsertImage, InsertLink, InsertFootnote, InsertToc,
+    InsertTable, InsertImage, InsertLink, InsertFootnote, CreateFootnoteDefinition, InsertToc,
     MoveTableCellNext, MoveTableCellPrevious,
     InsertTableRowAbove, InsertTableRowBelow, DeleteTableRow, MoveTableRowUp, MoveTableRowDown,
     InsertTableColumnLeft, InsertTableColumnRight, DeleteTableColumn, MoveTableColumnLeft, MoveTableColumnRight,
@@ -38,6 +38,7 @@ struct Command {
     std::size_t table_index = 0;
     std::u32string path, alt;              // InsertImage
     std::u32string href;                   // InsertLink
+    std::string footnote_label;            // CreateFootnoteDefinition
     std::optional<std::u32string> title;    // InsertLink
     std::u32string callout_kind;           // ToggleCallout
     std::u32string ext_name;               // Extension

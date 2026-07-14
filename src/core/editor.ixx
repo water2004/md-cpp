@@ -295,10 +295,14 @@ public:
             selection_ = *selection;
             return true;
         }
-        if (cmd.kind == CommandKind::ToggleCallout || cmd.kind == CommandKind::InsertFootnote) {
+        if (cmd.kind == CommandKind::ToggleCallout
+            || cmd.kind == CommandKind::InsertFootnote
+            || cmd.kind == CommandKind::CreateFootnoteDefinition) {
             const auto changed = cmd.kind == CommandKind::ToggleCallout
                 ? execute_document_toggle_callout(selection_, cmd).has_value()
-                : execute_document_insert_footnote(selection_, cmd).has_value();
+                : cmd.kind == CommandKind::InsertFootnote
+                    ? execute_document_insert_footnote(selection_, cmd).has_value()
+                    : execute_document_create_footnote_definition(selection_, cmd.footnote_label).has_value();
             return changed;
         }
         if (cmd.kind == CommandKind::MoveTableCellNext || cmd.kind == CommandKind::MoveTableCellPrevious

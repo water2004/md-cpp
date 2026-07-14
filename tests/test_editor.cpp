@@ -107,6 +107,19 @@ suite editor_tests = [] {
     expect(fatal(bool(validate_document(editor.document()).empty()))) << "redo document invariants";
 };
 
+"missing_footnote_definition_command_is_one_semantic_undoable_edit"_test = [] {
+    Editor editor("body[^missing]");
+    auto before = editor.selection();
+    Command command;
+    command.kind = CommandKind::CreateFootnoteDefinition;
+    command.footnote_label = "missing";
+    expect(fatal(editor.execute_command(command)));
+    expect(editor.markdown_utf8() == "body[^missing]\n\n[^missing]: ");
+    expect(fatal(editor.undo()));
+    expect(editor.markdown_utf8() == "body[^missing]");
+    expect(editor.selection() == before);
+};
+
 "normal_source_edits_never_parse_or_serialize_the_full_document"_test = [] {
     Editor editor("**alpha**\n\nbeta");
     editor.set_selection(caret(first_text(editor), 3));
