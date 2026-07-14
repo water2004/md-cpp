@@ -57,18 +57,6 @@ namespace winrt::ElMd
         bool geometryValid = false;
     };
 
-    struct EditorSurfaceRenderer::ScrollVisualCache
-    {
-        ::Microsoft::WRL::ComPtr<ID2D1Bitmap1> bitmap;
-        std::uint64_t modelRevision = 0;
-        std::uint64_t embeddedGeneration = 0;
-        std::uint64_t remoteImageGeneration = 0;
-        elmd::TextSelection selection{};
-        std::wstring baseDirectory;
-        float documentTop = 0.0f;
-        float height = 0.0f;
-    };
-
     namespace
     {
         bool SamePosition(elmd::TextPosition left, elmd::TextPosition right)
@@ -156,13 +144,6 @@ namespace winrt::ElMd
     {
         preparedDocument.reset();
         documentOwnerY.clear();
-        ClearScrollVisualCache();
-    }
-
-    void EditorSurfaceRenderer::ClearScrollVisualCache()
-    {
-        scrollVisualCache.reset();
-        interactionMapTranslationY = 0.0f;
     }
 
     void EditorSurfaceRenderer::SetInvalidateCallback(std::function<void()> callback)
@@ -213,7 +194,6 @@ namespace winrt::ElMd
         struct ResetFlag { bool& value; ~ResetFlag() { value = false; } } reset{resizing};
         auto result = resources.Resize(panel, width, height);
         if (!result.resized) return;
-        ClearScrollVisualCache();
         if (result.widthChanged)
         {
             renderCache.ClearTextLayouts();
@@ -223,10 +203,7 @@ namespace winrt::ElMd
         scrollTarget = (std::min)(scrollTarget, MaximumScrollOffset());
     }
 
-    void EditorSurfaceRenderer::DrawDocument(
-        detail::EditorRenderFrame const& frame,
-        float paintViewportHeight,
-        bool paintTransientInteractions)
+    void EditorSurfaceRenderer::DrawDocument(detail::EditorRenderFrame const& frame)
     {
         interactionMap.Clear(frame.renderModel.blocks.size());
         nonInteractiveRegions.clear();
@@ -592,7 +569,7 @@ namespace winrt::ElMd
         auto requestEmbeddedAt = [&](float documentTop)
         {
             auto screenTop = documentTop - scrollOffset;
-            return screenTop < paintViewportHeight + embeddedOverscanAfter
+            return screenTop < resources.surfaceHeightDip + embeddedOverscanAfter
                 && screenTop > -embeddedOverscanBefore;
         };
         auto rebuildGeometry = [&]
@@ -639,7 +616,7 @@ namespace winrt::ElMd
         };
 
         auto embeddedTop = scrollOffset - embeddedOverscanBefore;
-        auto embeddedBottom = scrollOffset + paintViewportHeight + embeddedOverscanAfter;
+        auto embeddedBottom = scrollOffset + resources.surfaceHeightDip + embeddedOverscanAfter;
         auto geometryChanged = false;
         for (auto index = firstIntersecting(embeddedTop); index < frame.renderModel.blocks.size(); ++index)
         {
@@ -668,7 +645,7 @@ namespace winrt::ElMd
         }
 
         auto viewportTop = scrollOffset - viewportOverscan;
-        auto viewportBottom = scrollOffset + paintViewportHeight + viewportOverscan;
+        auto viewportBottom = scrollOffset + resources.surfaceHeightDip + viewportOverscan;
         for (auto blockIndex = firstIntersecting(viewportTop); blockIndex < frame.renderModel.blocks.size(); ++blockIndex)
         {
             auto const& placement = preparedDocument->placements[blockIndex];
@@ -792,8 +769,7 @@ namespace winrt::ElMd
             interactionMap.AddBlockLines(interactionMap.blocks.size() - 1);
         }
 
-        if (paintTransientInteractions)
-            EditorTableInteraction::Paint(resources, interactionMap, pointerPosition, draggedTableAction, tableDropIndex);
+        EditorTableInteraction::Paint(resources, interactionMap, pointerPosition, draggedTableAction, tableDropIndex);
         totalDocumentHeight = preparedDocument->totalHeight;
         scrollOffset = (std::min)(scrollOffset, MaximumScrollOffset());
         scrollTarget = (std::min)(scrollTarget, MaximumScrollOffset());
@@ -898,8 +874,8 @@ namespace winrt::ElMd
     void EditorSurfaceRenderer::UpdatePointer(float x, float y) { pointerPosition = D2D1::Point2F(x, y); }
     void EditorSurfaceRenderer::ClearPointer() { pointerPosition.reset(); }
     void EditorSurfaceRenderer::SetTableDrag(std::optional<TableAction> action, std::optional<std::size_t> dropIndex) { draggedTableAction = std::move(action); tableDropIndex = dropIndex; }
-    std::optional<EditorSurfaceRenderer::TableAction> EditorSurfaceRenderer::TableActionAt(float x, float y) const { return EditorTableInteraction::ActionAt(interactionMap, x, y - interactionMapTranslationY); }
-    std::optional<std::size_t> EditorSurfaceRenderer::TableDropIndexAt(float x, float y, bool rows) const { return EditorTableInteraction::DropIndexAt(interactionMap, draggedTableAction, x, y - interactionMapTranslationY, rows); }
+    std::optional<EditorSurfaceRenderer::TableAction> EditorSurfaceRenderer::TableActionAt(float x, float y) const { return EditorTableInteraction::ActionAt(interactionMap, x, y); }
+    std::optional<std::size_t> EditorSurfaceRenderer::TableDropIndexAt(float x, float y, bool rows) const { return EditorTableInteraction::DropIndexAt(interactionMap, draggedTableAction, x, y, rows); }
 
     bool EditorSurfaceRenderer::ScrollToPosition(elmd::TextPosition position)
     {
@@ -934,22 +910,12 @@ namespace winrt::ElMd
 
     std::optional<elmd::TextPosition> EditorSurfaceRenderer::HitTest(float x, float y) const
     {
-        auto mapY = y - interactionMapTranslationY;
         for (auto const& rect : nonInteractiveRegions)
-            if (x >= rect.left && x <= rect.right && mapY >= rect.top && mapY <= rect.bottom)
+            if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom)
                 return std::nullopt;
-        return interactionMap.HitTest(x, mapY);
+        return interactionMap.HitTest(x, y);
     }
-    std::optional<D2D1_RECT_F> EditorSurfaceRenderer::CaretBounds(elmd::TextPosition position) const
-    {
-        auto bounds = interactionMap.CaretBounds(position, styleSheet.body.lineHeight);
-        if (bounds)
-        {
-            bounds->top += interactionMapTranslationY;
-            bounds->bottom += interactionMapTranslationY;
-        }
-        return bounds;
-    }
+    std::optional<D2D1_RECT_F> EditorSurfaceRenderer::CaretBounds(elmd::TextPosition position) const { return interactionMap.CaretBounds(position, styleSheet.body.lineHeight); }
     std::optional<elmd::TextPosition> EditorSurfaceRenderer::MoveCaretVertically(elmd::TextPosition position, bool down, float& goalX) const { return interactionMap.MoveCaretVertically(position, down, goalX, styleSheet.body.lineHeight); }
     std::optional<elmd::TextPosition> EditorSurfaceRenderer::VisualLineStart(elmd::TextPosition position) const { return interactionMap.VisualLineStart(position); }
     std::optional<elmd::TextPosition> EditorSurfaceRenderer::VisualLineEnd(elmd::TextPosition position) const { return interactionMap.VisualLineEnd(position); }
@@ -969,147 +935,13 @@ namespace winrt::ElMd
         rendering = true;
         struct Reset { EditorSurfaceRenderer& owner; ~Reset() { owner.rendering = false; if (owner.deferredInvalidate.exchange(false)) owner.Invalidate(); } } reset{*this};
         resources.EnsureFrameResources(styleSheet);
-
-        auto remoteImageGeneration = renderCache.RemoteImageGeneration();
-        auto cacheMatchesFrame = [&]
-        {
-            if (!scrollVisualCache || !scrollVisualCache->bitmap) return false;
-            auto viewTop = scrollOffset;
-            auto viewBottom = scrollOffset + resources.surfaceHeightDip;
-            return scrollVisualCache->modelRevision == frame.renderModel.revision
-                && SameSelection(scrollVisualCache->selection, frame.selection)
-                && scrollVisualCache->embeddedGeneration == embeddedGeneration
-                && scrollVisualCache->remoteImageGeneration == remoteImageGeneration
-                && scrollVisualCache->baseDirectory == frame.baseDirectory
-                && viewTop >= scrollVisualCache->documentTop
-                && viewBottom <= scrollVisualCache->documentTop + scrollVisualCache->height;
-        };
-
-        if (!cacheMatchesFrame())
-        {
-            ClearScrollVisualCache();
-            auto viewportHeight = resources.surfaceHeightDip;
-            auto maximumBandHeight = viewportHeight * 3.0f;
-            auto cacheHeight = totalDocumentHeight > 0.0f
-                ? (std::clamp)(totalDocumentHeight, viewportHeight, maximumBandHeight)
-                : maximumBandHeight;
-            auto viewportHeightPixels = static_cast<UINT32>((std::max)(
-                1.0f,
-                std::ceil(viewportHeight * resources.surfaceScaleY)));
-            auto desiredHeightPixels = static_cast<std::uint64_t>((std::max)(
-                1.0f,
-                std::ceil(cacheHeight * resources.surfaceScaleY)));
-            constexpr std::uint64_t cacheBudgetBytes = 96ull * 1024ull * 1024ull;
-            auto rowBytes = (std::max)(std::uint64_t{4}, static_cast<std::uint64_t>(resources.surfaceWidth) * 4ull);
-            auto budgetHeightPixels = cacheBudgetBytes / rowBytes;
-            auto maximumBitmapSize = static_cast<std::uint64_t>(resources.d2dContext->GetMaximumBitmapSize());
-            auto heightLimit = (std::max)(
-                static_cast<std::uint64_t>(viewportHeightPixels),
-                (std::min)(maximumBitmapSize, (std::max)(
-                    budgetHeightPixels,
-                    static_cast<std::uint64_t>(viewportHeightPixels))));
-            auto cacheHeightPixels = static_cast<UINT32>((std::clamp)(
-                desiredHeightPixels,
-                static_cast<std::uint64_t>(viewportHeightPixels),
-                heightLimit));
-            cacheHeight = static_cast<float>(cacheHeightPixels) / resources.surfaceScaleY;
-            auto maximumCacheTop = (std::max)(0.0f, totalDocumentHeight - cacheHeight);
-            auto cacheTop = (std::clamp)(
-                scrollOffset - (cacheHeight - viewportHeight) * 0.5f,
-                0.0f,
-                maximumCacheTop);
-            D2D1_BITMAP_PROPERTIES1 properties{};
-            properties.pixelFormat = resources.d2dTarget->GetPixelFormat();
-            properties.dpiX = 96.0f * resources.surfaceScaleX;
-            properties.dpiY = 96.0f * resources.surfaceScaleY;
-            properties.bitmapOptions = D2D1_BITMAP_OPTIONS_TARGET;
-            ::Microsoft::WRL::ComPtr<ID2D1Bitmap1> bitmap;
-            auto created = resources.d2dContext->CreateBitmap(
-                D2D1::SizeU(resources.surfaceWidth, cacheHeightPixels),
-                nullptr,
-                0,
-                &properties,
-                bitmap.GetAddressOf());
-            if (SUCCEEDED(created) && bitmap)
-            {
-                ::Microsoft::WRL::ComPtr<ID2D1Image> previousTarget;
-                resources.d2dContext->GetTarget(previousTarget.GetAddressOf());
-                resources.d2dContext->SetTarget(bitmap.Get());
-                resources.d2dContext->BeginDraw();
-                resources.d2dContext->SetTransform(D2D1::Matrix3x2F::Identity());
-                resources.d2dContext->Clear(styleSheet.canvasColor);
-                auto requestedOffset = scrollOffset;
-                auto requestedTarget = scrollTarget;
-                scrollOffset = cacheTop;
-                interactionMapTranslationY = 0.0f;
-                DrawDocument(frame, cacheHeight, false);
-                scrollOffset = (std::clamp)(requestedOffset, 0.0f, MaximumScrollOffset());
-                scrollTarget = (std::clamp)(requestedTarget, 0.0f, MaximumScrollOffset());
-                auto cached = resources.d2dContext->EndDraw();
-                resources.d2dContext->SetTarget(previousTarget.Get());
-                if (cached == D2DERR_RECREATE_TARGET)
-                {
-                    ClearScrollVisualCache();
-                    resources.ResetTargets();
-                    return;
-                }
-                if (SUCCEEDED(cached))
-                {
-                    scrollVisualCache = std::make_unique<ScrollVisualCache>();
-                    scrollVisualCache->bitmap = std::move(bitmap);
-                    scrollVisualCache->modelRevision = frame.renderModel.revision;
-                    scrollVisualCache->embeddedGeneration = embeddedGeneration;
-                    scrollVisualCache->remoteImageGeneration = remoteImageGeneration;
-                    scrollVisualCache->selection = frame.selection;
-                    scrollVisualCache->baseDirectory = frame.baseDirectory;
-                    scrollVisualCache->documentTop = cacheTop;
-                    scrollVisualCache->height = cacheHeight;
-                }
-            }
-        }
-
-        resources.d2dContext->SetTarget(resources.d2dTarget.Get());
         resources.d2dContext->BeginDraw();
-        resources.d2dContext->SetTransform(D2D1::Matrix3x2F::Identity());
         resources.d2dContext->Clear(styleSheet.canvasColor);
-        if (cacheMatchesFrame())
-        {
-            auto sourceTop = scrollOffset - scrollVisualCache->documentTop;
-            resources.d2dContext->DrawBitmap(
-                scrollVisualCache->bitmap.Get(),
-                D2D1::RectF(0.0f, 0.0f, resources.surfaceWidthDip, resources.surfaceHeightDip),
-                1.0f,
-                D2D1_INTERPOLATION_MODE_LINEAR,
-                D2D1::RectF(
-                    0.0f,
-                    sourceTop,
-                    resources.surfaceWidthDip,
-                    sourceTop + resources.surfaceHeightDip));
-            interactionMapTranslationY = scrollVisualCache->documentTop - scrollOffset;
-            auto mappedPointer = pointerPosition;
-            if (mappedPointer) mappedPointer->y -= interactionMapTranslationY;
-            resources.d2dContext->SetTransform(D2D1::Matrix3x2F::Translation(0.0f, interactionMapTranslationY));
-            EditorTableInteraction::Paint(
-                resources,
-                interactionMap,
-                mappedPointer,
-                draggedTableAction,
-                tableDropIndex);
-            resources.d2dContext->SetTransform(D2D1::Matrix3x2F::Identity());
-        }
-        else
-        {
-            interactionMapTranslationY = 0.0f;
-            DrawDocument(frame, resources.surfaceHeightDip, true);
-        }
+        DrawDocument(frame);
         auto ended = resources.d2dContext->EndDraw();
-        if (ended == D2DERR_RECREATE_TARGET) { ClearScrollVisualCache(); resources.ResetTargets(); return; }
+        if (ended == D2DERR_RECREATE_TARGET) { resources.ResetTargets(); return; }
         if (FAILED(ended)) return;
         auto presented = resources.swapChain->Present(1, 0);
-        if (presented == DXGI_ERROR_DEVICE_REMOVED || presented == DXGI_ERROR_DEVICE_RESET)
-        {
-            ClearScrollVisualCache();
-            resources.ResetTargets();
-        }
+        if (presented == DXGI_ERROR_DEVICE_REMOVED || presented == DXGI_ERROR_DEVICE_RESET) resources.ResetTargets();
     }
 }
