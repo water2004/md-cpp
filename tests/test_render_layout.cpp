@@ -852,14 +852,14 @@ suite render_layout_tests = [] {
     if (!rendered_callout || !rendered_footnote || !rendered_quote || !rendered_code || !rendered_blank) return;
     expect(fatal(bool(flow_indent_for(model.blocks[0], rendered_callout->id) == 6u)));
     expect(fatal(bool(flow_indent_for(model.blocks[0], rendered_footnote->id) == 8u)));
-    expect(fatal(bool(flow_indent_for(model.blocks[0], rendered_quote->id) == 10u)));
-    expect(fatal(bool(flow_indent_for(model.blocks[0], rendered_code->id) == 12u)));
-    expect(fatal(bool(flow_indent_for(model.blocks[0], rendered_blank->id) == 12u)));
+    expect(fatal(bool(flow_indent_for(model.blocks[0], rendered_quote->id) == 11u)));
+    expect(fatal(bool(flow_indent_for(model.blocks[0], rendered_code->id) == 13u)));
+    expect(fatal(bool(flow_indent_for(model.blocks[0], rendered_blank->id) == 13u)));
 
     auto blank_indent = std::find_if(model.blocks[0].inline_items.begin(), model.blocks[0].inline_items.end(), [&](auto const& item) {
         return item.source_span.container_id == blank_id
             && item.marker_role == MarkerRole::Structural
-            && item.display_text == std::u32string(12, U' ');
+            && item.display_text == std::u32string(13, U' ');
     });
     expect(fatal(bool(blank_indent != model.blocks[0].inline_items.end())));
 };
@@ -1536,6 +1536,34 @@ suite render_layout_tests = [] {
     expect(fatal(label));
     expect(fatal(bool(definition.block_style.background.has_value())));
     expect(fatal(bool(definition.child_blocks.size() == 1u)));
+};
+
+"multiblock_footnote_uses_one_hanging_content_column"_test = [] {
+    auto model = build_model(
+        "text[^note]\n\n"
+        "[^note]: first\n\n"
+        "    second\n");
+    expect(fatal(bool(model.blocks.size() == 2u)));
+    if (model.blocks.size() != 2u) return;
+    auto const& definition = model.blocks[1];
+    expect(fatal(bool(definition.kind == RenderBlockKind::Footnote)));
+    expect(fatal(bool(definition.child_blocks.size() == 2u)));
+
+    std::u32string visible;
+    for (auto const& item : definition.inline_items) {
+        visible += item.display_text.empty() ? item.text : item.display_text;
+    }
+    auto const first = visible.find(U"first");
+    auto const second = visible.find(U"second");
+    expect(fatal(bool(first != std::u32string::npos)));
+    expect(fatal(bool(second != std::u32string::npos)));
+    if (first == std::u32string::npos || second == std::u32string::npos) return;
+    auto const first_line = visible.rfind(U'\n', first);
+    auto const second_line = visible.rfind(U'\n', second);
+    auto const first_column = first_line == std::u32string::npos ? first : first - first_line - 1;
+    auto const second_column = second_line == std::u32string::npos ? second : second - second_line - 1;
+    expect(fatal(bool(first_column == 3u)));
+    expect(fatal(bool(second_column == first_column)));
 };
 
 "footnote_numbers_follow_first_reference_order_and_reuse_repeated_labels"_test = [] {

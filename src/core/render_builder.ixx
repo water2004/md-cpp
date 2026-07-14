@@ -343,14 +343,19 @@ struct Builder {
             case BlockKind::Callout:
             case BlockKind::FootnoteDefinition: {
                 auto rendered = make_flow_container(block, context, parent_indent_columns);
-                auto content_indent = context.indent_columns + 2;
-                std::size_t child_start = 0;
+                std::u32string footnote_marker;
                 if (block.kind == BlockKind::FootnoteDefinition && !block.footnote_label.empty()) {
+                    footnote_marker = footnote_display_label(block.footnote_label) + U". ";
+                }
+                auto const content_indent = context.indent_columns
+                    + (footnote_marker.empty() ? 2u : footnote_marker.size());
+                std::size_t child_start = 0;
+                if (!footnote_marker.empty()) {
                     append_missing_indent(out, owner, 0, context.indent_columns, emitted_columns);
                     InlineRenderItem label;
                     label.kind = InlineRenderItem::Kind::Marker;
                     label.source_span = {owner, {0, 0}};
-                    label.display_text = footnote_display_label(block.footnote_label) + U". ";
+                    label.display_text = footnote_marker;
                     label.footnote_label = block.footnote_label;
                     label.marker_role = MarkerRole::FootnoteLabel;
                     label.generated_boundary_affinity = TextAffinity::Downstream;
@@ -377,8 +382,8 @@ struct Builder {
                         block.children[index],
                         FlowContext{content_indent},
                         index == 0 && child_start == 0
-                            ? block.kind == BlockKind::FootnoteDefinition && !block.footnote_label.empty()
-                                ? context.indent_columns
+                            ? !footnote_marker.empty()
+                                ? context.indent_columns + footnote_marker.size()
                                 : emitted_columns
                             : 0,
                         context.indent_columns));

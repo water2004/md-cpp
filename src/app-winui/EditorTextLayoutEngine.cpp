@@ -323,7 +323,7 @@ namespace winrt::ElMd
             if (range.footnoteControl)
             {
                 auto const reference = *range.footnoteControl == EditorFootnoteControlKind::Reference;
-                layout->SetFontSize(styleSheet.body.size * (reference ? 0.9f : 0.82f), textRange);
+                layout->SetFontSize(styleSheet.body.size * (reference ? 1.1f : 0.82f), textRange);
                 layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, textRange);
                 if (resources.accentBrush) layout->SetDrawingEffect(resources.accentBrush.Get(), textRange);
             }
