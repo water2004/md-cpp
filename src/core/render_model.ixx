@@ -187,6 +187,8 @@ struct RenderBlock {
     bool source_mode = false;
     bool source_code = false;
     std::uint64_t presentation_key = 0;
+    std::shared_ptr<const std::u32string> source_code_context;
+    std::size_t source_code_context_offset = 0;
 
     // TextBlock
     std::vector<InlineRenderItem> inline_items;

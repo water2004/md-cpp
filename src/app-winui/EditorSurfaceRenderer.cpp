@@ -610,6 +610,7 @@ namespace winrt::ElMd
         }
 
         auto remoteImageGeneration = renderCache.RemoteImageGeneration();
+        std::unordered_map<void const*, std::vector<SyntaxHighlightRange>> sourceCodeHighlights;
         auto rebuildAll = !preparedDocument
             || preparedDocument->modelRevision != frame.renderModel.revision
             || (!frame.renderModel.blocks.empty()
@@ -707,11 +708,27 @@ namespace winrt::ElMd
             prepared.display = prepare(block, contentWidth, requestEmbedded);
             if (block.source_mode && block.source_code && block.language && !prepared.display.text.empty())
             {
-                auto highlights = treeSitter.Highlight(*block.language, elmd::cps_to_utf8(prepared.display.text));
+                auto const* contextKey = block.source_code_context
+                    ? static_cast<void const*>(block.source_code_context.get())
+                    : static_cast<void const*>(&block);
+                auto [found, inserted] = sourceCodeHighlights.try_emplace(contextKey);
+                if (inserted)
+                {
+                    auto const& context = block.source_code_context
+                        ? *block.source_code_context
+                        : prepared.display.text;
+                    found->second = treeSitter.Highlight(*block.language, elmd::cps_to_utf8(context));
+                }
+                auto lineStart = block.source_code_context ? block.source_code_context_offset : 0;
+                auto lineEnd = lineStart + prepared.display.text.size();
+                auto const& highlights = found->second;
                 for (auto const& highlight : highlights)
                 {
-                    auto start = (std::min)(static_cast<std::size_t>(highlight.start), prepared.display.text.size());
-                    auto end = (std::min)(start + static_cast<std::size_t>(highlight.length), prepared.display.text.size());
+                    auto highlightStart = static_cast<std::size_t>(highlight.start);
+                    auto highlightEnd = highlightStart + static_cast<std::size_t>(highlight.length);
+                    if (highlightEnd <= lineStart || highlightStart >= lineEnd) continue;
+                    auto start = (std::max)(highlightStart, lineStart) - lineStart;
+                    auto end = (std::min)(highlightEnd, lineEnd) - lineStart;
                     auto displayStart = elmd::char_index_to_utf16(prepared.display.text, start);
                     auto displayEnd = elmd::char_index_to_utf16(prepared.display.text, end);
                     if (displayEnd <= displayStart) continue;

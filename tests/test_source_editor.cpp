@@ -77,6 +77,21 @@ suite source_editor_tests = [] {
     expect(fatal(bool(editor.lines().back().presentation_key == after_key)));
 };
 
+"source code presentation invalidates one fenced context rather than the document"_test = [] {
+    SourceEditor editor(U"before\n```cpp\n/* first\nstill comment */\n```\nafter");
+    auto before = build_source_render_model(editor);
+    auto firstCodeKey = before.blocks[2].presentation_key;
+    auto secondCodeKey = before.blocks[3].presentation_key;
+    auto afterKey = before.blocks.back().presentation_key;
+    editor.set_selection(SourceSelection::caret(22));
+    expect(fatal(editor.insert_text(U"X")));
+    auto after = build_source_render_model(editor);
+    expect(fatal(bool(after.blocks[2].presentation_key != firstCodeKey)));
+    expect(fatal(bool(after.blocks[3].presentation_key != secondCodeKey)));
+    expect(fatal(bool(after.blocks.back().presentation_key == afterKey)));
+    expect(fatal(bool(after.blocks[2].source_code_context == after.blocks[3].source_code_context)));
+};
+
 "source positions translate only at the render boundary"_test = [] {
     SourceEditor editor(U"one\ntwo");
     editor.set_selection({1, 6, TextAffinity::Downstream, TextAffinity::Upstream});

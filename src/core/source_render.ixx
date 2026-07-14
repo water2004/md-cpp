@@ -66,7 +66,41 @@ inline RenderModel build_source_render_model(SourceEditor const& editor) {
     model.outline = Outline::empty(editor.revision());
     model.blocks.reserve(editor.lines().size());
     model.editable_order.reserve(editor.lines().size());
-    for (auto const& line : editor.lines()) {
+    struct CodeContext {
+        std::shared_ptr<const std::u32string> text;
+        std::size_t line_offset = 0;
+        std::uint64_t key = 0;
+    };
+    std::vector<std::optional<CodeContext>> code_contexts(editor.lines().size());
+    auto hash_context = [](std::u32string_view text) {
+        std::uint64_t value = 1469598103934665603ull;
+        for (auto character : text) {
+            value ^= static_cast<std::uint32_t>(character);
+            value *= 1099511628211ull;
+        }
+        return value;
+    };
+    for (std::size_t start = 0; start < editor.lines().size();) {
+        if (!editor.lines()[start].code_content) { ++start; continue; }
+        auto end = start;
+        std::u32string context;
+        std::vector<std::size_t> offsets;
+        while (end < editor.lines().size() && editor.lines()[end].code_content) {
+            offsets.push_back(context.size());
+            context += editor.lines()[end].text;
+            if (editor.lines()[end].has_newline) context.push_back(U'\n');
+            ++end;
+        }
+        auto key = hash_context(context);
+        auto shared = std::make_shared<const std::u32string>(std::move(context));
+        for (auto index = start; index < end; ++index) {
+            code_contexts[index] = CodeContext{shared, offsets[index - start], key};
+        }
+        start = end;
+    }
+
+    for (std::size_t index = 0; index < editor.lines().size(); ++index) {
+        auto const& line = editor.lines()[index];
         RenderBlock block;
         block.kind = RenderBlockKind::Text;
         block.id = line.id;
@@ -77,6 +111,14 @@ inline RenderModel build_source_render_model(SourceEditor const& editor) {
         block.source_mode = true;
         block.source_code = line.code_content;
         block.presentation_key = line.presentation_key;
+        if (code_contexts[index]) {
+            block.source_code_context = code_contexts[index]->text;
+            block.source_code_context_offset = code_contexts[index]->line_offset;
+            block.presentation_key ^= code_contexts[index]->key
+                + 0x9e3779b97f4a7c15ull
+                + (block.presentation_key << 6)
+                + (block.presentation_key >> 2);
+        }
         block.language = line.code_language;
         model.editable_order.push_back(line.id);
         model.blocks.push_back(std::move(block));
