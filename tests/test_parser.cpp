@@ -292,6 +292,62 @@ suite parser_tests = [] {
     expect(fatal(bool(serialize_markdown(parsed.document) == source)));
 };
 
+"footnote_multiblock_forms_preserve_marktext_compatible_source_exactly"_test = [] {
+    const std::vector<std::string> simple_forms{
+        "[^n]:\n    body on the next line\n",
+        "[^n]:\n\n    body after a blank line\n",
+        "[^n]: inline body\n\n    continuation paragraph\n",
+    };
+    for (auto const& source : simple_forms) {
+        const auto parsed = parse_text(1, source);
+        expect(fatal(bool(parsed.document.root.children.size() == 1u))) << source;
+        if (parsed.document.root.children.size() != 1u) continue;
+        auto const& footnote = parsed.document.root.children.front();
+        expect(bool(footnote.kind == BlockKind::FootnoteDefinition)) << "footnote kind: " << source;
+        expect(bool(first_block(footnote.children, BlockKind::Paragraph) != nullptr)) << "paragraph body: " << source;
+        expect(fatal(bool(serialize_markdown(parsed.document) == source))) << source;
+    }
+
+    const std::string multiblock =
+        "text[^m]\n\n"
+        "[^m]:\n\n"
+        "    First paragraph.\n\n"
+        "    - item\n"
+        "      - nested\n\n"
+        "    ```cpp\n"
+        "    int value = 1;\n"
+        "    ```\n\n"
+        "    Last paragraph.\n\n"
+        "outside\n";
+    const auto parsed = parse_text(1, multiblock);
+    expect(fatal(bool(parsed.document.root.children.size() == 3u)));
+    if (parsed.document.root.children.size() != 3u) return;
+    auto const& footnote = parsed.document.root.children[1];
+    expect(bool(footnote.kind == BlockKind::FootnoteDefinition)) << "multiblock footnote kind";
+    expect(bool(first_block(footnote.children, BlockKind::Paragraph) != nullptr)) << "multiblock paragraph";
+    expect(bool(first_block(footnote.children, BlockKind::List) != nullptr)) << "multiblock list";
+    expect(bool(first_block(footnote.children, BlockKind::CodeBlock) != nullptr)) << "multiblock fenced code";
+    expect(bool(parsed.document.root.children[2].kind == BlockKind::Paragraph)) << "outside paragraph kind";
+    expect(bool(parsed.document.root.children[2].inline_content.source == U"outside")) << "outside paragraph source";
+    auto const saved = serialize_markdown(parsed.document);
+    expect(bool(saved == multiblock)) << "multiblock exact save:\n" << saved;
+
+    const std::string terminated =
+        "text[^t]\n\n"
+        "[^t]: inline\n\n"
+        "    continuation\n\n"
+        "  two-space text is outside\n";
+    const auto termination = parse_text(1, terminated);
+    expect(bool(termination.document.root.children.size() == 3u)) << "termination root block count";
+    if (termination.document.root.children.size() == 3u) {
+        auto const& definition = termination.document.root.children[1];
+        expect(bool(definition.kind == BlockKind::FootnoteDefinition));
+        expect(bool(serialize_markdown_fragment(definition.children).find(U"two-space") == std::u32string::npos));
+        expect(bool(termination.document.root.children[2].kind == BlockKind::Paragraph));
+        expect(bool(serialize_markdown(termination.document) == terminated));
+    }
+};
+
 "callout_headers_preserve_exact_markers_and_title_whitespace"_test = [] {
     struct Case {
         std::string source;

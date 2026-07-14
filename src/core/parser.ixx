@@ -1428,6 +1428,7 @@ public:
             NodeId item_id = next_node_id();
             auto item_end = marker->source_end;
             bool previous_blank = false;
+            std::optional<std::size_t> trailing_blank_start;
             while (item_end < cps.size()) {
                 auto line_start = item_end;
                 auto line_end = line_start;
@@ -1440,8 +1441,20 @@ public:
                 }
                 auto next_marker = inspect(line_start);
                 if (next_marker && next_marker->indent == first->indent) break;
-                if (!blank && indentation <= first->indent && previous_blank) break;
+                if (!blank && indentation <= first->indent && previous_blank) {
+                    // A blank run before an outdented sibling is the separator
+                    // between blocks, not trailing source owned by this list
+                    // item. Leave it for parse_blocks so separator_before can
+                    // preserve the exact number of blank lines.
+                    item_end = trailing_blank_start.value_or(item_end);
+                    break;
+                }
                 previous_blank = blank;
+                if (blank) {
+                    if (!trailing_blank_start) trailing_blank_start = line_start;
+                } else {
+                    trailing_blank_start.reset();
+                }
                 item_end = line_end < cps.size() ? line_end + 1 : line_end;
             }
 
