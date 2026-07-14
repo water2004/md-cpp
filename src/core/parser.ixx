@@ -885,8 +885,8 @@ public:
 
     // ---- footnote definition ----
     std::optional<BlockNode> try_parse_footnote_definition() {
-        std::size_t start = pos;
-        std::size_t save = pos;
+        const auto start = pos;
+        const auto save = pos;
         advance_n(2);
         std::u32string label;
         while (!eof() && peek1() != ']' && peek1() != '\n') { label.push_back(peek1()); advance(); }
@@ -895,24 +895,156 @@ public:
         if (peek1() != ':') { pos = save; return std::nullopt; }
         advance();
         if (peek1() == ' ') advance();
-        std::size_t content_start = pos;
-        std::vector<BlockNode> children;
-        {
-            auto prev_block_start = [this](const std::u32string& line) -> bool {
-                // stop at next footnote-def / line that's not indented and starts with '[^'
-                std::size_t i = 0;
-                while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) ++i;
-                if (i + 1 < line.size() && line[i] == '[' && line[i+1] == '^') return true;
-                return false;
-            };
-            children = parse_blocks(prev_block_start);
+        const auto content_start = pos;
+
+        struct BodyLine {
+            std::size_t start = 0;
+            std::size_t end = 0;
+            std::size_t content_start = 0;
+            bool blank = false;
+        };
+        auto inspect_line = [&](std::size_t line_start) {
+            BodyLine line;
+            line.start = line_start;
+            line.end = line_start;
+            while (line.end < cps.size() && cps[line.end] != U'\n') ++line.end;
+            line.blank = true;
+            for (auto cursor = line.start; cursor < line.end; ++cursor) {
+                if (cps[cursor] != U' ' && cps[cursor] != U'\t') {
+                    line.blank = false;
+                    break;
+                }
+            }
+            line.content_start = line.start;
+            if (!line.blank) {
+                if (line.content_start < line.end && cps[line.content_start] == U'\t') {
+                    ++line.content_start;
+                } else {
+                    std::size_t spaces = 0;
+                    while (line.content_start < line.end && cps[line.content_start] == U' ' && spaces < 4) {
+                        ++line.content_start;
+                        ++spaces;
+                    }
+                    if (spaces < 4) line.content_start = line.start;
+                }
+            } else {
+                line.content_start = line.end;
+            }
+            return line;
+        };
+        auto is_continuation = [](const BodyLine& line) {
+            return !line.blank && line.content_start > line.start;
+        };
+
+        auto first_line_end = content_start;
+        while (first_line_end < cps.size() && cps[first_line_end] != U'\n') ++first_line_end;
+        std::vector<BodyLine> continuation_lines;
+        auto source_end = first_line_end < cps.size() ? first_line_end + 1 : first_line_end;
+        auto cursor = source_end;
+        while (cursor < cps.size()) {
+            auto line = inspect_line(cursor);
+            if (is_continuation(line)) {
+                continuation_lines.push_back(line);
+                source_end = line.end < cps.size() ? line.end + 1 : line.end;
+                cursor = source_end;
+                continue;
+            }
+            if (!line.blank) break;
+
+            std::vector<BodyLine> pending_blank_lines;
+            auto lookahead = cursor;
+            while (lookahead < cps.size()) {
+                auto blank = inspect_line(lookahead);
+                if (!blank.blank) break;
+                pending_blank_lines.push_back(blank);
+                lookahead = blank.end < cps.size() ? blank.end + 1 : blank.end;
+                if (lookahead == blank.end) break;
+            }
+            if (lookahead >= cps.size()) break;
+            auto next = inspect_line(lookahead);
+            if (!is_continuation(next)) break;
+            continuation_lines.insert(
+                continuation_lines.end(), pending_blank_lines.begin(), pending_blank_lines.end());
+            continuation_lines.push_back(next);
+            source_end = next.end < cps.size() ? next.end + 1 : next.end;
+            cursor = source_end;
         }
-        std::size_t end = pos;
-        NodeId id = next_node_id();
-        push_range(id, PhysicalRange(std::size_t(start), std::size_t(end)), PhysicalRange(std::size_t(content_start), std::size_t(end)));
+
+        std::u32string inner;
+        std::vector<std::size_t> offset_map;
+        std::vector<PhysicalRange> marker_ranges;
+        marker_ranges.push_back(PhysicalRange(start, content_start));
+        std::size_t inner_end_source = content_start;
+        auto append_range = [&](std::size_t begin, std::size_t end) {
+            for (auto source_offset = begin; source_offset < end; ++source_offset) {
+                offset_map.push_back(source_offset);
+                inner.push_back(cps[source_offset]);
+            }
+            inner_end_source = end;
+        };
+        append_range(content_start, first_line_end);
+        for (const auto& line : continuation_lines) {
+            offset_map.push_back(line.start > 0 ? line.start - 1 : line.start);
+            inner.push_back(U'\n');
+            if (!line.blank) {
+                marker_ranges.push_back(PhysicalRange(line.start, line.content_start));
+                append_range(line.content_start, line.end);
+            } else {
+                inner_end_source = line.end;
+            }
+        }
+        offset_map.push_back(inner_end_source);
+
+        ParseInput nested_input(input->revision, cps_to_utf8(inner), input->dialect);
+        Parser nested(&nested_input);
+        nested.node_counter = node_counter;
+        auto children = nested.parse_blocks(nullptr);
+        node_counter = nested.node_counter;
+        auto remap = [&](std::size_t value) {
+            return offset_map[(std::min)(value, offset_map.size() - 1)];
+        };
+        for (auto& range : nested.source_ranges) {
+            range.source_range = PhysicalRange(remap(range.source_range.start), remap(range.source_range.end));
+            range.content_range = PhysicalRange(remap(range.content_range.start), remap(range.content_range.end));
+            for (auto& prefix : range.marker_ranges) {
+                prefix = PhysicalRange(remap(prefix.start), remap(prefix.end));
+            }
+            source_ranges.push_back(std::move(range));
+        }
+        if (children.empty()) {
+            BlockNode paragraph;
+            paragraph.id = next_node_id();
+            paragraph.kind = BlockKind::Paragraph;
+            source_ranges.emplace_back(
+                paragraph.id,
+                PhysicalRange(content_start, content_start),
+                PhysicalRange(content_start, content_start));
+            children.push_back(std::move(paragraph));
+        }
+        for (auto& diagnostic : nested.diagnostics) diagnostics.push_back(std::move(diagnostic));
+        headings.insert(headings.end(), std::make_move_iterator(nested.headings.begin()), std::make_move_iterator(nested.headings.end()));
+        footnotes.insert(footnotes.end(), std::make_move_iterator(nested.footnotes.begin()), std::make_move_iterator(nested.footnotes.end()));
+        links.insert(links.end(), std::make_move_iterator(nested.links.begin()), std::make_move_iterator(nested.links.end()));
+        images.insert(images.end(), std::make_move_iterator(nested.images.begin()), std::make_move_iterator(nested.images.end()));
+        math_blocks.insert(math_blocks.end(), std::make_move_iterator(nested.math_blocks.begin()), std::make_move_iterator(nested.math_blocks.end()));
+        code_blocks.insert(code_blocks.end(), std::make_move_iterator(nested.code_blocks.begin()), std::make_move_iterator(nested.code_blocks.end()));
+
+        pos = source_end;
+        const auto id = next_node_id();
+        ParserSourceRange definition_range(
+            id,
+            PhysicalRange(start, source_end),
+            PhysicalRange(content_start, inner_end_source));
+        definition_range.marker_ranges = std::move(marker_ranges);
+        source_ranges.push_back(std::move(definition_range));
         footnotes.push_back({id, cps_to_utf8(label)});
-        BlockNode b; b.id = id; b.kind = BlockKind::FootnoteDefinition; b.footnote_label = cps_to_utf8(label); b.children = std::move(children);
-        return b;
+        BlockNode block;
+        block.id = id;
+        block.kind = BlockKind::FootnoteDefinition;
+        block.footnote_label = cps_to_utf8(label);
+        block.opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
+        block.children = std::move(children);
+        return block;
     }
 
     // ---- code fence / fenced math ----

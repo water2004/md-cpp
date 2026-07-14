@@ -50,6 +50,23 @@ inline std::u32string indent_continuation(std::u32string_view value, std::size_t
     return result;
 }
 
+inline std::u32string serialize_footnote_definition(const BlockNode& block) {
+    const auto body = serialize_blocks(block.children);
+    const auto marker = block.opening_marker.empty()
+        ? U"[^" + utf8_to_cps(block.footnote_label) + U"]: "
+        : block.opening_marker;
+    if (body.empty()) return marker;
+
+    const auto body_lines = lines(body);
+    std::u32string result = marker + body_lines.front();
+    for (std::size_t index = 1; index < body_lines.size(); ++index) {
+        result.push_back(U'\n');
+        if (!body_lines[index].empty()) result += U"    ";
+        result += body_lines[index];
+    }
+    return result;
+}
+
 inline std::u32string serialize_list(const BlockNode& block) {
     std::u32string result;
     const auto count = block.children.size();
@@ -130,8 +147,7 @@ inline std::u32string serialize_block(const BlockNode& block) {
             return result;
         }
         case BlockKind::FootnoteDefinition: {
-            auto body = serialize_blocks(block.children);
-            return U"[^" + utf8_to_cps(block.footnote_label) + U"]: " + indent_continuation(body, block.footnote_label.size() + 4);
+            return serialize_footnote_definition(block);
         }
         case BlockKind::Toc:
             return block.toc_marker == TocMarkerKind::WikiToc ? U"[[TOC]]" : U"[TOC]";

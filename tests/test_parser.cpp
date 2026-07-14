@@ -239,7 +239,57 @@ suite parser_tests = [] {
     expect(fatal(bool(footnote != nullptr)));
     const auto* callout = first_block(parsed.document.root.children, BlockKind::Callout);
     expect(fatal(bool(callout != nullptr)));
+    expect(fatal(bool(parsed.document.root.children.size() == 3u)));
+    if (parsed.document.root.children.size() == 3u) {
+        expect(fatal(bool(parsed.document.root.children[0].kind == BlockKind::BlockQuote)));
+        expect(fatal(bool(parsed.document.root.children[1].kind == BlockKind::FootnoteDefinition)));
+        expect(fatal(bool(parsed.document.root.children[2].kind == BlockKind::Callout)));
+    }
     if (callout && callout->callout_title) expect_lossless(*callout->callout_title);
+};
+
+"footnote_definitions_stop_at_root_siblings_and_parse_recursive_body_blocks"_test = [] {
+    const std::string source =
+        "text[^n]\n\n"
+        "[^n]: first\n"
+        "    continuation\n\n"
+        "    - item\n"
+        "      - nested\n\n"
+        "after\n";
+    const auto parsed = parse_text(1, source);
+    expect(fatal(bool(parsed.document.root.children.size() == 3u)));
+    if (parsed.document.root.children.size() != 3u) return;
+
+    const auto& footnote = parsed.document.root.children[1];
+    expect(fatal(bool(footnote.kind == BlockKind::FootnoteDefinition)));
+    expect(fatal(bool(footnote.footnote_label == "n")));
+    expect(fatal(bool(footnote.children.size() == 2u)));
+    if (footnote.children.size() == 2u) {
+        expect(fatal(bool(footnote.children[0].kind == BlockKind::Paragraph)));
+        expect(fatal(bool(footnote.children[0].inline_content.source == U"first\ncontinuation")));
+        expect_lossless(footnote.children[0].inline_content);
+        expect(fatal(bool(footnote.children[1].kind == BlockKind::List)));
+        expect(fatal(bool(first_block(footnote.children[1].children, BlockKind::List) != nullptr)));
+    }
+    expect(fatal(bool(parsed.document.root.children[2].kind == BlockKind::Paragraph)));
+    expect(fatal(bool(parsed.document.root.children[2].inline_content.source == U"after")));
+    expect(fatal(bool(serialize_markdown(parsed.document) == source)));
+};
+
+"footnote_body_recursively_parses_quotes_and_nested_lists"_test = [] {
+    const std::string source =
+        "[^q]: > quote\n"
+        "    >\n"
+        "    > - item\n";
+    const auto parsed = parse_text(1, source);
+    expect(fatal(bool(parsed.document.root.children.size() == 1u)));
+    if (parsed.document.root.children.size() != 1u) return;
+    const auto& footnote = parsed.document.root.children.front();
+    expect(fatal(bool(footnote.kind == BlockKind::FootnoteDefinition)));
+    expect(fatal(bool(footnote.children.size() == 1u)));
+    expect(fatal(bool(first_block(footnote.children, BlockKind::BlockQuote) != nullptr)));
+    expect(fatal(bool(first_block(footnote.children, BlockKind::List) != nullptr)));
+    expect(fatal(bool(serialize_markdown(parsed.document) == source)));
 };
 
 "callout_headers_preserve_exact_markers_and_title_whitespace"_test = [] {
