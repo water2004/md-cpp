@@ -427,7 +427,7 @@ namespace winrt::ElMd
                 auto position = elmd::TextPosition{block.id, 0, elmd::TextAffinity::Downstream};
                 auto start = static_cast<std::uint32_t>(display.displayToSource.size());
                 AppendGeneratedText(display, U"\uFFFC", position, elmd::InlineStyle::plain());
-                display.imageOverlays.push_back({start, block.source_span, block.src, block.alt, block.image_width, block.image_height});
+                display.imageOverlays.push_back({start, block.source_span, block.src, block.alt, block.image_width, block.image_height, true});
             }
             else if (block.kind == elmd::RenderBlockKind::Toc)
             {

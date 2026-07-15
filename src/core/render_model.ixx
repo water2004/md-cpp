@@ -155,6 +155,7 @@ struct InlineRenderItem {
     std::optional<std::string> title;
     std::optional<float> image_width;
     std::optional<float> image_height;
+    bool block_image = false;            // Image occupying its own block flow line
     MarkerStyle marker_style;
     SourceSyntaxKind source_syntax = SourceSyntaxKind::None;
     MarkerVisibility visibility = MarkerVisibility::WhenCaretInsideNode;

@@ -710,7 +710,15 @@ namespace winrt::ElMd
                 {
                     auto displayStart = static_cast<std::uint32_t>(elmd::utf16_len(display.text));
                     AppendGeneratedText(display, U"\uFFFC", {item.source_span.container_id, item.source_span.source_range.start, elmd::TextAffinity::Downstream}, item.style);
-                    display.imageOverlays.push_back(DisplayInlineText::ImageOverlay{ displayStart, item.source_span, item.src, item.alt, item.image_width, item.image_height });
+                    display.imageOverlays.push_back(DisplayInlineText::ImageOverlay{
+                        displayStart,
+                        item.source_span,
+                        item.src,
+                        item.alt,
+                        item.image_width,
+                        item.image_height,
+                        item.block_image,
+                    });
                 }
                 continue;
             }

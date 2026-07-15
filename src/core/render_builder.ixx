@@ -432,6 +432,7 @@ struct Builder {
                 item.title = block.image_title;
                 item.image_width = block.image_width;
                 item.image_height = block.image_height;
+                item.block_image = true;
                 out.push_back(std::move(item));
                 break;
             }

@@ -50,6 +50,7 @@ namespace winrt::ElMd
             std::string alt;
             std::optional<float> width;
             std::optional<float> height;
+            bool block = false;
         };
 
         struct IndentOverlay

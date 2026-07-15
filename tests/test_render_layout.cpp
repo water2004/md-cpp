@@ -652,9 +652,13 @@ suite render_layout_tests = [] {
     expect(fatal(bool((m.blocks.size()) == (1u))));
     std::u32string text;
     bool image = false;
+    bool block_image = false;
     bool quote = false;
     for (auto const& item : m.blocks[0].inline_items) {
-        if (item.kind == InlineRenderItem::Kind::Image) image = true;
+        if (item.kind == InlineRenderItem::Kind::Image) {
+            image = true;
+            block_image = item.block_image;
+        }
         else if (item.kind == InlineRenderItem::Kind::Link) for (auto const& child : item.children) text += child.text;
         else text += item.text;
     }
@@ -664,7 +668,30 @@ suite render_layout_tests = [] {
     expect(fatal(bool(text.find(U"grandchild") != std::u32string::npos)));
     expect(fatal(bool(text.find(U"quoted") != std::u32string::npos)));
     expect(fatal(bool(image)));
+    expect(fatal(bool(block_image)));
     expect(fatal(bool(quote)));
+};
+
+"inline_and_block_images_keep_distinct_flow_alignment"_test = [] {
+    auto inline_model = build_model("before ![inline](inline.png) after");
+    expect(fatal(bool(inline_model.blocks.size() == 1u)));
+    auto inline_image = std::ranges::find(
+        inline_model.blocks.front().inline_items,
+        InlineRenderItem::Kind::Image,
+        &InlineRenderItem::kind);
+    expect(fatal(bool(inline_image != inline_model.blocks.front().inline_items.end())));
+    if (inline_image != inline_model.blocks.front().inline_items.end())
+        expect(fatal(bool(!inline_image->block_image)));
+
+    auto nested_model = build_model("> - ![block](block.gif)");
+    expect(fatal(bool(nested_model.blocks.size() == 1u)));
+    auto nested_image = std::ranges::find(
+        nested_model.blocks.front().inline_items,
+        InlineRenderItem::Kind::Image,
+        &InlineRenderItem::kind);
+    expect(fatal(bool(nested_image != nested_model.blocks.front().inline_items.end())));
+    if (nested_image != nested_model.blocks.front().inline_items.end())
+        expect(fatal(bool(nested_image->block_image)));
 };
 
 "math_inside_emphasis_renders_without_inheriting_text_style"_test = [] {
