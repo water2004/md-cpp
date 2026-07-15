@@ -315,6 +315,12 @@
     <ClCompile Include="MainWindow.xaml.cpp">
       <Filter>Application Shell</Filter>
     </ClCompile>
+    <ClCompile Include="MainWindow.Events.cpp">
+      <Filter>Application Shell</Filter>
+    </ClCompile>
+    <ClCompile Include="MainWindow.Commands.cpp">
+      <Filter>Application Shell</Filter>
+    </ClCompile>
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp">
       <Filter>Application Shell</Filter>
     </ClCompile>

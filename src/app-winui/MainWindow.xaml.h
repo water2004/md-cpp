@@ -17,6 +17,8 @@ namespace winrt::ElMd::implementation
         MainWindow();
 
     private:
+        void AttachControllers();
+        void RegisterWindowHandlers();
         void InitializeEditorSurface();
         void InitializeTextInput();
         void ResizeEditorSurface(double width, double height);
