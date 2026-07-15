@@ -1059,11 +1059,12 @@ suite render_layout_tests = [] {
     if (parsed.document.root.children.empty()) return;
     auto const& callout = parsed.document.root.children.front();
     expect(fatal(bool(callout.kind == BlockKind::Callout)));
-    expect(fatal(bool(callout.callout_title.has_value())));
-    expect(fatal(bool(!callout.children.empty())));
-    if (!callout.callout_title || callout.children.empty()) return;
-    auto const title_id = callout.id;
-    auto const body_id = callout.children.front().id;
+    const auto* title = callout_title_block(callout);
+    expect(fatal(bool(title != nullptr)));
+    expect(fatal(bool(callout.children.size() >= 2u)));
+    if (!title || callout.children.size() < 2) return;
+    auto const title_id = title->id;
+    auto const body_id = callout.children[1].id;
 
     auto model = build_render_model(parsed.document, parsed.outline);
     expect(fatal(bool(model.editable_order.size() >= 2u)));
@@ -1073,9 +1074,8 @@ suite render_layout_tests = [] {
     expect(fatal(bool(!model.blocks.empty())));
     if (model.blocks.empty()) return;
     expect(fatal(bool(model.blocks.front().flow_anchor_owner_id == title_id)));
-    expect(fatal(bool(model.blocks.front().source_span.container_id == title_id)));
-    expect(fatal(bool(model.blocks.front().source_span.source_range.end
-        == callout.callout_title->source.size())));
+    expect(fatal(bool(model.blocks.front().source_span.container_id == callout.id)));
+    expect(fatal(bool(model.blocks.front().source_span.source_range.empty())));
     const auto title_source = std::ranges::any_of(
         model.blocks.front().inline_items,
         [&](auto const& item) {

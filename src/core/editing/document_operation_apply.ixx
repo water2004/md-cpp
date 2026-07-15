@@ -123,12 +123,6 @@ inline void scan_ids(const BlockNode& block, std::uint64_t& maximum) {
     for (const auto& token : block.inline_content.tree.tokens) {
         maximum = (std::max)(maximum, token.id.v);
     }
-    if (block.callout_title) {
-        scan_ids(block.callout_title->tree.nodes, maximum);
-        for (const auto& token : block.callout_title->tree.tokens) {
-            maximum = (std::max)(maximum, token.id.v);
-        }
-    }
     for (const auto& child : block.children) scan_ids(child, maximum);
 }
 

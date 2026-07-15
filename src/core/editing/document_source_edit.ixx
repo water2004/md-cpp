@@ -30,7 +30,11 @@ inline std::vector<DocumentInvariantError> validate_document(const EditorDocumen
     if (document.root.id.v == 0) errors.push_back({document.root.id, "document root has no id"});
     else ids.insert(document.root.id.v);
     if (document.root.children.empty()) errors.push_back({{}, "document has no blocks"});
-    document_edit_detail::validate_blocks(document.root.children, ids, errors);
+    document_edit_detail::validate_blocks(
+        document.root.children,
+        BlockKind::Document,
+        ids,
+        errors);
     return errors;
 }
 

@@ -967,17 +967,17 @@ suite document_edit_tests = [] {
     auto document = parse_document("> [!IMPORTANT] title\n> first\n>\n> last");
     auto const& callout = document.root.children.front();
     expect(fatal(bool(callout.kind == BlockKind::Callout)));
-    expect(fatal(bool(callout.children.size() == 2u)));
-    if (callout.children.size() != 2) return;
+    expect(fatal(bool(callout.children.size() == 3u)));
+    if (callout.children.size() != 3) return;
     auto opened = test_edit::document_enter(
         document,
-        TextSelection::caret({callout.children.front().id, 5, TextAffinity::Downstream}));
+        TextSelection::caret({callout.children[1].id, 5, TextAffinity::Downstream}));
     expect(fatal(bool(opened.has_value())));
     if (!opened) return;
     auto const* opened_callout = find_block(opened->after.root, callout.id);
-    expect(fatal(bool(opened_callout != nullptr && opened_callout->children.size() == 3u)));
-    if (!opened_callout || opened_callout->children.size() != 3) return;
-    auto const empty_id = opened_callout->children[1].id;
+    expect(fatal(bool(opened_callout != nullptr && opened_callout->children.size() == 4u)));
+    if (!opened_callout || opened_callout->children.size() != 4) return;
+    auto const empty_id = opened_callout->children[2].id;
     auto transaction = test_edit::document_enter(
         opened->after,
         TextSelection::caret({empty_id, 0, TextAffinity::Downstream}));
@@ -988,9 +988,9 @@ suite document_edit_tests = [] {
     auto const& leading = transaction->after.root.children[0];
     auto const& outside = transaction->after.root.children[1];
     auto const& trailing = transaction->after.root.children[2];
-    expect(fatal(bool(leading.kind == BlockKind::Callout && leading.callout_title.has_value())));
+    expect(fatal(bool(leading.kind == BlockKind::Callout && callout_title_block(leading) != nullptr)));
     expect(fatal(bool(outside.kind == BlockKind::Paragraph && outside.inline_content.source.empty())));
-    expect(fatal(bool(trailing.kind == BlockKind::Callout && !trailing.callout_title.has_value())));
+    expect(fatal(bool(trailing.kind == BlockKind::Callout && callout_title_block(trailing) == nullptr)));
     expect(fatal(bool(trailing.callout_kind == "IMPORTANT")));
     expect(fatal(bool(trailing.children.size() == 1u)));
     expect(fatal(bool(transaction->selection_after.active.container_id == outside.id)));
@@ -1095,14 +1095,15 @@ suite document_edit_tests = [] {
 "callout_title_boundaries_use_tree_split_join_and_unwrap"_test = [] {
     auto document = parse_document("> [!NOTE] title\n> body");
     const auto callout_id = document.root.children.front().id;
+    const auto title_id = document.root.children.front().children.front().id;
 
     auto entered_at_start = test_edit::document_enter(
         document,
-        TextSelection::caret({callout_id, 0, TextAffinity::Downstream}));
+        TextSelection::caret({title_id, 0, TextAffinity::Downstream}));
     expect(fatal(bool(entered_at_start.has_value()))) << "enter at callout title start";
     if (entered_at_start) {
         auto const& callout = entered_at_start->after.root.children.front();
-        expect(fatal(bool(!callout.callout_title.has_value())));
+        expect(fatal(bool(callout_title_block(callout) == nullptr)));
         expect(fatal(bool(callout.children.size() == 2u)));
         if (callout.children.size() == 2u) {
             expect(fatal(bool(callout.children[0].inline_content.source == U"title")));
@@ -1115,68 +1116,86 @@ suite document_edit_tests = [] {
 
     auto entered = test_edit::document_enter(
         document,
-        TextSelection::caret({callout_id, 2, TextAffinity::Downstream}));
+        TextSelection::caret({title_id, 2, TextAffinity::Downstream}));
     expect(fatal(bool(entered.has_value()))) << "enter callout title";
     if (entered) {
         auto const& callout = entered->after.root.children.front();
         expect(fatal(bool(callout.kind == BlockKind::Callout)));
-        expect(fatal(bool(callout.callout_title.has_value())));
-        expect(fatal(bool(callout.callout_title && callout.callout_title->source == U"ti")));
-        expect(fatal(bool(callout.children.size() == 2u)));
-        if (callout.children.size() == 2) {
-            expect(fatal(bool(callout.children[0].inline_content.source == U"tle")));
-            expect(fatal(bool(callout.children[1].inline_content.source == U"body")));
-            expect(fatal(bool(entered->selection_after.active.container_id == callout.children[0].id)));
+        const auto* title = callout_title_block(callout);
+        expect(fatal(bool(title != nullptr)));
+        expect(fatal(bool(title && title->inline_content.source == U"ti")));
+        expect(fatal(bool(callout.children.size() == 3u)));
+        if (callout.children.size() == 3) {
+            expect(fatal(bool(callout.children[1].inline_content.source == U"tle")));
+            expect(fatal(bool(callout.children[2].inline_content.source == U"body")));
+            expect(fatal(bool(entered->selection_after.active.container_id == callout.children[1].id)));
         }
         auto serialized = serialize_markdown(entered->after);
         expect(fatal(bool(serialized == "> [!NOTE] ti\n> tle\n>\n> body"))) << serialized;
         expect_document_valid(entered->after);
     }
 
-    const auto body_id = document.root.children.front().children.front().id;
+    const auto body_id = document.root.children.front().children[1].id;
     auto backward = test_edit::document_delete_backward(
         document,
         TextSelection::caret({body_id, 0, TextAffinity::Downstream}));
     expect(fatal(bool(backward.has_value()))) << "backspace first callout body";
     if (backward) {
         auto const& callout = backward->after.root.children.front();
-        expect(fatal(bool(callout.callout_title.has_value())));
-        expect(fatal(bool(callout.callout_title && callout.callout_title->source == U"titlebody")));
-        expect(fatal(bool(callout.children.empty())));
-        expect(fatal(bool(backward->selection_after.active.container_id == callout_id)));
+        const auto* title = callout_title_block(callout);
+        expect(fatal(bool(title != nullptr)));
+        expect(fatal(bool(title && title->inline_content.source == U"titlebody")));
+        expect(fatal(bool(callout.children.size() == 1u)));
+        expect(fatal(bool(backward->selection_after.active.container_id == title_id)));
         expect(fatal(bool(backward->selection_after.active.source_offset == 5u)));
         expect_document_valid(backward->after);
     }
 
     auto forward = test_edit::document_delete_forward(
         document,
-        TextSelection::caret({callout_id, 5, TextAffinity::Upstream}));
+        TextSelection::caret({title_id, 5, TextAffinity::Upstream}));
     expect(fatal(bool(forward.has_value()))) << "delete after callout title";
     if (forward) {
         auto const& callout = forward->after.root.children.front();
-        expect(fatal(bool(callout.callout_title.has_value())));
-        expect(fatal(bool(callout.callout_title && callout.callout_title->source == U"titlebody")));
-        expect(fatal(bool(callout.children.empty())));
-        expect(fatal(bool(forward->selection_after.active.container_id == callout_id)));
+        const auto* title = callout_title_block(callout);
+        expect(fatal(bool(title != nullptr)));
+        expect(fatal(bool(title && title->inline_content.source == U"titlebody")));
+        expect(fatal(bool(callout.children.size() == 1u)));
+        expect(fatal(bool(forward->selection_after.active.container_id == title_id)));
         expect(fatal(bool(forward->selection_after.active.source_offset == 5u)));
         expect_document_valid(forward->after);
     }
 
     auto unwrapped = test_edit::document_delete_backward(
         document,
-        TextSelection::caret({callout_id, 0, TextAffinity::Downstream}));
+        TextSelection::caret({title_id, 0, TextAffinity::Downstream}));
     expect(fatal(bool(unwrapped.has_value()))) << "backspace callout title start";
     if (unwrapped) {
         auto const& quote = unwrapped->after.root.children.front();
         expect(fatal(bool(quote.kind == BlockKind::BlockQuote)));
         expect(fatal(bool(quote.children.size() == 1u)));
         if (quote.children.size() == 1) {
-            expect(fatal(bool(quote.children[0].id == callout_id)));
+            expect(fatal(bool(quote.children[0].id == title_id)));
             expect(fatal(bool(quote.children[0].inline_content.source == U"title\nbody")));
         }
         expect(fatal(bool(serialize_markdown(unwrapped->after) == "> title\n> body")));
         expect_document_valid(unwrapped->after);
     }
+};
+
+"callout_title_tree_position_is_a_document_invariant"_test = [] {
+    auto misplaced = parse_document("> [!NOTE] title\n> body");
+    auto& callout = misplaced.root.children.front();
+    expect(fatal(bool(callout.children.size() == 2u)));
+    if (callout.children.size() != 2u) return;
+    std::swap(callout.children[0], callout.children[1]);
+    const auto misplaced_errors = validate_document(misplaced);
+    expect(fatal(bool(!misplaced_errors.empty())));
+
+    auto orphaned = parse_document("paragraph");
+    orphaned.root.children.front().kind = BlockKind::CalloutTitle;
+    const auto orphaned_errors = validate_document(orphaned);
+    expect(fatal(bool(!orphaned_errors.empty())));
 };
 
 "callout_boundaries_are_independent_of_ancestor_depth"_test = [] {
@@ -1186,9 +1205,10 @@ suite document_edit_tests = [] {
         if (!callout && node.kind == BlockKind::Callout) callout = &node;
     });
     expect(fatal(bool(callout != nullptr)));
-    if (callout && callout->callout_title && !callout->children.empty()) {
+    if (callout && callout_title_block(*callout) && callout->children.size() > 1) {
         const auto callout_id = callout->id;
-        const auto body_id = callout->children.front().id;
+        const auto title_id = callout->children.front().id;
+        const auto body_id = callout->children[1].id;
         auto joined = test_edit::document_delete_backward(
             nested,
             TextSelection::caret({body_id, 0, TextAffinity::Downstream}));
@@ -1197,17 +1217,18 @@ suite document_edit_tests = [] {
             const auto* updated = find_block(joined->after.root, callout_id);
             expect(fatal(bool(updated != nullptr)));
             expect(fatal(bool(updated && updated->kind == BlockKind::Callout)));
-            expect(fatal(bool(updated && updated->callout_title.has_value())));
-            expect(fatal(bool(updated && updated->callout_title
-                && updated->callout_title->source == U"titlebody")));
-            expect(fatal(bool(updated && updated->children.empty())));
+            const auto* updated_title = updated ? callout_title_block(*updated) : nullptr;
+            expect(fatal(bool(updated_title != nullptr)));
+            expect(fatal(bool(updated_title
+                && updated_title->inline_content.source == U"titlebody")));
+            expect(fatal(bool(updated && updated->children.size() == 1u)));
             expect(fatal(bool(joined->after.root.children.front().kind == BlockKind::List)));
             expect_document_valid(joined->after);
         }
 
         auto unwrapped = test_edit::document_delete_backward(
             nested,
-            TextSelection::caret({callout_id, 0, TextAffinity::Downstream}));
+            TextSelection::caret({title_id, 0, TextAffinity::Downstream}));
         expect(fatal(bool(unwrapped.has_value())));
         if (unwrapped) {
             expect(fatal(bool(unwrapped->after.root.children.front().kind == BlockKind::List)));
@@ -1516,7 +1537,7 @@ suite document_edit_tests = [] {
 "callout_command_switches_kind_in_place_and_preserves_header_spacing"_test = [] {
     auto document = parse_document("> [!note]  title\n> body");
     auto const callout_id = document.root.children.front().id;
-    auto const body_id = document.root.children.front().children.front().id;
+    auto const body_id = document.root.children.front().children[1].id;
     auto switched = test_edit::document_toggle_callout(
         document,
         TextSelection::caret({body_id, 0, TextAffinity::Downstream}),
@@ -1526,7 +1547,7 @@ suite document_edit_tests = [] {
     auto const* callout = find_block(switched->after.root, callout_id);
     expect(fatal(bool(callout != nullptr && callout->kind == BlockKind::Callout)));
     expect(fatal(bool(callout != nullptr && callout->callout_kind == "TIP")));
-    expect(fatal(bool(callout != nullptr && callout->children.size() == 1u)));
+    expect(fatal(bool(callout != nullptr && callout->children.size() == 2u)));
     const auto markdown = serialize_markdown(switched->after);
     expect(fatal(bool(markdown == "> [!TIP]  title\n> body"))) << markdown;
     const auto reparsed = parse_document(markdown);

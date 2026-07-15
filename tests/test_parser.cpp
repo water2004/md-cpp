@@ -247,7 +247,11 @@ suite parser_tests = [] {
         expect(fatal(bool(parsed.document.root.children[1].kind == BlockKind::FootnoteDefinition)));
         expect(fatal(bool(parsed.document.root.children[2].kind == BlockKind::Callout)));
     }
-    if (callout && callout->callout_title) expect_lossless(*callout->callout_title);
+    if (callout) {
+        const auto* title = callout_title_block(*callout);
+        expect(fatal(bool(title != nullptr)));
+        if (title) expect_lossless(title->inline_content);
+    }
 };
 
 "footnote_definitions_stop_at_root_siblings_and_parse_recursive_body_blocks"_test = [] {
@@ -370,10 +374,11 @@ suite parser_tests = [] {
         expect(fatal(bool(callout.kind == BlockKind::Callout))) << test.source;
         expect(fatal(bool(callout.callout_kind == test.kind))) << test.source;
         expect(fatal(bool(!callout.opening_marker.empty()))) << test.source;
-        expect(fatal(bool(callout.callout_title.has_value() == test.title.has_value()))) << test.source;
-        if (test.title && callout.callout_title) {
-            expect(fatal(bool(callout.callout_title->source == *test.title))) << test.source;
-            expect_lossless(*callout.callout_title);
+        const auto* title = callout_title_block(callout);
+        expect(fatal(bool((title != nullptr) == test.title.has_value()))) << test.source;
+        if (test.title && title) {
+            expect(fatal(bool(title->inline_content.source == *test.title))) << test.source;
+            expect_lossless(title->inline_content);
         }
         expect(fatal(bool(serialize_markdown(parsed.document) == test.source))) << test.source;
     }
@@ -384,6 +389,40 @@ suite parser_tests = [] {
         expect(fatal(bool(unknown.document.root.children.front().kind == BlockKind::BlockQuote)));
         expect(fatal(bool(serialize_markdown(unknown.document) == "> [!CUSTOM] title\n> body")));
     }
+};
+
+"callout_title_is_a_first_class_unified_tree_child"_test = [] {
+    const auto parsed = parse_text(7, "> [!NOTE] _title_\n> body");
+    expect(fatal(bool(parsed.document.root.children.size() == 1u)));
+    if (parsed.document.root.children.size() != 1u) return;
+    const auto& callout = parsed.document.root.children.front();
+    expect(fatal(bool(callout.kind == BlockKind::Callout)));
+    expect(fatal(bool(editable_inline_document(callout) == nullptr)));
+    expect(fatal(bool(callout.children.size() == 2u)));
+    if (callout.children.size() != 2u) return;
+
+    const auto& title = callout.children.front();
+    const auto& body = callout.children.back();
+    expect(fatal(bool(title.kind == BlockKind::CalloutTitle)));
+    expect(fatal(bool(title.id != callout.id)));
+    expect(fatal(bool(title.inline_content.source == U"_title_")));
+    expect_lossless(title.inline_content);
+    expect(fatal(bool(body.kind == BlockKind::Paragraph)));
+
+    const auto fragments = document_text_fragments(parsed.document);
+    expect(fatal(bool(fragments.size() == 2u)));
+    if (fragments.size() == 2u) {
+        expect(fatal(bool(fragments[0].container_id == title.id)));
+        expect(fatal(bool(fragments[0].text == U"_title_")));
+        expect(fatal(bool(fragments[1].container_id == body.id)));
+        expect(fatal(bool(fragments[1].text == U"body")));
+    }
+
+    const auto projection = serialize_markdown_projection(parsed.document);
+    const auto title_map = std::ranges::find(
+        projection.source_maps, title.id, &SerializedSourceMap::container_id);
+    expect(fatal(bool(title_map != projection.source_maps.end())));
+    expect(fatal(bool(projection.text == U"> [!NOTE] _title_\n> body")));
 };
 
 "atx_heading_keeps_non_closing_trailing_whitespace_in_local_source"_test = [] {

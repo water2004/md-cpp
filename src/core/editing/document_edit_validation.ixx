@@ -27,9 +27,21 @@ inline void validate_inline_document(NodeId owner, const InlineDocument& documen
     scan(document.tree.nodes);
     for (const auto& token : document.tree.tokens) if (token.id.v == 0 || !ids.insert(token.id.v).second) errors.push_back({token.id, "duplicate or missing token id"});
 }
-inline void validate_blocks(const BlockVec& blocks, std::unordered_set<std::uint64_t>& ids, std::vector<DocumentInvariantError>& errors) {
-    for (const auto& block : blocks) {
+inline void validate_blocks(
+    const BlockVec& blocks,
+    BlockKind parent_kind,
+    std::unordered_set<std::uint64_t>& ids,
+    std::vector<DocumentInvariantError>& errors) {
+    for (std::size_t index = 0; index < blocks.size(); ++index) {
+        const auto& block = blocks[index];
         if (block.id.v == 0 || !ids.insert(block.id.v).second) errors.push_back({block.id, "duplicate or missing block id"});
+        if (block.kind == BlockKind::CalloutTitle
+            && (parent_kind != BlockKind::Callout || index != 0)) {
+            errors.push_back({block.id, "callout title is not the first child of a callout"});
+        }
+        if (block.kind == BlockKind::CalloutTitle && !block.children.empty()) {
+            errors.push_back({block.id, "callout title owns structural children"});
+        }
         if (const auto* document = editable_inline_document(block)) {
             validate_inline_document(block.id, *document, ids, errors);
         }
@@ -41,7 +53,7 @@ inline void validate_blocks(const BlockVec& blocks, std::unordered_set<std::uint
                 errors.push_back({block.id, "block-source CST is not lossless"});
             }
         }
-        validate_blocks(block.children, ids, errors);
+        validate_blocks(block.children, block.kind, ids, errors);
     }
 }
 

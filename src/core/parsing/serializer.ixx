@@ -1,6 +1,7 @@
 export module elmd.core.serializer;
 import std;
 import elmd.core.ast;
+import elmd.core.block_tree;
 import elmd.core.document;
 import elmd.core.ids;
 import elmd.core.instrumentation;
@@ -145,6 +146,7 @@ inline ProjectedText prefix_lines(ProjectedText input, Prefix&& prefix) {
 
 inline ProjectedText serialize_block(const BlockNode& block);
 inline ProjectedText serialize_blocks(const BlockVec& blocks);
+inline ProjectedText serialize_blocks_from(const BlockVec& blocks, std::size_t start);
 
 inline ProjectedText serialize_list_item_blocks(const BlockVec& blocks) {
     ProjectedText result;
@@ -259,11 +261,12 @@ inline ProjectedText serialize_block(const BlockNode& block) {
                 ? U"> [!" + utf8_to_cps(block.callout_kind) + U"]"
                 : block.opening_marker;
             auto result = generated(first);
-            if (block.callout_title) {
+            const auto* title = callout_title_block(block);
+            if (title) {
                 if (block.opening_marker.empty()) result.append_generated(U" ");
-                result.append(source_text(block.id, block.callout_title->source));
+                result.append(source_text(title->id, title->inline_content.source));
             }
-            auto body = serialize_blocks(block.children);
+            auto body = serialize_blocks_from(block.children, callout_body_start(block));
             if (!body.text.empty()) {
                 result.append_generated(U"\n");
                 result.append(prefix_lines(std::move(body), [](std::size_t, std::u32string_view line) {
@@ -292,6 +295,8 @@ inline ProjectedText serialize_block(const BlockNode& block) {
         case BlockKind::ListItem:
         case BlockKind::TaskListItem:
             return serialize_list_item_blocks(block.children);
+        case BlockKind::CalloutTitle:
+            return source_text(block.id, block.inline_content.source);
         case BlockKind::TableRow:
             return serialize_table_row(block);
         case BlockKind::TableCell:
@@ -313,9 +318,14 @@ inline std::u32string block_separator(const BlockNode& previous, const BlockNode
 }
 
 inline ProjectedText serialize_blocks(const BlockVec& blocks) {
+    return serialize_blocks_from(blocks, 0);
+}
+
+inline ProjectedText serialize_blocks_from(const BlockVec& blocks, std::size_t start) {
     ProjectedText result;
-    for (std::size_t index = 0; index < blocks.size(); ++index) {
-        if (index > 0) result.append_generated(block_separator(blocks[index - 1], blocks[index]));
+    start = (std::min)(start, blocks.size());
+    for (std::size_t index = start; index < blocks.size(); ++index) {
+        if (index > start) result.append_generated(block_separator(blocks[index - 1], blocks[index]));
         result.append(serialize_block(blocks[index]));
     }
     return result;

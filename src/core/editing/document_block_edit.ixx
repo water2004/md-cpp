@@ -42,27 +42,30 @@ inline std::optional<RecordedBlockEdit> split_direct(
     if (!parent || !block || index >= parent->children.size()) return std::nullopt;
 
     RecordedBlockEdit result;
-    if (block->kind == BlockKind::Callout && block->callout_title) {
-        offset = (std::min)(offset, block->callout_title->source.size());
-        auto right_source = block->callout_title->source.substr(offset);
+    if (block->kind == BlockKind::CalloutTitle) {
+        if (parent->kind != BlockKind::Callout) return std::nullopt;
+        offset = (std::min)(offset, block->inline_content.source.size());
+        auto right_source = block->inline_content.source.substr(offset);
         if (offset == 0) {
-            DocumentTreeEdit update;
-            update.kind = DocumentTreeEditKind::UpdatePayload;
-            update.before = document_transaction_detail::payload_shell(*block);
-            block->callout_title.reset();
-            update.after = document_transaction_detail::payload_shell(*block);
-            result.operations.emplace_back(std::move(update));
-        } else if (offset < block->callout_title->source.size()) {
+            DocumentTreeEdit remove;
+            remove.kind = DocumentTreeEditKind::Remove;
+            remove.parent_id = parent->id;
+            remove.index = index;
+            remove.before = *block;
+            result.operations.emplace_back(std::move(remove));
+            parent->children.erase(
+                parent->children.begin() + static_cast<std::ptrdiff_t>(index));
+        } else if (offset < block->inline_content.source.size()) {
             auto edit = edit_inline(
                 document,
                 id,
-                {offset, block->callout_title->source.size()},
+                {offset, block->inline_content.source.size()},
                 {},
                 allocator);
             if (!edit) return std::nullopt;
             append_source_operation(result.operations, std::move(*edit));
-            block = find_block(document.root, id);
-            if (!block) return std::nullopt;
+            parent = find_block(document.root, parent->id);
+            if (!parent) return std::nullopt;
         }
 
         BlockNode right;
@@ -72,11 +75,14 @@ inline std::optional<RecordedBlockEdit> split_direct(
         result.target = TextPosition{right.id, 0, TextAffinity::Downstream};
         DocumentTreeEdit insert;
         insert.kind = DocumentTreeEditKind::Insert;
-        insert.parent_id = block->id;
-        insert.index = 0;
+        insert.parent_id = parent->id;
+        const auto insert_index = offset == 0 ? index : index + 1;
+        insert.index = insert_index;
         insert.after = right;
         result.operations.emplace_back(std::move(insert));
-        block->children.insert(block->children.begin(), std::move(right));
+        parent->children.insert(
+            parent->children.begin() + static_cast<std::ptrdiff_t>(insert_index),
+            std::move(right));
         return result;
     }
 
@@ -376,12 +382,7 @@ inline std::optional<RecordedBlockEdit> exit_empty_flow_container(
         if (!current_container) return std::nullopt;
         auto trailing = document_transaction_detail::payload_shell(*current_container);
         trailing.id = allocator.allocate();
-        if (trailing.kind == BlockKind::Callout) {
-            // The source header title belongs only to the leading callout. A
-            // split continuation keeps the alert kind but starts untitled.
-            trailing.callout_title.reset();
-            trailing.opening_marker.clear();
-        }
+        if (trailing.kind == BlockKind::Callout) trailing.opening_marker.clear();
         trailing_id = trailing.id;
         DocumentTreeEdit insert_trailing;
         insert_trailing.kind = DocumentTreeEditKind::Insert;
@@ -606,9 +607,8 @@ inline bool prunable_empty_container(const BlockNode& block) {
         case BlockKind::ListItem:
         case BlockKind::TaskListItem:
         case BlockKind::TableRow:
-            return true;
         case BlockKind::Callout:
-            return !block.callout_title.has_value();
+            return true;
         default:
             return false;
     }

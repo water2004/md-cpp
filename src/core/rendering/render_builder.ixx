@@ -7,6 +7,7 @@ import elmd.core.ids;
 import elmd.core.dialect;
 import elmd.core.ast;
 import elmd.core.block_source;
+import elmd.core.block_tree;
 import elmd.core.callout;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
@@ -54,7 +55,7 @@ inline std::size_t block_local_length(const BlockNode& block) {
 inline RenderBlock render_block_base(BlockKind k, NodeId id, std::size_t length, BlockStyle bs) {
     RenderBlock b; b.kind = [&](BlockKind)->RenderBlockKind {
         switch (k) {
-            case BlockKind::Paragraph: case BlockKind::Heading:
+            case BlockKind::Paragraph: case BlockKind::Heading: case BlockKind::CalloutTitle:
             case BlockKind::List: case BlockKind::TaskList:
                 return RenderBlockKind::Text;
             case BlockKind::BlockQuote: return RenderBlockKind::Quote;
@@ -380,16 +381,8 @@ struct Builder {
                     label.generated_boundary_affinity = TextAffinity::Downstream;
                     label.visibility = MarkerVisibility::Always;
                     out.push_back(std::move(label));
-                    if (block.callout_title || !block.children.empty()) {
-                        append_block_break(out, owner, 0);
-                    }
-                }
-                if (block.kind == BlockKind::Callout && block.callout_title) {
-                    append_missing_indent(out, block.id, 0, content_indent, 0);
-                    auto title = build_inline_document(*block.callout_title, block.id, InlineStyle::plain());
-                    out.insert(out.end(), title.begin(), title.end());
                     if (!block.children.empty()) {
-                        append_block_break(out, block.id, block.callout_title->source.size());
+                        append_block_break(out, owner, 0);
                     }
                 }
                 for (std::size_t index = 0; index < block.children.size(); ++index) {
@@ -402,7 +395,7 @@ struct Builder {
                         out,
                         block.children[index],
                         FlowContext{content_indent},
-                        index == 0 && callout_label.empty() && !block.callout_title
+                        index == 0 && callout_label.empty()
                             ? !footnote_marker.empty()
                                 ? context.indent_columns + footnote_marker.size()
                                 : emitted_columns
@@ -419,6 +412,7 @@ struct Builder {
         switch (block.kind) {
             case BlockKind::Paragraph:
             case BlockKind::Heading:
+            case BlockKind::CalloutTitle:
             case BlockKind::TableCell:
                 append_missing_indent(out, owner, 0, context.indent_columns, emitted_columns);
                 out.insert(out.end(), rendered.inline_items.begin(), rendered.inline_items.end());
@@ -671,6 +665,7 @@ struct Builder {
         };
         switch (b.kind) {
             case BK::Paragraph:
+            case BK::CalloutTitle:
             case BK::TableCell: {
                 auto rb = base(BlockStyle::paragraph(theme.layout));
                 if (b.inline_content.source.empty() && b.opening_marker.empty() && b.closing_marker.empty()) {

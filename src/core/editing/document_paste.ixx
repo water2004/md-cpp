@@ -140,7 +140,7 @@ inline std::optional<TextPosition> sew_tail_and_remove(
 inline bool direct_inline_anchor(const BlockNode& block) {
     return block.kind == BlockKind::Paragraph
         || block.kind == BlockKind::Heading
-        || (block.kind == BlockKind::Callout && block.callout_title.has_value());
+        || block.kind == BlockKind::CalloutTitle;
 }
 
 inline bool atx_heading(const BlockNode& block) {
@@ -516,6 +516,9 @@ inline std::optional<TextPosition> paste_parsed_blocks(
     }
 
     const auto head_id = anchor->id;
+    const auto split_removes_head = anchor->kind == BlockKind::CalloutTitle
+        && position.source_offset == 0;
+    const auto original_head_separator = anchor->separator_before;
     auto split = document_edit_detail::split_direct(
         document,
         head_id,
@@ -529,12 +532,12 @@ inline std::optional<TextPosition> paste_parsed_blocks(
         std::make_move_iterator(split->operations.end()));
 
     anchor = find_block(document.root, head_id);
-    if (!anchor) return std::nullopt;
-    const auto* head_inline = editable_inline_document(*anchor);
+    if (!anchor && !split_removes_head) return std::nullopt;
+    const auto* head_inline = anchor ? editable_inline_document(*anchor) : nullptr;
     const auto head_was_empty = !head_inline || head_inline->source.empty();
-    const auto removable_empty_head = anchor->kind == BlockKind::Paragraph
-        || anchor->kind == BlockKind::Heading;
-    const auto head_separator = anchor->separator_before;
+    const auto removable_empty_head = anchor
+        && (anchor->kind == BlockKind::Paragraph || anchor->kind == BlockKind::Heading);
+    const auto head_separator = anchor ? anchor->separator_before : original_head_separator;
     bool merged_first = false;
     if (head_inline && !blocks.empty() && blocks.front().kind == BlockKind::Paragraph) {
         const auto pasted = blocks.front().inline_content.source;

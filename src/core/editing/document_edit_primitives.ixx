@@ -57,7 +57,11 @@ private:
     bool active_ = true;
 };
 
-inline bool text_block(BlockKind kind) { return kind == BlockKind::Paragraph || kind == BlockKind::Heading; }
+inline bool text_block(BlockKind kind) {
+    return kind == BlockKind::Paragraph
+        || kind == BlockKind::Heading
+        || kind == BlockKind::CalloutTitle;
+}
 inline bool atomic_block(BlockKind kind) {
     return kind == BlockKind::ImageBlock || kind == BlockKind::Toc || kind == BlockKind::Frontmatter
         || kind == BlockKind::ThematicBreak || kind == BlockKind::LinkDefinition

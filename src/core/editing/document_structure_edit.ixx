@@ -226,36 +226,18 @@ inline std::optional<DocumentTransaction> document_toggle_callout(EditorDocument
             callout->opening_marker = rewrite_callout_opening_marker(callout->opening_marker, kind);
             update.after = document_transaction_detail::payload_shell(*callout);
             operations.emplace_back(std::move(update));
-        } else if (callout->callout_title) {
-            const auto child_count = callout->children.size();
-            for (std::size_t target_index = 0; target_index < child_count; ++target_index) {
-                parent = block_at_path(after.root, range->parent_path);
-                callout = find_block(after.root, callout_id);
-                if (!parent || !callout || callout->children.empty()) return std::nullopt;
-                DocumentTreeEdit move;
-                move.kind = DocumentTreeEditKind::Move;
-                move.parent_id = callout_id;
-                move.index = 0;
-                move.other_parent_id = parent->id;
-                move.other_index = range->first + 1 + target_index;
-                auto child = remove_block(*callout, 0);
-                if (!child || !insert_block(*parent, move.other_index, std::move(*child))) return std::nullopt;
-                operations.emplace_back(std::move(move));
+        } else {
+            if (auto* title = callout_title_block(*callout)) {
+                DocumentTreeEdit update;
+                update.kind = DocumentTreeEditKind::UpdatePayload;
+                update.before = document_transaction_detail::payload_shell(*title);
+                title->kind = BlockKind::Paragraph;
+                update.after = document_transaction_detail::payload_shell(*title);
+                operations.emplace_back(std::move(update));
             }
-            callout = find_block(after.root, callout_id);
-            if (!callout || !callout->callout_title) return std::nullopt;
-            DocumentTreeEdit update;
-            update.kind = DocumentTreeEditKind::UpdatePayload;
-            update.before = document_transaction_detail::payload_shell(*callout);
-            auto title = std::move(*callout->callout_title);
-            *callout = BlockNode{};
-            callout->id = callout_id;
-            callout->kind = BlockKind::Paragraph;
-            callout->inline_content = std::move(title);
-            update.after = document_transaction_detail::payload_shell(*callout);
-            operations.emplace_back(std::move(update));
-        } else if (!document_structure_detail::unwrap_container(after, *range, operations)) {
-            return std::nullopt;
+            if (!document_structure_detail::unwrap_container(after, *range, operations)) {
+                return std::nullopt;
+            }
         }
     } else {
         BlockNode callout;

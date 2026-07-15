@@ -16,7 +16,7 @@ using BlockVec = std::vector<BlockNode>;
 
 enum class BlockKind {
     Document,
-    Paragraph, Heading, BlockQuote, List, TaskList, ListItem, TaskListItem,
+    Paragraph, Heading, CalloutTitle, BlockQuote, List, TaskList, ListItem, TaskListItem,
     CodeBlock, MathBlock, Table, TableRow, TableCell,
     ImageBlock, Callout, FootnoteDefinition, Toc, Frontmatter,
     ThematicBreak, LinkDefinition, UnsupportedMarkup, Extension,
@@ -27,7 +27,7 @@ struct BlockNode {
     BlockKind kind = BlockKind::Paragraph;
     // Payload — only the relevant per `kind`.
     BlockVec children;                  // the one structural child collection for every container
-    InlineDocument inline_content;      // Paragraph / Heading / TableCell
+    InlineDocument inline_content;      // Paragraph / Heading / CalloutTitle / TableCell
     BlockSourceDocument block_source;   // CodeBlock / MathBlock, exact full Markdown source
     std::uint8_t level = 0;             // Heading
     std::string slug;                   // Heading
@@ -49,7 +49,6 @@ struct BlockNode {
     std::u32string opening_marker;
     std::u32string closing_marker;
     std::string callout_kind;           // Callout
-    std::optional<InlineDocument> callout_title; // Callout
     std::string footnote_label;        // FootnoteDefinition
     TocMarkerKind toc_marker = TocMarkerKind::BracketToc; // Toc
     FrontmatterFormat fmt = FrontmatterFormat::Yaml; // Frontmatter

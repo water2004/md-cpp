@@ -14,6 +14,8 @@ Editing modules should expose narrow operations and keep dependency direction ex
 
 Inline formatting is a CST query followed by one block-local source edit. Existing formatting is identified from complete CST delimiter ranges, so removing `_`/`__`, variable-length code spans, math, and nested formatting preserves the exact source spelling instead of comparing against hard-coded marker text.
 
+Callout titles are ordinary `CalloutTitle` block nodes: when present they are the first child of the `Callout`, own their own `InlineDocument`, source coordinate, and node identity, and participate in the same recursive traversal, clipboard, history, rendering, and validation paths as every other editable child. The Callout container owns only structural metadata; it has no editable side document.
+
 Some large files are intentionally cohesive:
 
 - `parsing/parser.ixx` owns one block-parser state machine and its source-range accounting.

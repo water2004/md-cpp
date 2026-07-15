@@ -65,6 +65,22 @@ inline const BlockNode* find_parent_block(const BlockNode& root, NodeId id) {
     return block_at_path(root, *path);
 }
 
+inline BlockNode* callout_title_block(BlockNode& callout) {
+    if (callout.kind != BlockKind::Callout || callout.children.empty()
+        || callout.children.front().kind != BlockKind::CalloutTitle) return nullptr;
+    return &callout.children.front();
+}
+
+inline const BlockNode* callout_title_block(const BlockNode& callout) {
+    if (callout.kind != BlockKind::Callout || callout.children.empty()
+        || callout.children.front().kind != BlockKind::CalloutTitle) return nullptr;
+    return &callout.children.front();
+}
+
+inline std::size_t callout_body_start(const BlockNode& callout) {
+    return callout_title_block(callout) ? 1u : 0u;
+}
+
 template <class Visitor>
 inline void walk_blocks(BlockNode& root, Visitor&& visitor) {
     visitor(root);

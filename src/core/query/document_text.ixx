@@ -23,10 +23,9 @@ inline InlineDocument* editable_inline_document(BlockNode& block) {
     switch (block.kind) {
         case BlockKind::Paragraph:
         case BlockKind::Heading:
+        case BlockKind::CalloutTitle:
         case BlockKind::TableCell:
             return &block.inline_content;
-        case BlockKind::Callout:
-            return block.callout_title ? &*block.callout_title : nullptr;
         default:
             return nullptr;
     }
@@ -36,10 +35,9 @@ inline const InlineDocument* editable_inline_document(const BlockNode& block) {
     switch (block.kind) {
         case BlockKind::Paragraph:
         case BlockKind::Heading:
+        case BlockKind::CalloutTitle:
         case BlockKind::TableCell:
             return &block.inline_content;
-        case BlockKind::Callout:
-            return block.callout_title ? &*block.callout_title : nullptr;
         default:
             return nullptr;
     }

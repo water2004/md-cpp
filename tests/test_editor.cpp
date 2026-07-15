@@ -262,21 +262,22 @@ suite editor_tests = [] {
 "structural_paste_uses_the_nearest_recursive_container_context"_test = [] {
     Editor callout("> [!NOTE] title\n> body");
     const auto callout_id = callout.document().root.children.front().id;
+    const auto title_id = callout.document().root.children.front().children.front().id;
     callout.set_selection(TextSelection::caret({
-        callout_id,
+        title_id,
         0,
         TextAffinity::Downstream}));
     expect(fatal(bool(callout.execute_document_paste_text(
-        callout.selection(), U"> nested").has_value())));
+        callout.selection(), U"> nested").has_value()))) << "paste transaction";
     const auto& result = callout.document().root.children.front();
-    expect(fatal(bool(result.kind == BlockKind::Callout)));
-    expect(fatal(bool(!result.callout_title.has_value())));
-    expect(fatal(bool(result.children.size() == 2u)));
-    expect(fatal(bool(result.children.front().kind == BlockKind::BlockQuote)));
+    expect(fatal(bool(result.kind == BlockKind::Callout))) << callout.markdown_utf8();
+    expect(fatal(bool(callout_title_block(result) == nullptr))) << callout.markdown_utf8();
+    expect(fatal(bool(result.children.size() == 2u))) << callout.markdown_utf8();
+    expect(fatal(bool(result.children.front().kind == BlockKind::BlockQuote))) << callout.markdown_utf8();
     expect(fatal(bool(result.children.front().children.front().inline_content.source
-        == U"nestedtitle")));
-    expect(fatal(bool(result.children.back().inline_content.source == U"body")));
-    expect(fatal(bool(validate_document(callout.document()).empty())));
+        == U"nestedtitle"))) << callout.markdown_utf8();
+    expect(fatal(bool(result.children.back().inline_content.source == U"body"))) << callout.markdown_utf8();
+    expect(fatal(bool(validate_document(callout.document()).empty()))) << callout.markdown_utf8();
     expect(fatal(bool(callout.undo())));
     expect(fatal(bool(callout.markdown_utf8() == "> [!NOTE] title\n> body")));
     expect(fatal(bool(callout.redo())));
@@ -649,7 +650,7 @@ suite editor_tests = [] {
 
     Editor callout_backward("> [!NOTE] title\n> body");
     const auto& callout = callout_backward.document().root.children.front();
-    const auto body_id = callout.children.front().id;
+    const auto body_id = callout.children[1].id;
     exercise(
         callout_backward,
         TextSelection::caret({body_id, 0, TextAffinity::Downstream}),
@@ -657,10 +658,10 @@ suite editor_tests = [] {
         "parent inline join");
 
     Editor callout_forward("> [!NOTE] title\n> body");
-    const auto callout_id = callout_forward.document().root.children.front().id;
+    const auto title_id = callout_forward.document().root.children.front().children.front().id;
     exercise(
         callout_forward,
-        TextSelection::caret({callout_id, 5, TextAffinity::Upstream}),
+        TextSelection::caret({title_id, 5, TextAffinity::Upstream}),
         false,
         "first child join");
 
@@ -720,7 +721,10 @@ suite editor_tests = [] {
     exercise(quote, quote.document().root.children.front().children.front().id, "quote");
 
     Editor callout("> [!NOTE] title\n> body");
-    exercise(callout, callout.document().root.children.front().id, "callout title");
+    exercise(
+        callout,
+        callout.document().root.children.front().children.front().id,
+        "callout title");
 
     Editor untitled_callout("> [!NOTE]\n> body");
     exercise(
@@ -804,16 +808,17 @@ suite editor_tests = [] {
 
     Editor callout("> [!NOTE] title\n> body");
     const auto callout_id = callout.document().root.children.front().id;
-    const auto body_id = callout.document().root.children.front().children.front().id;
+    const auto title_id = callout.document().root.children.front().children.front().id;
+    const auto body_id = callout.document().root.children.front().children[1].id;
     exercise(
         callout,
         TextSelection{
-            {callout_id, 2, TextAffinity::Downstream},
+            {title_id, 2, TextAffinity::Downstream},
             {body_id, 2, TextAffinity::Downstream}},
         "callout title to body");
     const auto* remaining_callout = find_block(callout.document().root, callout_id);
     expect(fatal(bool(remaining_callout != nullptr)));
-    expect(fatal(bool(remaining_callout && remaining_callout->callout_title.has_value())));
+    expect(fatal(bool(remaining_callout && callout_title_block(*remaining_callout) != nullptr)));
 
     Editor raw("```\nalpha\n```\n\nomega");
     const auto code_id = raw.document().root.children.front().id;
@@ -1591,12 +1596,14 @@ suite editor_tests = [] {
     const auto* callout = find_block(editor.document().root, callout_id);
     expect(fatal(bool(callout != nullptr)));
     expect(fatal(bool(callout && callout->kind == BlockKind::Callout)));
-    expect(fatal(bool(callout && callout->callout_title.has_value())));
-    if (!callout || !callout->callout_title) return;
-    expect(fatal(bool(callout->callout_title->source == U"_title_")));
+    const auto* title = callout ? callout_title_block(*callout) : nullptr;
+    expect(fatal(bool(title != nullptr)));
+    if (!callout || !title) return;
+    const auto title_id = title->id;
+    expect(fatal(bool(title->inline_content.source == U"_title_")));
 
     const auto before_selection = TextSelection::caret(
-        {callout_id, 1, TextAffinity::Downstream});
+        {title_id, 1, TextAffinity::Downstream});
     editor.set_selection(before_selection);
     reset_core_operation_counters();
     expect(fatal(bool(editor.execute_document_insert_text(editor.selection(), U"X").has_value())));
@@ -1607,14 +1614,15 @@ suite editor_tests = [] {
     expect(fatal(bool(counters.inline_reparses == 1u)));
 
     callout = find_block(editor.document().root, callout_id);
-    expect(fatal(bool(callout && callout->callout_title.has_value())));
-    if (!callout || !callout->callout_title) return;
-    expect(fatal(bool(callout->callout_title->source == U"_Xtitle_")));
-    expect(fatal(bool(flatten_tokens(callout->callout_title->tree, callout->callout_title->source)
-        == callout->callout_title->source)));
+    title = callout ? callout_title_block(*callout) : nullptr;
+    expect(fatal(bool(title != nullptr)));
+    if (!callout || !title) return;
+    expect(fatal(bool(title->inline_content.source == U"_Xtitle_")));
+    expect(fatal(bool(flatten_tokens(title->inline_content.tree, title->inline_content.source)
+        == title->inline_content.source)));
     const auto after_selection = editor.selection();
     expect(fatal(bool(after_selection.active == TextPosition{
-        callout_id, 2, TextAffinity::Downstream})));
+        title_id, 2, TextAffinity::Downstream})));
     expect(fatal(bool(editor.markdown_utf8() == "> [!NOTE] _Xtitle_\n> body")));
 
     expect(fatal(bool(editor.undo())));
@@ -1628,8 +1636,9 @@ suite editor_tests = [] {
 "callout_title_tree_splits_restore_exactly_through_history"_test = [] {
     Editor editor("> [!NOTE] title\n> body");
     const auto callout_id = editor.document().root.children.front().id;
+    const auto title_id = editor.document().root.children.front().children.front().id;
     const auto before_selection = TextSelection::caret(
-        {callout_id, 2, TextAffinity::Downstream});
+        {title_id, 2, TextAffinity::Downstream});
     editor.set_selection(before_selection);
     reset_core_operation_counters();
     expect(fatal(bool(editor.execute_document_enter(editor.selection()).has_value())));
@@ -1638,7 +1647,7 @@ suite editor_tests = [] {
     expect(fatal(bool(counters.full_document_serializations == 0u)));
     expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
     const auto after_selection = editor.selection();
-    expect(fatal(bool(after_selection.active.container_id != callout_id)));
+    expect(fatal(bool(after_selection.active.container_id != title_id)));
     expect(fatal(bool(editor.markdown_utf8() == "> [!NOTE] ti\n> tle\n>\n> body")));
 
     expect(fatal(bool(editor.undo())));
@@ -2226,14 +2235,17 @@ suite editor_tests = [] {
 
     Editor unwrap_callout("> [!NOTE] title\n> body");
     const auto callout_id = unwrap_callout.document().root.children.front().id;
-    const auto body_id = unwrap_callout.document().root.children.front().children.front().id;
+    const auto title_id = unwrap_callout.document().root.children.front().children.front().id;
+    const auto body_id = unwrap_callout.document().root.children.front().children[1].id;
     const auto callout_before = TextSelection::caret({body_id, 0, TextAffinity::Downstream});
     const auto unwrap_callout_markdown = unwrap_callout.markdown_utf8();
     unwrap_callout.set_selection(callout_before);
     reset_core_operation_counters();
     auto unwrapped_callout = unwrap_callout.execute_document_toggle_callout(
         unwrap_callout.selection(), callout_command);
-    expect(fatal(bool(find_block(unwrap_callout.document().root, callout_id) != nullptr)));
+    expect(fatal(bool(find_block(unwrap_callout.document().root, callout_id) == nullptr)));
+    const auto* unwrapped_title = find_block(unwrap_callout.document().root, title_id);
+    expect(fatal(bool(unwrapped_title != nullptr && unwrapped_title->kind == BlockKind::Paragraph)));
     verify(
         unwrap_callout,
         unwrap_callout_markdown,

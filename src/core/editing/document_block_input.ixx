@@ -257,124 +257,68 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> remove_callout_pre
     TextPosition position,
     document_edit_detail::NodeAllocator& allocator) {
     auto path = block_path(document.root, position.container_id);
-    if (!path || path->empty()) return std::nullopt;
+    if (!path || path->size() < 2) return std::nullopt;
     auto* selected = block_at_path(document.root, *path);
     if (!selected) return std::nullopt;
-
-    if (selected->kind == BlockKind::Callout && selected->callout_title) {
-        auto parent_path = *path;
-        const auto callout_index = parent_path.back();
-        parent_path.pop_back();
-        auto* parent = block_at_path(document.root, parent_path);
-        if (!parent || callout_index >= parent->children.size()) return std::nullopt;
-        document_edit_detail::RecordedBlockEdit result;
-        result.target = TextPosition{position.container_id, 0, TextAffinity::Downstream};
-        const auto parent_id = parent->id;
-        const auto callout_id = selected->id;
-        BlockNode quote;
-        quote.id = allocator.allocate();
-        quote.kind = BlockKind::BlockQuote;
-        const auto quote_id = quote.id;
-        DocumentTreeEdit insert_quote;
-        insert_quote.kind = DocumentTreeEditKind::Insert;
-        insert_quote.parent_id = parent_id;
-        insert_quote.index = callout_index;
-        insert_quote.after = quote;
-        result.operations.emplace_back(std::move(insert_quote));
-        parent->children.insert(
-            parent->children.begin() + static_cast<std::ptrdiff_t>(callout_index),
-            std::move(quote));
-
-        DocumentTreeEdit move_callout;
-        move_callout.kind = DocumentTreeEditKind::Move;
-        move_callout.parent_id = parent_id;
-        move_callout.index = callout_index + 1;
-        move_callout.other_parent_id = quote_id;
-        move_callout.other_index = 0;
-        auto moved_callout = remove_block(*parent, callout_index + 1);
-        auto* inserted_quote = find_block(document.root, quote_id);
-        if (!moved_callout || !inserted_quote
-            || !insert_block(*inserted_quote, 0, std::move(*moved_callout))) return std::nullopt;
-        result.operations.emplace_back(std::move(move_callout));
-
-        auto* callout = find_block(document.root, callout_id);
-        if (!callout || !callout->callout_title) return std::nullopt;
-        if (!callout->children.empty()
-            && document_edit_detail::text_block(callout->children.front().kind)) {
-            const auto offset = callout->callout_title->source.size();
-            auto appended = U"\n" + callout->children.front().inline_content.source;
-            auto edit = document_edit_detail::edit_inline(
-                document,
-                callout_id,
-                {offset, offset},
-                std::move(appended),
-                allocator);
-            if (!edit) return std::nullopt;
-            document_edit_detail::append_source_operation(result.operations, std::move(*edit));
-            callout = find_block(document.root, callout_id);
-            if (!callout || callout->children.empty()) return std::nullopt;
-            DocumentTreeEdit remove_body;
-            remove_body.kind = DocumentTreeEditKind::Remove;
-            remove_body.parent_id = callout_id;
-            remove_body.index = 0;
-            remove_body.before = callout->children.front();
-            result.operations.emplace_back(std::move(remove_body));
-            callout->children.erase(callout->children.begin());
-        }
-
-        callout = find_block(document.root, callout_id);
-        inserted_quote = find_block(document.root, quote_id);
-        if (!callout || !inserted_quote) return std::nullopt;
-        std::size_t quote_child_index = 1;
-        while (!callout->children.empty()) {
-            DocumentTreeEdit move_child;
-            move_child.kind = DocumentTreeEditKind::Move;
-            move_child.parent_id = callout_id;
-            move_child.index = 0;
-            move_child.other_parent_id = quote_id;
-            move_child.other_index = quote_child_index;
-            auto child = remove_block(*callout, 0);
-            if (!child || !insert_block(*inserted_quote, quote_child_index, std::move(*child))) {
-                return std::nullopt;
-            }
-            result.operations.emplace_back(std::move(move_child));
-            ++quote_child_index;
-        }
-
-        DocumentTreeEdit update;
-        update.kind = DocumentTreeEditKind::UpdatePayload;
-        update.before = document_transaction_detail::payload_shell(*callout);
-        auto title = std::move(*callout->callout_title);
-        *callout = BlockNode{};
-        callout->id = callout_id;
-        callout->kind = BlockKind::Paragraph;
-        callout->inline_content = std::move(title);
-        update.after = document_transaction_detail::payload_shell(*callout);
-        result.operations.emplace_back(std::move(update));
-        return result;
-    }
-
-    if (path->size() < 2) return std::nullopt;
     auto callout_path = *path;
     const auto child_index = callout_path.back();
     callout_path.pop_back();
     auto* callout = block_at_path(document.root, callout_path);
-    if (!callout || callout->kind != BlockKind::Callout || callout->callout_title
-        || child_index != 0) return std::nullopt;
+    if (!callout || callout->kind != BlockKind::Callout) return std::nullopt;
+    const auto* title = callout_title_block(*callout);
+    const auto selected_title = selected->kind == BlockKind::CalloutTitle && child_index == 0;
+    if (!selected_title && (title || child_index != 0)) return std::nullopt;
 
     document_edit_detail::RecordedBlockEdit result;
     result.target = TextPosition{position.container_id, 0, TextAffinity::Downstream};
-    DocumentTreeEdit update;
-    update.kind = DocumentTreeEditKind::UpdatePayload;
-    update.before = document_transaction_detail::payload_shell(*callout);
-    auto children = std::move(callout->children);
-    const auto id = callout->id;
-    *callout = BlockNode{};
-    callout->id = id;
+
+    if (selected_title && callout->children.size() > 1
+        && document_edit_detail::text_block(callout->children[1].kind)) {
+        const auto title_id = selected->id;
+        const auto offset = selected->inline_content.source.size();
+        auto appended = U"\n" + callout->children[1].inline_content.source;
+        auto edit = document_edit_detail::edit_inline(
+            document,
+            title_id,
+            {offset, offset},
+            std::move(appended),
+            allocator);
+        if (!edit) return std::nullopt;
+        document_edit_detail::append_source_operation(result.operations, std::move(*edit));
+        callout = block_at_path(document.root, callout_path);
+        if (!callout || callout->children.size() < 2) return std::nullopt;
+        DocumentTreeEdit remove_body;
+        remove_body.kind = DocumentTreeEditKind::Remove;
+        remove_body.parent_id = callout->id;
+        remove_body.index = 1;
+        remove_body.before = callout->children[1];
+        result.operations.emplace_back(std::move(remove_body));
+        callout->children.erase(callout->children.begin() + 1);
+    }
+
+    if (selected_title) {
+        callout = block_at_path(document.root, callout_path);
+        if (!callout || callout->children.empty()) return std::nullopt;
+        auto* current_title = &callout->children.front();
+        DocumentTreeEdit title_update;
+        title_update.kind = DocumentTreeEditKind::UpdatePayload;
+        title_update.before = document_transaction_detail::payload_shell(*current_title);
+        current_title->kind = BlockKind::Paragraph;
+        title_update.after = document_transaction_detail::payload_shell(*current_title);
+        result.operations.emplace_back(std::move(title_update));
+    }
+
+    callout = block_at_path(document.root, callout_path);
+    if (!callout) return std::nullopt;
+    DocumentTreeEdit callout_update;
+    callout_update.kind = DocumentTreeEditKind::UpdatePayload;
+    callout_update.before = document_transaction_detail::payload_shell(*callout);
     callout->kind = BlockKind::BlockQuote;
-    callout->children = std::move(children);
-    update.after = document_transaction_detail::payload_shell(*callout);
-    result.operations.emplace_back(std::move(update));
+    callout->callout_kind.clear();
+    callout->opening_marker.clear();
+    callout->closing_marker.clear();
+    callout_update.after = document_transaction_detail::payload_shell(*callout);
+    result.operations.emplace_back(std::move(callout_update));
     return result;
 }
 

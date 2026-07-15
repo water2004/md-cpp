@@ -25,6 +25,7 @@ import elmd.core.metadata;
 import elmd.core.symbols;
 import elmd.core.ast;
 import elmd.core.block_source;
+import elmd.core.block_tree;
 import elmd.core.callout;
 import elmd.core.document;
 import elmd.core.document_symbols;
@@ -1577,6 +1578,13 @@ public:
             callout->opening_marker = std::u32string(
                 std::u32string_view(cps).substr(start, content_start - start))
                 + callout->opening_marker;
+            if (const auto* title = callout_title_block(*callout)) {
+                const auto title_start = first_line.size() - title->inline_content.source.size();
+                source_ranges.emplace_back(
+                    title->id,
+                    PhysicalRange(offset_map[title_start], offset_map[first_line.size()]),
+                    PhysicalRange(offset_map[title_start], offset_map[first_line.size()]));
+            }
         }
         auto body_start = callout ? (first_newline == std::u32string::npos ? inner.size() : first_newline + 1) : 0;
         auto body = inner.substr(body_start);
@@ -1625,7 +1633,10 @@ public:
         source_ranges.push_back(std::move(quote_range));
         if (callout) {
             callout->id = id;
-            callout->children = std::move(children);
+            callout->children.insert(
+                callout->children.end(),
+                std::make_move_iterator(children.begin()),
+                std::make_move_iterator(children.end()));
             return callout;
         }
         BlockNode b; b.id = id; b.kind = BlockKind::BlockQuote; b.children = std::move(children);
@@ -1651,14 +1662,23 @@ public:
             std::u32string title_part = title_start < line.size()
                 ? substr_cps_(line, title_start, std::u32string::npos)
                 : U"";
-            std::optional<InlineDocument> title;
             if (!title_part.empty()) {
-                InlineDocument value;
-                value.source = std::move(title_part);
-                value.tree = parse_inline(value.source, inline_parse_context());
-                title = std::move(value);
+                BlockNode title;
+                title.id = next_node_id();
+                title.kind = BlockKind::CalloutTitle;
+                title.inline_content.source = std::move(title_part);
+                title.inline_content.tree = parse_inline(
+                    title.inline_content.source,
+                    inline_parse_context());
+                BlockNode b;
+                b.id = NodeId(0);
+                b.kind = BlockKind::Callout;
+                b.callout_kind = *normalized_kind;
+                b.children.push_back(std::move(title));
+                b.opening_marker = line.substr(0, title_start);
+                return b;
             }
-            BlockNode b; b.id = NodeId(0); b.kind = BlockKind::Callout; b.callout_kind = *normalized_kind; b.callout_title = std::move(title);
+            BlockNode b; b.id = NodeId(0); b.kind = BlockKind::Callout; b.callout_kind = *normalized_kind;
             b.opening_marker = line.substr(0, title_start);
             return b;
         }

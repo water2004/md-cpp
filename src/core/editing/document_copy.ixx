@@ -146,9 +146,6 @@ inline std::optional<BlockNode> slice_block(
     }
 
     if (!has_selected_owner && copy.children.empty()) return std::nullopt;
-    if (block.kind == BlockKind::Callout && !has_selected_owner) {
-        copy.callout_title.reset();
-    }
     return copy;
 }
 
