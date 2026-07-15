@@ -140,14 +140,15 @@ inline std::string footnote_preview(
 }
 
 inline std::optional<DocumentTransaction> document_create_footnote_definition(
-    const EditorDocument& document,
+    EditorDocument& document,
     const TextSelection& selection,
     std::string label) {
     if (label.empty()) return std::nullopt;
     const auto symbols = build_document_symbol_index(document);
     if (find_footnote_definition(symbols, label)) return std::nullopt;
 
-    auto after = document;
+    const auto revision_before = document.revision;
+    auto& after = document;
     document_edit_detail::NodeAllocator allocator(after);
     auto definition = document_footnotes_detail::make_definition(after, allocator, std::move(label));
     const auto target = document_edit_detail::first_editable_position(definition);
@@ -163,22 +164,23 @@ inline std::optional<DocumentTransaction> document_create_footnote_definition(
     after.root.children.push_back(std::move(definition));
     ++after.revision;
     return make_recorded_document_transaction(
-        std::move(after),
         std::move(operations),
         selection,
         TextSelection::caret(*target),
-        document.revision,
+        revision_before,
+        after.revision,
         DocumentTransactionReason::Structure);
 }
 
 inline std::optional<DocumentTransaction> document_insert_footnote(
-    const EditorDocument& document,
+    EditorDocument& document,
     const TextSelection& selection) {
     if (selection.anchor.container_id != selection.active.container_id) return std::nullopt;
-    auto after = document;
+    const auto revision_before = document.revision;
+    auto& after = document;
     document_edit_detail::NodeAllocator allocator(after);
     auto* owner = document_edit_detail::find_inline_owner(
-        after.root.children, selection.active.container_id);
+        after.root, selection.active.container_id);
     if (!owner) return std::nullopt;
 
     const auto offset = selection.is_caret()
@@ -209,11 +211,11 @@ inline std::optional<DocumentTransaction> document_insert_footnote(
     after.root.children.push_back(std::move(definition));
     ++after.revision;
     return make_recorded_document_transaction(
-        std::move(after),
         std::move(operations),
         selection,
         TextSelection::caret(*target),
-        document.revision,
+        revision_before,
+        after.revision,
         DocumentTransactionReason::Structure);
 }
 

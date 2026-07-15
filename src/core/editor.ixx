@@ -72,7 +72,7 @@ public:
     std::optional<DocumentTransaction> execute_document_enter(TextSelection selection) {
         auto transaction = document_enter(document_, selection);
         if (!transaction) return std::nullopt;
-        if (transaction->revision_before == transaction->after.revision) {
+        if (transaction->revision_before == transaction->revision_after) {
             selection_ = transaction->selection_after;
         } else {
             apply_document_transaction_(*transaction);
@@ -83,7 +83,7 @@ public:
     std::optional<DocumentTransaction> execute_document_insert_text(TextSelection selection, std::u32string_view text) {
         auto transaction = document_insert_text(document_, selection, text);
         if (!transaction) return std::nullopt;
-        if (transaction->revision_before == transaction->after.revision) {
+        if (transaction->revision_before == transaction->revision_after) {
             selection_ = transaction->selection_after;
         } else {
             apply_document_transaction_(*transaction);
@@ -225,7 +225,7 @@ public:
         std::size_t requested_index = 0) {
         auto transaction = document_edit_table(document_, selection, edit, alignment, requested_index);
         if (!transaction) return std::nullopt;
-        if (transaction->revision_before == transaction->after.revision) {
+        if (transaction->revision_before == transaction->revision_after) {
             selection_ = transaction->selection_after;
         } else {
             apply_document_transaction_(*transaction);
@@ -495,7 +495,6 @@ private:
 
     void apply_document_transaction_(const DocumentTransaction& transaction) {
         document_history_.push(transaction);
-        document_ = transaction.after;
         selection_ = transaction.selection_after;
         refresh_derived_from_document_();
     }

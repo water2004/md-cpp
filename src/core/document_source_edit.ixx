@@ -34,10 +34,10 @@ inline std::vector<DocumentInvariantError> validate_document(const EditorDocumen
     return errors;
 }
 
-inline std::optional<DocumentTransaction> document_delete_selection(const EditorDocument&, const TextSelection&);
+inline std::optional<DocumentTransaction> document_delete_selection(EditorDocument&, const TextSelection&);
 
 inline DocumentTransaction source_transaction_with_block_reparse(
-    EditorDocument after,
+    EditorDocument& after,
     AppliedSourceEdit edit,
     TextSelection selection_before,
     TextPosition target,
@@ -57,27 +57,27 @@ inline DocumentTransaction source_transaction_with_block_reparse(
         document_edit_detail::append_source_operation(operations, std::move(edit));
     }
     return make_recorded_document_transaction(
-        std::move(after),
         std::move(operations),
         selection_before,
         TextSelection::caret(target),
         revision_before,
+        after.revision,
         reason);
 }
 
-inline std::optional<DocumentTransaction> document_insert_text(const EditorDocument& document, const TextSelection& selection, std::u32string_view text) {
+inline std::optional<DocumentTransaction> document_insert_text(EditorDocument& document, const TextSelection& selection, std::u32string_view text) {
     if (text.empty()) return std::nullopt;
-    auto working = document;
+    const auto revision_before = document.revision;
+    auto& working = document;
     auto current = selection;
     std::vector<DocumentOperation> operations;
     if (!selection.is_caret()) {
-        auto deletion = document_delete_selection(document, selection);
+        auto deletion = document_delete_selection(working, selection);
         if (!deletion) return std::nullopt;
         operations.insert(
             operations.end(),
             std::make_move_iterator(deletion->operations.begin()),
             std::make_move_iterator(deletion->operations.end()));
-        working = std::move(deletion->after);
         current = deletion->selection_after;
     }
     document_edit_detail::NodeAllocator allocator(working);
@@ -104,18 +104,19 @@ inline std::optional<DocumentTransaction> document_insert_text(const EditorDocum
             std::make_move_iterator(reclassified->operations.begin()),
             std::make_move_iterator(reclassified->operations.end()));
     }
-    ++working.revision;
+    working.revision = revision_before + 1;
     return make_recorded_document_transaction(
-        std::move(working),
         std::move(operations),
         selection,
         TextSelection::caret(target),
-        document.revision,
+        revision_before,
+        working.revision,
         DocumentTransactionReason::InsertText);
 }
 
-inline std::optional<DocumentTransaction> document_enter(const EditorDocument& document, const TextSelection& selection) {
-    auto after = document;
+inline std::optional<DocumentTransaction> document_enter(EditorDocument& document, const TextSelection& selection) {
+    const auto revision_before = document.revision;
+    auto& after = document;
     auto current = selection;
     std::vector<DocumentOperation> operations;
     if (!current.is_caret()) {
@@ -125,7 +126,6 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
             operations.end(),
             std::make_move_iterator(deletion->operations.begin()),
             std::make_move_iterator(deletion->operations.end()));
-        after = std::move(deletion->after);
         current = deletion->selection_after;
     }
     document_edit_detail::NodeAllocator allocator(after);
@@ -182,7 +182,7 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
             std::make_move_iterator(split->operations.begin()),
             std::make_move_iterator(split->operations.end()));
     }
-    ++after.revision;
+    after.revision = revision_before + 1;
     if (source_edit) {
         if (auto reclassified = document_edit_detail::reparse_edited_direct_block(
                 after, target, allocator, &*source_edit)) {
@@ -198,11 +198,11 @@ inline std::optional<DocumentTransaction> document_enter(const EditorDocument& d
     }
     if (operations.empty()) return std::nullopt;
     return make_recorded_document_transaction(
-        std::move(after),
         std::move(operations),
         selection,
         TextSelection::caret(target),
-        document.revision,
+        revision_before,
+        after.revision,
         DocumentTransactionReason::Structure);
 }
 
@@ -217,11 +217,12 @@ inline std::u32string format_marker(InlineFormat format) {
     return {};
 }
 
-inline std::optional<DocumentTransaction> document_toggle_inline_format(const EditorDocument& document, const TextSelection& selection, InlineFormat format) {
+inline std::optional<DocumentTransaction> document_toggle_inline_format(EditorDocument& document, const TextSelection& selection, InlineFormat format) {
     if (selection.anchor.container_id != selection.active.container_id) return std::nullopt;
-    auto after = document;
+    const auto revision_before = document.revision;
+    auto& after = document;
     document_edit_detail::NodeAllocator allocator(after);
-    auto* inline_document = document_edit_detail::find_inline_owner(after.root.children, selection.active.container_id);
+    auto* inline_document = document_edit_detail::find_inline_owner(after.root, selection.active.container_id);
     if (!inline_document) return std::nullopt;
     auto start = (std::min)(selection.anchor.source_offset, selection.active.source_offset);
     auto end = (std::max)(selection.anchor.source_offset, selection.active.source_offset);
@@ -245,13 +246,14 @@ inline std::optional<DocumentTransaction> document_toggle_inline_format(const Ed
     if (!applied) return std::nullopt;
     ++after.revision;
     return document_edit_detail::source_transaction(
-        std::move(after), std::move(*applied), selection, result, document.revision, DocumentTransactionReason::Format);
+        after, std::move(*applied), selection, result, revision_before, DocumentTransactionReason::Format);
 }
 
-inline std::optional<DocumentTransaction> document_insert_link(const EditorDocument& document, const TextSelection& selection, std::string href, std::optional<std::string> title) {
+inline std::optional<DocumentTransaction> document_insert_link(EditorDocument& document, const TextSelection& selection, std::string href, std::optional<std::string> title) {
     if (selection.anchor.container_id != selection.active.container_id) return std::nullopt;
-    auto after = document; document_edit_detail::NodeAllocator allocator(after);
-    auto* owner = document_edit_detail::find_inline_owner(after.root.children, selection.active.container_id); if (!owner) return std::nullopt;
+    const auto revision_before = document.revision;
+    auto& after = document; document_edit_detail::NodeAllocator allocator(after);
+    auto* owner = document_edit_detail::find_inline_owner(after.root, selection.active.container_id); if (!owner) return std::nullopt;
     const auto start = (std::min)(selection.anchor.source_offset, selection.active.source_offset);
     const auto end = (std::min)((std::max)(selection.anchor.source_offset, selection.active.source_offset), owner->source.size());
     const auto label = owner->source.substr(start, end - start);
@@ -264,13 +266,14 @@ inline std::optional<DocumentTransaction> document_insert_link(const EditorDocum
     ++after.revision;
     const auto target = TextPosition{selection.active.container_id, start + 1 + label.size(), TextAffinity::Downstream};
     return document_edit_detail::source_transaction(
-        std::move(after), std::move(*applied), selection, TextSelection::caret(target), document.revision, DocumentTransactionReason::Format);
+        after, std::move(*applied), selection, TextSelection::caret(target), revision_before, DocumentTransactionReason::Format);
 }
 
-inline std::optional<DocumentTransaction> document_insert_image(const EditorDocument& document, const TextSelection& selection, std::string path, std::string alt) {
+inline std::optional<DocumentTransaction> document_insert_image(EditorDocument& document, const TextSelection& selection, std::string path, std::string alt) {
     if (selection.anchor.container_id != selection.active.container_id) return std::nullopt;
-    auto after = document; document_edit_detail::NodeAllocator allocator(after);
-    auto* owner = document_edit_detail::find_inline_owner(after.root.children, selection.active.container_id); if (!owner) return std::nullopt;
+    const auto revision_before = document.revision;
+    auto& after = document; document_edit_detail::NodeAllocator allocator(after);
+    auto* owner = document_edit_detail::find_inline_owner(after.root, selection.active.container_id); if (!owner) return std::nullopt;
     const auto start = (std::min)(selection.anchor.source_offset, selection.active.source_offset);
     const auto end = (std::min)((std::max)(selection.anchor.source_offset, selection.active.source_offset), owner->source.size());
     auto label = alt.empty() ? owner->source.substr(start, end - start) : utf8_to_cps(alt);
@@ -280,21 +283,22 @@ inline std::optional<DocumentTransaction> document_insert_image(const EditorDocu
     if (!applied) return std::nullopt;
     ++after.revision;
     return document_edit_detail::source_transaction(
-        std::move(after),
+        after,
         std::move(*applied),
         selection,
         TextSelection::caret({selection.active.container_id, start + 2 + label.size(), TextAffinity::Downstream}),
-        document.revision,
+        revision_before,
         DocumentTransactionReason::Format);
 }
 
-inline std::optional<DocumentTransaction> document_insert_soft_break(const EditorDocument& document, const TextSelection& selection) {
+inline std::optional<DocumentTransaction> document_insert_soft_break(EditorDocument& document, const TextSelection& selection) {
     return document_insert_text(document, selection, U"\n");
 }
 
-inline std::optional<DocumentTransaction> document_delete_backward(const EditorDocument& document, const TextSelection& selection) {
+inline std::optional<DocumentTransaction> document_delete_backward(EditorDocument& document, const TextSelection& selection) {
     if (!selection.is_caret()) return document_delete_selection(document, selection);
-    auto after = document; auto target = selection.active; document_edit_detail::NodeAllocator allocator(after);
+    const auto revision_before = document.revision;
+    auto& after = document; auto target = selection.active; document_edit_detail::NodeAllocator allocator(after);
     std::optional<AppliedSourceEdit> source_edit;
     std::vector<DocumentOperation> operations;
     auto const* selected_block = find_block(after.root, target.container_id);
@@ -304,7 +308,7 @@ inline std::optional<DocumentTransaction> document_delete_backward(const EditorD
         target = removed->target;
         operations = std::move(removed->operations);
     } else if (target.source_offset > 0) {
-        if (auto* owner = document_edit_detail::find_inline_owner(after.root.children, target.container_id)) {
+        if (auto* owner = document_edit_detail::find_inline_owner(after.root, target.container_id)) {
             auto range = inline_backward_delete_range(*owner, target.source_offset);
             if (!range) return std::nullopt;
             source_edit = document_edit_detail::edit_inline(after, target.container_id, *range, {}, allocator);
@@ -336,22 +340,23 @@ inline std::optional<DocumentTransaction> document_delete_backward(const EditorD
     ++after.revision;
     if (source_edit) {
         return source_transaction_with_block_reparse(
-            std::move(after), std::move(*source_edit), selection, target,
-            document.revision, DocumentTransactionReason::Delete);
+            after, std::move(*source_edit), selection, target,
+            revision_before, DocumentTransactionReason::Delete);
     }
     if (operations.empty()) return std::nullopt;
     return make_recorded_document_transaction(
-        std::move(after),
         std::move(operations),
         selection,
         TextSelection::caret(target),
-        document.revision,
+        revision_before,
+        after.revision,
         DocumentTransactionReason::Delete);
 }
 
-inline std::optional<DocumentTransaction> document_delete_forward(const EditorDocument& document, const TextSelection& selection) {
+inline std::optional<DocumentTransaction> document_delete_forward(EditorDocument& document, const TextSelection& selection) {
     if (!selection.is_caret()) return document_delete_selection(document, selection);
-    auto after = document; auto target = selection.active; document_edit_detail::NodeAllocator allocator(after);
+    const auto revision_before = document.revision;
+    auto& after = document; auto target = selection.active; document_edit_detail::NodeAllocator allocator(after);
     std::optional<AppliedSourceEdit> source_edit;
     std::vector<DocumentOperation> operations;
     auto const* selected_block = find_block(after.root, target.container_id);
@@ -362,16 +367,16 @@ inline std::optional<DocumentTransaction> document_delete_forward(const EditorDo
         operations = std::move(removed->operations);
         ++after.revision;
         return make_recorded_document_transaction(
-            std::move(after),
             std::move(operations),
             selection,
             TextSelection::caret(target),
-            document.revision,
+            revision_before,
+            after.revision,
             DocumentTransactionReason::Delete);
     }
     const auto length = document_edit_detail::editable_length(after, target.container_id); if (!length) return std::nullopt;
     if (target.source_offset < *length) {
-        if (auto* owner = document_edit_detail::find_inline_owner(after.root.children, target.container_id)) {
+        if (auto* owner = document_edit_detail::find_inline_owner(after.root, target.container_id)) {
             auto range = inline_forward_delete_range(*owner, target.source_offset);
             if (!range) return std::nullopt;
             source_edit = document_edit_detail::edit_inline(after, target.container_id, *range, {}, allocator);
@@ -395,22 +400,23 @@ inline std::optional<DocumentTransaction> document_delete_forward(const EditorDo
     ++after.revision;
     if (source_edit) {
         return source_transaction_with_block_reparse(
-            std::move(after), std::move(*source_edit), selection, target,
-            document.revision, DocumentTransactionReason::Delete);
+            after, std::move(*source_edit), selection, target,
+            revision_before, DocumentTransactionReason::Delete);
     }
     if (operations.empty()) return std::nullopt;
     return make_recorded_document_transaction(
-        std::move(after),
         std::move(operations),
         selection,
         TextSelection::caret(target),
-        document.revision,
+        revision_before,
+        after.revision,
         DocumentTransactionReason::Delete);
 }
 
-inline std::optional<DocumentTransaction> document_delete_selection(const EditorDocument& document, const TextSelection& selection) {
+inline std::optional<DocumentTransaction> document_delete_selection(EditorDocument& document, const TextSelection& selection) {
     if (selection.is_caret()) return std::nullopt;
-    auto after = document; document_edit_detail::NodeAllocator allocator(after);
+    const auto revision_before = document.revision;
+    auto& after = document; document_edit_detail::NodeAllocator allocator(after);
     if (selection.anchor.container_id == selection.active.container_id) {
         const auto start = (std::min)(selection.anchor.source_offset, selection.active.source_offset);
         const auto end = (std::max)(selection.anchor.source_offset, selection.active.source_offset);
@@ -420,8 +426,8 @@ inline std::optional<DocumentTransaction> document_delete_selection(const Editor
         ++after.revision;
         const auto target = TextPosition{selection.active.container_id, start, TextAffinity::Downstream};
         return source_transaction_with_block_reparse(
-            std::move(after), std::move(*source_edit), selection, target,
-            document.revision, DocumentTransactionReason::Delete);
+            after, std::move(*source_edit), selection, target,
+            revision_before, DocumentTransactionReason::Delete);
     }
 
     const auto nodes = document_text_fragments(after);
@@ -485,11 +491,11 @@ inline std::optional<DocumentTransaction> document_delete_selection(const Editor
             std::make_move_iterator(reclassified->operations.end()));
     }
     return make_recorded_document_transaction(
-        std::move(after),
         std::move(operations),
         selection,
         TextSelection::caret(target),
-        document.revision,
+        revision_before,
+        after.revision,
         DocumentTransactionReason::Delete);
 }
 

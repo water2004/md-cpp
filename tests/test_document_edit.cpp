@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstddef>
+#include <optional>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -24,6 +25,174 @@ using namespace elmd;
 using namespace boost::ut;
 
 namespace {
+
+template <class T>
+concept carries_document_snapshot = requires(T value) { value.after; };
+
+static_assert(!carries_document_snapshot<DocumentTransaction>);
+
+namespace test_edit {
+
+// Low-level edit functions now mutate the authoritative document in place and
+// return only their reversible operation log. These adapters deliberately copy
+// at the test boundary so the existing black-box assertions can inspect a
+// materialized result without reintroducing snapshots into production
+// transactions.
+struct MaterializedTransaction : DocumentTransaction {
+    EditorDocument after;
+};
+
+template <class Invoke>
+std::optional<MaterializedTransaction> materialize_transaction(
+    EditorDocument document,
+    Invoke&& invoke) {
+    auto transaction = std::forward<Invoke>(invoke)(document);
+    if (!transaction) return std::nullopt;
+    MaterializedTransaction result;
+    static_cast<DocumentTransaction&>(result) = std::move(*transaction);
+    result.after = std::move(document);
+    return result;
+}
+
+std::optional<MaterializedTransaction> document_insert_text(
+    EditorDocument document, const TextSelection& selection, std::u32string_view text) {
+    return materialize_transaction(std::move(document), [&](auto& working) {
+        return elmd::document_insert_text(working, selection, text);
+    });
+}
+
+std::optional<MaterializedTransaction> document_enter(
+    EditorDocument document, const TextSelection& selection) {
+    return materialize_transaction(std::move(document), [&](auto& working) {
+        return elmd::document_enter(working, selection);
+    });
+}
+
+std::optional<MaterializedTransaction> document_delete_backward(
+    EditorDocument document, const TextSelection& selection) {
+    return materialize_transaction(std::move(document), [&](auto& working) {
+        return elmd::document_delete_backward(working, selection);
+    });
+}
+
+std::optional<MaterializedTransaction> document_delete_forward(
+    EditorDocument document, const TextSelection& selection) {
+    return materialize_transaction(std::move(document), [&](auto& working) {
+        return elmd::document_delete_forward(working, selection);
+    });
+}
+
+std::optional<MaterializedTransaction> document_delete_selection(
+    EditorDocument document, const TextSelection& selection) {
+    return materialize_transaction(std::move(document), [&](auto& working) {
+        return elmd::document_delete_selection(working, selection);
+    });
+}
+
+std::optional<MaterializedTransaction> document_toggle_inline_format(
+    EditorDocument document, const TextSelection& selection, InlineFormat format) {
+    return materialize_transaction(std::move(document), [&](auto& working) {
+        return elmd::document_toggle_inline_format(working, selection, format);
+    });
+}
+
+std::optional<MaterializedTransaction> document_insert_link(
+    EditorDocument document, const TextSelection& selection, std::string href,
+    std::optional<std::string> title = std::nullopt) {
+    return materialize_transaction(std::move(document), [&](auto& working) {
+        return elmd::document_insert_link(working, selection, std::move(href), std::move(title));
+    });
+}
+
+std::optional<MaterializedTransaction> document_insert_image(
+    EditorDocument document, const TextSelection& selection, std::string path, std::string alt) {
+    return materialize_transaction(std::move(document), [&](auto& working) {
+        return elmd::document_insert_image(working, selection, std::move(path), std::move(alt));
+    });
+}
+
+std::optional<MaterializedTransaction> document_insert_footnote(
+    EditorDocument document, const TextSelection& selection) {
+    return materialize_transaction(std::move(document), [&](auto& working) {
+        return elmd::document_insert_footnote(working, selection);
+    });
+}
+
+std::optional<MaterializedTransaction> document_create_footnote_definition(
+    EditorDocument document, const TextSelection& selection, std::string label) {
+    return materialize_transaction(std::move(document), [&](auto& working) {
+        return elmd::document_create_footnote_definition(working, selection, std::move(label));
+    });
+}
+
+std::optional<MaterializedTransaction> document_paste_text(
+    EditorDocument document, const TextSelection& selection, std::u32string_view text) {
+    return materialize_transaction(std::move(document), [&](auto& working) {
+        return elmd::document_paste_text(working, selection, text);
+    });
+}
+
+std::optional<MaterializedTransaction> document_set_heading(
+    EditorDocument document, const TextSelection& selection, std::uint8_t level) {
+    return materialize_transaction(std::move(document), [&](auto& working) {
+        return elmd::document_set_heading(working, selection, level);
+    });
+}
+
+std::optional<MaterializedTransaction> document_toggle_block_quote(
+    EditorDocument document, const TextSelection& selection) {
+    return materialize_transaction(std::move(document), [&](auto& working) {
+        return elmd::document_toggle_block_quote(working, selection);
+    });
+}
+
+std::optional<MaterializedTransaction> document_toggle_callout(
+    EditorDocument document, const TextSelection& selection, std::string kind) {
+    return materialize_transaction(std::move(document), [&](auto& working) {
+        return elmd::document_toggle_callout(working, selection, std::move(kind));
+    });
+}
+
+std::optional<MaterializedTransaction> document_toggle_list(
+    EditorDocument document, const TextSelection& selection, ListStyle style) {
+    return materialize_transaction(std::move(document), [&](auto& working) {
+        return elmd::document_toggle_list(working, selection, style);
+    });
+}
+
+std::optional<MaterializedTransaction> document_indent_list_item(
+    EditorDocument document, const TextSelection& selection) {
+    return materialize_transaction(std::move(document), [&](auto& working) {
+        return elmd::document_indent_list_item(working, selection);
+    });
+}
+
+std::optional<MaterializedTransaction> document_outdent_list_item(
+    EditorDocument document, const TextSelection& selection) {
+    return materialize_transaction(std::move(document), [&](auto& working) {
+        return elmd::document_outdent_list_item(working, selection);
+    });
+}
+
+std::optional<MaterializedTransaction> document_insert_atomic_block(
+    EditorDocument document, const TextSelection& selection, BlockNode block) {
+    return materialize_transaction(std::move(document), [&](auto& working) {
+        return elmd::document_insert_atomic_block(working, selection, std::move(block));
+    });
+}
+
+std::optional<MaterializedTransaction> document_edit_table(
+    EditorDocument document,
+    const TextSelection& selection,
+    DocumentTableEdit edit,
+    TableAlignment alignment = TableAlignment::None,
+    std::size_t argument = 0) {
+    return materialize_transaction(std::move(document), [&](auto& working) {
+        return elmd::document_edit_table(working, selection, edit, alignment, argument);
+    });
+}
+
+}  // namespace test_edit
 
 EditorDocument parse_document(std::string source) {
     return parse_text(1, source).document;
@@ -75,7 +244,7 @@ std::pair<EditorDocument, TextSelection> type_text(
     TextSelection selection,
     std::u32string_view text) {
     for (const auto value : text) {
-        auto transaction = document_insert_text(document, selection, std::u32string(1, value));
+        auto transaction = test_edit::document_insert_text(document, selection, std::u32string(1, value));
         if (!transaction) throw std::runtime_error("typing failed");
         document = std::move(transaction->after);
         selection = transaction->selection_after;
@@ -87,11 +256,28 @@ std::pair<EditorDocument, TextSelection> type_text(
 
 suite document_edit_tests = [] {
 
+"low_level_edit_mutates_only_the_authoritative_document"_test = [] {
+    auto document = parse_document("alpha\n\nbeta");
+    const auto revision_before = document.revision;
+    const auto selection = caret(document.root.children[0], 2);
+
+    auto transaction = elmd::document_insert_text(document, selection, U"X");
+
+    expect(fatal(bool(transaction.has_value())));
+    if (!transaction) return;
+    expect(document.root.children[0].inline_content.source == U"alXpha");
+    expect(document.root.children[1].inline_content.source == U"beta");
+    expect(transaction->revision_before == revision_before);
+    expect(transaction->revision_after == document.revision);
+    expect(transaction->revision_after == revision_before + 1);
+    expect_document_valid(document);
+};
+
 "insert_text_edits_only_the_target_inline_source"_test = [] {
     auto document = parse_document("alpha\n\nbeta");
     const auto first_id = document.root.children[0].id;
     const auto second_before = document.root.children[1].inline_content;
-    auto transaction = document_insert_text(document, caret(document.root.children[0], 2), U"X");
+    auto transaction = test_edit::document_insert_text(document, caret(document.root.children[0], 2), U"X");
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     expect(fatal(bool(transaction->after.root.children[0].inline_content.source == U"alXpha")));
@@ -104,7 +290,7 @@ suite document_edit_tests = [] {
 "selection_replacement_uses_source_offsets_including_markers"_test = [] {
     auto document = parse_document("**alpha**");
     const auto& paragraph = first_editable(document);
-    auto transaction = document_insert_text(document, range(paragraph, 2, 7), U"beta");
+    auto transaction = test_edit::document_insert_text(document, range(paragraph, 2, 7), U"beta");
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     expect(fatal(bool(first_editable(transaction->after).inline_content.source == U"**beta**")));
@@ -115,7 +301,7 @@ suite document_edit_tests = [] {
 "marker_input_keeps_an_editable_incomplete_cst"_test = [] {
     auto document = parse_document("abc");
     const auto& paragraph = first_editable(document);
-    auto transaction = document_insert_text(document, caret(paragraph, 1), U"*");
+    auto transaction = test_edit::document_insert_text(document, caret(paragraph, 1), U"*");
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     const auto& inline_document = first_editable(transaction->after).inline_content;
@@ -127,7 +313,7 @@ suite document_edit_tests = [] {
 "source_transactions_publish_reversible_text_operations"_test = [] {
     auto document = parse_document("abc");
     const auto& paragraph = first_editable(document);
-    auto transaction = document_insert_text(document, caret(paragraph, 1), U"X");
+    auto transaction = test_edit::document_insert_text(document, caret(paragraph, 1), U"X");
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     expect(fatal(bool(transaction->revision_before == document.revision)));
@@ -157,7 +343,7 @@ suite document_edit_tests = [] {
 
     auto original = parse_document("");
     normalize_document(original);
-    auto marker = document_insert_text(original, caret(first_editable(original)), U"# ");
+    auto marker = test_edit::document_insert_text(original, caret(first_editable(original)), U"# ");
     expect(fatal(bool(marker.has_value())));
     if (!marker) return;
     const auto tree_count = std::ranges::count_if(marker->operations, [](const auto& operation) {
@@ -223,7 +409,7 @@ suite document_edit_tests = [] {
             std::move(document), caret(first_editable(document)), marker);
         auto [with_content, after_content] = type_text(
             std::move(structured), at_content_start, U"content");
-        auto deletion = document_delete_backward(
+        auto deletion = test_edit::document_delete_backward(
             with_content,
             TextSelection::caret({
                 after_content.active.container_id,
@@ -245,7 +431,7 @@ suite document_edit_tests = [] {
 "block_start_backspace_semantics_do_not_depend_on_visual_affinity"_test = [] {
     auto document = parse_document("> content");
     const auto owner_id = first_editable(document).id;
-    auto deletion = document_delete_backward(
+    auto deletion = test_edit::document_delete_backward(
         document,
         TextSelection::caret({owner_id, 0, TextAffinity::Upstream}));
     expect(fatal(bool(deletion.has_value())));
@@ -268,7 +454,7 @@ suite document_edit_tests = [] {
         std::move(heading), heading_start, U"nested");
     const auto content_id = after_content.active.container_id;
 
-    auto remove_heading = document_delete_backward(
+    auto remove_heading = test_edit::document_delete_backward(
         with_content,
         TextSelection::caret({content_id, 0, TextAffinity::Downstream}));
     expect(fatal(bool(remove_heading.has_value())));
@@ -277,7 +463,7 @@ suite document_edit_tests = [] {
     expect(fatal(bool(remove_heading->after.root.children.front().children.front().kind == BlockKind::Paragraph)));
     expect(fatal(bool(remove_heading->after.root.children.front().children.front().inline_content.source == U"nested")));
 
-    auto remove_quote = document_delete_backward(remove_heading->after, remove_heading->selection_after);
+    auto remove_quote = test_edit::document_delete_backward(remove_heading->after, remove_heading->selection_after);
     expect(fatal(bool(remove_quote.has_value())));
     if (!remove_quote) return;
     expect(fatal(bool(remove_quote->after.root.children.size() == 1u)));
@@ -295,7 +481,7 @@ suite document_edit_tests = [] {
     });
     expect(fatal(bool(editable.size() == 3u)));
     if (editable.size() != 3) return;
-    auto deletion = document_delete_backward(
+    auto deletion = test_edit::document_delete_backward(
         document,
         TextSelection::caret({editable[1], 0, TextAffinity::Downstream}));
     expect(fatal(bool(deletion.has_value())));
@@ -320,7 +506,7 @@ suite document_edit_tests = [] {
     expect(fatal(bool(inner != nullptr)));
     if (!inner) return;
     const auto inner_id = inner->id;
-    auto deletion = document_delete_backward(
+    auto deletion = test_edit::document_delete_backward(
         document,
         TextSelection::caret({inner_id, 0, TextAffinity::Downstream}));
     expect(fatal(bool(deletion.has_value())));
@@ -338,7 +524,7 @@ suite document_edit_tests = [] {
     auto document = parse_document("");
     normalize_document(document);
     auto [opening, at_opening_end] = type_text(std::move(document), caret(first_editable(document)), U"```cpp");
-    auto entered = document_enter(opening, at_opening_end);
+    auto entered = test_edit::document_enter(opening, at_opening_end);
     expect(fatal(bool(entered.has_value())));
     if (!entered) return;
     expect(fatal(bool(entered->after.root.children.front().kind == BlockKind::CodeBlock)));
@@ -352,7 +538,7 @@ suite document_edit_tests = [] {
     expect(fatal(bool(entered->selection_after.active.container_id == entered->after.root.children.front().id)));
     expect(fatal(bool(entered->selection_after.active.source_offset == 7u)));
 
-    auto second_enter = document_enter(entered->after, entered->selection_after);
+    auto second_enter = test_edit::document_enter(entered->after, entered->selection_after);
     expect(fatal(bool(second_enter.has_value())));
     if (!second_enter) return;
     expect(fatal(bool(second_enter->after.root.children.front().block_source.source == U"```cpp\n\n```")));
@@ -400,7 +586,7 @@ suite document_edit_tests = [] {
 "enter_continues_and_exits_lists_by_tree_context"_test = [] {
     auto bullets = parse_document("- one");
     auto bullet_id = bullets.root.children.front().children.front().children.front().id;
-    auto continued = document_enter(bullets, TextSelection::caret({bullet_id, 3, TextAffinity::Downstream}));
+    auto continued = test_edit::document_enter(bullets, TextSelection::caret({bullet_id, 3, TextAffinity::Downstream}));
     expect(fatal(bool(continued.has_value())));
     if (continued) {
         const auto& list = continued->after.root.children.front();
@@ -412,13 +598,13 @@ suite document_edit_tests = [] {
 
     auto ordered = parse_document("7) one");
     auto ordered_id = ordered.root.children.front().children.front().children.front().id;
-    auto next_number = document_enter(ordered, TextSelection::caret({ordered_id, 3, TextAffinity::Downstream}));
+    auto next_number = test_edit::document_enter(ordered, TextSelection::caret({ordered_id, 3, TextAffinity::Downstream}));
     expect(fatal(bool(next_number.has_value())));
     if (next_number) expect(fatal(bool(next_number->after.root.children.front().children.back().marker == U"8) ")));
 
     auto before_ordered = parse_document("7) one");
     auto before_ordered_id = before_ordered.root.children.front().children.front().children.front().id;
-    auto inserted_before = document_enter(before_ordered, TextSelection::caret({before_ordered_id, 0, TextAffinity::Downstream}));
+    auto inserted_before = test_edit::document_enter(before_ordered, TextSelection::caret({before_ordered_id, 0, TextAffinity::Downstream}));
     expect(fatal(bool(inserted_before.has_value())));
     if (inserted_before) {
         const auto& list = inserted_before->after.root.children.front();
@@ -429,7 +615,7 @@ suite document_edit_tests = [] {
 
     auto tasks = parse_document("- [x] done");
     auto task_id = tasks.root.children.front().children.front().children.front().id;
-    auto next_task = document_enter(tasks, TextSelection::caret({task_id, 4, TextAffinity::Downstream}));
+    auto next_task = test_edit::document_enter(tasks, TextSelection::caret({task_id, 4, TextAffinity::Downstream}));
     expect(fatal(bool(next_task.has_value())));
     if (next_task) {
         const auto& item = next_task->after.root.children.front().children.back();
@@ -440,7 +626,7 @@ suite document_edit_tests = [] {
 
     auto empty = parse_document("- one\n- ");
     auto empty_id = empty.root.children.front().children.back().children.front().id;
-    auto exited = document_enter(empty, TextSelection::caret({empty_id, 0, TextAffinity::Downstream}));
+    auto exited = test_edit::document_enter(empty, TextSelection::caret({empty_id, 0, TextAffinity::Downstream}));
     expect(fatal(bool(exited.has_value())));
     if (exited) {
         expect(fatal(bool(exited->after.root.children.size() == 2u)));
@@ -457,7 +643,7 @@ suite document_edit_tests = [] {
     auto& quote = list.children.front().children.front();
     expect(fatal(bool(quote.kind == BlockKind::BlockQuote)));
     auto paragraph_id = quote.children.front().id;
-    auto transaction = document_enter(document, TextSelection::caret({paragraph_id, 6, TextAffinity::Downstream}));
+    auto transaction = test_edit::document_enter(document, TextSelection::caret({paragraph_id, 6, TextAffinity::Downstream}));
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     const auto& updated_list = transaction->after.root.children.front();
@@ -471,7 +657,7 @@ suite document_edit_tests = [] {
 "backspace_inside_markers_reparses_one_inline_document"_test = [] {
     auto document = parse_document("**alpha**");
     const auto& paragraph = first_editable(document);
-    auto transaction = document_delete_backward(document, caret(paragraph, 1));
+    auto transaction = test_edit::document_delete_backward(document, caret(paragraph, 1));
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     expect(fatal(bool(first_editable(transaction->after).inline_content.source == U"*alpha**")));
@@ -482,7 +668,7 @@ suite document_edit_tests = [] {
 "delete_forward_preserves_unclosed_source_verbatim"_test = [] {
     auto document = parse_document("[title](url)");
     const auto& paragraph = first_editable(document);
-    auto transaction = document_delete_forward(document, caret(paragraph, 11));
+    auto transaction = test_edit::document_delete_forward(document, caret(paragraph, 11));
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     expect(fatal(bool(first_editable(transaction->after).inline_content.source == U"[title](url")));
@@ -501,13 +687,13 @@ suite document_edit_tests = [] {
     for (const auto& test : cases) {
         auto document = parse_document("value");
         const auto& paragraph = first_editable(document);
-        auto wrapped = document_toggle_inline_format(document, range(paragraph, 0, 5), test.format);
+        auto wrapped = test_edit::document_toggle_inline_format(document, range(paragraph, 0, 5), test.format);
         expect(fatal(bool(wrapped.has_value())));
         if (!wrapped) continue;
         const auto& inline_document = first_editable(wrapped->after).inline_content;
         expect(fatal(bool(inline_document.source == test.expected)));
         expect(fatal(bool(inline_contains_kind(inline_document, test.kind))));
-        auto unwrapped = document_toggle_inline_format(wrapped->after, wrapped->selection_after, test.format);
+        auto unwrapped = test_edit::document_toggle_inline_format(wrapped->after, wrapped->selection_after, test.format);
         expect(fatal(bool(unwrapped.has_value())));
         if (unwrapped) expect(fatal(bool(first_editable(unwrapped->after).inline_content.source == U"value")));
     }
@@ -516,7 +702,7 @@ suite document_edit_tests = [] {
 "link_and_image_commands_are_source_edits"_test = [] {
     auto link_document = parse_document("title");
     const auto& link_paragraph = first_editable(link_document);
-    auto link = document_insert_link(link_document, range(link_paragraph, 0, 5), "url", "name");
+    auto link = test_edit::document_insert_link(link_document, range(link_paragraph, 0, 5), "url", "name");
     expect(fatal(bool(link.has_value())));
     if (link) {
         const auto& inline_document = first_editable(link->after).inline_content;
@@ -525,7 +711,7 @@ suite document_edit_tests = [] {
     }
     auto image_document = parse_document("diagram");
     const auto& image_paragraph = first_editable(image_document);
-    auto image = document_insert_image(image_document, range(image_paragraph, 0, 7), "image.png", "diagram");
+    auto image = test_edit::document_insert_image(image_document, range(image_paragraph, 0, 7), "image.png", "diagram");
     expect(fatal(bool(image.has_value())));
     if (image) {
         const auto& inline_document = first_editable(image->after).inline_content;
@@ -537,7 +723,7 @@ suite document_edit_tests = [] {
 "enter_splits_source_without_serializing_the_document"_test = [] {
     auto document = parse_document("**alpha**");
     const auto original_id = first_editable(document).id;
-    auto transaction = document_enter(document, caret(first_editable(document), 5));
+    auto transaction = test_edit::document_enter(document, caret(first_editable(document), 5));
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     expect(fatal(bool(transaction->after.root.children.size() == 2u)));
@@ -552,7 +738,7 @@ suite document_edit_tests = [] {
     auto document = parse_document("body[^1]\n\n[^3]: existing");
     const auto& owner = first_editable(document);
     const auto before = range(owner, 0, 4);
-    auto inserted = document_insert_footnote(document, before);
+    auto inserted = test_edit::document_insert_footnote(document, before);
     expect(fatal(bool(inserted.has_value())));
     if (!inserted) return;
 
@@ -588,7 +774,7 @@ suite document_edit_tests = [] {
     auto document = parse_document("body[^missing]");
     const auto& owner = first_editable(document);
     const auto before = caret(owner, owner.inline_content.source.size());
-    auto created = document_create_footnote_definition(document, before, "missing");
+    auto created = test_edit::document_create_footnote_definition(document, before, "missing");
     expect(fatal(bool(created.has_value())));
     if (!created) return;
     expect(fatal(bool(created->operations.size() == 1u)));
@@ -602,7 +788,7 @@ suite document_edit_tests = [] {
         expect(fatal(bool(reference->container_id == owner.id)));
         expect(fatal(bool(reference->source_offset == 4u)));
     }
-    expect(fatal(bool(!document_create_footnote_definition(
+    expect(fatal(bool(!test_edit::document_create_footnote_definition(
         created->after, created->selection_after, "missing").has_value())));
     expect_document_valid(created->after);
 };
@@ -610,7 +796,7 @@ suite document_edit_tests = [] {
 "enter_edits_code_math_and_table_cell_sources"_test = [] {
     auto fenced = parse_document("```cpp\none\ntwo\n```");
     auto const code_offset = block_source_offset_for_content(fenced.root.children.front().block_source, 3);
-    auto code = document_enter(fenced, TextSelection::caret({fenced.root.children.front().id, code_offset, TextAffinity::Downstream}));
+    auto code = test_edit::document_enter(fenced, TextSelection::caret({fenced.root.children.front().id, code_offset, TextAffinity::Downstream}));
     expect(fatal(bool(code.has_value())));
     if (code) {
         expect(fatal(bool(block_source_content(code->after.root.children.front().block_source) == U"one\n\ntwo\n")));
@@ -619,13 +805,13 @@ suite document_edit_tests = [] {
 
     auto math = parse_document("$$\na+b\n$$");
     auto const math_offset = block_source_offset_for_content(math.root.children.front().block_source, 1);
-    auto math_break = document_enter(math, TextSelection::caret({math.root.children.front().id, math_offset, TextAffinity::Downstream}));
+    auto math_break = test_edit::document_enter(math, TextSelection::caret({math.root.children.front().id, math_offset, TextAffinity::Downstream}));
     expect(fatal(bool(math_break.has_value())));
     if (math_break) expect(fatal(bool(block_source_content(math_break->after.root.children.front().block_source) == U"a\n+b\n")));
 
     auto table = parse_document("| ab |\n| --- |");
     auto& cell = table.root.children.front().children.front().children.front();
-    auto cell_break = document_enter(table, caret(cell, 1));
+    auto cell_break = test_edit::document_enter(table, caret(cell, 1));
     expect(fatal(bool(cell_break.has_value())));
     if (cell_break) {
         auto const& edited = cell_break->after.root.children.front().children.front().children.front().inline_content;
@@ -633,12 +819,12 @@ suite document_edit_tests = [] {
         expect(fatal(bool(inline_contains_kind(edited, InlineCstKind::HardBreak))));
         expect(fatal(bool(serialize_markdown(cell_break->after).find("a<br>b") != std::string::npos)));
 
-        auto second_break = document_enter(cell_break->after, cell_break->selection_after);
+        auto second_break = test_edit::document_enter(cell_break->after, cell_break->selection_after);
         expect(fatal(bool(second_break.has_value())));
         if (second_break) {
             auto const& with_empty_line = second_break->after.root.children.front().children.front().children.front().inline_content;
             expect(fatal(bool(with_empty_line.source == U"a<br><br>b")));
-            auto removed = document_delete_backward(second_break->after, second_break->selection_after);
+            auto removed = test_edit::document_delete_backward(second_break->after, second_break->selection_after);
             expect(fatal(bool(removed.has_value())));
             if (removed) {
                 auto const& joined = removed->after.root.children.front().children.front().children.front().inline_content;
@@ -652,7 +838,7 @@ suite document_edit_tests = [] {
 "enter_on_empty_indented_code_line_exits_the_block"_test = [] {
     auto document = parse_document("    one\n\n    two");
     auto const code_id = document.root.children.front().id;
-    auto transaction = document_enter(document, TextSelection::caret({code_id, 8, TextAffinity::Downstream}));
+    auto transaction = test_edit::document_enter(document, TextSelection::caret({code_id, 8, TextAffinity::Downstream}));
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     expect(fatal(bool(transaction->after.root.children.size() == 3u)));
@@ -671,7 +857,7 @@ suite document_edit_tests = [] {
     expect(fatal(bool(quote.kind == BlockKind::BlockQuote)));
     expect(fatal(bool(quote.children.size() == 2u)));
     auto const empty_id = quote.children.back().id;
-    auto transaction = document_enter(document, TextSelection::caret({empty_id, 0, TextAffinity::Downstream}));
+    auto transaction = test_edit::document_enter(document, TextSelection::caret({empty_id, 0, TextAffinity::Downstream}));
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     expect(fatal(bool(transaction->after.root.children.size() == 2u)));
@@ -697,7 +883,7 @@ suite document_edit_tests = [] {
         if (!callout || callout->children.size() < 2) continue;
         const auto callout_id = callout->id;
         const auto empty_id = callout->children.back().id;
-        auto transaction = document_enter(
+        auto transaction = test_edit::document_enter(
             document,
             TextSelection::caret({empty_id, 0, TextAffinity::Downstream}));
         expect(fatal(bool(transaction.has_value()))) << source;
@@ -721,7 +907,7 @@ suite document_edit_tests = [] {
     expect(fatal(bool(callout.kind == BlockKind::Callout)));
     expect(fatal(bool(callout.children.size() == 2u)));
     if (callout.children.size() != 2) return;
-    auto opened = document_enter(
+    auto opened = test_edit::document_enter(
         document,
         TextSelection::caret({callout.children.front().id, 5, TextAffinity::Downstream}));
     expect(fatal(bool(opened.has_value())));
@@ -730,7 +916,7 @@ suite document_edit_tests = [] {
     expect(fatal(bool(opened_callout != nullptr && opened_callout->children.size() == 3u)));
     if (!opened_callout || opened_callout->children.size() != 3) return;
     auto const empty_id = opened_callout->children[1].id;
-    auto transaction = document_enter(
+    auto transaction = test_edit::document_enter(
         opened->after,
         TextSelection::caret({empty_id, 0, TextAffinity::Downstream}));
     expect(fatal(bool(transaction.has_value())));
@@ -759,7 +945,7 @@ suite document_edit_tests = [] {
     if (definition.children.size() != 1u) return;
 
     auto const first_id = definition.children.front().id;
-    auto opened = document_enter(
+    auto opened = test_edit::document_enter(
         document,
         TextSelection::caret({first_id, 5, TextAffinity::Downstream}));
     expect(fatal(bool(opened.has_value())));
@@ -772,7 +958,7 @@ suite document_edit_tests = [] {
     auto const empty_id = opened_definition->children.back().id;
     expect(fatal(bool(opened_definition->children.back().inline_content.source.empty())));
 
-    auto exited = document_enter(
+    auto exited = test_edit::document_enter(
         opened->after,
         TextSelection::caret({empty_id, 0, TextAffinity::Downstream}));
     expect(fatal(bool(exited.has_value())));
@@ -804,7 +990,7 @@ suite document_edit_tests = [] {
     if (quote == item.children.end() || quote->children.empty()) return;
     auto const empty_id = quote->children.front().id;
 
-    auto transaction = document_enter(document, TextSelection::caret({empty_id, 0, TextAffinity::Downstream}));
+    auto transaction = test_edit::document_enter(document, TextSelection::caret({empty_id, 0, TextAffinity::Downstream}));
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     expect(fatal(bool(find_block(transaction->after.root, empty_id) == nullptr)));
@@ -828,14 +1014,14 @@ suite document_edit_tests = [] {
 "backspace_and_delete_join_adjacent_blocks"_test = [] {
     auto document = parse_document("alpha\n\nbeta");
     const auto second_id = document.root.children[1].id;
-    auto backward = document_delete_backward(document, caret(document.root.children[1], 0));
+    auto backward = test_edit::document_delete_backward(document, caret(document.root.children[1], 0));
     expect(fatal(bool(backward.has_value())));
     if (backward) {
         expect(fatal(bool(backward->after.root.children.size() == 1u)));
         expect(fatal(bool(backward->after.root.children[0].inline_content.source == U"alphabeta")));
         expect(fatal(bool(backward->selection_after.active.source_offset == 5u)));
     }
-    auto forward = document_delete_forward(document, caret(document.root.children[0], 5));
+    auto forward = test_edit::document_delete_forward(document, caret(document.root.children[0], 5));
     expect(fatal(bool(forward.has_value())));
     if (forward) {
         expect(fatal(bool(forward->after.root.children.size() == 1u)));
@@ -848,7 +1034,7 @@ suite document_edit_tests = [] {
     auto document = parse_document("> [!NOTE] title\n> body");
     const auto callout_id = document.root.children.front().id;
 
-    auto entered_at_start = document_enter(
+    auto entered_at_start = test_edit::document_enter(
         document,
         TextSelection::caret({callout_id, 0, TextAffinity::Downstream}));
     expect(fatal(bool(entered_at_start.has_value()))) << "enter at callout title start";
@@ -865,7 +1051,7 @@ suite document_edit_tests = [] {
         expect_document_valid(entered_at_start->after);
     }
 
-    auto entered = document_enter(
+    auto entered = test_edit::document_enter(
         document,
         TextSelection::caret({callout_id, 2, TextAffinity::Downstream}));
     expect(fatal(bool(entered.has_value()))) << "enter callout title";
@@ -886,7 +1072,7 @@ suite document_edit_tests = [] {
     }
 
     const auto body_id = document.root.children.front().children.front().id;
-    auto backward = document_delete_backward(
+    auto backward = test_edit::document_delete_backward(
         document,
         TextSelection::caret({body_id, 0, TextAffinity::Downstream}));
     expect(fatal(bool(backward.has_value()))) << "backspace first callout body";
@@ -900,7 +1086,7 @@ suite document_edit_tests = [] {
         expect_document_valid(backward->after);
     }
 
-    auto forward = document_delete_forward(
+    auto forward = test_edit::document_delete_forward(
         document,
         TextSelection::caret({callout_id, 5, TextAffinity::Upstream}));
     expect(fatal(bool(forward.has_value()))) << "delete after callout title";
@@ -914,7 +1100,7 @@ suite document_edit_tests = [] {
         expect_document_valid(forward->after);
     }
 
-    auto unwrapped = document_delete_backward(
+    auto unwrapped = test_edit::document_delete_backward(
         document,
         TextSelection::caret({callout_id, 0, TextAffinity::Downstream}));
     expect(fatal(bool(unwrapped.has_value()))) << "backspace callout title start";
@@ -941,7 +1127,7 @@ suite document_edit_tests = [] {
     if (callout && callout->callout_title && !callout->children.empty()) {
         const auto callout_id = callout->id;
         const auto body_id = callout->children.front().id;
-        auto joined = document_delete_backward(
+        auto joined = test_edit::document_delete_backward(
             nested,
             TextSelection::caret({body_id, 0, TextAffinity::Downstream}));
         expect(fatal(bool(joined.has_value())));
@@ -957,7 +1143,7 @@ suite document_edit_tests = [] {
             expect_document_valid(joined->after);
         }
 
-        auto unwrapped = document_delete_backward(
+        auto unwrapped = test_edit::document_delete_backward(
             nested,
             TextSelection::caret({callout_id, 0, TextAffinity::Downstream}));
         expect(fatal(bool(unwrapped.has_value())));
@@ -975,7 +1161,7 @@ suite document_edit_tests = [] {
 
     auto untitled = parse_document("> [!NOTE]\n> body");
     const auto body_id = first_editable(untitled).id;
-    auto remove_callout = document_delete_backward(
+    auto remove_callout = test_edit::document_delete_backward(
         untitled,
         TextSelection::caret({body_id, 0, TextAffinity::Downstream}));
     expect(fatal(bool(remove_callout.has_value())));
@@ -983,7 +1169,7 @@ suite document_edit_tests = [] {
     expect(fatal(bool(remove_callout->after.root.children.front().kind == BlockKind::BlockQuote)));
     expect(fatal(bool(remove_callout->selection_after.active.container_id == body_id)));
 
-    auto remove_quote = document_delete_backward(remove_callout->after, remove_callout->selection_after);
+    auto remove_quote = test_edit::document_delete_backward(remove_callout->after, remove_callout->selection_after);
     expect(fatal(bool(remove_quote.has_value())));
     if (!remove_quote) return;
     expect(fatal(bool(remove_quote->after.root.children.front().kind == BlockKind::Paragraph)));
@@ -1002,15 +1188,15 @@ suite document_edit_tests = [] {
     for (const auto& [markdown, container_kind] : cases) {
         auto document = parse_document(markdown);
         auto const first_id = first_editable(document).id;
-        auto split = document_enter(document, caret(first_editable(document), 5));
+        auto split = test_edit::document_enter(document, caret(first_editable(document), 5));
         expect(fatal(bool(split.has_value()))) << markdown;
         if (!split) continue;
         const auto second_id = split->selection_after.active.container_id;
-        auto inserted = document_insert_text(split->after, split->selection_after, U"second");
+        auto inserted = test_edit::document_insert_text(split->after, split->selection_after, U"second");
         expect(fatal(bool(inserted.has_value()))) << markdown;
         if (!inserted) continue;
 
-        auto joined = document_delete_backward(
+        auto joined = test_edit::document_delete_backward(
             inserted->after,
             TextSelection::caret({second_id, 0, TextAffinity::Downstream}));
         expect(fatal(bool(joined.has_value()))) << markdown;
@@ -1039,7 +1225,7 @@ suite document_edit_tests = [] {
         && list.children.front().children.size() == 2u) {
         const auto first_id = list.children.front().children.front().id;
         const auto second_id = list.children.front().children.back().id;
-        auto joined = document_delete_backward(
+        auto joined = test_edit::document_delete_backward(
             list_document,
             TextSelection::caret({second_id, 0, TextAffinity::Downstream}));
         expect(fatal(bool(joined.has_value())));
@@ -1062,7 +1248,7 @@ suite document_edit_tests = [] {
     if (quote_document.root.children.size() == 3u) {
         auto const blank_id = quote_document.root.children[1].id;
         auto const& quote_content = quote_document.root.children[0].children.back();
-        auto transaction = document_delete_backward(quote_document, caret(quote_document.root.children[1], 0));
+        auto transaction = test_edit::document_delete_backward(quote_document, caret(quote_document.root.children[1], 0));
         expect(fatal(bool(transaction.has_value())));
         if (transaction) {
             expect(fatal(bool(transaction->after.root.children.size() == 2u)));
@@ -1079,7 +1265,7 @@ suite document_edit_tests = [] {
         auto const blank_id = code_document.root.children[1].id;
         auto const code_id = code_document.root.children[0].id;
         auto const code_length = code_document.root.children[0].block_source.source.size();
-        auto transaction = document_delete_backward(code_document, caret(code_document.root.children[1], 0));
+        auto transaction = test_edit::document_delete_backward(code_document, caret(code_document.root.children[1], 0));
         expect(fatal(bool(transaction.has_value())));
         if (transaction) {
             expect(fatal(bool(transaction->after.root.children.size() == 2u)));
@@ -1097,7 +1283,7 @@ suite document_edit_tests = [] {
     if (document.root.children.size() != 3u) return;
     auto const blank_id = document.root.children[1].id;
     auto const quote_content_id = document.root.children[2].children.front().id;
-    auto transaction = document_delete_forward(document, caret(document.root.children[1], 0));
+    auto transaction = test_edit::document_delete_forward(document, caret(document.root.children[1], 0));
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     expect(fatal(bool(transaction->after.root.children.size() == 2u)));
@@ -1113,7 +1299,7 @@ suite document_edit_tests = [] {
     if (after_image.root.children.size() == 3u) {
         auto const image_id = after_image.root.children[0].id;
         auto const blank_id = after_image.root.children[1].id;
-        auto transaction = document_delete_backward(after_image, caret(after_image.root.children[1], 0));
+        auto transaction = test_edit::document_delete_backward(after_image, caret(after_image.root.children[1], 0));
         expect(fatal(bool(transaction.has_value())));
         if (transaction) {
             expect(fatal(bool(find_block(transaction->after.root, blank_id) == nullptr)));
@@ -1128,7 +1314,7 @@ suite document_edit_tests = [] {
     if (before_break.root.children.size() == 3u) {
         auto const blank_id = before_break.root.children[1].id;
         auto const break_id = before_break.root.children[2].id;
-        auto transaction = document_delete_forward(before_break, caret(before_break.root.children[1], 0));
+        auto transaction = test_edit::document_delete_forward(before_break, caret(before_break.root.children[1], 0));
         expect(fatal(bool(transaction.has_value())));
         if (transaction) {
             expect(fatal(bool(find_block(transaction->after.root, blank_id) == nullptr)));
@@ -1145,7 +1331,7 @@ suite document_edit_tests = [] {
     if (document.root.children.size() != 2u) return;
     auto const image_id = document.root.children[0].id;
     auto const quote_content_id = document.root.children[1].children.front().id;
-    auto transaction = document_delete_forward(document, TextSelection::caret({image_id, 0, TextAffinity::Downstream}));
+    auto transaction = test_edit::document_delete_forward(document, TextSelection::caret({image_id, 0, TextAffinity::Downstream}));
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     expect(fatal(bool(find_block(transaction->after.root, image_id) == nullptr)));
@@ -1159,7 +1345,7 @@ suite document_edit_tests = [] {
     TextSelection selection{
         {document.root.children[0].id, 2, TextAffinity::Downstream},
         {document.root.children[2].id, 3, TextAffinity::Downstream}};
-    auto transaction = document_delete_selection(document, selection);
+    auto transaction = test_edit::document_delete_selection(document, selection);
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     expect(fatal(bool(transaction->after.root.children.size() == 1u)));
@@ -1170,7 +1356,7 @@ suite document_edit_tests = [] {
 
 "paste_normalizes_newlines_and_parses_clipboard_markdown"_test = [] {
     auto document = parse_document("ab");
-    auto transaction = document_paste_text(document, caret(first_editable(document), 1), U"X\r\nY");
+    auto transaction = test_edit::document_paste_text(document, caret(first_editable(document), 1), U"X\r\nY");
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     expect(fatal(bool(transaction->after.root.children.size() == 1u)));
@@ -1180,7 +1366,7 @@ suite document_edit_tests = [] {
 
 "paste_semantically_merges_fragment_head_and_anchor_tail"_test = [] {
     auto document = parse_document("ab");
-    auto transaction = document_paste_text(
+    auto transaction = test_edit::document_paste_text(
         document,
         caret(first_editable(document), 1),
         U"X\n\nY");
@@ -1197,7 +1383,7 @@ suite document_edit_tests = [] {
 
 "paste_uses_literal_semantics_for_raw_blocks_and_table_cells"_test = [] {
     auto code = parse_document("```cpp\nabc\n```");
-    auto code_paste = document_paste_text(
+    auto code_paste = test_edit::document_paste_text(
         code,
         caret(code.root.children.front(), 7),
         U"# h\r\n- item");
@@ -1212,7 +1398,7 @@ suite document_edit_tests = [] {
 
     auto table = parse_document("| a | b |\n| --- | --- |\n| c | d |");
     auto* first_cell = &table.root.children.front().children.front().children.front();
-    auto cell_paste = document_paste_text(
+    auto cell_paste = test_edit::document_paste_text(
         table,
         TextSelection{
             {first_cell->id, 0, TextAffinity::Downstream},
@@ -1228,13 +1414,13 @@ suite document_edit_tests = [] {
 
 "paragraph_heading_conversion_preserves_inline_source"_test = [] {
     auto document = parse_document("__title__");
-    auto heading = document_set_heading(document, caret(first_editable(document), 3), 3);
+    auto heading = test_edit::document_set_heading(document, caret(first_editable(document), 3), 3);
     expect(fatal(bool(heading.has_value())));
     if (!heading) return;
     expect(fatal(bool(heading->after.root.children.front().kind == BlockKind::Heading)));
     expect(fatal(bool(heading->after.root.children.front().level == 3u)));
     expect(fatal(bool(heading->after.root.children.front().inline_content.source == U"__title__")));
-    auto paragraph = document_set_heading(heading->after, heading->selection_after, 0);
+    auto paragraph = test_edit::document_set_heading(heading->after, heading->selection_after, 0);
     expect(fatal(bool(paragraph.has_value())));
     if (paragraph) expect(fatal(bool(paragraph->after.root.children.front().kind == BlockKind::Paragraph)));
 };
@@ -1242,13 +1428,13 @@ suite document_edit_tests = [] {
 "quote_callout_and_list_commands_use_unified_children"_test = [] {
     auto document = parse_document("one\n\ntwo");
     TextSelection both{{document.root.children[0].id, 0, TextAffinity::Downstream}, {document.root.children[1].id, 3, TextAffinity::Downstream}};
-    auto quote = document_toggle_block_quote(document, both);
+    auto quote = test_edit::document_toggle_block_quote(document, both);
     expect(fatal(bool(quote.has_value())));
     if (quote) {
         expect(fatal(bool(quote->after.root.children.front().kind == BlockKind::BlockQuote)));
         expect(fatal(bool(quote->after.root.children.front().children.size() == 2u)));
     }
-    auto list = document_toggle_list(document, both, ListStyle::Bullet);
+    auto list = test_edit::document_toggle_list(document, both, ListStyle::Bullet);
     expect(fatal(bool(list.has_value())));
     if (list) {
         const auto& root_list = list->after.root.children.front();
@@ -1257,7 +1443,7 @@ suite document_edit_tests = [] {
         expect(fatal(bool(root_list.children.front().kind == BlockKind::ListItem)));
         expect(fatal(bool(root_list.children.front().children.front().inline_content.source == U"one")));
     }
-    auto callout = document_toggle_callout(document, both, "NOTE");
+    auto callout = test_edit::document_toggle_callout(document, both, "NOTE");
     expect(fatal(bool(callout.has_value())));
     if (callout) {
         expect(fatal(bool(callout->after.root.children.front().kind == BlockKind::Callout)));
@@ -1269,7 +1455,7 @@ suite document_edit_tests = [] {
     auto document = parse_document("> [!note]  title\n> body");
     auto const callout_id = document.root.children.front().id;
     auto const body_id = document.root.children.front().children.front().id;
-    auto switched = document_toggle_callout(
+    auto switched = test_edit::document_toggle_callout(
         document,
         TextSelection::caret({body_id, 0, TextAffinity::Downstream}),
         "tip");
@@ -1291,13 +1477,13 @@ suite document_edit_tests = [] {
     auto document = parse_document("- one\n- two\n");
     auto& list = document.root.children.front();
     const auto second_paragraph_id = list.children[1].children.front().id;
-    auto indented = document_indent_list_item(document, TextSelection::caret({second_paragraph_id, 0, TextAffinity::Downstream}));
+    auto indented = test_edit::document_indent_list_item(document, TextSelection::caret({second_paragraph_id, 0, TextAffinity::Downstream}));
     expect(fatal(bool(indented.has_value())));
     if (!indented) return;
     const auto& after_list = indented->after.root.children.front();
     expect(fatal(bool(after_list.children.size() == 1u)));
     expect(fatal(bool(after_list.children.front().children.back().kind == BlockKind::List)));
-    auto outdented = document_outdent_list_item(indented->after, indented->selection_after);
+    auto outdented = test_edit::document_outdent_list_item(indented->after, indented->selection_after);
     expect(fatal(bool(outdented.has_value())));
     if (outdented) expect(fatal(bool(outdented->after.root.children.front().children.size() == 2u)));
 };
@@ -1306,20 +1492,20 @@ suite document_edit_tests = [] {
     auto document = parse_document("anchor");
     auto table = make_table_block(document, 1, 2);
     const auto first_cell_id = table.children.front().children.front().id;
-    auto inserted = document_insert_atomic_block(document, caret(first_editable(document), 0), std::move(table));
+    auto inserted = test_edit::document_insert_atomic_block(document, caret(first_editable(document), 0), std::move(table));
     expect(fatal(bool(inserted.has_value())));
     if (!inserted) return;
     TextSelection in_cell = TextSelection::caret({first_cell_id, 0, TextAffinity::Downstream});
-    auto column = document_edit_table(inserted->after, in_cell, DocumentTableEdit::InsertColumnRight);
+    auto column = test_edit::document_edit_table(inserted->after, in_cell, DocumentTableEdit::InsertColumnRight);
     expect(fatal(bool(column.has_value())));
     if (!column) return;
     const auto& table_after_column = column->after.root.children[1];
     expect(fatal(bool(table_after_column.children.front().children.size() == 3u)));
     expect(fatal(bool(table_after_column.children[1].children.size() == 3u)));
-    auto row = document_edit_table(column->after, in_cell, DocumentTableEdit::InsertRowBelow);
+    auto row = test_edit::document_edit_table(column->after, in_cell, DocumentTableEdit::InsertRowBelow);
     expect(fatal(bool(row.has_value())));
     if (row) expect(fatal(bool(row->after.root.children[1].children.size() == 3u)));
-    auto aligned = document_edit_table(column->after, in_cell, DocumentTableEdit::SetColumnAlignment, TableAlignment::Center);
+    auto aligned = test_edit::document_edit_table(column->after, in_cell, DocumentTableEdit::SetColumnAlignment, TableAlignment::Center);
     expect(fatal(bool(aligned.has_value())));
     if (aligned) expect(fatal(bool(aligned->after.root.children[1].table_aligns.front() == TableAlignment::Center)));
 };
@@ -1333,13 +1519,13 @@ suite document_edit_tests = [] {
         const bool insert = first_editable(document).inline_content.source.empty() || (random() & 1u) == 0;
         if (insert) {
             const char32_t value = U'a' + static_cast<char32_t>(random() % 26);
-            auto transaction = document_insert_text(document, position, std::u32string(1, value));
+            auto transaction = test_edit::document_insert_text(document, position, std::u32string(1, value));
             expect(fatal(bool(transaction.has_value())));
             if (!transaction) break;
             document = std::move(transaction->after);
             position = transaction->selection_after;
         } else {
-            auto transaction = document_delete_backward(document, position);
+            auto transaction = test_edit::document_delete_backward(document, position);
             expect(fatal(bool(transaction.has_value())));
             if (!transaction) break;
             document = std::move(transaction->after);
@@ -1353,7 +1539,7 @@ suite document_edit_tests = [] {
 
 "save_reload_after_edits_is_lossless"_test = [] {
     auto document = parse_document("*abc*\n\n[title](<url>)");
-    auto transaction = document_insert_text(document, caret(document.root.children[0], 3), U"X");
+    auto transaction = test_edit::document_insert_text(document, caret(document.root.children[0], 3), U"X");
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
     const auto saved = serialize_markdown(transaction->after);

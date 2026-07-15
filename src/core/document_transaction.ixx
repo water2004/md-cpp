@@ -1,6 +1,7 @@
 // elmd.core.document_transaction — reversible document operations produced by
-// editing commands. History consumes this operation log directly; transactions
-// never retain a complete "before" EditorDocument snapshot.
+// editing commands. Commands apply these operations directly to the
+// authoritative document; transactions never retain complete document
+// snapshots.
 export module elmd.core.document_transaction;
 import std;
 import elmd.core.ast;
@@ -31,11 +32,11 @@ struct DocumentTreeEdit {
 using DocumentOperation = std::variant<DocumentTextOperation, DocumentTreeEdit>;
 
 struct DocumentTransaction {
-    EditorDocument after;
     std::vector<DocumentOperation> operations;
     TextSelection selection_before;
     TextSelection selection_after;
     std::uint64_t revision_before = 0;
+    std::uint64_t revision_after = 0;
     DocumentTransactionReason reason = DocumentTransactionReason::Structure;
 };
 
@@ -60,18 +61,18 @@ inline BlockNode payload_shell(const BlockNode& source) {
 } // namespace document_transaction_detail
 
 inline DocumentTransaction make_recorded_document_transaction(
-    EditorDocument after,
     std::vector<DocumentOperation> operations,
     TextSelection selection_before,
     TextSelection selection_after,
     std::uint64_t revision_before,
+    std::uint64_t revision_after,
     DocumentTransactionReason reason) {
     DocumentTransaction transaction;
-    transaction.after = std::move(after);
     transaction.operations = std::move(operations);
     transaction.selection_before = selection_before;
     transaction.selection_after = selection_after;
     transaction.revision_before = revision_before;
+    transaction.revision_after = revision_after;
     transaction.reason = reason;
     return transaction;
 }

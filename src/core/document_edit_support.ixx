@@ -110,19 +110,13 @@ inline InlineDocument make_inline(std::u32string source, const EditorDocument& o
     return document;
 }
 
-inline InlineDocument* find_inline_owner(BlockVec& blocks, NodeId id) {
-    for (auto& block : blocks) {
-        if (block.id == id) return editable_inline_document(block);
-        if (auto* found = find_inline_owner(block.children, id)) return found;
-    }
-    return nullptr;
+inline InlineDocument* find_inline_owner(BlockNode& root, NodeId id) {
+    auto* block = elmd::find_block(root, id);
+    return block ? editable_inline_document(*block) : nullptr;
 }
-inline const InlineDocument* find_inline_owner(const BlockVec& blocks, NodeId id) {
-    for (const auto& block : blocks) {
-        if (block.id == id) return editable_inline_document(block);
-        if (const auto* found = find_inline_owner(block.children, id)) return found;
-    }
-    return nullptr;
+inline const InlineDocument* find_inline_owner(const BlockNode& root, NodeId id) {
+    const auto* block = elmd::find_block(root, id);
+    return block ? editable_inline_document(*block) : nullptr;
 }
 
 inline void assign_missing_ids(InlineCstNodes& nodes, NodeAllocator& allocator) {
@@ -162,7 +156,7 @@ inline std::optional<AppliedSourceEdit> edit_inline(
     SourceRange range,
     std::u32string replacement,
     NodeAllocator& allocator) {
-    auto* inline_document = find_inline_owner(document.root.children, owner_id);
+    auto* inline_document = find_inline_owner(document.root, owner_id);
     if (!inline_document || !range.valid_for(inline_document->source.size())) return std::nullopt;
     return apply_inline_source_edit(
         owner_id,
@@ -225,7 +219,7 @@ inline std::optional<InsertResult> insert_text(
 }
 
 inline std::optional<std::size_t> editable_length(const EditorDocument& document, NodeId id) {
-    if (const auto* inline_document = find_inline_owner(document.root.children, id)) return inline_document->source.size();
+    if (const auto* inline_document = find_inline_owner(document.root, id)) return inline_document->source.size();
     if (const auto* block = elmd::find_block(document.root, id)) {
         if (block->kind == BlockKind::CodeBlock || block->kind == BlockKind::MathBlock) {
             return block->block_source.source.size();
@@ -898,7 +892,7 @@ inline void validate_blocks(const BlockVec& blocks, std::unordered_set<std::uint
 }
 
 inline DocumentTransaction source_transaction(
-    EditorDocument after,
+    EditorDocument& after,
     AppliedSourceEdit edit,
     TextSelection selection_before,
     TextSelection selection_after,
@@ -910,11 +904,11 @@ inline DocumentTransaction source_transaction(
         std::move(edit.inverse),
     });
     return make_recorded_document_transaction(
-        std::move(after),
         std::move(operations),
         selection_before,
         selection_after,
         revision_before,
+        after.revision,
         reason);
 }
 

@@ -809,12 +809,13 @@ inline std::optional<std::u32string> document_selected_markdown(
 }
 
 inline std::optional<DocumentTransaction> document_paste_text(
-    const EditorDocument& document,
+    EditorDocument& document,
     const TextSelection& selection,
     std::u32string_view text) {
     if (text.empty()) return std::nullopt;
     auto normalized = document_clipboard_detail::normalize_newlines(text);
-    auto working = document;
+    const auto revision_before = document.revision;
+    auto& working = document;
     auto current = selection;
     std::vector<DocumentOperation> operations;
     if (!current.is_caret()) {
@@ -824,7 +825,6 @@ inline std::optional<DocumentTransaction> document_paste_text(
             operations.end(),
             std::make_move_iterator(deletion->operations.begin()),
             std::make_move_iterator(deletion->operations.end()));
-        working = std::move(deletion->after);
         current = deletion->selection_after;
     }
 
@@ -860,13 +860,13 @@ inline std::optional<DocumentTransaction> document_paste_text(
         }
     }
     if (!target || operations.empty()) return std::nullopt;
-    working.revision = document.revision + 1;
+    working.revision = revision_before + 1;
     return make_recorded_document_transaction(
-        std::move(working),
         std::move(operations),
         selection,
         TextSelection::caret(*target),
-        document.revision,
+        revision_before,
+        working.revision,
         DocumentTransactionReason::Paste);
 }
 

@@ -151,7 +151,7 @@ inline DocumentHistoryEntry make_entry(const DocumentTransaction& transaction) {
     entry.selection_before = transaction.selection_before;
     entry.selection_after = transaction.selection_after;
     entry.revision_before = transaction.revision_before;
-    entry.revision_after = transaction.after.revision;
+    entry.revision_after = transaction.revision_after;
     return entry;
 }
 

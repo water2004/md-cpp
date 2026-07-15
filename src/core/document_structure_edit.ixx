@@ -135,9 +135,10 @@ inline bool unwrap_container(
 
 } // namespace document_structure_detail
 
-inline std::optional<DocumentTransaction> document_set_heading(const EditorDocument& document, const TextSelection& selection, std::uint8_t level) {
+inline std::optional<DocumentTransaction> document_set_heading(EditorDocument& document, const TextSelection& selection, std::uint8_t level) {
     if (level > 6 || selection.anchor.container_id != selection.active.container_id) return std::nullopt;
-    auto after = document;
+    const auto revision_before = document.revision;
+    auto& after = document;
     auto* block = find_block(after.root, selection.active.container_id);
     if (!block || !document_edit_detail::text_block(block->kind)) return std::nullopt;
     DocumentTreeEdit update;
@@ -154,16 +155,17 @@ inline std::optional<DocumentTransaction> document_set_heading(const EditorDocum
     operations.emplace_back(std::move(update));
     ++after.revision;
     return make_recorded_document_transaction(
-        std::move(after),
         std::move(operations),
         selection,
         selection,
-        document.revision,
+        revision_before,
+        after.revision,
         DocumentTransactionReason::Structure);
 }
 
-inline std::optional<DocumentTransaction> document_toggle_block_quote(const EditorDocument& document, const TextSelection& selection) {
-    auto after = document; document_edit_detail::NodeAllocator allocator(after);
+inline std::optional<DocumentTransaction> document_toggle_block_quote(EditorDocument& document, const TextSelection& selection) {
+    const auto revision_before = document.revision;
+    auto& after = document; document_edit_detail::NodeAllocator allocator(after);
     auto first = selection.anchor.container_id;
     auto last = selection.active.container_id;
     const auto first_quote = document_structure_detail::nearest_container(
@@ -188,13 +190,14 @@ inline std::optional<DocumentTransaction> document_toggle_block_quote(const Edit
     }
     ++after.revision;
     return make_recorded_document_transaction(
-        std::move(after), std::move(operations), selection, selection,
-        document.revision, DocumentTransactionReason::Structure);
+        std::move(operations), selection, selection,
+        revision_before, after.revision, DocumentTransactionReason::Structure);
 }
 
-inline std::optional<DocumentTransaction> document_toggle_callout(const EditorDocument& document, const TextSelection& selection, std::string kind) {
+inline std::optional<DocumentTransaction> document_toggle_callout(EditorDocument& document, const TextSelection& selection, std::string kind) {
     kind = normalize_callout_kind(kind).value_or("NOTE");
-    auto after = document; document_edit_detail::NodeAllocator allocator(after);
+    const auto revision_before = document.revision;
+    auto& after = document; document_edit_detail::NodeAllocator allocator(after);
     auto first = selection.anchor.container_id;
     auto last = selection.active.container_id;
     const auto first_callout = document_structure_detail::nearest_container(
@@ -261,12 +264,13 @@ inline std::optional<DocumentTransaction> document_toggle_callout(const EditorDo
     }
     ++after.revision;
     return make_recorded_document_transaction(
-        std::move(after), std::move(operations), selection, selection,
-        document.revision, DocumentTransactionReason::Structure);
+        std::move(operations), selection, selection,
+        revision_before, after.revision, DocumentTransactionReason::Structure);
 }
 
-inline std::optional<DocumentTransaction> document_toggle_list(const EditorDocument& document, const TextSelection& selection, document_edit_detail::ListStyle style) {
-    auto after = document; document_edit_detail::NodeAllocator allocator(after);
+inline std::optional<DocumentTransaction> document_toggle_list(EditorDocument& document, const TextSelection& selection, document_edit_detail::ListStyle style) {
+    const auto revision_before = document.revision;
+    auto& after = document; document_edit_detail::NodeAllocator allocator(after);
     auto first = selection.anchor.container_id;
     auto last = selection.active.container_id;
     const auto first_list = document_structure_detail::nearest_container(
@@ -382,13 +386,14 @@ inline std::optional<DocumentTransaction> document_toggle_list(const EditorDocum
     }
     ++after.revision;
     return make_recorded_document_transaction(
-        std::move(after), std::move(operations), selection, selection,
-        document.revision, DocumentTransactionReason::Structure);
+        std::move(operations), selection, selection,
+        revision_before, after.revision, DocumentTransactionReason::Structure);
 }
 using ListStyle = document_edit_detail::ListStyle;
 
-inline std::optional<DocumentTransaction> document_toggle_task_checkbox(const EditorDocument& document, const TextSelection& selection) {
-    auto after = document;
+inline std::optional<DocumentTransaction> document_toggle_task_checkbox(EditorDocument& document, const TextSelection& selection) {
+    const auto revision_before = document.revision;
+    auto& after = document;
     auto path = block_path(after.root, selection.active.container_id);
     if (!path) return std::nullopt;
     BlockNode* item = nullptr;
@@ -416,11 +421,11 @@ inline std::optional<DocumentTransaction> document_toggle_task_checkbox(const Ed
     operations.emplace_back(std::move(update));
     ++after.revision;
     return make_recorded_document_transaction(
-        std::move(after),
         std::move(operations),
         selection,
         selection,
-        document.revision,
+        revision_before,
+        after.revision,
         DocumentTransactionReason::Structure);
 }
 
@@ -462,9 +467,10 @@ inline BlockNode make_table_block(const EditorDocument& document, std::size_t ro
     return table;
 }
 
-inline std::optional<DocumentTransaction> document_insert_atomic_block(const EditorDocument& document, const TextSelection& selection, BlockNode block) {
+inline std::optional<DocumentTransaction> document_insert_atomic_block(EditorDocument& document, const TextSelection& selection, BlockNode block) {
     if (!selection.is_caret()) return std::nullopt;
-    auto after = document;
+    const auto revision_before = document.revision;
+    auto& after = document;
     document_edit_detail::NodeAllocator allocator(after);
     std::uint64_t block_maximum = 0;
     document_edit_detail::scan_block_ids(block, block_maximum);
@@ -523,16 +529,17 @@ inline std::optional<DocumentTransaction> document_insert_atomic_block(const Edi
     }
     ++after.revision;
     return make_recorded_document_transaction(
-        std::move(after),
         std::move(operations),
         selection,
         TextSelection::caret(inserted_target),
-        document.revision,
+        revision_before,
+        after.revision,
         DocumentTransactionReason::Structure);
 }
 
-inline std::optional<DocumentTransaction> document_indent_list_item(const EditorDocument& document, const TextSelection& selection) {
-    auto after = document;
+inline std::optional<DocumentTransaction> document_indent_list_item(EditorDocument& document, const TextSelection& selection) {
+    const auto revision_before = document.revision;
+    auto& after = document;
     auto path = block_path(after.root, selection.active.container_id);
     if (!path) return std::nullopt;
     while (!path->empty()) {
@@ -590,12 +597,13 @@ inline std::optional<DocumentTransaction> document_indent_list_item(const Editor
     operations.emplace_back(std::move(move));
     ++after.revision;
     return make_recorded_document_transaction(
-        std::move(after), std::move(operations), selection, selection,
-        document.revision, DocumentTransactionReason::Structure);
+        std::move(operations), selection, selection,
+        revision_before, after.revision, DocumentTransactionReason::Structure);
 }
 
-inline std::optional<DocumentTransaction> document_outdent_list_item(const EditorDocument& document, const TextSelection& selection) {
-    auto after = document;
+inline std::optional<DocumentTransaction> document_outdent_list_item(EditorDocument& document, const TextSelection& selection) {
+    const auto revision_before = document.revision;
+    auto& after = document;
     auto path = block_path(after.root, selection.active.container_id);
     if (!path) return std::nullopt;
     while (!path->empty()) {
@@ -612,21 +620,22 @@ inline std::optional<DocumentTransaction> document_outdent_list_item(const Edito
     if (!recorded || recorded->operations.empty()) return std::nullopt;
     ++after.revision;
     return make_recorded_document_transaction(
-        std::move(after),
         std::move(recorded->operations),
         selection,
         selection,
-        document.revision,
+        revision_before,
+        after.revision,
         DocumentTransactionReason::Structure);
 }
 
 inline std::optional<DocumentTransaction> document_edit_table(
-    const EditorDocument& document,
+    EditorDocument& document,
     const TextSelection& selection,
     DocumentTableEdit edit,
     TableAlignment alignment = TableAlignment::None,
     std::size_t argument = 0) {
-    auto after = document;
+    const auto revision_before = document.revision;
+    auto& after = document;
     auto path = block_path(after.root, selection.active.container_id);
     if (!path || path->size() < 2) return std::nullopt;
     while (!path->empty() && block_at_path(after.root, *path)->kind != BlockKind::TableCell) path->pop_back();
@@ -861,11 +870,11 @@ inline std::optional<DocumentTransaction> document_edit_table(
     if (changed) ++after.revision;
     const auto target = TextSelection::caret(TextPosition{target_id, 0, TextAffinity::Downstream});
     return make_recorded_document_transaction(
-        std::move(after),
         std::move(operations),
         selection,
         target,
-        document.revision,
+        revision_before,
+        after.revision,
         DocumentTransactionReason::Structure);
 }
 

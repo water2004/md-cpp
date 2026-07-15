@@ -384,7 +384,7 @@ suite render_layout_tests = [] {
     expect(fatal(bool(inserted.has_value())));
     if (!inserted) return;
     expect(fatal(bool(inserted->selection_after.active.container_id == code->id)));
-    auto model = build_render_model(inserted->after, Outline::empty(inserted->after.revision));
+    auto model = build_render_model(parsed.document, Outline::empty(parsed.document.revision));
     expect(fatal(bool(model.blocks.size() == 1u)));
     if (model.blocks.empty()) return;
     auto caretIndent = std::find_if(model.blocks.front().inline_items.begin(), model.blocks.front().inline_items.end(), [&](auto const& item) {
@@ -418,7 +418,7 @@ suite render_layout_tests = [] {
     expect(fatal(bool(exited.has_value())));
     if (!exited) return;
     expect(fatal(bool(exited->selection_after.active.container_id != code->id)));
-    auto model = build_render_model(exited->after, Outline::empty(exited->after.revision));
+    auto model = build_render_model(parsed.document, Outline::empty(parsed.document.revision));
     expect(fatal(bool(model.blocks.size() == 1u)));
     if (model.blocks.empty()) return;
     auto caretIndent = std::find_if(model.blocks.front().inline_items.begin(), model.blocks.front().inline_items.end(), [&](auto const& item) {
