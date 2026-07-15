@@ -134,6 +134,7 @@
     <ClInclude Include="export\EditorPdfPrintJob.h" />
     <ClInclude Include="editor\interaction\EditorSidebarController.h" />
     <ClInclude Include="editor\rendering\EditorSurfaceRenderer.h" />
+    <ClInclude Include="editor\rendering\EditorPreparedDocument.h" />
     <ClInclude Include="media\MathJaxRenderer.h" />
     <ClInclude Include="media\MermaidRenderer.h" />
     <ClInclude Include="media\SvgNormalizer.h" />
@@ -302,6 +303,9 @@
     <ClCompile Include="editor\rendering\EditorStyleSheet.cpp" />
     <ClCompile Include="editor\interaction\EditorInteractionMap.cpp" />
     <ClCompile Include="editor\rendering\EditorContentPreparation.cpp" />
+    <ClCompile Include="editor\rendering\EditorContentUtilities.cpp" />
+    <ClCompile Include="editor\rendering\EditorInlineObjects.cpp" />
+    <ClCompile Include="editor\rendering\EditorBlockContentPreparation.cpp" />
     <ClCompile Include="editor\rendering\EditorRenderResources.cpp" />
     <ClCompile Include="editor\rendering\EditorRenderCache.cpp" />
     <ClCompile Include="editor\rendering\EditorSvgPainter.cpp" />
@@ -317,6 +321,9 @@
     <ClCompile Include="export\EditorPdfPrintJob.cpp" />
     <ClCompile Include="editor\interaction\EditorSidebarController.cpp" />
     <ClCompile Include="editor\rendering\EditorSurfaceRenderer.cpp" />
+    <ClCompile Include="editor\rendering\EditorSurfaceRenderer.Document.cpp" />
+    <ClCompile Include="editor\rendering\EditorSurfaceRenderer.Interaction.cpp" />
+    <ClCompile Include="editor\rendering\EditorSurfaceRenderer.Pdf.cpp" />
     <ClCompile Include="media\MathJaxRenderer.cpp" />
     <ClCompile Include="media\MermaidRenderer.cpp" />
     <ClCompile Include="media\SvgNormalizer.cpp" />

@@ -1,6 +1,7 @@
 #pragma once
 
 import elmd.core.ids;
+import elmd.core.render_model;
 import elmd.core.text_edit;
 
 #include "media/MathJaxRenderer.h"
@@ -113,6 +114,12 @@ namespace winrt::ElMd
         elmd::InlineStyle style,
         EditorDisplayPositionKind kind = EditorDisplayPositionKind::Generated);
     void AppendMathPlaceholder(DisplayInlineText& display, std::size_t count, elmd::TextPosition sourcePosition);
+    void AppendMathFragments(
+        DisplayInlineText& display,
+        MathJaxSvg const& math,
+        elmd::TextSpan sourceSpan,
+        bool editing,
+        elmd::InlineStyle style);
     void ApplyInlinePlaceholder(IDWriteTextLayout* layout, UINT32 displayStart, float width, float height, float baseline);
     void ApplyMathInlineObjects(IDWriteTextLayout* layout, std::vector<DisplayInlineText::MathOverlay> const& overlays);
     void ApplyIndentInlineObjects(IDWriteTextLayout* layout, std::vector<DisplayInlineText::IndentOverlay> const& overlays);

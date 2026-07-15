@@ -216,6 +216,15 @@
     <ClCompile Include="editor\rendering\EditorContentPreparation.cpp">
       <Filter>Editor\Rendering</Filter>
     </ClCompile>
+    <ClCompile Include="editor\rendering\EditorContentUtilities.cpp">
+      <Filter>Editor\Rendering</Filter>
+    </ClCompile>
+    <ClCompile Include="editor\rendering\EditorInlineObjects.cpp">
+      <Filter>Editor\Rendering</Filter>
+    </ClCompile>
+    <ClCompile Include="editor\rendering\EditorBlockContentPreparation.cpp">
+      <Filter>Editor\Rendering</Filter>
+    </ClCompile>
     <ClCompile Include="editor\rendering\EditorRenderResources.cpp">
       <Filter>Editor\Rendering</Filter>
     </ClCompile>
@@ -259,6 +268,15 @@
       <Filter>Editor\Interaction</Filter>
     </ClCompile>
     <ClCompile Include="editor\rendering\EditorSurfaceRenderer.cpp">
+      <Filter>Editor\Rendering</Filter>
+    </ClCompile>
+    <ClCompile Include="editor\rendering\EditorSurfaceRenderer.Document.cpp">
+      <Filter>Editor\Rendering</Filter>
+    </ClCompile>
+    <ClCompile Include="editor\rendering\EditorSurfaceRenderer.Interaction.cpp">
+      <Filter>Editor\Rendering</Filter>
+    </ClCompile>
+    <ClCompile Include="editor\rendering\EditorSurfaceRenderer.Pdf.cpp">
       <Filter>Editor\Rendering</Filter>
     </ClCompile>
     <ClCompile Include="media\MathJaxRenderer.cpp">
@@ -360,6 +378,9 @@
       <Filter>Editor\Interaction</Filter>
     </ClInclude>
     <ClInclude Include="editor\rendering\EditorSurfaceRenderer.h">
+      <Filter>Editor\Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\rendering\EditorPreparedDocument.h">
       <Filter>Editor\Rendering</Filter>
     </ClInclude>
     <ClInclude Include="media\MathJaxRenderer.h">
