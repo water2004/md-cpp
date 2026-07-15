@@ -72,4 +72,45 @@ suite layout_plan_tests = [] {
     expect(fatal(bool((plan.total_height) == (20.0f))));
 };
 
+"print_pages_keep_fitting_blocks_intact"_test = [] {
+    std::vector<PrintBlockExtent> blocks{
+        {40.0f, 180.0f},
+        {200.0f, 460.0f},
+        {490.0f, 760.0f},
+        {800.0f, 1040.0f},
+    };
+    auto pages = plan_print_pages(blocks, 0.0f, 1080.0f, 700.0f);
+    expect(fatal(bool((pages.size()) == (2u))));
+    expect(fatal(bool((pages[0].source_top) == (0.0f))));
+    expect(fatal(bool((pages[0].source_bottom) == (460.0f))));
+    expect(fatal(bool((pages[1].source_top) == (490.0f))));
+    expect(fatal(bool((pages[1].source_bottom) == (1040.0f))));
+};
+
+"print_pages_split_only_an_oversized_block"_test = [] {
+    std::vector<PrintBlockExtent> blocks{{20.0f, 1620.0f}, {1640.0f, 1700.0f}};
+    auto pages = plan_print_pages(blocks, 0.0f, 1720.0f, 700.0f);
+    expect(fatal(bool((pages.size()) == (3u))));
+    expect(fatal(bool((pages[0].source_bottom) == (700.0f))));
+    expect(fatal(bool((pages[1].source_top) == (700.0f))));
+    expect(fatal(bool((pages[1].source_bottom) == (1400.0f))));
+    expect(fatal(bool((pages[2].source_top) == (1400.0f))));
+    expect(fatal(bool((pages[2].source_bottom) == (1700.0f))));
+};
+
+"print_pages_handle_empty_and_invalid_layouts"_test = [] {
+    std::vector<PrintBlockExtent> empty;
+    auto emptyPages = plan_print_pages(empty, 0.0f, 120.0f, 700.0f);
+    expect(fatal(bool((emptyPages.size()) == (1u))));
+    expect(fatal(bool((emptyPages[0].source_bottom) == (120.0f))));
+
+    std::vector<PrintBlockExtent> invalid{
+        {std::numeric_limits<float>::quiet_NaN(), 4.0f},
+        {10.0f, 5.0f},
+    };
+    auto pages = plan_print_pages(invalid, 0.0f, 20.0f, 0.0f);
+    expect(fatal(bool(!pages.empty())));
+    for (auto const& page : pages) expect(fatal(bool(page.source_bottom > page.source_top)));
+};
+
 }; // suite layout_plan_tests

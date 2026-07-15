@@ -38,6 +38,90 @@ struct DocumentLayoutPlan {
     float total_height = 0.0f;
 };
 
+struct PrintBlockExtent {
+    float top = 0.0f;
+    float bottom = 0.0f;
+};
+
+struct PrintPageSlice {
+    float source_top = 0.0f;
+    float source_bottom = 0.0f;
+
+    float height() const { return source_bottom - source_top; }
+};
+
+// Plan pages in document coordinates. Blocks that fit are never split; an
+// individual block taller than a page is the only case where a page boundary
+// may fall inside a block. Inter-block gaps are not carried to the top of the
+// next page.
+inline std::vector<PrintPageSlice> plan_print_pages(
+    std::span<PrintBlockExtent const> input,
+    float document_top,
+    float document_bottom,
+    float page_extent)
+{
+    constexpr float epsilon = 0.01f;
+    page_extent = std::isfinite(page_extent) ? (std::max)(1.0f, page_extent) : 1.0f;
+    document_top = std::isfinite(document_top) ? document_top : 0.0f;
+    document_bottom = std::isfinite(document_bottom)
+        ? (std::max)(document_top, document_bottom)
+        : document_top;
+
+    std::vector<PrintBlockExtent> blocks;
+    blocks.reserve(input.size());
+    for (auto extent : input) {
+        if (!std::isfinite(extent.top) || !std::isfinite(extent.bottom)) continue;
+        extent.top = (std::max)(document_top, extent.top);
+        extent.bottom = (std::max)(extent.top, extent.bottom);
+        if (extent.bottom <= document_top + epsilon) continue;
+        if (!blocks.empty() && extent.top < blocks.back().bottom) {
+            extent.top = blocks.back().bottom;
+            extent.bottom = (std::max)(extent.top, extent.bottom);
+        }
+        blocks.push_back(extent);
+    }
+
+    if (blocks.empty()) {
+        return {{document_top, (std::min)(document_top + page_extent, document_bottom)}};
+    }
+
+    std::vector<PrintPageSlice> pages;
+    std::size_t index = 0;
+    auto page_top = document_top;
+    while (index < blocks.size()) {
+        while (index < blocks.size() && blocks[index].bottom <= page_top + epsilon) ++index;
+        if (index >= blocks.size()) break;
+
+        auto first = index;
+        auto limit = page_top + page_extent;
+        auto page_bottom = page_top;
+        while (index < blocks.size() && blocks[index].bottom <= limit + epsilon) {
+            page_bottom = (std::max)(page_bottom, blocks[index].bottom);
+            ++index;
+        }
+
+        if (index != first) {
+            pages.push_back({page_top, page_bottom});
+            if (index < blocks.size()) page_top = (std::max)(page_bottom, blocks[index].top);
+            continue;
+        }
+
+        // The first remaining block crosses the page limit. Preserve progress
+        // even for malformed/zero-height input and continue within that block.
+        page_bottom = (std::min)(limit, blocks[index].bottom);
+        if (page_bottom <= page_top + epsilon) page_bottom = page_top + page_extent;
+        pages.push_back({page_top, page_bottom});
+        page_top = page_bottom;
+        if (page_top >= blocks[index].bottom - epsilon) {
+            ++index;
+            if (index < blocks.size()) page_top = (std::max)(page_top, blocks[index].top);
+        }
+    }
+
+    if (pages.empty()) pages.push_back({document_top, document_bottom});
+    return pages;
+}
+
 inline DocumentLayoutPlan plan_document_layout(
     std::span<BlockLayoutInput const> inputs,
     LayoutPlanSettings settings)
