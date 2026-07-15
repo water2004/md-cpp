@@ -1,6 +1,6 @@
 # Theme configuration
 
-The application loads built-in themes from `Assets/themes` and manages imported themes in `Assets/themes/custom`. The repository ships complete `dark.json`, `light.json`, and `high-contrast.json` profiles; MSBuild copies them to the configured Assets directory. Imported profiles can be previewed, selected, replaced by ID, and removed from the native Settings dialog. Built-in profiles cannot be removed.
+The application loads built-in themes from `Assets/themes` and manages imported themes in `Assets/themes/custom`. The repository ships complete `dark.json`, `light.json`, and `high-contrast.json` profiles; MSBuild copies them to the configured Assets directory. Imported profiles can be previewed, selected, replaced by ID, and removed from the native full-window Settings view. Built-in profiles cannot be removed.
 
 The theme file is the normal runtime source of truth for:
 
