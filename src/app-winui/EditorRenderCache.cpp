@@ -160,6 +160,13 @@ namespace winrt::ElMd
         return remoteState->generation.load();
     }
 
+    bool EditorRenderCache::HasPendingImages() const
+    {
+        if (!pendingGifImages.empty()) return true;
+        std::scoped_lock lock(remoteState->mutex);
+        return !remoteState->pending.empty() || !remoteState->dimensionPending.empty();
+    }
+
     std::optional<EditorRenderCache::ImageDimensions> EditorRenderCache::ProbeGifDimensions(
         std::wstring const& baseDirectory,
         std::string_view source)

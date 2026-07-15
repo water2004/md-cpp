@@ -33,6 +33,7 @@ namespace winrt::ElMd
         void ClearTextLayouts();
         void ClearSvgDocuments();
         void ClearDeviceResources();
+        bool HasPendingImages() const;
         std::uint64_t RemoteImageGeneration() const;
         std::optional<ImageDimensions> ProbeGifDimensions(std::wstring const& baseDirectory, std::string_view source);
         std::optional<RasterImage> LoadRasterImage(EditorRenderResources const& resources, std::wstring const& baseDirectory, std::string_view source);

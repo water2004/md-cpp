@@ -24,9 +24,19 @@ namespace winrt::ElMd
             Dark,
         };
 
+        enum class PdfExportResult
+        {
+            WaitingForAssets,
+            Completed,
+        };
+
         void Initialize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel);
         void Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height);
         void Render(detail::EditorRenderFrame const& frame);
+        PdfExportResult ExportPdf(
+            std::filesystem::path const& path,
+            std::wstring const& title,
+            detail::EditorRenderFrame const& frame);
         void SetTheme(Theme value);
         void ResetDocumentCaches();
         void SetInvalidateCallback(std::function<void()> callback);
@@ -101,6 +111,8 @@ namespace winrt::ElMd
         float totalDocumentHeight = 0.0f;
         bool resizing = false;
         bool rendering = false;
+        bool printMode = false;
+        bool exporting = false;
         std::atomic_bool deferredInvalidate = false;
     };
 }

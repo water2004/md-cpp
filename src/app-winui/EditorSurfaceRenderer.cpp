@@ -1,8 +1,10 @@
 #include "pch.h"
 #include "EditorSurfaceRenderer.h"
+#include "EditorPdfPrintJob.h"
 
 import elmd.core.render_model;
 import elmd.core.callout;
+import elmd.core.layout_plan;
 import elmd.core.utf;
 
 #include "EditorContentPreparation.h"
@@ -159,7 +161,7 @@ namespace winrt::ElMd
 
     void EditorSurfaceRenderer::Invalidate()
     {
-        if (rendering) { deferredInvalidate = true; return; }
+        if (rendering || exporting) { deferredInvalidate = true; return; }
         std::function<void()> callback;
         {
             std::scoped_lock lock(invalidationState->mutex);
@@ -217,7 +219,8 @@ namespace winrt::ElMd
         auto documentRight = (std::max)(documentLeft + 1.0f, resources.surfaceWidthDip - padding - 14.0f);
         auto documentWidth = documentRight - documentLeft;
         auto y = styleSheet.verticalPadding - scrollOffset;
-        auto caret = frame.selection.active;
+        auto selection = printMode ? elmd::TextSelection{} : frame.selection;
+        auto caret = selection.active;
 
         std::unordered_map<std::uint64_t, std::size_t> order;
         for (std::size_t index = 0; index < frame.renderModel.editable_order.size(); ++index) order.emplace(frame.renderModel.editable_order[index].v, index);
@@ -230,11 +233,11 @@ namespace winrt::ElMd
             if (rightOrder == order.end()) return true;
             return leftOrder->second < rightOrder->second;
         };
-        auto selectionStart = positionLess(frame.selection.active, frame.selection.anchor) ? frame.selection.active : frame.selection.anchor;
-        auto selectionEnd = positionLess(frame.selection.active, frame.selection.anchor) ? frame.selection.anchor : frame.selection.active;
+        auto selectionStart = positionLess(selection.active, selection.anchor) ? selection.active : selection.anchor;
+        auto selectionEnd = positionLess(selection.active, selection.anchor) ? selection.anchor : selection.active;
         auto selected = [&](elmd::TextPosition position)
         {
-            if (frame.selection.is_caret()) return false;
+            if (selection.is_caret()) return false;
             return !positionLess(position, selectionStart) && positionLess(position, selectionEnd);
         };
 
@@ -270,7 +273,7 @@ namespace winrt::ElMd
                     boxTop,
                     objectRect.left + 0.5f + overlay.boxSize,
                     boxTop + overlay.boxSize);
-                auto hovered = pointerPosition
+                auto hovered = !printMode && pointerPosition
                     && pointerPosition->x >= objectRect.left && pointerPosition->x <= objectRect.right
                     && pointerPosition->y >= objectRect.top && pointerPosition->y <= objectRect.bottom;
                 auto rounded = D2D1::RoundedRect(boxRect, 3.0f, 3.0f);
@@ -450,7 +453,7 @@ namespace winrt::ElMd
 
         auto drawSelection = [&](IDWriteTextLayout* layout, D2D1_POINT_2F origin, EditorDisplayMapping const& mapping)
         {
-            if (!layout || frame.selection.is_caret() || mapping.empty()) return;
+            if (!layout || selection.is_caret() || mapping.empty()) return;
             std::size_t index = 0;
             while (index + 1 < mapping.size())
             {
@@ -632,7 +635,7 @@ namespace winrt::ElMd
             draw(draw, parent, true, 0);
         };
 
-        if (frame.renderModel.blocks.empty())
+        if (frame.renderModel.blocks.empty() && !printMode)
         {
             constexpr wchar_t message[] = L"Open a Markdown file or start editing.";
             resources.d2dContext->DrawTextW(message, 38, resources.textFormat.Get(), D2D1::RectF(documentLeft, y, documentRight, y + 80.0f), resources.mutedBrush.Get());
@@ -644,7 +647,7 @@ namespace winrt::ElMd
             || preparedDocument->modelRevision != frame.renderModel.revision
             || (!frame.renderModel.blocks.empty()
                 && !frame.renderModel.blocks.front().source_mode
-                && !SameSelection(preparedDocument->selection, frame.selection))
+                && !SameSelection(preparedDocument->selection, selection))
             || preparedDocument->documentWidth != documentWidth
             || preparedDocument->theme != theme
             || preparedDocument->blocks.size() != frame.renderModel.blocks.size();
@@ -653,7 +656,7 @@ namespace winrt::ElMd
             auto previous = std::move(preparedDocument);
             preparedDocument = std::make_unique<PreparedDocument>();
             preparedDocument->modelRevision = frame.renderModel.revision;
-            preparedDocument->selection = frame.selection;
+            preparedDocument->selection = selection;
             preparedDocument->documentWidth = documentWidth;
             preparedDocument->theme = theme;
             preparedDocument->blocks.resize(frame.renderModel.blocks.size());
@@ -681,7 +684,7 @@ namespace winrt::ElMd
                 }
             }
         }
-        preparedDocument->selection = frame.selection;
+        preparedDocument->selection = selection;
         auto prepareBlock = [&](elmd::RenderBlock const& block, bool requestEmbedded)
         {
             PreparedDocument::Block prepared;
@@ -822,6 +825,7 @@ namespace winrt::ElMd
         constexpr float embeddedUnloadAfter = 2000.0f;
         auto requestEmbeddedAt = [&](float documentTop)
         {
+            if (printMode) return true;
             auto screenTop = documentTop - scrollOffset;
             return screenTop < resources.surfaceHeightDip + embeddedOverscanAfter
                 && screenTop > -embeddedOverscanBefore;
@@ -905,6 +909,7 @@ namespace winrt::ElMd
             preparedDocument->embeddedBlocks.end());
         for (auto index : activeEmbedded)
         {
+            if (printMode) break;
             if (index >= frame.renderModel.blocks.size()) continue;
             auto const& placement = preparedDocument->placements[index];
             if (placement.bottom >= unloadTop && placement.top <= unloadBottom) continue;
@@ -967,7 +972,7 @@ namespace winrt::ElMd
                 EditorTableBlockRenderer::Paint(
                     block,
                     *prepared.table,
-                    frame.selection,
+                    selection,
                     documentLeft,
                     top,
                     scrollOffset,
@@ -1065,11 +1070,11 @@ namespace winrt::ElMd
             interactionMap.AddBlockLines(interactionMap.blocks.size() - 1);
         }
 
-        EditorTableInteraction::Paint(resources, interactionMap, pointerPosition, draggedTableAction, tableDropIndex);
+        EditorTableInteraction::Paint(resources, interactionMap, printMode ? std::nullopt : pointerPosition, draggedTableAction, tableDropIndex);
         totalDocumentHeight = preparedDocument->totalHeight;
         scrollOffset = (std::min)(scrollOffset, MaximumScrollOffset());
         scrollTarget = (std::min)(scrollTarget, MaximumScrollOffset());
-        if (frame.selection.is_caret())
+        if (!printMode && selection.is_caret())
         {
             if (auto rect = CaretBounds(caret))
                 resources.d2dContext->DrawLine(D2D1::Point2F(rect->left, rect->top), D2D1::Point2F(rect->left, rect->bottom), resources.caretBrush.Get(), 1.5f);
@@ -1159,6 +1164,158 @@ namespace winrt::ElMd
     std::optional<elmd::TextPosition> EditorSurfaceRenderer::MoveCaretVertically(elmd::TextPosition position, bool down, float& goalX) const { return interactionMap.MoveCaretVertically(position, down, goalX, styleSheet.body.lineHeight); }
     std::optional<elmd::TextPosition> EditorSurfaceRenderer::VisualLineStart(elmd::TextPosition position) const { return interactionMap.VisualLineStart(position); }
     std::optional<elmd::TextPosition> EditorSurfaceRenderer::VisualLineEnd(elmd::TextPosition position) const { return interactionMap.VisualLineEnd(position); }
+
+    EditorSurfaceRenderer::PdfExportResult EditorSurfaceRenderer::ExportPdf(
+        std::filesystem::path const& path,
+        std::wstring const& title,
+        detail::EditorRenderFrame const& frame)
+    {
+        if (!resources.Ready()) winrt::throw_hresult(E_UNEXPECTED);
+        if (rendering || resizing || exporting) return PdfExportResult::WaitingForAssets;
+        exporting = true;
+
+        ::Microsoft::WRL::ComPtr<ID2D1Image> originalTarget;
+        resources.d2dContext->GetTarget(originalTarget.GetAddressOf());
+        D2D1_MATRIX_3X2_F originalTransform{};
+        resources.d2dContext->GetTransform(&originalTransform);
+        auto originalWidth = resources.surfaceWidthDip;
+        auto originalHeight = resources.surfaceHeightDip;
+        auto originalScroll = scrollOffset;
+        auto originalScrollTarget = scrollTarget;
+        auto originalTotalHeight = totalDocumentHeight;
+        auto originalTheme = theme;
+        auto originalStyle = styleSheet;
+        auto originalPrepared = std::move(preparedDocument);
+        auto originalOwnerY = std::move(documentOwnerY);
+        auto originalInteraction = std::move(interactionMap);
+        auto originalNonInteractive = std::move(nonInteractiveRegions);
+        bool restored = false;
+
+        auto restore = [&]() noexcept
+        {
+            if (restored) return;
+            restored = true;
+            resources.d2dContext->SetTarget(originalTarget.Get());
+            resources.d2dContext->SetTransform(originalTransform);
+            resources.surfaceWidthDip = originalWidth;
+            resources.surfaceHeightDip = originalHeight;
+            scrollOffset = originalScroll;
+            scrollTarget = originalScrollTarget;
+            totalDocumentHeight = originalTotalHeight;
+            theme = originalTheme;
+            styleSheet = originalStyle;
+            printMode = false;
+            preparedDocument = std::move(originalPrepared);
+            documentOwnerY = std::move(originalOwnerY);
+            interactionMap = std::move(originalInteraction);
+            nonInteractiveRegions = std::move(originalNonInteractive);
+            try
+            {
+                renderCache.ClearTextLayouts();
+                renderCache.ClearSvgDocuments();
+                resources.RebuildTextFormats(styleSheet);
+                resources.ResetBrushes();
+                resources.EnsureFrameResources(styleSheet);
+            }
+            catch (...) {}
+        };
+        auto finish = [&]()
+        {
+            restore();
+            exporting = false;
+            if (deferredInvalidate.exchange(false)) Invalidate();
+        };
+
+        try
+        {
+            constexpr float pageWidth = 210.0f / 25.4f * 96.0f;
+            constexpr float pageHeight = 297.0f / 25.4f * 96.0f;
+            constexpr float pageMargin = 48.0f;
+            constexpr float contentWidth = pageWidth - pageMargin * 2.0f;
+            constexpr float contentHeight = pageHeight - pageMargin * 2.0f;
+
+            printMode = true;
+            theme = Theme::Light;
+            styleSheet = CreateEditorStyleSheet(false);
+            preparedDocument.reset();
+            documentOwnerY.clear();
+            interactionMap = {};
+            nonInteractiveRegions.clear();
+            resources.surfaceWidthDip = contentWidth;
+            resources.surfaceHeightDip = contentHeight;
+            scrollOffset = 0.0f;
+            scrollTarget = 0.0f;
+            renderCache.ClearTextLayouts();
+            renderCache.ClearSvgDocuments();
+            resources.RebuildTextFormats(styleSheet);
+            resources.ResetBrushes();
+            resources.EnsureFrameResources(styleSheet);
+
+            auto recordPage = [&](float sourceTop, float clipHeight)
+            {
+                EditorPdfPage page;
+                page.size = D2D1::SizeF(pageWidth, pageHeight);
+                winrt::check_hresult(resources.d2dContext->CreateCommandList(page.commands.GetAddressOf()));
+                resources.d2dContext->SetTarget(page.commands.Get());
+                resources.d2dContext->SetTransform(D2D1::Matrix3x2F::Identity());
+                resources.d2dContext->BeginDraw();
+                resources.d2dContext->Clear(D2D1::ColorF(D2D1::ColorF::White));
+                resources.d2dContext->SetTransform(D2D1::Matrix3x2F::Translation(pageMargin, pageMargin));
+                resources.d2dContext->PushAxisAlignedClip(
+                    D2D1::RectF(0.0f, 0.0f, contentWidth, (std::max)(1.0f, clipHeight)),
+                    D2D1_ANTIALIAS_MODE_ALIASED);
+                scrollOffset = sourceTop;
+                scrollTarget = sourceTop;
+                DrawDocument(frame);
+                resources.d2dContext->PopAxisAlignedClip();
+                auto result = resources.d2dContext->EndDraw();
+                resources.d2dContext->SetTarget(nullptr);
+                winrt::check_hresult(result);
+                winrt::check_hresult(page.commands->Close());
+                return page;
+            };
+
+            // The first pass requests every embedded resource and establishes
+            // final block extents at print width. It is intentionally discarded
+            // because the block-aware page boundaries are not known yet.
+            auto preflight = recordPage(0.0f, contentHeight);
+            (void)preflight;
+            auto pendingMath = preparedDocument && std::any_of(
+                preparedDocument->blocks.begin(),
+                preparedDocument->blocks.end(),
+                [](PreparedDocument::Block const& block) { return block.pendingMath; });
+            if (pendingMath || renderCache.HasPendingImages())
+            {
+                finish();
+                return PdfExportResult::WaitingForAssets;
+            }
+
+            std::vector<elmd::PrintBlockExtent> extents;
+            if (preparedDocument)
+            {
+                extents.reserve(preparedDocument->placements.size());
+                for (auto const& placement : preparedDocument->placements)
+                    extents.push_back({placement.top, placement.bottom});
+            }
+            auto documentBottom = preparedDocument ? preparedDocument->totalHeight : contentHeight;
+            auto slices = elmd::plan_print_pages(extents, 0.0f, documentBottom, contentHeight);
+            std::vector<EditorPdfPage> pages;
+            pages.reserve(slices.size());
+            for (auto const& slice : slices)
+                pages.push_back(recordPage(slice.source_top, (std::min)(contentHeight, slice.height())));
+
+            resources.d2dContext->SetTarget(originalTarget.Get());
+            resources.d2dContext->SetTransform(originalTransform);
+            EditorPdfPrintJob::Write(path, title, resources.d2dDevice.Get(), resources.wicFactory.Get(), pages);
+            finish();
+            return PdfExportResult::Completed;
+        }
+        catch (...)
+        {
+            finish();
+            throw;
+        }
+    }
 
     void EditorSurfaceRenderer::Render(detail::EditorRenderFrame const& frame)
     {
