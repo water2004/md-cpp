@@ -33,7 +33,6 @@ namespace winrt::ElMd
         D2D1_COLOR_F selectionColor{};
         D2D1_COLOR_F caretColor{};
         std::array<D2D1_COLOR_F, 11> syntaxColors{};
-        float documentWidth = 900.0f;
         float horizontalPadding = 48.0f;
         float verticalPadding = 40.0f;
         float blockGap = 6.0f;

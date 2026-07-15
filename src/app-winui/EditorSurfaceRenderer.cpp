@@ -213,7 +213,7 @@ namespace winrt::ElMd
         nonInteractiveRegions.clear();
         auto padding = (std::min)(styleSheet.horizontalPadding, (std::max)(12.0f, resources.surfaceWidthDip * 0.06f));
         auto documentLeft = padding;
-        auto documentRight = (std::max)(documentLeft + 1.0f, (std::min)(resources.surfaceWidthDip - padding - 14.0f, documentLeft + styleSheet.documentWidth));
+        auto documentRight = (std::max)(documentLeft + 1.0f, resources.surfaceWidthDip - padding - 14.0f);
         auto documentWidth = documentRight - documentLeft;
         auto y = styleSheet.verticalPadding - scrollOffset;
         auto caret = frame.selection.active;
