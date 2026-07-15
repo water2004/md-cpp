@@ -29,6 +29,21 @@ namespace winrt::ElMd
         ClearPreparedDocument();
     }
 
+    void EditorSurfaceRenderer::SetMathRenderingEnabled(bool enabled)
+    {
+        if (mathJax.Enabled() == enabled) return;
+        mathJax.SetEnabled(enabled);
+        ++embeddedGeneration;
+        renderCache.ClearSvgDocuments();
+        ClearPreparedDocument();
+        Invalidate();
+    }
+
+    bool EditorSurfaceRenderer::MathRenderingEnabled() const
+    {
+        return mathJax.Enabled();
+    }
+
     void EditorSurfaceRenderer::ResetDocumentCaches()
     {
         mathJax.Clear();

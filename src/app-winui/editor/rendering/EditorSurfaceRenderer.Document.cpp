@@ -96,6 +96,7 @@ namespace winrt::ElMd
 
         ::Microsoft::WRL::ComPtr<ID2D1DeviceContext5> svgContext;
         auto svgSupported = SUCCEEDED(resources.d2dContext.As(&svgContext)) && svgContext;
+        auto mathSvgSupported = svgSupported && mathJax.Enabled();
         EditorSvgPainter svgPainter(resources, renderCache);
         EditorTextLayoutEngine textLayoutEngine(resources, styleSheet);
         EditorInlineImageRenderer inlineImages(resources, renderCache, styleSheet, frame.baseDirectory);
@@ -272,11 +273,11 @@ namespace winrt::ElMd
             if (block.kind == elmd::RenderBlockKind::Code)
                 return BuildCodeBlockText(block, caret, treeSitter);
             if (block.kind == elmd::RenderBlockKind::Math)
-                return BuildMathBlockText(block, caret, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, width, svgSupported, requestEmbedded);
+                return BuildMathBlockText(block, caret, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, width, mathSvgSupported, requestEmbedded);
             if (!block.inline_items.empty())
             {
                 auto sourceEnd = InlineItemsEndPosition(block.inline_items, {block.id, block.content_span.source_range.end, elmd::TextAffinity::Downstream});
-                return BuildDisplayInlineText(block.inline_items, caret, sourceEnd, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, width, svgSupported, requestEmbedded);
+                return BuildDisplayInlineText(block.inline_items, caret, sourceEnd, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, width, mathSvgSupported, requestEmbedded);
             }
 
             DisplayInlineText display;
@@ -565,7 +566,7 @@ namespace winrt::ElMd
                     block,
                     caret,
                     documentWidth,
-                    svgSupported,
+                    mathSvgSupported,
                     requestEmbedded,
                     resources,
                     styleSheet,

@@ -174,6 +174,8 @@ namespace winrt::ElMd
         JSContext* context = nullptr;
         std::chrono::steady_clock::time_point deadline{};
         bool initializationAttempted = false;
+        bool enabled = false;
+        std::atomic_bool interruptRequested = false;
         std::jthread worker;
 
         static bool RetryableFailure(std::string_view error)
@@ -188,7 +190,8 @@ namespace winrt::ElMd
         static int Interrupt(JSRuntime*, void* opaque)
         {
             auto self = static_cast<State*>(opaque);
-            return std::chrono::steady_clock::now() >= self->deadline;
+            return self->interruptRequested.load(std::memory_order_relaxed)
+                || std::chrono::steady_clock::now() >= self->deadline;
         }
 
         static JSValue LoadFontModule(JSContext* context, JSValueConst, int count, JSValueConst* arguments)
@@ -271,6 +274,7 @@ namespace winrt::ElMd
                 JS_FreeRuntime(runtime);
                 runtime = nullptr;
             }
+            initializationAttempted = false;
         }
 
         MathJaxSvg RenderNow(Request const& request)
@@ -424,18 +428,55 @@ namespace winrt::ElMd
         }
     };
 
-    MathJaxRenderer::MathJaxRenderer() : state(std::make_unique<State>())
-    {
-        auto current = state.get();
-        state->worker = std::jthread([current](std::stop_token stop) { current->Run(stop); });
-    }
+    MathJaxRenderer::MathJaxRenderer() : state(std::make_unique<State>()) {}
 
     MathJaxRenderer::~MathJaxRenderer()
     {
         if (!state) return;
-        state->worker.request_stop();
-        state->ready.notify_all();
-        if (state->worker.joinable()) state->worker.join();
+        SetCompletionCallback({});
+        SetEnabled(false);
+    }
+
+    void MathJaxRenderer::SetEnabled(bool enabled)
+    {
+        if (!state) return;
+        if (enabled)
+        {
+            std::scoped_lock lock(state->mutex);
+            if (state->enabled) return;
+            state->enabled = true;
+            state->interruptRequested = false;
+            auto current = state.get();
+            state->worker = std::jthread([current](std::stop_token stop) { current->Run(stop); });
+            return;
+        }
+
+        std::jthread worker;
+        {
+            std::scoped_lock lock(state->mutex);
+            if (!state->enabled && !state->worker.joinable()) return;
+            state->enabled = false;
+            ++state->generation;
+            state->requests.clear();
+            state->queued.clear();
+            state->cache.clear();
+            state->cacheOrder.clear();
+            state->transientFailures.clear();
+            state->cacheBytes = 0;
+            state->interruptRequested = true;
+            state->worker.request_stop();
+            state->ready.notify_all();
+            worker = std::move(state->worker);
+        }
+        if (worker.joinable()) worker.join();
+        state->interruptRequested = false;
+    }
+
+    bool MathJaxRenderer::Enabled() const
+    {
+        if (!state) return false;
+        std::scoped_lock lock(state->mutex);
+        return state->enabled;
     }
 
     void MathJaxRenderer::Clear()
@@ -461,6 +502,7 @@ namespace winrt::ElMd
     {
         auto key = std::string(tex) + '\x1f' + (display ? "1" : "0") + '\x1f' + std::to_string(em) + '\x1f' + std::to_string(containerWidth);
         std::scoped_lock lock(state->mutex);
+        if (!state->enabled) return {};
         if (auto found = state->cache.find(key); found != state->cache.end()) return found->second;
         if (!allowQueue) return {};
         if (state->queued.insert(key).second)

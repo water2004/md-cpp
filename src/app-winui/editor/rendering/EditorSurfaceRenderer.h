@@ -32,6 +32,8 @@ namespace winrt::ElMd
             std::wstring const& title,
             detail::EditorRenderFrame const& frame);
         void SetTheme(elmd::ThemeProfile const& value);
+        void SetMathRenderingEnabled(bool enabled);
+        bool MathRenderingEnabled() const;
         void ResetDocumentCaches();
         void SetInvalidateCallback(std::function<void()> callback);
 
