@@ -596,4 +596,3 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> remove_list_prefix
 }
 
 } // namespace elmd::document_input_rules::detail
-

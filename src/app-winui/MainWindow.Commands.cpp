@@ -185,4 +185,3 @@ namespace winrt::ElMd::implementation
         });
     }
 }
-

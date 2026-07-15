@@ -86,4 +86,3 @@ namespace winrt::ElMd
         return document;
     }
 }
-

@@ -159,4 +159,3 @@ inline std::optional<RawBlockOpening> recognize_raw_block_opening(
 }
 
 } // namespace elmd::document_input_rules::detail
-

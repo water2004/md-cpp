@@ -89,7 +89,6 @@ namespace
         return absolute.wstring();
     }
 }
-
 namespace winrt::ElMd
 {
     std::optional<EditorRenderCache::ImageDimensions> EditorRenderCache::ProbeGifDimensions(
@@ -654,4 +653,3 @@ namespace winrt::ElMd
         std::erase(rasterImageOrder, *key);
     }
 }
-

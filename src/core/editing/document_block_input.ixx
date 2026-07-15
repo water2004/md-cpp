@@ -433,4 +433,3 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> remove_quote_prefi
 }
 
 } // namespace elmd::document_input_rules::detail
-

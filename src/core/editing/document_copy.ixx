@@ -189,4 +189,3 @@ inline std::optional<std::u32string> document_selected_markdown(
 }
 
 } // namespace elmd
-
