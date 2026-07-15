@@ -188,7 +188,16 @@ namespace
         return layout;
     }
 
-    elmd::ThemeProfile ParseProfile(std::string const& source, elmd::Theme requestedVariant)
+    bool ValidThemeId(std::string_view value)
+    {
+        if (value.empty() || value.size() > 96) return false;
+        return std::ranges::all_of(value, [](unsigned char character)
+        {
+            return std::isalnum(character) || character == '.' || character == '_' || character == '-';
+        });
+    }
+
+    elmd::ThemeProfile ParseProfile(std::string const& source)
     {
         auto root = JsonObject::Parse(winrt::to_hstring(source));
         elmd::ThemeProfile profile;
@@ -198,8 +207,8 @@ namespace
         profile.id = winrt::to_string(root.GetNamedString(L"id"));
         profile.name = winrt::to_string(root.GetNamedString(L"name"));
         profile.variant = ParseVariant(root.GetNamedString(L"variant"));
-        if (profile.id.empty() || profile.name.empty() || profile.variant != requestedVariant)
-            throw std::runtime_error("theme identity or variant does not match its file");
+        if (!ValidThemeId(profile.id) || profile.name.empty())
+            throw std::runtime_error("theme identity is invalid");
         profile.typography = ParseTypography(root.GetNamedObject(L"typography"));
         profile.colors = ParseColors(root.GetNamedObject(L"colors"));
         profile.layout = ParseLayout(root.GetNamedObject(L"layout"));
@@ -209,22 +218,37 @@ namespace
 
 namespace winrt::ElMd
 {
-    ThemeLoadResult LoadThemeProfile(elmd::Theme variant)
+    std::filesystem::path BuiltinThemeDirectory()
     {
-        auto path = ExecutableDirectory() / L"Assets" / L"themes" / ThemeFileName(variant);
+        return ExecutableDirectory() / L"Assets" / L"themes";
+    }
+
+    ThemeFileLoadResult LoadThemeFile(std::filesystem::path const& path)
+    {
         try
         {
-            return { ParseProfile(ReadUtf8(path), variant), true, {} };
+            return { ParseProfile(ReadUtf8(path)), {} };
         }
         catch (winrt::hresult_error const& error)
         {
-            return { elmd::default_theme_profile(variant), false,
-                L"Theme fallback: " + error.message() };
+            return { std::nullopt, L"Unable to load theme " + winrt::hstring(path.filename().c_str()) + L": " + error.message() };
         }
         catch (std::exception const& error)
         {
-            return { elmd::default_theme_profile(variant), false,
-                L"Theme fallback: " + winrt::to_hstring(error.what()) };
+            return { std::nullopt, L"Unable to load theme " + winrt::hstring(path.filename().c_str()) + L": " + winrt::to_hstring(error.what()) };
         }
+    }
+
+    ThemeLoadResult LoadThemeProfile(elmd::Theme variant)
+    {
+        auto loaded = LoadThemeFile(BuiltinThemeDirectory() / ThemeFileName(variant));
+        if (loaded.profile && loaded.profile->variant == variant)
+        {
+            return { std::move(*loaded.profile), true, {} };
+        }
+        auto diagnostic = loaded.diagnostic.empty()
+            ? winrt::hstring(L"Theme fallback: built-in theme variant does not match its file")
+            : L"Theme fallback: " + loaded.diagnostic;
+        return { elmd::default_theme_profile(variant), false, std::move(diagnostic) };
     }
 }

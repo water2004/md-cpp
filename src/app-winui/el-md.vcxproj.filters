@@ -55,6 +55,9 @@
     <Filter Include="Theme">
       <UniqueIdentifier>{ac059afc-bc91-44a7-97ec-42f0bca22c02}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Settings">
+      <UniqueIdentifier>{d58f1065-cfec-4d7e-bbb8-bcc2c1251bca}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\core\model\ast.ixx">
@@ -228,6 +231,12 @@
     <ClCompile Include="theme\ThemeConfig.cpp">
       <Filter>Theme</Filter>
     </ClCompile>
+    <ClCompile Include="theme\ThemeCatalog.cpp">
+      <Filter>Theme</Filter>
+    </ClCompile>
+    <ClCompile Include="settings\AppSettings.cpp">
+      <Filter>Settings</Filter>
+    </ClCompile>
     <ClCompile Include="editor\session\EditorSession.cpp">
       <Filter>Editor\Session</Filter>
     </ClCompile>
@@ -352,6 +361,12 @@
     </ClInclude>
     <ClInclude Include="theme\ThemeConfig.h">
       <Filter>Theme</Filter>
+    </ClInclude>
+    <ClInclude Include="theme\ThemeCatalog.h">
+      <Filter>Theme</Filter>
+    </ClInclude>
+    <ClInclude Include="settings\AppSettings.h">
+      <Filter>Settings</Filter>
     </ClInclude>
     <ClInclude Include="editor\session\EditorSession.h">
       <Filter>Editor\Session</Filter>

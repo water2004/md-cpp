@@ -111,7 +111,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
+    <ClInclude Include="settings\AppSettings.h" />
     <ClInclude Include="theme\ThemeConfig.h" />
+    <ClInclude Include="theme\ThemeCatalog.h" />
     <ClInclude Include="editor\session\EditorSession.h" />
     <ClInclude Include="editor\session\EditorRenderFrame.h" />
     <ClInclude Include="editor\rendering\EditorStyleSheet.h" />
@@ -320,7 +322,9 @@
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="settings\AppSettings.cpp" />
     <ClCompile Include="theme\ThemeConfig.cpp" />
+    <ClCompile Include="theme\ThemeCatalog.cpp" />
     <ClCompile Include="editor\session\EditorSession.cpp" />
     <ClCompile Include="media\EditorGifDecoder.cpp" />
     <ClCompile Include="editor\rendering\EditorStyleSheet.cpp" />
