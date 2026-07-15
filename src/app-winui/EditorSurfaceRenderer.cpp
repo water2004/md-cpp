@@ -57,6 +57,7 @@ namespace winrt::ElMd
         Theme theme = Theme::Dark;
         std::vector<Block> blocks;
         std::vector<Placement> placements;
+        std::unordered_set<std::size_t> embeddedBlocks;
         bool geometryValid = false;
     };
 
@@ -750,10 +751,13 @@ namespace winrt::ElMd
                 contentWidth,
                 [&](IDWriteTextLayout* candidate, DisplayInlineText const& candidateDisplay)
                 {
-                    prepared.images = inlineImages.Resolve(
-                        candidate,
-                        candidateDisplay.imageOverlays,
-                        contentWidth);
+                    if (requestEmbedded)
+                    {
+                        prepared.images = inlineImages.Resolve(
+                            candidate,
+                            candidateDisplay.imageOverlays,
+                            contentWidth);
+                    }
                 });
             prepared.mathPreviews.reserve(prepared.display.mathPreviews.size());
             for (auto const& preview : prepared.display.mathPreviews)
@@ -788,6 +792,8 @@ namespace winrt::ElMd
         constexpr float viewportOverscan = 240.0f;
         constexpr float embeddedOverscanBefore = 1200.0f;
         constexpr float embeddedOverscanAfter = 800.0f;
+        constexpr float embeddedUnloadBefore = 2400.0f;
+        constexpr float embeddedUnloadAfter = 2000.0f;
         auto requestEmbeddedAt = [&](float documentTop)
         {
             auto screenTop = documentTop - scrollOffset;
@@ -798,6 +804,7 @@ namespace winrt::ElMd
         {
             auto documentY = styleSheet.verticalPadding;
             documentOwnerY.clear();
+            preparedDocument->embeddedBlocks.clear();
             for (std::size_t index = 0; index < frame.renderModel.blocks.size(); ++index)
             {
                 auto const& block = frame.renderModel.blocks[index];
@@ -817,6 +824,8 @@ namespace winrt::ElMd
                 auto& placement = preparedDocument->placements[index];
                 placement.top = documentY;
                 placement.bottom = documentY + prepared.height;
+                if (prepared.embeddedRequested && (prepared.containsMath || prepared.containsImage))
+                    preparedDocument->embeddedBlocks.insert(index);
                 for (auto owner : prepared.owners) documentOwnerY[owner.v] = placement.top;
                 documentY = placement.bottom + block.block_style.margin_bottom
                     + (block.source_mode ? 0.0f : styleSheet.blockGap);
@@ -859,6 +868,36 @@ namespace winrt::ElMd
             if (!refreshForMath && !refreshForImages && !enteredEmbeddedBand) continue;
             auto previousHeight = prepared.height;
             prepared = prepareBlock(block, true);
+            preparedDocument->embeddedBlocks.insert(index);
+            geometryChanged = geometryChanged || prepared.height != previousHeight;
+        }
+
+        auto unloadTop = scrollOffset - embeddedUnloadBefore;
+        auto unloadBottom = scrollOffset + resources.surfaceHeightDip + embeddedUnloadAfter;
+        auto activeEmbedded = std::vector<std::size_t>(
+            preparedDocument->embeddedBlocks.begin(),
+            preparedDocument->embeddedBlocks.end());
+        for (auto index : activeEmbedded)
+        {
+            if (index >= frame.renderModel.blocks.size()) continue;
+            auto const& placement = preparedDocument->placements[index];
+            if (placement.bottom >= unloadTop && placement.top <= unloadBottom) continue;
+            auto const& block = frame.renderModel.blocks[index];
+            auto& prepared = preparedDocument->blocks[index];
+            std::vector<std::string> imageSources;
+            imageSources.reserve(prepared.images.size());
+            for (auto const& image : prepared.images)
+                if (!image.source.empty()) imageSources.push_back(image.source);
+            if (prepared.table)
+            {
+                for (auto const& cellImages : prepared.table->imageDraws)
+                    for (auto const& image : cellImages)
+                        if (!image.source.empty()) imageSources.push_back(image.source);
+            }
+            auto previousHeight = prepared.height;
+            prepared = prepareBlock(block, false);
+            preparedDocument->embeddedBlocks.erase(index);
+            for (auto const& source : imageSources) inlineImages.ReleaseGif(source);
             geometryChanged = geometryChanged || prepared.height != previousHeight;
         }
         if (geometryChanged)

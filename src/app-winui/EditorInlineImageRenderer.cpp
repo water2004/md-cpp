@@ -23,6 +23,7 @@ namespace winrt::ElMd
             ImageDraw draw;
             draw.displayStart = overlay.displayStart;
             draw.block = overlay.block;
+            draw.source = overlay.source;
             draw.image = cache.LoadRasterImage(resources, baseDirectory, overlay.source);
             draw.alt = winrt::to_hstring(overlay.alt.empty() ? std::string("image") : overlay.alt).c_str();
             if (draw.image)
@@ -60,6 +61,11 @@ namespace winrt::ElMd
             resolved.push_back(std::move(draw));
         }
         return resolved;
+    }
+
+    void EditorInlineImageRenderer::ReleaseGif(std::string_view source) const
+    {
+        cache.ReleaseGifImage(baseDirectory, source);
     }
 
     void EditorInlineImageRenderer::Draw(IDWriteTextLayout* layout, D2D1_POINT_2F origin, std::vector<ImageDraw> const& images) const

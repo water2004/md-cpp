@@ -13,6 +13,7 @@ namespace winrt::ElMd
         {
             std::uint32_t displayStart = 0;
             std::optional<EditorRenderCache::RasterImage> image;
+            std::string source;
             std::wstring alt;
             float width = 0.0f;
             float height = 0.0f;
@@ -22,6 +23,7 @@ namespace winrt::ElMd
 
         EditorInlineImageRenderer(EditorRenderResources& resources, EditorRenderCache& cache, EditorStyleSheet const& styleSheet, std::wstring const& baseDirectory);
         std::vector<ImageDraw> Resolve(IDWriteTextLayout* layout, std::vector<DisplayInlineText::ImageOverlay> const& overlays, float availableWidth) const;
+        void ReleaseGif(std::string_view source) const;
         void Draw(IDWriteTextLayout* layout, D2D1_POINT_2F origin, std::vector<ImageDraw> const& images) const;
 
     private:

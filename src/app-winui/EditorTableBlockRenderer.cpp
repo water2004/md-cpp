@@ -103,7 +103,9 @@ namespace winrt::ElMd
                 rowHeights[row] = (std::max)(
                     rowHeights[row],
                     cellTextHeight + previewHeight + 16.0f);
-                auto images = inlineImageRenderer.Resolve(layout.Get(), display.imageOverlays, (std::max)(1.0f, columnWidth - 20.0f));
+                auto images = requestEmbedded
+                    ? inlineImageRenderer.Resolve(layout.Get(), display.imageOverlays, (std::max)(1.0f, columnWidth - 20.0f))
+                    : std::vector<EditorInlineImageRenderer::ImageDraw>{};
                 EditorVisualTableCell cell;
                 cell.sourceSpan = sourceSpan;
                 cell.row = row;
