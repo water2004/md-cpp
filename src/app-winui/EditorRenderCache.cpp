@@ -22,30 +22,11 @@ namespace winrt::ElMd
             remoteState->invalidate = std::move(invalidate);
             remoteState->active = true;
         }
-        animationTimer = dispatcher.CreateTimer();
-        animationTimer.IsRepeating(false);
-        animationTickToken = animationTimer.Tick([this](auto const&, auto const&)
-        {
-            animationDeadline.reset();
-            std::function<void()> invalidate;
-            {
-                std::scoped_lock lock(remoteState->mutex);
-                if (remoteState->active) invalidate = remoteState->invalidate;
-            }
-            if (invalidate) invalidate();
-        });
     }
 
     void EditorRenderCache::Detach()
     {
-        if (animationTimer)
-        {
-            animationTimer.Stop();
-            if (animationTickToken.value) animationTimer.Tick(animationTickToken);
-        }
-        animationTickToken = {};
-        animationTimer = nullptr;
-        animationDeadline.reset();
+        StopAnimationPump();
         {
             std::scoped_lock lock(remoteState->mutex);
             remoteState->active = false;
@@ -122,14 +103,42 @@ namespace winrt::ElMd
 
     void EditorRenderCache::RequestAnimationFrame(std::chrono::milliseconds delay)
     {
-        if (!animationTimer || delay.count() <= 0) return;
+        if (delay.count() <= 0) return;
         delay = (std::clamp)(delay, std::chrono::milliseconds{1}, std::chrono::milliseconds{10000});
         auto deadline = std::chrono::steady_clock::now() + delay;
-        if (animationDeadline && *animationDeadline <= deadline) return;
-        animationDeadline = deadline;
-        animationTimer.Stop();
-        animationTimer.Interval(std::chrono::duration_cast<winrt::Windows::Foundation::TimeSpan>(delay));
-        animationTimer.Start();
+        if (!animationDeadline || deadline < *animationDeadline) animationDeadline = deadline;
+        if (animationPumpActive) return;
+        animationPumpActive = true;
+        animationRenderingToken = winrt::Microsoft::UI::Xaml::Media::CompositionTarget::Rendering(
+            [this](auto const&, auto const&)
+            {
+                if (!animationDeadline)
+                {
+                    StopAnimationPump();
+                    return;
+                }
+                if (std::chrono::steady_clock::now() < *animationDeadline) return;
+                animationDeadline.reset();
+                std::function<void()> invalidate;
+                {
+                    std::scoped_lock lock(remoteState->mutex);
+                    if (remoteState->active) invalidate = remoteState->invalidate;
+                }
+                if (invalidate) invalidate();
+                // A visible animated image requests its following deadline
+                // synchronously while the invalidated frame is drawn. If no
+                // image did so, it has left the viewport and the pump can stop.
+                if (!animationDeadline) StopAnimationPump();
+            });
+    }
+
+    void EditorRenderCache::StopAnimationPump()
+    {
+        if (animationPumpActive)
+            winrt::Microsoft::UI::Xaml::Media::CompositionTarget::Rendering(animationRenderingToken);
+        animationRenderingToken = {};
+        animationDeadline.reset();
+        animationPumpActive = false;
     }
 
     void EditorRenderCache::QueueRemoteImage(std::string source)

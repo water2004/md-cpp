@@ -74,6 +74,7 @@ namespace winrt::ElMd
         };
 
         void QueueRemoteImage(std::string source);
+        void StopAnimationPump();
 
         std::unordered_map<std::uint64_t, CachedTextLayout> textLayouts;
         std::deque<std::uint64_t> textLayoutOrder;
@@ -86,8 +87,8 @@ namespace winrt::ElMd
         std::list<std::uint64_t> svgDocumentOrder;
         std::size_t svgDocumentBytes = 0;
         std::shared_ptr<RemoteState> remoteState = std::make_shared<RemoteState>();
-        winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer animationTimer{ nullptr };
-        winrt::event_token animationTickToken{};
+        winrt::event_token animationRenderingToken{};
         std::optional<std::chrono::steady_clock::time_point> animationDeadline;
+        bool animationPumpActive = false;
     };
 }
