@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "media/MathJaxRenderer.h"
+#include "storage/AssetPaths.h"
 
 #pragma warning(push)
 #pragma warning(disable : 4100 4244)
@@ -23,15 +24,7 @@ namespace
 
     std::wstring MathJaxBundlePath()
     {
-        std::wstring path(32768, L'\0');
-        auto length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
-        path.resize(length);
-        auto separator = path.find_last_of(L"\\/");
-        if (separator == std::wstring::npos)
-        {
-            return L"Assets\\mathjax\\mathjax-quickjs.js";
-        }
-        return path.substr(0, separator + 1) + L"Assets\\mathjax\\mathjax-quickjs.js";
+        return winrt::ElMd::AssetPath(std::filesystem::path(L"mathjax") / L"mathjax-quickjs.js").wstring();
     }
 
     std::wstring MathJaxFontPath(std::string_view module)

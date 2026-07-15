@@ -21,7 +21,6 @@ namespace winrt::ElMd
         winrt::hstring diagnostic;
     };
 
-    std::filesystem::path AppDataDirectory();
     SettingsLoadResult LoadAppSettings();
     std::optional<winrt::hstring> SaveAppSettings(AppSettings const& settings);
 }

@@ -1,18 +1,10 @@
 #include "pch.h"
 #include "theme/ThemeConfig.h"
+#include "storage/AssetPaths.h"
 
 namespace
 {
     using winrt::Windows::Data::Json::JsonObject;
-
-    std::filesystem::path ExecutableDirectory()
-    {
-        std::wstring path(32768, L'\0');
-        auto length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
-        if (length == 0 || length >= path.size()) winrt::throw_last_error();
-        path.resize(length);
-        return std::filesystem::path(path).parent_path();
-    }
 
     std::wstring ThemeFileName(elmd::Theme variant)
     {
@@ -220,7 +212,7 @@ namespace winrt::ElMd
 {
     std::filesystem::path BuiltinThemeDirectory()
     {
-        return ExecutableDirectory() / L"Assets" / L"themes";
+        return AssetPath(L"themes");
     }
 
     ThemeFileLoadResult LoadThemeFile(std::filesystem::path const& path)

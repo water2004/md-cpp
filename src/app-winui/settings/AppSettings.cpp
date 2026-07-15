@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "settings/AppSettings.h"
+#include "storage/AssetPaths.h"
 
 namespace
 {
@@ -22,21 +23,9 @@ namespace
 
 namespace winrt::ElMd
 {
-    std::filesystem::path AppDataDirectory()
-    {
-        std::wstring value(32768, L'\0');
-        auto length = GetEnvironmentVariableW(L"LOCALAPPDATA", value.data(), static_cast<DWORD>(value.size()));
-        if (length > 0 && length < value.size())
-        {
-            value.resize(length);
-            return std::filesystem::path(value) / L"el-md";
-        }
-        return std::filesystem::temp_directory_path() / L"el-md";
-    }
-
     SettingsLoadResult LoadAppSettings()
     {
-        auto path = AppDataDirectory() / L"settings.json";
+        auto path = AssetPath(L"settings.json");
         if (!std::filesystem::exists(path)) return {};
         try
         {
@@ -63,7 +52,7 @@ namespace winrt::ElMd
     {
         try
         {
-            auto directory = AppDataDirectory();
+            auto directory = AssetsDirectory();
             std::filesystem::create_directories(directory);
             Windows::Data::Json::JsonObject root;
             root.Insert(L"schemaVersion", Windows::Data::Json::JsonValue::CreateNumberValue(1));

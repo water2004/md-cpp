@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "theme/ThemeCatalog.h"
+#include "storage/AssetPaths.h"
 
 namespace
 {
@@ -37,7 +38,7 @@ namespace winrt::ElMd
 {
     std::filesystem::path ThemeCatalog::CustomThemeDirectory()
     {
-        return AppDataDirectory() / L"themes";
+        return AssetPath(std::filesystem::path(L"themes") / L"custom");
     }
 
     void ThemeCatalog::Refresh()

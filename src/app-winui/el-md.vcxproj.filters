@@ -58,6 +58,9 @@
     <Filter Include="Settings">
       <UniqueIdentifier>{d58f1065-cfec-4d7e-bbb8-bcc2c1251bca}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Storage">
+      <UniqueIdentifier>{fa0552ea-8304-4269-8534-12ed0641c419}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\core\model\ast.ixx">
@@ -237,6 +240,9 @@
     <ClCompile Include="settings\AppSettings.cpp">
       <Filter>Settings</Filter>
     </ClCompile>
+    <ClCompile Include="storage\AssetPaths.cpp">
+      <Filter>Storage</Filter>
+    </ClCompile>
     <ClCompile Include="editor\session\EditorSession.cpp">
       <Filter>Editor\Session</Filter>
     </ClCompile>
@@ -367,6 +373,9 @@
     </ClInclude>
     <ClInclude Include="settings\AppSettings.h">
       <Filter>Settings</Filter>
+    </ClInclude>
+    <ClInclude Include="storage\AssetPaths.h">
+      <Filter>Storage</Filter>
     </ClInclude>
     <ClInclude Include="editor\session\EditorSession.h">
       <Filter>Editor\Session</Filter>

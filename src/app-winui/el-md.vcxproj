@@ -67,7 +67,9 @@
   <ImportGroup Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Label="UserMacros">
+    <ElMdAssetsDirectory />
+  </PropertyGroup>
   <PropertyGroup>
     <OutDir>$(ProjectDir)$(Platform)\$(Configuration)\el-md\</OutDir>
   </PropertyGroup>
@@ -81,6 +83,7 @@
       <LanguageStandard Condition="'$(VisualStudioVersion)' &gt;= '18.0'">stdcpplatest</LanguageStandard>
       <LanguageStandard Condition="'$(VisualStudioVersion)' &lt; '18.0'">stdcpp17</LanguageStandard>
       <AdditionalOptions>%(AdditionalOptions) /bigobj</AdditionalOptions>
+      <PreprocessorDefinitions>ELMD_ASSETS_DIRECTORY=L&quot;$(ElMdAssetsDirectory)&quot;;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <AdditionalDependencies>$(IntDir)quickjs\quickjs.lib;d2d1.lib;d3d11.lib;dwrite.lib;dxgi.lib;windowscodecs.lib;shlwapi.lib;winspool.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -111,6 +114,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
+    <ClInclude Include="storage\AssetPaths.h" />
     <ClInclude Include="settings\AppSettings.h" />
     <ClInclude Include="theme\ThemeConfig.h" />
     <ClInclude Include="theme\ThemeCatalog.h" />
@@ -323,6 +327,7 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="settings\AppSettings.cpp" />
+    <ClCompile Include="storage\AssetPaths.cpp" />
     <ClCompile Include="theme\ThemeConfig.cpp" />
     <ClCompile Include="theme\ThemeCatalog.cpp" />
     <ClCompile Include="editor\session\EditorSession.cpp" />
@@ -428,6 +433,16 @@
     <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="CopyConfiguredElMdAssets" AfterTargets="Build" Condition="'$(ElMdAssetsDirectory)'!=''">
+    <ItemGroup>
+      <ElMdDeployableAsset Include="$(ProjectDir)Assets\**\*"
+        Exclude="$(ProjectDir)Assets\settings.json;$(ProjectDir)Assets\themes\custom\**\*" />
+    </ItemGroup>
+    <Copy
+      SourceFiles="@(ElMdDeployableAsset)"
+      DestinationFiles="@(ElMdDeployableAsset-&gt;'$(ElMdAssetsDirectory)\%(RecursiveDir)%(Filename)%(Extension)')"
+      SkipUnchangedFiles="true" />
+  </Target>
   <ImportGroup Label="ExtensionTargets">
     <Import Project="packages\Microsoft.Web.WebView2.1.0.3719.77\build\native\Microsoft.Web.WebView2.targets" Condition="Exists('packages\Microsoft.Web.WebView2.1.0.3719.77\build\native\Microsoft.Web.WebView2.targets')" />
     <Import Project="packages\Microsoft.Windows.AI.MachineLearning.2.1.70\build\native\Microsoft.Windows.AI.MachineLearning.targets" Condition="Exists('packages\Microsoft.Windows.AI.MachineLearning.2.1.70\build\native\Microsoft.Windows.AI.MachineLearning.targets')" />
