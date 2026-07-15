@@ -25,15 +25,18 @@ namespace winrt::ElMd::implementation
 
     std::optional<winrt::hstring> MainWindow::ApplySettings(winrt::ElMd::AppSettings const& settings)
     {
+        if (auto saveError = winrt::ElMd::SaveAppSettings(settings))
+        {
+            SetStatus(*saveError);
+            return saveError;
+        }
         auto mathChanged = appSettings.mathRenderingEnabled != settings.mathRenderingEnabled;
         auto themeChanged = appSettings.themeId != settings.themeId;
         appSettings = settings;
-        auto saveError = winrt::ElMd::SaveAppSettings(appSettings);
         if (mathChanged) editorRenderer.SetMathRenderingEnabled(appSettings.mathRenderingEnabled);
         if (themeChanged) UpdateTheme();
         else if (mathChanged) RenderEditorSurface();
-        if (saveError) SetStatus(*saveError);
-        return saveError;
+        return std::nullopt;
     }
 
     void MainWindow::ToggleSettingsMode()
@@ -67,7 +70,7 @@ namespace winrt::ElMd::implementation
             }
             else
             {
-                settingsView->SetSystemVariant(CurrentThemeVariant());
+                settingsView->Reset(appSettings, CurrentThemeVariant());
             }
             settingsView->SetNavigationWidth(themeProfile.layout.navigation_open_width);
 
@@ -81,6 +84,7 @@ namespace winrt::ElMd::implementation
         }
 
         SettingsViewHost().Visibility(Microsoft::UI::Xaml::Visibility::Collapsed);
+        if (settingsView) settingsView->Reset(appSettings, CurrentThemeVariant());
         DocumentNavigation().Visibility(Microsoft::UI::Xaml::Visibility::Visible);
         DocumentNavigation().IsPaneOpen(documentPaneWasOpen);
         StatusBar().Visibility(Microsoft::UI::Xaml::Visibility::Visible);

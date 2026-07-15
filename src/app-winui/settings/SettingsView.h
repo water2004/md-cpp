@@ -18,6 +18,7 @@ namespace winrt::ElMd
             ApplySettings applySettings);
 
         winrt::Microsoft::UI::Xaml::Controls::NavigationView Root() const { return navigation_; }
+        void Reset(AppSettings settings, elmd::Theme systemVariant);
         void SetSystemVariant(elmd::Theme variant);
         void SetNavigationWidth(double width) { navigation_.OpenPaneLength(width); }
         void Detach();
@@ -30,13 +31,16 @@ namespace winrt::ElMd
         void Navigate(winrt::hstring const& page);
         void RefreshThemeList();
         void UpdateThemePreview();
-        void ApplyChangedSettings();
+        void ApplyMathSetting();
+        void ApplyPendingTheme();
+        void UpdateThemeActions();
         void SetGeneralStatus(winrt::hstring const& message, bool error = false);
         void SetThemeStatus(winrt::hstring const& message, bool error = false);
         winrt::fire_and_forget ImportThemeAsync();
         void RemoveSelectedTheme();
 
         AppSettings settings_;
+        AppSettings appliedSettings_;
         std::shared_ptr<ThemeCatalog> catalog_;
         elmd::Theme systemVariant_ = elmd::Theme::Dark;
         HWND owner_ = nullptr;
@@ -48,6 +52,7 @@ namespace winrt::ElMd
         winrt::Microsoft::UI::Xaml::Controls::ToggleSwitch mathToggle_;
         winrt::Microsoft::UI::Xaml::Controls::ListView themeList_;
         winrt::Microsoft::UI::Xaml::Controls::Border themePreview_;
+        winrt::Microsoft::UI::Xaml::Controls::Button applyThemeButton_;
         winrt::Microsoft::UI::Xaml::Controls::Button removeThemeButton_;
         winrt::Microsoft::UI::Xaml::Controls::TextBlock generalStatus_;
         winrt::Microsoft::UI::Xaml::Controls::TextBlock themeStatus_;

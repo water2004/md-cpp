@@ -75,6 +75,7 @@ namespace winrt::ElMd
         HWND owner,
         ApplySettings applySettings)
         : settings_(std::move(settings)),
+          appliedSettings_(settings_),
           catalog_(std::move(catalog)),
           systemVariant_(systemVariant),
           owner_(owner),
@@ -133,7 +134,7 @@ namespace winrt::ElMd
         {
             if (refreshing_) return;
             settings_.mathRenderingEnabled = mathToggle_.IsOn();
-            ApplyChangedSettings();
+            ApplyMathSetting();
         });
         mathCard.Children().Append(mathToggle_);
         mathCard.Children().Append(Text(
@@ -179,7 +180,7 @@ namespace winrt::ElMd
         auto heading = PageHeading(L"Themes");
         Grid::SetRow(heading, 0);
         listPanel.Children().Append(heading);
-        auto description = Text(L"Choose a built-in theme or import a complete JSON profile.");
+        auto description = Text(L"Choose a built-in theme or import a complete JSON profile. Selection only changes the preview until Apply.");
         Grid::SetRow(description, 1);
         listPanel.Children().Append(description);
         themeList_.SelectionMode(ListViewSelectionMode::Single);
@@ -191,7 +192,6 @@ namespace winrt::ElMd
             if (refreshing_) return;
             settings_.themeId = themeIds_[static_cast<std::size_t>(index)];
             UpdateThemePreview();
-            ApplyChangedSettings();
         });
         Grid::SetRow(themeList_, 2);
         listPanel.Children().Append(themeList_);
@@ -199,11 +199,16 @@ namespace winrt::ElMd
         StackPanel buttons;
         buttons.Orientation(Orientation::Horizontal);
         buttons.Spacing(8);
+        applyThemeButton_.Content(box_value(L"Apply"));
+        applyThemeButton_.Click([this](auto const&, auto const&) { ApplyPendingTheme(); });
+        if (auto accentStyle = Application::Current().Resources().TryLookup(box_value(L"AccentButtonStyle")).try_as<Style>())
+            applyThemeButton_.Style(accentStyle);
         Button importButton;
         importButton.Content(box_value(L"Import…"));
         importButton.Click([this](auto const&, auto const&) { ImportThemeAsync(); });
         removeThemeButton_.Content(box_value(L"Remove"));
         removeThemeButton_.Click([this](auto const&, auto const&) { RemoveSelectedTheme(); });
+        buttons.Children().Append(applyThemeButton_);
         buttons.Children().Append(importButton);
         buttons.Children().Append(removeThemeButton_);
         Grid::SetRow(buttons, 3);
@@ -366,11 +371,7 @@ namespace winrt::ElMd
         themePreview_.BorderBrush(Brush(colors.shell_border));
         themePreview_.Child(preview);
 
-        auto index = themeList_.SelectedIndex();
-        auto removable = index > 0
-            && static_cast<std::size_t>(index - 1) < catalog_->Entries().size()
-            && !catalog_->Entries()[static_cast<std::size_t>(index - 1)].builtIn;
-        removeThemeButton_.IsEnabled(removable);
+        UpdateThemeActions();
         if (!resolved.loadedFromFile && !resolved.diagnostic.empty()) SetThemeStatus(resolved.diagnostic, true);
         else if (!catalog_->Diagnostics().empty()) SetThemeStatus(catalog_->Diagnostics().front(), true);
         else SetThemeStatus({});
@@ -415,8 +416,7 @@ namespace winrt::ElMd
             }
             settings_.themeId = std::move(id);
             RefreshThemeList();
-            ApplyChangedSettings();
-            SetThemeStatus(L"Theme imported");
+            SetThemeStatus(L"Theme imported. Select Apply to use it.");
         }
         catch (hresult_error const& error)
         {
@@ -435,27 +435,75 @@ namespace winrt::ElMd
         auto index = themeList_.SelectedIndex();
         if (index <= 0 || static_cast<std::size_t>(index) >= themeIds_.size()) return;
         auto id = themeIds_[static_cast<std::size_t>(index)];
+        if (id == appliedSettings_.themeId)
+        {
+            SetThemeStatus(L"Apply another theme before removing the active theme.", true);
+            return;
+        }
         if (auto error = catalog_->Remove(id))
         {
             SetThemeStatus(*error, true);
             return;
         }
-        auto removedActiveTheme = settings_.themeId == id;
-        if (removedActiveTheme) settings_.themeId = "system";
+        if (settings_.themeId == id) settings_.themeId = appliedSettings_.themeId;
         RefreshThemeList();
-        if (removedActiveTheme) ApplyChangedSettings();
         SetThemeStatus(L"Custom theme removed");
     }
 
-    void SettingsView::ApplyChangedSettings()
+    void SettingsView::ApplyMathSetting()
     {
         if (detached_ || !applySettings_) return;
-        if (auto error = applySettings_(settings_))
+        auto proposed = appliedSettings_;
+        proposed.mathRenderingEnabled = settings_.mathRenderingEnabled;
+        if (auto error = applySettings_(proposed))
         {
             SetGeneralStatus(*error, true);
+            refreshing_ = true;
+            settings_.mathRenderingEnabled = appliedSettings_.mathRenderingEnabled;
+            mathToggle_.IsOn(settings_.mathRenderingEnabled);
+            refreshing_ = false;
+            return;
+        }
+        appliedSettings_.mathRenderingEnabled = proposed.mathRenderingEnabled;
+        SetGeneralStatus({});
+    }
+
+    void SettingsView::ApplyPendingTheme()
+    {
+        if (detached_ || !applySettings_ || settings_.themeId == appliedSettings_.themeId) return;
+        auto proposed = appliedSettings_;
+        proposed.themeId = settings_.themeId;
+        if (auto error = applySettings_(proposed))
+        {
             SetThemeStatus(*error, true);
             return;
         }
+        appliedSettings_.themeId = proposed.themeId;
+        SetThemeStatus(L"Theme applied");
+        UpdateThemeActions();
+    }
+
+    void SettingsView::UpdateThemeActions()
+    {
+        applyThemeButton_.IsEnabled(settings_.themeId != appliedSettings_.themeId);
+        auto index = themeList_.SelectedIndex();
+        auto removable = index > 0
+            && static_cast<std::size_t>(index) < themeIds_.size()
+            && static_cast<std::size_t>(index - 1) < catalog_->Entries().size()
+            && !catalog_->Entries()[static_cast<std::size_t>(index - 1)].builtIn
+            && themeIds_[static_cast<std::size_t>(index)] != appliedSettings_.themeId;
+        removeThemeButton_.IsEnabled(removable);
+    }
+
+    void SettingsView::Reset(AppSettings settings, elmd::Theme systemVariant)
+    {
+        settings_ = std::move(settings);
+        appliedSettings_ = settings_;
+        systemVariant_ = systemVariant;
+        refreshing_ = true;
+        mathToggle_.IsOn(settings_.mathRenderingEnabled);
+        refreshing_ = false;
+        RefreshThemeList();
         SetGeneralStatus({});
     }
 
