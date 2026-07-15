@@ -28,7 +28,7 @@ The `syntax` array has exactly eleven entries in this order:
 10. variable/property
 11. constant/special
 
-Theme changes selected in Settings rebuild both the block render model and native DirectWrite/Direct2D resources. The `Follow Windows` selection reloads the matching light, dark, or high-contrast profile when the Windows theme changes.
+Theme selection in Settings changes only the preview until `Apply` is pressed. Applying a theme rebuilds both the block render model and native DirectWrite/Direct2D resources. The applied `Follow Windows` selection reloads the matching light, dark, or high-contrast profile when the Windows theme changes.
 
 ## Assets directory
 

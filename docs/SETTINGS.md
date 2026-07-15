@@ -18,4 +18,4 @@ Settings use schema version 1 and are saved atomically to `Assets/settings.json`
 }
 ```
 
-An invalid or unavailable file falls back to safe defaults and reports a diagnostic. Changes apply and save immediately. Selecting a theme updates the complete native shell and editor while the Settings view remains open, so the full application acts as the preview. Theme cards also preview the profile's actual typography, code, quote, and color values. Removing the active custom theme immediately repairs the selection to `system` instead of retaining a dangling ID.
+An invalid or unavailable file falls back to safe defaults and reports a diagnostic. The MathJax switch applies and saves immediately. Theme selection is staged: it updates only the theme preview until the Theme page's `Apply` button is pressed. Leaving Settings without applying discards the pending theme selection. The preview uses the profile's actual typography, code, quote, and color values. An active custom theme cannot be removed until a different theme has been applied, preventing a dangling persisted ID.
