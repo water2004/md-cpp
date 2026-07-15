@@ -751,13 +751,11 @@ namespace winrt::ElMd
                 contentWidth,
                 [&](IDWriteTextLayout* candidate, DisplayInlineText const& candidateDisplay)
                 {
-                    if (requestEmbedded)
-                    {
-                        prepared.images = inlineImages.Resolve(
-                            candidate,
-                            candidateDisplay.imageOverlays,
-                            contentWidth);
-                    }
+                    prepared.images = inlineImages.Resolve(
+                        candidate,
+                        candidateDisplay.imageOverlays,
+                        contentWidth,
+                        requestEmbedded);
                 });
             prepared.mathPreviews.reserve(prepared.display.mathPreviews.size());
             for (auto const& preview : prepared.display.mathPreviews)

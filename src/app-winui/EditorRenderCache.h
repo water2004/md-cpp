@@ -20,6 +20,12 @@ namespace winrt::ElMd
             std::size_t bytes = 0;
         };
 
+        struct ImageDimensions
+        {
+            float width = 0.0f;
+            float height = 0.0f;
+        };
+
         ~EditorRenderCache();
 
         void Attach(winrt::Microsoft::UI::Dispatching::DispatcherQueue const& dispatcher, std::function<void()> invalidate);
@@ -28,6 +34,7 @@ namespace winrt::ElMd
         void ClearSvgDocuments();
         void ClearDeviceResources();
         std::uint64_t RemoteImageGeneration() const;
+        std::optional<ImageDimensions> ProbeGifDimensions(std::wstring const& baseDirectory, std::string_view source);
         std::optional<RasterImage> LoadRasterImage(EditorRenderResources const& resources, std::wstring const& baseDirectory, std::string_view source);
         void ReleaseGifImage(std::wstring const& baseDirectory, std::string_view source);
         ID2D1Bitmap1* CurrentBitmap(RasterImage const& image, std::chrono::milliseconds& untilNextFrame) const;
@@ -63,21 +70,29 @@ namespace winrt::ElMd
             std::function<void()> invalidate;
             winrt::Microsoft::UI::Dispatching::DispatcherQueue dispatcher{ nullptr };
             std::unordered_map<std::string, std::vector<std::uint8_t>> data;
+            std::unordered_map<std::string, ImageDimensions> dimensions;
             std::unordered_set<std::string> pending;
             std::unordered_set<std::string> failed;
+            std::unordered_set<std::string> dimensionPending;
+            std::unordered_set<std::string> dimensionFailed;
             std::deque<std::string> order;
+            std::deque<std::string> dimensionOrder;
             std::size_t bytes = 0;
             std::atomic_uint64_t generation = 0;
             bool active = false;
         };
 
         void QueueRemoteImage(std::string source);
+        void QueueRemoteGifDimensions(std::string source);
         void StopAnimationPump();
 
         std::unordered_map<std::uint64_t, CachedTextLayout> textLayouts;
         std::deque<std::uint64_t> textLayoutOrder;
         std::size_t textLayoutBytes = 0;
         std::unordered_map<std::wstring, RasterImage> rasterImages;
+        std::unordered_map<std::wstring, ImageDimensions> gifDimensions;
+        std::deque<std::wstring> gifDimensionOrder;
+        std::unordered_set<std::wstring> gifDimensionMisses;
         std::unordered_map<std::wstring, PendingGifImage> pendingGifImages;
         std::unordered_set<std::wstring> rasterImageFailures;
         std::deque<std::wstring> rasterImageOrder;

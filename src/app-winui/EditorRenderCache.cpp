@@ -22,6 +22,48 @@ namespace
         return _wcsicmp(extension.c_str(), L".gif") == 0;
     }
 
+    std::optional<winrt::ElMd::EditorRenderCache::ImageDimensions> GifDimensionsFromHeader(
+        std::uint8_t const* bytes,
+        std::size_t size)
+    {
+        if (!bytes || size < 10) return std::nullopt;
+        auto signature = std::string_view(reinterpret_cast<char const*>(bytes), 6);
+        if (signature != "GIF87a" && signature != "GIF89a") return std::nullopt;
+        auto width = static_cast<UINT>(bytes[6]) | (static_cast<UINT>(bytes[7]) << 8);
+        auto height = static_cast<UINT>(bytes[8]) | (static_cast<UINT>(bytes[9]) << 8);
+        if (width == 0 || height == 0
+            || static_cast<std::uint64_t>(width) * height > 16ull * 1024ull * 1024ull)
+            return std::nullopt;
+        return winrt::ElMd::EditorRenderCache::ImageDimensions{
+            static_cast<float>(width),
+            static_cast<float>(height),
+        };
+    }
+
+    std::optional<winrt::ElMd::EditorRenderCache::ImageDimensions> GifDimensionsFromBase64(
+        std::string_view source)
+    {
+        static constexpr std::string_view alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        std::array<std::uint8_t, 10> header{};
+        auto count = std::size_t{0};
+        std::uint32_t accumulator = 0;
+        unsigned bits = 0;
+        for (auto ch : source)
+        {
+            if (ch == '=') break;
+            if (ch == '\r' || ch == '\n' || ch == ' ' || ch == '\t') continue;
+            auto position = alphabet.find(ch);
+            if (position == std::string_view::npos) return std::nullopt;
+            accumulator = (accumulator << 6) | static_cast<std::uint32_t>(position);
+            bits += 6;
+            if (bits < 8) continue;
+            bits -= 8;
+            header[count++] = static_cast<std::uint8_t>((accumulator >> bits) & 0xff);
+            if (count == header.size()) break;
+        }
+        return GifDimensionsFromHeader(header.data(), count);
+    }
+
     std::optional<std::wstring> RasterImageKey(
         std::wstring const& baseDirectory,
         std::string_view source)
@@ -74,9 +116,13 @@ namespace winrt::ElMd
             remoteState->invalidate = {};
             remoteState->dispatcher = nullptr;
             remoteState->data.clear();
+            remoteState->dimensions.clear();
             remoteState->pending.clear();
             remoteState->failed.clear();
+            remoteState->dimensionPending.clear();
+            remoteState->dimensionFailed.clear();
             remoteState->order.clear();
+            remoteState->dimensionOrder.clear();
             remoteState->bytes = 0;
             ++remoteState->generation;
         }
@@ -102,6 +148,7 @@ namespace winrt::ElMd
         ClearTextLayouts();
         ClearSvgDocuments();
         rasterImages.clear();
+        for (auto const& [key, pending] : pendingGifImages) pending.decode->Cancel();
         pendingGifImages.clear();
         rasterImageFailures.clear();
         rasterImageOrder.clear();
@@ -111,6 +158,70 @@ namespace winrt::ElMd
     std::uint64_t EditorRenderCache::RemoteImageGeneration() const
     {
         return remoteState->generation.load();
+    }
+
+    std::optional<EditorRenderCache::ImageDimensions> EditorRenderCache::ProbeGifDimensions(
+        std::wstring const& baseDirectory,
+        std::string_view source)
+    {
+        auto key = RasterImageKey(baseDirectory, source);
+        if (!key) return std::nullopt;
+        if (auto found = gifDimensions.find(*key); found != gifDimensions.end()) return found->second;
+        if (gifDimensionMisses.contains(*key)) return std::nullopt;
+        if (auto found = rasterImages.find(*key); found != rasterImages.end() && found->second.animation)
+            return ImageDimensions{found->second.width, found->second.height};
+
+        std::optional<ImageDimensions> dimensions;
+        if (source.starts_with("data:image/"))
+        {
+            auto comma = source.find(',');
+            if (comma != std::string_view::npos
+                && source.substr(0, comma).find(";base64") != std::string_view::npos)
+                dimensions = GifDimensionsFromBase64(source.substr(comma + 1));
+        }
+        else if (source.starts_with("https://") || source.starts_with("http://"))
+        {
+            auto remoteSource = std::string(source);
+            {
+                std::scoped_lock lock(remoteState->mutex);
+                if (auto found = remoteState->dimensions.find(remoteSource); found != remoteState->dimensions.end())
+                    dimensions = found->second;
+                else if (auto dataFound = remoteState->data.find(remoteSource); dataFound != remoteState->data.end())
+                    dimensions = GifDimensionsFromHeader(dataFound->second.data(), dataFound->second.size());
+            }
+            if (!dimensions) QueueRemoteGifDimensions(std::move(remoteSource));
+        }
+        else
+        {
+            auto path = std::filesystem::path(*key);
+            std::array<std::uint8_t, 10> header{};
+            std::ifstream stream(path, std::ios::binary);
+            if (stream)
+            {
+                stream.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(header.size()));
+                dimensions = GifDimensionsFromHeader(header.data(), static_cast<std::size_t>(stream.gcount()));
+            }
+        }
+        if (!dimensions)
+        {
+            // Remote metadata is asynchronous; unlike local/data misses it
+            // must remain probeable after the range request completes.
+            if (!source.starts_with("https://") && !source.starts_with("http://"))
+            {
+                if (gifDimensionMisses.size() >= 2048) gifDimensionMisses.clear();
+                gifDimensionMisses.insert(*key);
+            }
+            return std::nullopt;
+        }
+        constexpr std::size_t dimensionLimit = 1024;
+        while (gifDimensionOrder.size() >= dimensionLimit)
+        {
+            gifDimensions.erase(gifDimensionOrder.front());
+            gifDimensionOrder.pop_front();
+        }
+        gifDimensionOrder.push_back(*key);
+        gifDimensions.emplace(*key, *dimensions);
+        return dimensions;
     }
 
     ID2D1Bitmap1* EditorRenderCache::CurrentBitmap(
@@ -161,6 +272,132 @@ namespace winrt::ElMd
         animationRenderingToken = {};
         animationDeadline.reset();
         animationPumpActive = false;
+    }
+
+    void EditorRenderCache::QueueRemoteGifDimensions(std::string source)
+    {
+        auto state = remoteState;
+        {
+            std::scoped_lock lock(state->mutex);
+            if (!state->active
+                || state->dimensions.contains(source)
+                || state->dimensionPending.contains(source)
+                || state->dimensionFailed.contains(source)) return;
+            state->dimensionPending.insert(source);
+        }
+        auto publish = [state, source](std::optional<ImageDimensions> dimensions)
+        {
+            winrt::Microsoft::UI::Dispatching::DispatcherQueue dispatcher{ nullptr };
+            {
+                std::scoped_lock lock(state->mutex);
+                state->dimensionPending.erase(source);
+                if (!state->active) return;
+                if (dimensions)
+                {
+                    constexpr std::size_t dimensionLimit = 1024;
+                    while (state->dimensionOrder.size() >= dimensionLimit)
+                    {
+                        state->dimensions.erase(state->dimensionOrder.front());
+                        state->dimensionOrder.pop_front();
+                    }
+                    if (!state->dimensions.contains(source)) state->dimensionOrder.push_back(source);
+                    state->dimensions.insert_or_assign(source, *dimensions);
+                }
+                else
+                {
+                    state->dimensionFailed.insert(source);
+                }
+                ++state->generation;
+                dispatcher = state->dispatcher;
+            }
+            if (dispatcher)
+            {
+                dispatcher.TryEnqueue([state]
+                {
+                    std::function<void()> invalidate;
+                    {
+                        std::scoped_lock lock(state->mutex);
+                        if (state->active) invalidate = state->invalidate;
+                    }
+                    if (invalidate) invalidate();
+                });
+            }
+        };
+        try
+        {
+            auto client = winrt::Windows::Web::Http::HttpClient{};
+            auto request = winrt::Windows::Web::Http::HttpRequestMessage{
+                winrt::Windows::Web::Http::HttpMethod::Get(),
+                winrt::Windows::Foundation::Uri(winrt::to_hstring(source)),
+            };
+            request.Headers().TryAppendWithoutValidation(L"Range", L"bytes=0-9");
+            auto operation = client.SendRequestAsync(
+                request,
+                winrt::Windows::Web::Http::HttpCompletionOption::ResponseHeadersRead);
+            operation.Completed([client, publish](auto const& async, winrt::Windows::Foundation::AsyncStatus status) mutable
+            {
+                if (status != winrt::Windows::Foundation::AsyncStatus::Completed)
+                {
+                    publish(std::nullopt);
+                    return;
+                }
+                try
+                {
+                    auto response = async.GetResults();
+                    if (!response.IsSuccessStatusCode())
+                    {
+                        publish(std::nullopt);
+                        return;
+                    }
+                    auto streamOperation = response.Content().ReadAsInputStreamAsync();
+                    streamOperation.Completed([response, publish](auto const& streamAsync, winrt::Windows::Foundation::AsyncStatus streamStatus) mutable
+                    {
+                        if (streamStatus != winrt::Windows::Foundation::AsyncStatus::Completed)
+                        {
+                            publish(std::nullopt);
+                            return;
+                        }
+                        try
+                        {
+                            auto reader = winrt::Windows::Storage::Streams::DataReader{streamAsync.GetResults()};
+                            reader.InputStreamOptions(winrt::Windows::Storage::Streams::InputStreamOptions::Partial);
+                            auto loadOperation = reader.LoadAsync(10);
+                            loadOperation.Completed([response, reader, publish](auto const& loadAsync, winrt::Windows::Foundation::AsyncStatus loadStatus) mutable
+                            {
+                                if (loadStatus != winrt::Windows::Foundation::AsyncStatus::Completed)
+                                {
+                                    publish(std::nullopt);
+                                    return;
+                                }
+                                try
+                                {
+                                    auto count = (std::min)(loadAsync.GetResults(), 10u);
+                                    std::array<std::uint8_t, 10> header{};
+                                    reader.ReadBytes(winrt::array_view<std::uint8_t>(header.data(), header.data() + count));
+                                    publish(GifDimensionsFromHeader(header.data(), count));
+                                }
+                                catch (...)
+                                {
+                                    publish(std::nullopt);
+                                }
+                            });
+                        }
+                        catch (...)
+                        {
+                            publish(std::nullopt);
+                        }
+                    });
+                }
+                catch (...)
+                {
+                    publish(std::nullopt);
+                }
+            });
+        }
+        catch (...)
+        {
+            publish(std::nullopt);
+        }
     }
 
     void EditorRenderCache::QueueRemoteImage(std::string source)
@@ -302,9 +539,12 @@ namespace winrt::ElMd
 
         std::shared_ptr<std::vector<std::uint8_t>> encodedBacking;
         std::shared_ptr<GifInitialFrame const> gifInitial;
-        auto gifCandidate = !encoded.empty() ? HasGifMagic(encoded) : HasGifExtension(path);
+        auto gifCandidate = !encoded.empty()
+            ? HasGifMagic(encoded)
+            : HasGifExtension(path) || ProbeGifDimensions(baseDirectory, source).has_value();
         if (gifCandidate)
         {
+            gifDimensionMisses.erase(key);
             auto pending = pendingGifImages.find(key);
             if (pending == pendingGifImages.end())
             {
@@ -443,6 +683,20 @@ namespace winrt::ElMd
             rasterImageBytes += image.bytes;
             rasterImageOrder.push_back(key);
             rasterImages.emplace(key, image);
+        }
+        if (gifCandidate)
+        {
+            if (!gifDimensions.contains(key))
+            {
+                constexpr std::size_t dimensionLimit = 1024;
+                while (gifDimensionOrder.size() >= dimensionLimit)
+                {
+                    gifDimensions.erase(gifDimensionOrder.front());
+                    gifDimensionOrder.pop_front();
+                }
+                gifDimensionOrder.push_back(key);
+            }
+            gifDimensions.insert_or_assign(key, ImageDimensions{image.width, image.height});
         }
         return image;
     }

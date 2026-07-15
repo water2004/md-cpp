@@ -12,7 +12,7 @@ namespace winrt::ElMd
     {
     }
 
-    std::vector<EditorInlineImageRenderer::ImageDraw> EditorInlineImageRenderer::Resolve(IDWriteTextLayout* layout, std::vector<DisplayInlineText::ImageOverlay> const& overlays, float availableWidth) const
+    std::vector<EditorInlineImageRenderer::ImageDraw> EditorInlineImageRenderer::Resolve(IDWriteTextLayout* layout, std::vector<DisplayInlineText::ImageOverlay> const& overlays, float availableWidth, bool loadContent) const
     {
         std::vector<ImageDraw> resolved;
         if (!layout) return resolved;
@@ -24,14 +24,18 @@ namespace winrt::ElMd
             draw.displayStart = overlay.displayStart;
             draw.block = overlay.block;
             draw.source = overlay.source;
-            draw.image = cache.LoadRasterImage(resources, baseDirectory, overlay.source);
+            if (loadContent)
+                draw.image = cache.LoadRasterImage(resources, baseDirectory, overlay.source);
             draw.alt = winrt::to_hstring(overlay.alt.empty() ? std::string("image") : overlay.alt).c_str();
-            if (draw.image)
+            auto dimensions = draw.image
+                ? std::optional(EditorRenderCache::ImageDimensions{draw.image->width, draw.image->height})
+                : cache.ProbeGifDimensions(baseDirectory, overlay.source);
+            if (dimensions)
             {
-                draw.width = overlay.width.value_or(draw.image->width);
-                draw.height = overlay.height.value_or(draw.image->height);
-                if (overlay.width && !overlay.height) draw.height = draw.image->height * draw.width / draw.image->width;
-                if (!overlay.width && overlay.height) draw.width = draw.image->width * draw.height / draw.image->height;
+                draw.width = overlay.width.value_or(dimensions->width);
+                draw.height = overlay.height.value_or(dimensions->height);
+                if (overlay.width && !overlay.height) draw.height = dimensions->height * draw.width / dimensions->width;
+                if (!overlay.width && overlay.height) draw.width = dimensions->width * draw.height / dimensions->height;
                 auto scale = (std::min)(1.0f, (std::min)((std::max)(48.0f, availableWidth * 0.75f) / draw.width, 240.0f / draw.height));
                 draw.width = (std::max)(1.0f, draw.width * scale);
                 draw.height = (std::max)(styleSheet.body.lineHeight, draw.height * scale);
