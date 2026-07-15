@@ -99,6 +99,15 @@
     <ClCompile Include="..\core\editing\document_input_rules.ixx">
       <Filter>Core Modules\Editing</Filter>
     </ClCompile>
+    <ClCompile Include="..\core\editing\document_input_syntax.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\document_list_input.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\document_block_input.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
     <ClCompile Include="..\core\editing\document_source_edit.ixx">
       <Filter>Core Modules\Editing</Filter>
     </ClCompile>
