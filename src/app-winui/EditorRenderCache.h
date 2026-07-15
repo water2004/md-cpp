@@ -6,25 +6,14 @@
 
 namespace winrt::ElMd
 {
+    struct DecodedGifAnimation;
+
     struct EditorRenderCache
     {
         struct RasterImage
         {
-            struct Frame
-            {
-                ::Microsoft::WRL::ComPtr<ID2D1Bitmap1> bitmap;
-                std::chrono::milliseconds duration{100};
-            };
-
-            struct Animation
-            {
-                std::vector<Frame> frames;
-                std::chrono::milliseconds cycle{0};
-                std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
-            };
-
             ::Microsoft::WRL::ComPtr<ID2D1Bitmap1> bitmap;
-            std::shared_ptr<Animation> animation;
+            std::shared_ptr<DecodedGifAnimation> animation;
             float width = 0.0f;
             float height = 0.0f;
             std::size_t bytes = 0;

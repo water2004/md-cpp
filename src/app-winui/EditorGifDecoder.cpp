@@ -94,6 +94,12 @@ namespace
         return pixel;
     }
 
+    void FillCanvas(std::vector<std::uint8_t>& canvas, std::array<std::uint8_t, 4> const& pixel)
+    {
+        for (auto offset = std::size_t{0}; offset < canvas.size(); offset += 4)
+            std::copy(pixel.begin(), pixel.end(), canvas.begin() + offset);
+    }
+
     void FillRect(
         std::vector<std::uint8_t>& canvas,
         UINT canvasWidth,
@@ -151,65 +157,42 @@ namespace
 
 namespace winrt::ElMd
 {
-    std::optional<DecodedGifAnimation> DecodeGifAnimation(
-        IWICImagingFactory* factory,
-        ID2D1DeviceContext* context,
-        IWICBitmapDecoder* decoder,
-        std::size_t decodedByteBudget)
+    struct DecodedGifAnimation::State
     {
-        if (!factory || !context || !decoder) return std::nullopt;
-        GUID containerFormat{};
-        UINT frameCount = 0;
-        if (FAILED(decoder->GetContainerFormat(&containerFormat))
-            || !IsEqualGUID(containerFormat, GUID_ContainerFormatGif)
-            || FAILED(decoder->GetFrameCount(&frameCount))
-            || frameCount < 2
-            || frameCount > 256) return std::nullopt;
+        struct Frame
+        {
+            GifFrameInfo info;
+            std::chrono::milliseconds duration{100};
+            std::chrono::milliseconds boundary{0};
+        };
 
-        ::Microsoft::WRL::ComPtr<IWICMetadataQueryReader> decoderMetadata;
-        decoder->GetMetadataQueryReader(decoderMetadata.GetAddressOf());
-        auto canvasWidth = MetadataUnsigned(decoderMetadata.Get(), L"/logscrdesc/Width").value_or(0);
-        auto canvasHeight = MetadataUnsigned(decoderMetadata.Get(), L"/logscrdesc/Height").value_or(0);
-        ::Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> firstRawFrame;
-        if (FAILED(decoder->GetFrame(0, firstRawFrame.GetAddressOf())) || !firstRawFrame) return std::nullopt;
-        auto firstInfo = ReadFrameInfo(firstRawFrame.Get());
-        if (canvasWidth == 0) canvasWidth = firstInfo.left + firstInfo.width;
-        if (canvasHeight == 0) canvasHeight = firstInfo.top + firstInfo.height;
-        auto canvasPixels = static_cast<std::uint64_t>(canvasWidth) * canvasHeight;
-        auto canvasBytes = canvasPixels * 4ull;
-        if (canvasWidth == 0 || canvasHeight == 0
-            || canvasPixels > 16ull * 1024ull * 1024ull
-            || canvasBytes * frameCount > decodedByteBudget) return std::nullopt;
-
-        auto background = BackgroundPixel(factory, decoder, firstInfo);
-        std::vector<std::uint8_t> canvas(static_cast<std::size_t>(canvasBytes));
-        for (auto offset = std::size_t{0}; offset < canvas.size(); offset += 4)
-            std::copy(background.begin(), background.end(), canvas.begin() + offset);
+        ::Microsoft::WRL::ComPtr<IWICImagingFactory> factory;
+        ::Microsoft::WRL::ComPtr<IWICBitmapDecoder> decoder;
+        ::Microsoft::WRL::ComPtr<ID2D1Bitmap1> bitmap;
+        std::shared_ptr<std::vector<std::uint8_t> const> encodedBacking;
+        std::vector<Frame> frames;
+        std::vector<std::uint8_t> canvas;
         std::vector<std::uint8_t> restoreCanvas;
-        GifFrameInfo previousInfo;
-        DecodedGifAnimation result;
-        result.width = canvasWidth;
-        result.height = canvasHeight;
-        result.bytes = static_cast<std::size_t>(canvasBytes * frameCount);
-        result.frames.reserve(frameCount);
-        D2D1_BITMAP_PROPERTIES1 properties = D2D1::BitmapProperties1(
-            D2D1_BITMAP_OPTIONS_NONE,
-            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
-            96.0f,
-            96.0f);
+        std::array<std::uint8_t, 4> background{};
+        std::chrono::milliseconds cycle{0};
+        std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+        std::uint64_t currentCycle = 0;
+        std::size_t currentFrame = 0;
+        std::size_t memoryCost = 0;
+        UINT width = 0;
+        UINT height = 0;
+        bool failed = false;
 
-        for (UINT index = 0; index < frameCount; ++index)
+        bool DecodeAndComposite(std::size_t index)
         {
             ::Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> frame;
-            if (FAILED(decoder->GetFrame(index, frame.GetAddressOf())) || !frame) return std::nullopt;
-            auto info = ReadFrameInfo(frame.Get());
-            if (info.width == 0 || info.height == 0
-                || info.left >= canvasWidth || info.top >= canvasHeight
-                || static_cast<std::uint64_t>(info.width) * info.height > 16ull * 1024ull * 1024ull)
-                return std::nullopt;
-            ::Microsoft::WRL::ComPtr<IWICFormatConverter> converter;
+            if (index >= frames.size()
+                || FAILED(decoder->GetFrame(static_cast<UINT>(index), frame.GetAddressOf()))
+                || !frame) return false;
+            auto const& info = frames[index].info;
             auto stride = info.width * 4u;
-            std::vector<std::uint8_t> framePixels(static_cast<std::size_t>(stride) * info.height);
+            std::vector<std::uint8_t> pixels(static_cast<std::size_t>(stride) * info.height);
+            ::Microsoft::WRL::ComPtr<IWICFormatConverter> converter;
             if (FAILED(factory->CreateFormatConverter(converter.GetAddressOf()))
                 || FAILED(converter->Initialize(
                     frame.Get(),
@@ -221,31 +204,161 @@ namespace winrt::ElMd
                 || FAILED(converter->CopyPixels(
                     nullptr,
                     stride,
-                    static_cast<UINT>(framePixels.size()),
-                    framePixels.data()))) return std::nullopt;
-
-            if (index > 0)
-            {
-                if (previousInfo.disposal == 2) FillRect(canvas, canvasWidth, canvasHeight, previousInfo, background);
-                else if (previousInfo.disposal == 3 && restoreCanvas.size() == canvas.size()) canvas = restoreCanvas;
-                restoreCanvas.clear();
-            }
-            if (info.disposal == 3) restoreCanvas = canvas;
-            CompositeFrame(canvas, canvasWidth, canvasHeight, info, framePixels);
-
-            DecodedGifAnimation::Frame decoded;
-            decoded.duration = FrameDelay(frame.Get());
-            if (FAILED(context->CreateBitmap(
-                    D2D1::SizeU(canvasWidth, canvasHeight),
-                    canvas.data(),
-                    canvasWidth * 4u,
-                    &properties,
-                    decoded.bitmap.GetAddressOf())) || !decoded.bitmap) return std::nullopt;
-            result.cycle += decoded.duration;
-            result.frames.push_back(std::move(decoded));
-            previousInfo = info;
+                    static_cast<UINT>(pixels.size()),
+                    pixels.data()))) return false;
+            CompositeFrame(canvas, width, height, info, pixels);
+            return true;
         }
-        if (result.frames.size() != frameCount || result.cycle.count() <= 0) return std::nullopt;
-        return result;
+
+        bool AdvanceOne()
+        {
+            if (currentFrame + 1 >= frames.size()) return false;
+            auto const& previous = frames[currentFrame].info;
+            if (previous.disposal == 2) FillRect(canvas, width, height, previous, background);
+            else if (previous.disposal == 3 && restoreCanvas.size() == canvas.size()) canvas = restoreCanvas;
+            restoreCanvas.clear();
+            ++currentFrame;
+            if (frames[currentFrame].info.disposal == 3) restoreCanvas = canvas;
+            return DecodeAndComposite(currentFrame);
+        }
+
+        bool ResetTo(std::size_t target)
+        {
+            FillCanvas(canvas, background);
+            restoreCanvas.clear();
+            currentFrame = 0;
+            if (frames.front().info.disposal == 3) restoreCanvas = canvas;
+            if (!DecodeAndComposite(0)) return false;
+            while (currentFrame < target)
+                if (!AdvanceOne()) return false;
+            return true;
+        }
+
+        bool Upload()
+        {
+            return bitmap && SUCCEEDED(bitmap->CopyFromMemory(nullptr, canvas.data(), width * 4u));
+        }
+    };
+
+    DecodedGifAnimation::DecodedGifAnimation(std::shared_ptr<State> value)
+        : state(std::move(value))
+    {
+    }
+
+    ID2D1Bitmap1* DecodedGifAnimation::CurrentBitmap(std::chrono::milliseconds& untilNextFrame)
+    {
+        untilNextFrame = std::chrono::milliseconds{0};
+        if (!state || state->failed || !state->bitmap || state->frames.size() < 2 || state->cycle.count() <= 0)
+            return state ? state->bitmap.Get() : nullptr;
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - state->started);
+        auto cycleNumber = static_cast<std::uint64_t>(elapsed.count() / state->cycle.count());
+        auto position = std::chrono::milliseconds{elapsed.count() % state->cycle.count()};
+        auto target = std::size_t{0};
+        while (target + 1 < state->frames.size() && position >= state->frames[target].boundary) ++target;
+        untilNextFrame = (std::max)(
+            std::chrono::milliseconds{1},
+            state->frames[target].boundary - position);
+        auto changed = false;
+        if (cycleNumber != state->currentCycle || target < state->currentFrame)
+        {
+            changed = true;
+            state->currentCycle = cycleNumber;
+            if (!state->ResetTo(target)) state->failed = true;
+        }
+        else
+        {
+            while (!state->failed && state->currentFrame < target)
+            {
+                changed = true;
+                if (!state->AdvanceOne()) state->failed = true;
+            }
+        }
+        if (changed && !state->failed && !state->Upload()) state->failed = true;
+        if (state->failed) untilNextFrame = std::chrono::milliseconds{0};
+        return state->bitmap.Get();
+    }
+
+    ::Microsoft::WRL::ComPtr<ID2D1Bitmap1> const& DecodedGifAnimation::Bitmap() const
+    {
+        return state->bitmap;
+    }
+
+    UINT DecodedGifAnimation::Width() const { return state ? state->width : 0; }
+    UINT DecodedGifAnimation::Height() const { return state ? state->height : 0; }
+    std::size_t DecodedGifAnimation::MemoryCost() const { return state ? state->memoryCost : 0; }
+
+    std::shared_ptr<DecodedGifAnimation> DecodeGifAnimation(
+        IWICImagingFactory* factory,
+        ID2D1DeviceContext* context,
+        IWICBitmapDecoder* decoder,
+        std::shared_ptr<std::vector<std::uint8_t> const> encodedBacking,
+        std::size_t runtimeByteBudget)
+    {
+        if (!factory || !context || !decoder) return {};
+        GUID containerFormat{};
+        UINT frameCount = 0;
+        if (FAILED(decoder->GetContainerFormat(&containerFormat))
+            || !IsEqualGUID(containerFormat, GUID_ContainerFormatGif)
+            || FAILED(decoder->GetFrameCount(&frameCount))
+            || frameCount < 2
+            || frameCount > 4096) return {};
+
+        ::Microsoft::WRL::ComPtr<IWICMetadataQueryReader> decoderMetadata;
+        decoder->GetMetadataQueryReader(decoderMetadata.GetAddressOf());
+        auto width = MetadataUnsigned(decoderMetadata.Get(), L"/logscrdesc/Width").value_or(0);
+        auto height = MetadataUnsigned(decoderMetadata.Get(), L"/logscrdesc/Height").value_or(0);
+        ::Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> firstFrame;
+        if (FAILED(decoder->GetFrame(0, firstFrame.GetAddressOf())) || !firstFrame) return {};
+        auto firstInfo = ReadFrameInfo(firstFrame.Get());
+        if (width == 0) width = firstInfo.left + firstInfo.width;
+        if (height == 0) height = firstInfo.top + firstInfo.height;
+        auto canvasPixels = static_cast<std::uint64_t>(width) * height;
+        auto canvasBytes = canvasPixels * 4ull;
+        auto backingBytes = encodedBacking ? encodedBacking->size() : 0;
+        auto runtimeBytes = canvasBytes * 2ull + backingBytes
+            + static_cast<std::uint64_t>(frameCount) * sizeof(DecodedGifAnimation::State::Frame);
+        if (width == 0 || height == 0
+            || canvasPixels > 16ull * 1024ull * 1024ull
+            || runtimeBytes > runtimeByteBudget) return {};
+
+        auto state = std::make_shared<DecodedGifAnimation::State>();
+        state->factory = factory;
+        state->decoder = decoder;
+        state->encodedBacking = std::move(encodedBacking);
+        state->width = width;
+        state->height = height;
+        state->memoryCost = static_cast<std::size_t>(runtimeBytes);
+        state->background = BackgroundPixel(factory, decoder, firstInfo);
+        state->canvas.resize(static_cast<std::size_t>(canvasBytes));
+        state->frames.reserve(frameCount);
+        for (UINT index = 0; index < frameCount; ++index)
+        {
+            ::Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> frame;
+            if (FAILED(decoder->GetFrame(index, frame.GetAddressOf())) || !frame) return {};
+            auto info = ReadFrameInfo(frame.Get());
+            if (info.width == 0 || info.height == 0
+                || info.left >= width || info.top >= height
+                || static_cast<std::uint64_t>(info.width) * info.height > 16ull * 1024ull * 1024ull) return {};
+            auto duration = FrameDelay(frame.Get());
+            state->cycle += duration;
+            state->frames.push_back(DecodedGifAnimation::State::Frame{ info, duration, state->cycle });
+        }
+        FillCanvas(state->canvas, state->background);
+        if (state->frames.front().info.disposal == 3) state->restoreCanvas = state->canvas;
+        if (!state->DecodeAndComposite(0)) return {};
+        D2D1_BITMAP_PROPERTIES1 properties = D2D1::BitmapProperties1(
+            D2D1_BITMAP_OPTIONS_NONE,
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
+            96.0f,
+            96.0f);
+        if (FAILED(context->CreateBitmap(
+                D2D1::SizeU(width, height),
+                state->canvas.data(),
+                width * 4u,
+                &properties,
+                state->bitmap.GetAddressOf())) || !state->bitmap) return {};
+        state->started = std::chrono::steady_clock::now();
+        return std::shared_ptr<DecodedGifAnimation>(new DecodedGifAnimation(std::move(state)));
     }
 }

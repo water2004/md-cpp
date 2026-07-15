@@ -76,29 +76,9 @@ namespace winrt::ElMd
         std::chrono::milliseconds& untilNextFrame) const
     {
         untilNextFrame = std::chrono::milliseconds{0};
-        if (!image.animation || image.animation->frames.size() < 2
-            || image.animation->cycle.count() <= 0)
-        {
-            return image.bitmap.Get();
-        }
-
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - image.animation->started);
-        auto position = elapsed.count() % image.animation->cycle.count();
-        auto boundary = std::int64_t{0};
-        for (auto const& frame : image.animation->frames)
-        {
-            boundary += frame.duration.count();
-            if (position < boundary)
-            {
-                untilNextFrame = std::chrono::milliseconds{(std::max)(
-                    std::int64_t{1},
-                    boundary - position)};
-                return frame.bitmap.Get();
-            }
-        }
-        untilNextFrame = image.animation->frames.front().duration;
-        return image.animation->frames.front().bitmap.Get();
+        return image.animation
+            ? image.animation->CurrentBitmap(untilNextFrame)
+            : image.bitmap.Get();
     }
 
     void EditorRenderCache::RequestAnimationFrame(std::chrono::milliseconds delay)
@@ -284,10 +264,13 @@ namespace winrt::ElMd
 
         ::Microsoft::WRL::ComPtr<IWICBitmapDecoder> decoder;
         ::Microsoft::WRL::ComPtr<IWICStream> stream;
+        std::shared_ptr<std::vector<std::uint8_t>> encodedBacking;
         if (!encoded.empty())
         {
             if (encoded.size() > (std::numeric_limits<DWORD>::max)()) return fail();
-            if (FAILED(resources.wicFactory->CreateStream(stream.GetAddressOf())) || FAILED(stream->InitializeFromMemory(encoded.data(), static_cast<DWORD>(encoded.size())))) return fail();
+            encodedBacking = std::make_shared<std::vector<std::uint8_t>>(std::move(encoded));
+            if (FAILED(resources.wicFactory->CreateStream(stream.GetAddressOf()))
+                || FAILED(stream->InitializeFromMemory(encodedBacking->data(), static_cast<DWORD>(encodedBacking->size())))) return fail();
             if (FAILED(resources.wicFactory->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad, decoder.GetAddressOf()))) return fail();
         }
         else if (FAILED(resources.wicFactory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad, decoder.GetAddressOf()))) return fail();
@@ -296,18 +279,14 @@ namespace winrt::ElMd
                 resources.wicFactory.Get(),
                 resources.d2dContext.Get(),
                 decoder.Get(),
+                encodedBacking,
                 64u * 1024u * 1024u))
         {
-            auto animation = std::make_shared<RasterImage::Animation>();
-            animation->cycle = decoded->cycle;
-            animation->frames.reserve(decoded->frames.size());
-            for (auto& frame : decoded->frames)
-                animation->frames.push_back(RasterImage::Frame{ std::move(frame.bitmap), frame.duration });
-            image.bitmap = animation->frames.front().bitmap;
-            image.animation = std::move(animation);
-            image.width = static_cast<float>(decoded->width);
-            image.height = static_cast<float>(decoded->height);
-            image.bytes = decoded->bytes;
+            image.bitmap = decoded->Bitmap();
+            image.animation = std::move(decoded);
+            image.width = static_cast<float>(image.animation->Width());
+            image.height = static_cast<float>(image.animation->Height());
+            image.bytes = image.animation->MemoryCost();
         }
         else
         {
