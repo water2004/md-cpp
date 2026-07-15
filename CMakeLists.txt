@@ -58,7 +58,7 @@ add_library(elmd_core STATIC)
 target_compile_features(elmd_core PUBLIC cxx_std_23)
 set_target_properties(elmd_core PROPERTIES CXX_MODULE_STD ON)
 
-file(GLOB ELMD_CORE_MODULE CONFIGURE_DEPENDS
+file(GLOB_RECURSE ELMD_CORE_MODULE CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.ixx)
 target_sources(elmd_core PUBLIC
     FILE_SET CXX_MODULES FILES ${ELMD_CORE_MODULE})
@@ -77,9 +77,9 @@ if(WIN32)
         set(ELMD_WINSDK_INC "${_win_sdk_inc}" CACHE PATH "Windows SDK Include dir")
     endif()
 
-    file(GLOB ELMD_PLATFORM_MODULE CONFIGURE_DEPENDS
+    file(GLOB_RECURSE ELMD_PLATFORM_MODULE CONFIGURE_DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/*.ixx)
-    file(GLOB ELMD_PLATFORM_SRC CONFIGURE_DEPENDS
+    file(GLOB_RECURSE ELMD_PLATFORM_SRC CONFIGURE_DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/*.cpp)
 
     if(ELMD_PLATFORM_MODULE OR ELMD_PLATFORM_SRC)

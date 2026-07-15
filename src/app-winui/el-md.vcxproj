@@ -149,148 +149,148 @@
     <Page Include="MainWindow.xaml" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\core\ast.ixx">
+    <ClCompile Include="..\core\model\ast.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\block_source.ixx">
+    <ClCompile Include="..\core\parsing\block_source.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\block_tree.ixx">
+    <ClCompile Include="..\core\model\block_tree.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\callout.ixx">
+    <ClCompile Include="..\core\model\callout.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\command.ixx">
+    <ClCompile Include="..\core\editing\command.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\diagnostics.ixx">
+    <ClCompile Include="..\core\support\diagnostics.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\dialect.ixx">
+    <ClCompile Include="..\core\parsing\dialect.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\document.ixx">
+    <ClCompile Include="..\core\model\document.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\document_edit.ixx">
+    <ClCompile Include="..\core\editing\document_edit.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\document_edit_support.ixx">
+    <ClCompile Include="..\core\editing\document_edit_support.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\document_block_reparse.ixx">
+    <ClCompile Include="..\core\editing\document_block_reparse.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\document_clipboard.ixx">
+    <ClCompile Include="..\core\editing\document_clipboard.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\document_footnotes.ixx">
+    <ClCompile Include="..\core\editing\document_footnotes.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\document_input_rules.ixx">
+    <ClCompile Include="..\core\editing\document_input_rules.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\document_source_edit.ixx">
+    <ClCompile Include="..\core\editing\document_source_edit.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\document_structure_edit.ixx">
+    <ClCompile Include="..\core\editing\document_structure_edit.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\document_transaction.ixx">
+    <ClCompile Include="..\core\editing\document_transaction.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\document_operation_apply.ixx">
+    <ClCompile Include="..\core\editing\document_operation_apply.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\document_history.ixx">
+    <ClCompile Include="..\core\editing\document_history.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\document_symbols.ixx">
+    <ClCompile Include="..\core\query\document_symbols.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\document_text.ixx">
+    <ClCompile Include="..\core\query\document_text.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\editor.ixx">
+    <ClCompile Include="..\core\editing\editor.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\error.ixx">
+    <ClCompile Include="..\core\support\error.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\extension.ixx">
+    <ClCompile Include="..\core\model\extension.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\ids.ixx">
+    <ClCompile Include="..\core\model\ids.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\input.ixx">
+    <ClCompile Include="..\core\editing\input.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\instrumentation.ixx">
+    <ClCompile Include="..\core\support\instrumentation.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\inline_cst.ixx">
+    <ClCompile Include="..\core\model\inline_cst.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\inline_document.ixx">
+    <ClCompile Include="..\core\model\inline_document.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\inline_parser.ixx">
+    <ClCompile Include="..\core\parsing\inline_parser.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\inline_source_edit.ixx">
+    <ClCompile Include="..\core\editing\inline_source_edit.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\layout_plan.ixx">
+    <ClCompile Include="..\core\rendering\layout_plan.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\metadata.ixx">
+    <ClCompile Include="..\core\model\metadata.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\outline.ixx">
+    <ClCompile Include="..\core\query\outline.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\parser.ixx">
+    <ClCompile Include="..\core\parsing\parser.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\render_builder.ixx">
+    <ClCompile Include="..\core\rendering\render_builder.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\render_model.ixx">
+    <ClCompile Include="..\core\rendering\render_model.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\source_style.ixx">
+    <ClCompile Include="..\core\source\source_style.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\source_editor.ixx">
+    <ClCompile Include="..\core\source\source_editor.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\source_render.ixx">
+    <ClCompile Include="..\core\source\source_render.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\selection.ixx">
+    <ClCompile Include="..\core\editing\selection.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\serializer.ixx">
+    <ClCompile Include="..\core\parsing\serializer.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\slug.ixx">
+    <ClCompile Include="..\core\parsing\slug.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\symbols.ixx">
+    <ClCompile Include="..\core\model\symbols.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\theme.ixx">
+    <ClCompile Include="..\core\rendering\theme.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\text_edit.ixx">
+    <ClCompile Include="..\core\editing\text_edit.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\types.ixx">
+    <ClCompile Include="..\core\support\types.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\utf.ixx">
+    <ClCompile Include="..\core\support\utf.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="pch.cpp">
