@@ -351,18 +351,22 @@ suite parser_tests = [] {
 "callout_headers_preserve_exact_markers_and_title_whitespace"_test = [] {
     struct Case {
         std::string source;
+        std::string kind;
         std::optional<std::u32string> title;
     };
     for (const auto& test : std::vector<Case>{
-             {"> [!note]  title  \n> body", U" title  "},
-             {">[!NOTE]title\n> body", U"title"},
-             {"> [!NOTE] \n> body", std::nullopt},
+             {"> [!note]  title  \n> body", "NOTE", U" title  "},
+             {">[!TIP]title\n> body", "TIP", U"title"},
+             {"> [!WARNING] \n> body", "WARNING", std::nullopt},
+             {"> [!caution]\n> body", "CAUTION", std::nullopt},
+             {"> [!IMPORTANT]\n> body", "IMPORTANT", std::nullopt},
          }) {
         const auto parsed = parse_text(1, test.source);
         expect(fatal(bool(parsed.document.root.children.size() == 1u))) << test.source;
         if (parsed.document.root.children.size() != 1) continue;
         const auto& callout = parsed.document.root.children.front();
         expect(fatal(bool(callout.kind == BlockKind::Callout))) << test.source;
+        expect(fatal(bool(callout.callout_kind == test.kind))) << test.source;
         expect(fatal(bool(!callout.opening_marker.empty()))) << test.source;
         expect(fatal(bool(callout.callout_title.has_value() == test.title.has_value()))) << test.source;
         if (test.title && callout.callout_title) {
@@ -370,6 +374,13 @@ suite parser_tests = [] {
             expect_lossless(*callout.callout_title);
         }
         expect(fatal(bool(serialize_markdown(parsed.document) == test.source))) << test.source;
+    }
+
+    const auto unknown = parse_text(1, "> [!CUSTOM] title\n> body");
+    expect(fatal(bool(unknown.document.root.children.size() == 1u)));
+    if (!unknown.document.root.children.empty()) {
+        expect(fatal(bool(unknown.document.root.children.front().kind == BlockKind::BlockQuote)));
+        expect(fatal(bool(serialize_markdown(unknown.document) == "> [!CUSTOM] title\n> body")));
     }
 };
 

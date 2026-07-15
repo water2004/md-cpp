@@ -3,6 +3,7 @@ import std;
 import elmd.core.ast;
 import elmd.core.block_source;
 import elmd.core.block_tree;
+import elmd.core.callout;
 import elmd.core.document;
 import elmd.core.ids;
 import elmd.core.inline_cst;
@@ -192,6 +193,7 @@ inline std::optional<DocumentTransaction> document_toggle_block_quote(const Edit
 }
 
 inline std::optional<DocumentTransaction> document_toggle_callout(const EditorDocument& document, const TextSelection& selection, std::string kind) {
+    kind = normalize_callout_kind(kind).value_or("NOTE");
     auto after = document; document_edit_detail::NodeAllocator allocator(after);
     auto first = selection.anchor.container_id;
     auto last = selection.active.container_id;
@@ -210,7 +212,15 @@ inline std::optional<DocumentTransaction> document_toggle_callout(const EditorDo
         const auto callout_id = parent->children[range->first].id;
         auto* callout = find_block(after.root, callout_id);
         if (!callout) return std::nullopt;
-        if (callout->callout_title) {
+        if (callout->callout_kind != kind) {
+            DocumentTreeEdit update;
+            update.kind = DocumentTreeEditKind::UpdatePayload;
+            update.before = document_transaction_detail::payload_shell(*callout);
+            callout->callout_kind = kind;
+            callout->opening_marker = rewrite_callout_opening_marker(callout->opening_marker, kind);
+            update.after = document_transaction_detail::payload_shell(*callout);
+            operations.emplace_back(std::move(update));
+        } else if (callout->callout_title) {
             const auto child_count = callout->children.size();
             for (std::size_t target_index = 0; target_index < child_count; ++target_index) {
                 parent = block_at_path(after.root, range->parent_path);
@@ -245,7 +255,7 @@ inline std::optional<DocumentTransaction> document_toggle_callout(const EditorDo
         BlockNode callout;
         callout.id = allocator.allocate();
         callout.kind = BlockKind::Callout;
-        callout.callout_kind = std::move(kind);
+        callout.callout_kind = kind;
         if (!document_structure_detail::insert_container_and_move_range(
                 after, *range, std::move(callout), operations)) return std::nullopt;
     }

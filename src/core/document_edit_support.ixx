@@ -559,6 +559,7 @@ inline std::optional<RecordedBlockEdit> exit_empty_flow_container(
         BlockPath candidate(path->begin(), path->begin() + static_cast<std::ptrdiff_t>(depth));
         auto const* ancestor = block_at_path(document.root, candidate);
         if (ancestor && (ancestor->kind == BlockKind::BlockQuote
+            || ancestor->kind == BlockKind::Callout
             || ancestor->kind == BlockKind::FootnoteDefinition)) {
             container_depth = depth;
             break;
@@ -575,9 +576,9 @@ inline std::optional<RecordedBlockEdit> exit_empty_flow_container(
     auto& container = parent->children[container_index];
     const auto child_index = (*path)[*container_depth];
     if (child_index >= container.children.size()) return std::nullopt;
-    // A quote can split around an empty child. A footnote definition is one
-    // semantic item and cannot be duplicated with the same label, so it exits
-    // only from its trailing empty child.
+    // Quotes and callouts can split around an empty child. A footnote
+    // definition is one semantic item and cannot be duplicated with the same
+    // label, so it exits only from its trailing empty child.
     if (container.kind == BlockKind::FootnoteDefinition
         && child_index + 1 != container.children.size()) return std::nullopt;
 
@@ -605,6 +606,12 @@ inline std::optional<RecordedBlockEdit> exit_empty_flow_container(
         if (!current_container) return std::nullopt;
         auto trailing = document_transaction_detail::payload_shell(*current_container);
         trailing.id = allocator.allocate();
+        if (trailing.kind == BlockKind::Callout) {
+            // The source header title belongs only to the leading callout. A
+            // split continuation keeps the alert kind but starts untitled.
+            trailing.callout_title.reset();
+            trailing.opening_marker.clear();
+        }
         trailing_id = trailing.id;
         DocumentTreeEdit insert_trailing;
         insert_trailing.kind = DocumentTreeEditKind::Insert;

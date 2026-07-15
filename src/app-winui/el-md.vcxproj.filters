@@ -19,6 +19,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\core\ast.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\callout.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\caret.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\command.ixx"><Filter>Core Modules</Filter></ClCompile>
     <ClCompile Include="..\core\diagnostics.ixx"><Filter>Core Modules</Filter></ClCompile>

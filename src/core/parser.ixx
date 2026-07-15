@@ -25,6 +25,7 @@ import elmd.core.metadata;
 import elmd.core.symbols;
 import elmd.core.ast;
 import elmd.core.block_source;
+import elmd.core.callout;
 import elmd.core.document;
 import elmd.core.document_symbols;
 import elmd.core.outline;
@@ -1642,6 +1643,8 @@ public:
             }
             if (kind_end == std::u32string::npos) return std::nullopt;
             std::u32string kind = substr_cps_(line, marker_start + 2, kind_end - marker_start - 2);
+            auto normalized_kind = normalize_callout_kind(cps_to_utf8(kind));
+            if (!normalized_kind) return std::nullopt;
             auto title_start = kind_end + 1;
             if (title_start < line.size()
                 && (line[title_start] == U' ' || line[title_start] == U'\t')) ++title_start;
@@ -1655,9 +1658,7 @@ public:
                 value.tree = parse_inline(value.source, inline_parse_context());
                 title = std::move(value);
             }
-            // uppercase kind
-            for (char32_t& c : kind) if (c >= 'a' && c <= 'z') c = static_cast<char32_t>(c - 'a' + 'A');
-            BlockNode b; b.id = NodeId(0); b.kind = BlockKind::Callout; b.callout_kind = cps_to_utf8(kind); b.callout_title = std::move(title);
+            BlockNode b; b.id = NodeId(0); b.kind = BlockKind::Callout; b.callout_kind = *normalized_kind; b.callout_title = std::move(title);
             b.opening_marker = line.substr(0, title_start);
             return b;
         }

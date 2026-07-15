@@ -7,6 +7,7 @@ import elmd.core.ids;
 import elmd.core.dialect;
 import elmd.core.ast;
 import elmd.core.block_source;
+import elmd.core.callout;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
 import elmd.core.selection;
@@ -344,12 +345,15 @@ struct Builder {
             case BlockKind::FootnoteDefinition: {
                 auto rendered = make_flow_container(block, context, parent_indent_columns);
                 std::u32string footnote_marker;
+                std::u32string callout_label;
                 if (block.kind == BlockKind::FootnoteDefinition && !block.footnote_label.empty()) {
                     footnote_marker = footnote_display_label(block.footnote_label) + U". ";
                 }
+                if (block.kind == BlockKind::Callout) {
+                    callout_label = callout_display_label(block.callout_kind);
+                }
                 auto const content_indent = context.indent_columns
                     + (footnote_marker.empty() ? 2u : footnote_marker.size());
-                std::size_t child_start = 0;
                 if (!footnote_marker.empty()) {
                     append_missing_indent(out, owner, 0, context.indent_columns, emitted_columns);
                     InlineRenderItem label;
@@ -362,14 +366,28 @@ struct Builder {
                     label.visibility = MarkerVisibility::Always;
                     out.push_back(std::move(label));
                 }
+                if (!callout_label.empty()) {
+                    append_missing_indent(out, owner, 0, content_indent, emitted_columns);
+                    InlineRenderItem label;
+                    label.kind = InlineRenderItem::Kind::Marker;
+                    label.source_span = {owner, {0, 0}};
+                    label.display_text = callout_label;
+                    label.style.bold = true;
+                    label.marker_role = MarkerRole::Structural;
+                    label.generated_boundary_affinity = TextAffinity::Downstream;
+                    label.visibility = MarkerVisibility::Always;
+                    out.push_back(std::move(label));
+                    if (block.callout_title || !block.children.empty()) {
+                        append_block_break(out, owner, 0);
+                    }
+                }
                 if (block.kind == BlockKind::Callout && block.callout_title) {
-                    append_missing_indent(out, block.id, 0, content_indent, emitted_columns);
+                    append_missing_indent(out, block.id, 0, content_indent, 0);
                     auto title = build_inline_document(*block.callout_title, block.id, InlineStyle::plain());
                     out.insert(out.end(), title.begin(), title.end());
                     if (!block.children.empty()) {
                         append_block_break(out, block.id, block.callout_title->source.size());
                     }
-                    child_start = 1;
                 }
                 for (std::size_t index = 0; index < block.children.size(); ++index) {
                     if (index > 0) {
@@ -381,7 +399,7 @@ struct Builder {
                         out,
                         block.children[index],
                         FlowContext{content_indent},
-                        index == 0 && child_start == 0
+                        index == 0 && callout_label.empty() && !block.callout_title
                             ? !footnote_marker.empty()
                                 ? context.indent_columns + footnote_marker.size()
                                 : emitted_columns

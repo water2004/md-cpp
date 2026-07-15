@@ -683,6 +683,72 @@ suite document_edit_tests = [] {
     expect(fatal(bool(find_block(transaction->after.root, empty_id) == nullptr)));
 };
 
+"enter_on_trailing_empty_callout_line_exits_at_any_ancestor_depth"_test = [] {
+    for (const auto& source : std::vector<std::string>{
+             "> [!TIP]\n> one\n>",
+             "- item\n  > [!WARNING]\n  > one\n  > ",
+         }) {
+        auto document = parse_document(source);
+        const BlockNode* callout = nullptr;
+        walk_blocks(document.root, [&](const BlockNode& node) {
+            if (!callout && node.kind == BlockKind::Callout) callout = &node;
+        });
+        expect(fatal(bool(callout != nullptr))) << source;
+        if (!callout || callout->children.size() < 2) continue;
+        const auto callout_id = callout->id;
+        const auto empty_id = callout->children.back().id;
+        auto transaction = document_enter(
+            document,
+            TextSelection::caret({empty_id, 0, TextAffinity::Downstream}));
+        expect(fatal(bool(transaction.has_value()))) << source;
+        if (!transaction) continue;
+        expect(fatal(bool(find_block(transaction->after.root, empty_id) == nullptr))) << source;
+        const auto* updated = find_block(transaction->after.root, callout_id);
+        expect(fatal(bool(updated != nullptr && updated->kind == BlockKind::Callout))) << source;
+        expect(fatal(bool(updated != nullptr && updated->children.size() == 1u))) << source;
+        const auto* selected = find_block(
+            transaction->after.root,
+            transaction->selection_after.active.container_id);
+        expect(fatal(bool(selected != nullptr && selected->kind == BlockKind::Paragraph))) << source;
+        expect(fatal(bool(selected != nullptr && selected->inline_content.source.empty()))) << source;
+        expect_document_valid(transaction->after);
+    }
+};
+
+"enter_on_middle_empty_callout_line_splits_without_copying_the_title"_test = [] {
+    auto document = parse_document("> [!IMPORTANT] title\n> first\n>\n> last");
+    auto const& callout = document.root.children.front();
+    expect(fatal(bool(callout.kind == BlockKind::Callout)));
+    expect(fatal(bool(callout.children.size() == 2u)));
+    if (callout.children.size() != 2) return;
+    auto opened = document_enter(
+        document,
+        TextSelection::caret({callout.children.front().id, 5, TextAffinity::Downstream}));
+    expect(fatal(bool(opened.has_value())));
+    if (!opened) return;
+    auto const* opened_callout = find_block(opened->after.root, callout.id);
+    expect(fatal(bool(opened_callout != nullptr && opened_callout->children.size() == 3u)));
+    if (!opened_callout || opened_callout->children.size() != 3) return;
+    auto const empty_id = opened_callout->children[1].id;
+    auto transaction = document_enter(
+        opened->after,
+        TextSelection::caret({empty_id, 0, TextAffinity::Downstream}));
+    expect(fatal(bool(transaction.has_value())));
+    if (!transaction) return;
+    expect(fatal(bool(transaction->after.root.children.size() == 3u)));
+    if (transaction->after.root.children.size() != 3) return;
+    auto const& leading = transaction->after.root.children[0];
+    auto const& outside = transaction->after.root.children[1];
+    auto const& trailing = transaction->after.root.children[2];
+    expect(fatal(bool(leading.kind == BlockKind::Callout && leading.callout_title.has_value())));
+    expect(fatal(bool(outside.kind == BlockKind::Paragraph && outside.inline_content.source.empty())));
+    expect(fatal(bool(trailing.kind == BlockKind::Callout && !trailing.callout_title.has_value())));
+    expect(fatal(bool(trailing.callout_kind == "IMPORTANT")));
+    expect(fatal(bool(trailing.children.size() == 1u)));
+    expect(fatal(bool(transaction->selection_after.active.container_id == outside.id)));
+    expect_document_valid(transaction->after);
+};
+
 "enter_on_trailing_empty_footnote_line_exits_the_definition"_test = [] {
     auto document = parse_document("body[^1]\n\n[^1]: first");
     expect(fatal(bool(document.root.children.size() == 2u)));
@@ -1197,6 +1263,28 @@ suite document_edit_tests = [] {
         expect(fatal(bool(callout->after.root.children.front().kind == BlockKind::Callout)));
         expect(fatal(bool(callout->after.root.children.front().children.size() == 2u)));
     }
+};
+
+"callout_command_switches_kind_in_place_and_preserves_header_spacing"_test = [] {
+    auto document = parse_document("> [!note]  title\n> body");
+    auto const callout_id = document.root.children.front().id;
+    auto const body_id = document.root.children.front().children.front().id;
+    auto switched = document_toggle_callout(
+        document,
+        TextSelection::caret({body_id, 0, TextAffinity::Downstream}),
+        "tip");
+    expect(fatal(bool(switched.has_value())));
+    if (!switched) return;
+    auto const* callout = find_block(switched->after.root, callout_id);
+    expect(fatal(bool(callout != nullptr && callout->kind == BlockKind::Callout)));
+    expect(fatal(bool(callout != nullptr && callout->callout_kind == "TIP")));
+    expect(fatal(bool(callout != nullptr && callout->children.size() == 1u)));
+    const auto markdown = serialize_markdown(switched->after);
+    expect(fatal(bool(markdown == "> [!TIP]  title\n> body"))) << markdown;
+    const auto reparsed = parse_document(markdown);
+    expect(fatal(bool(reparsed.root.children.front().kind == BlockKind::Callout)));
+    expect(fatal(bool(reparsed.root.children.front().callout_kind == "TIP")));
+    expect_document_valid(switched->after);
 };
 
 "list_indent_and_outdent_move_existing_nodes"_test = [] {

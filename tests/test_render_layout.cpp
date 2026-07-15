@@ -18,6 +18,7 @@ import elmd.core.render_model;
 import elmd.core.ast;
 import elmd.core.block_source;
 import elmd.core.block_tree;
+import elmd.core.callout;
 import elmd.core.text_measurer;
 import elmd.core.block_layout;
 import elmd.core.hit_test;
@@ -889,6 +890,36 @@ suite render_layout_tests = [] {
             && item.display_text == std::u32string(13, U' ');
     });
     expect(fatal(bool(blank_indent != model.blocks[0].inline_items.end())));
+};
+
+"callout_markers_share_three_visual_categories_and_render_a_generated_label"_test = [] {
+    struct Case {
+        std::string marker;
+        CalloutVisualKind visual;
+        std::u32string label;
+    };
+    for (const auto& test : std::vector<Case>{
+             {"NOTE", CalloutVisualKind::Note, U"Note"},
+             {"IMPORTANT", CalloutVisualKind::Note, U"Important"},
+             {"TIP", CalloutVisualKind::Tip, U"Tip"},
+             {"WARNING", CalloutVisualKind::Warning, U"Warning"},
+             {"CAUTION", CalloutVisualKind::Warning, U"Caution"},
+         }) {
+        expect(fatal(bool(callout_visual_kind(test.marker) == test.visual))) << test.marker;
+        expect(fatal(bool(callout_display_label(test.marker) == test.label))) << test.marker;
+        auto model = build_model("> [!" + test.marker + "]\n> body");
+        expect(fatal(bool(model.blocks.size() == 1u))) << test.marker;
+        if (model.blocks.empty()) continue;
+        expect(fatal(bool(model.blocks.front().kind == RenderBlockKind::Callout))) << test.marker;
+        expect(fatal(bool(model.blocks.front().callout_kind == test.marker))) << test.marker;
+        const auto label = std::ranges::find_if(model.blocks.front().inline_items, [&](auto const& item) {
+            return item.kind == InlineRenderItem::Kind::Marker
+                && item.source_span.source_range.empty()
+                && item.display_text == test.label;
+        });
+        expect(fatal(bool(label != model.blocks.front().inline_items.end()))) << test.marker;
+        if (label != model.blocks.front().inline_items.end()) expect(fatal(bool(label->style.bold)));
+    }
 };
 
 "unified_flow_accumulates_arbitrary_container_depth"_test = [] {
