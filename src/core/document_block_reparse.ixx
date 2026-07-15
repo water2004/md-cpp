@@ -183,7 +183,7 @@ inline std::optional<RecordedBlockEdit> reparse_edited_direct_block(
     // implicit multi-block split command. Enter remains the operation that
     // creates sibling block boundaries.
     const auto exact = parsed.blocks.size() == 1
-        && serializer_detail::serialize_blocks(parsed.blocks) == source;
+        && serializer_detail::serialize_blocks(parsed.blocks).text == source;
     if (!exact || !target) {
         if (!is_raw) return std::nullopt;
         parsed.blocks.clear();

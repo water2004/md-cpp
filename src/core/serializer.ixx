@@ -2,166 +2,291 @@ export module elmd.core.serializer;
 import std;
 import elmd.core.ast;
 import elmd.core.document;
-import elmd.core.utf;
+import elmd.core.ids;
 import elmd.core.instrumentation;
+import elmd.core.text_edit;
+import elmd.core.utf;
 
 export namespace elmd {
 
+struct SerializedSourceMap {
+    NodeId container_id{};
+    // Index i stores the serialized Markdown offset for source offset i.
+    std::vector<std::size_t> source_to_serialized;
+};
+
+struct SerializedMarkdownProjection {
+    std::u32string text;
+    std::vector<SerializedSourceMap> source_maps;
+};
+
+inline std::optional<std::size_t> serialized_offset_for_source_position(
+    const SerializedMarkdownProjection& projection,
+    TextPosition position) {
+    for (const auto& map : projection.source_maps) {
+        if (map.container_id != position.container_id || map.source_to_serialized.empty()) continue;
+        const auto local = (std::min)(position.source_offset, map.source_to_serialized.size() - 1);
+        return map.source_to_serialized[local];
+    }
+    return std::nullopt;
+}
+
+inline std::optional<TextPosition> source_position_for_serialized_offset(
+    const SerializedMarkdownProjection& projection,
+    std::size_t serialized_offset,
+    TextAffinity affinity = TextAffinity::Downstream) {
+    serialized_offset = (std::min)(serialized_offset, projection.text.size());
+    std::optional<TextPosition> preceding;
+    std::optional<TextPosition> following;
+    std::size_t preceding_offset = 0;
+    std::size_t following_offset = (std::numeric_limits<std::size_t>::max)();
+    for (const auto& map : projection.source_maps) {
+        for (std::size_t local = 0; local < map.source_to_serialized.size(); ++local) {
+            const auto projected = map.source_to_serialized[local];
+            const TextPosition candidate{map.container_id, local, affinity};
+            if (projected == serialized_offset) return candidate;
+            if (projected < serialized_offset && (!preceding || projected >= preceding_offset)) {
+                preceding = candidate;
+                preceding_offset = projected;
+            }
+            if (projected > serialized_offset && (!following || projected < following_offset)) {
+                following = candidate;
+                following_offset = projected;
+            }
+        }
+    }
+    return following ? following : preceding;
+}
+
 namespace serializer_detail {
 
-inline std::vector<std::u32string> lines(std::u32string_view value) {
-    std::vector<std::u32string> result;
-    std::size_t start = 0;
-    while (start <= value.size()) {
-        auto end = value.find(U'\n', start);
-        if (end == std::u32string_view::npos) {
-            result.emplace_back(value.substr(start));
-            break;
+struct ProjectedText {
+    std::u32string text;
+    std::vector<SerializedSourceMap> source_maps;
+
+    void append(ProjectedText other) {
+        const auto shift = text.size();
+        text += other.text;
+        for (auto& map : other.source_maps) {
+            for (auto& offset : map.source_to_serialized) offset += shift;
+            source_maps.push_back(std::move(map));
         }
-        result.emplace_back(value.substr(start, end - start));
-        start = end + 1;
+    }
+
+    void append_generated(std::u32string_view value) { text.append(value); }
+};
+
+inline ProjectedText generated(std::u32string value) {
+    ProjectedText result;
+    result.text = std::move(value);
+    return result;
+}
+
+inline ProjectedText source_text(NodeId owner, std::u32string value) {
+    ProjectedText result;
+    result.text = std::move(value);
+    SerializedSourceMap map;
+    map.container_id = owner;
+    map.source_to_serialized.resize(result.text.size() + 1);
+    std::iota(map.source_to_serialized.begin(), map.source_to_serialized.end(), std::size_t{0});
+    result.source_maps.push_back(std::move(map));
+    return result;
+}
+
+inline ProjectedText atomic_text(NodeId owner, std::u32string value) {
+    ProjectedText result;
+    result.text = std::move(value);
+    result.source_maps.push_back({owner, {0, result.text.size()}});
+    return result;
+}
+
+inline std::vector<std::size_t> line_starts(std::u32string_view value) {
+    std::vector<std::size_t> result{0};
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        if (value[index] == U'\n') result.push_back(index + 1);
     }
     return result;
 }
 
-inline std::u32string serialize_block(const BlockNode& block);
-inline std::u32string serialize_blocks(const BlockVec& blocks);
+template <class Prefix>
+inline ProjectedText prefix_lines(ProjectedText input, Prefix&& prefix) {
+    const auto starts = line_starts(input.text);
+    std::vector<std::u32string> prefixes;
+    prefixes.reserve(starts.size());
+    std::vector<std::size_t> cumulative_prefix_sizes(starts.size() + 1, 0);
+    std::size_t inserted = 0;
+    for (std::size_t line = 0; line < starts.size(); ++line) {
+        const auto end = line + 1 < starts.size() ? starts[line + 1] - 1 : input.text.size();
+        prefixes.push_back(prefix(line, input.text.substr(starts[line], end - starts[line])));
+        inserted += prefixes.back().size();
+        cumulative_prefix_sizes[line + 1] = inserted;
+    }
 
-inline std::u32string serialize_list_item_blocks(const BlockVec& blocks) {
-    std::u32string result;
+    ProjectedText result;
+    result.text.reserve(input.text.size() + inserted);
+    std::size_t start_index = 0;
+    for (std::size_t offset = 0; offset <= input.text.size(); ++offset) {
+        while (start_index < starts.size() && starts[start_index] == offset) {
+            result.text += prefixes[start_index++];
+        }
+        if (offset < input.text.size()) result.text.push_back(input.text[offset]);
+    }
+
+    for (auto& map : input.source_maps) {
+        for (auto& offset : map.source_to_serialized) {
+            const auto prefixed_line_count = static_cast<std::size_t>(
+                std::ranges::upper_bound(starts, offset) - starts.begin());
+            offset += cumulative_prefix_sizes[prefixed_line_count];
+        }
+        result.source_maps.push_back(std::move(map));
+    }
+    return result;
+}
+
+inline ProjectedText serialize_block(const BlockNode& block);
+inline ProjectedText serialize_blocks(const BlockVec& blocks);
+
+inline ProjectedText serialize_list_item_blocks(const BlockVec& blocks) {
+    ProjectedText result;
     for (std::size_t index = 0; index < blocks.size(); ++index) {
         if (index > 0) {
-            const auto nested = blocks[index].kind == BlockKind::List || blocks[index].kind == BlockKind::TaskList;
-            result += nested ? U"\n" : U"\n\n";
+            const auto nested = blocks[index].kind == BlockKind::List
+                || blocks[index].kind == BlockKind::TaskList;
+            result.append_generated(nested ? U"\n" : U"\n\n");
         }
-        result += serialize_block(blocks[index]);
+        result.append(serialize_block(blocks[index]));
     }
     return result;
 }
 
-inline std::u32string indent_continuation(std::u32string_view value, std::size_t width) {
-    auto source_lines = lines(value);
-    std::u32string result;
-    const std::u32string indent(width, U' ');
-    for (std::size_t index = 0; index < source_lines.size(); ++index) {
-        if (index > 0) result += U"\n" + indent;
-        result += source_lines[index];
-    }
-    return result;
+inline ProjectedText indent_continuation(ProjectedText value, std::size_t width) {
+    return prefix_lines(std::move(value), [width](std::size_t line, std::u32string_view) {
+        return line == 0 ? std::u32string{} : std::u32string(width, U' ');
+    });
 }
 
-inline std::u32string serialize_footnote_definition(const BlockNode& block) {
-    const auto body = serialize_blocks(block.children);
+inline ProjectedText serialize_footnote_definition(const BlockNode& block) {
+    auto body = serialize_blocks(block.children);
     const auto marker = block.opening_marker.empty()
         ? U"[^" + utf8_to_cps(block.footnote_label) + U"]: "
         : block.opening_marker;
-    if (body.empty()) return marker;
-
-    const auto body_lines = lines(body);
-    std::u32string result = marker + body_lines.front();
-    for (std::size_t index = 1; index < body_lines.size(); ++index) {
-        result.push_back(U'\n');
-        if (!body_lines[index].empty()) result += U"    ";
-        result += body_lines[index];
-    }
+    if (body.text.empty()) return generated(marker);
+    body = prefix_lines(std::move(body), [](std::size_t line, std::u32string_view text) {
+        return line > 0 && !text.empty() ? std::u32string(4, U' ') : std::u32string{};
+    });
+    auto result = generated(marker);
+    result.append(std::move(body));
     return result;
 }
 
-inline std::u32string serialize_list(const BlockNode& block) {
-    std::u32string result;
-    const auto count = block.children.size();
-    for (std::size_t index = 0; index < count; ++index) {
+inline ProjectedText serialize_list(const BlockNode& block) {
+    ProjectedText result;
+    for (std::size_t index = 0; index < block.children.size(); ++index) {
         const auto& item = block.children[index];
         auto marker = item.marker;
-        if (marker.empty() && item.kind == BlockKind::TaskListItem) marker = item.checked ? U"- [x] " : U"- [ ] ";
-        else if (marker.empty() && block.list_ordered) marker = utf8_to_cps(std::to_string(block.list_start + index)) + std::u32string(1, block.list_delimiter) + U" ";
-        else if (marker.empty()) marker = U"- ";
-        auto body = serialize_list_item_blocks(item.children);
-        result += marker + indent_continuation(body, marker.size());
-        if (index + 1 < count) result += U"\n";
+        if (marker.empty() && item.kind == BlockKind::TaskListItem) {
+            marker = item.checked ? U"- [x] " : U"- [ ] ";
+        } else if (marker.empty() && block.list_ordered) {
+            marker = utf8_to_cps(std::to_string(block.list_start + index))
+                + std::u32string(1, block.list_delimiter) + U" ";
+        } else if (marker.empty()) {
+            marker = U"- ";
+        }
+        result.append_generated(marker);
+        result.append(indent_continuation(serialize_list_item_blocks(item.children), marker.size()));
+        if (index + 1 < block.children.size()) result.append_generated(U"\n");
     }
     return result;
 }
 
-inline std::u32string serialize_table_row(const BlockNode& row) {
-    std::u32string result = U"|";
-    for (const auto& cell : row.children) result += U" " + cell.inline_content.source + U" |";
+inline ProjectedText serialize_table_row(const BlockNode& row) {
+    auto result = generated(U"|");
+    for (const auto& cell : row.children) {
+        result.append_generated(U" ");
+        result.append(source_text(cell.id, cell.inline_content.source));
+        result.append_generated(U" |");
+    }
     return result;
 }
 
-inline std::u32string serialize_block(const BlockNode& block) {
+inline ProjectedText serialize_block(const BlockNode& block) {
     switch (block.kind) {
         case BlockKind::Paragraph:
-            return block.inline_content.source;
-        case BlockKind::Heading:
-            if (!block.opening_marker.empty() || !block.closing_marker.empty()) {
-                return block.opening_marker + block.inline_content.source + block.closing_marker;
-            }
-            return std::u32string(block.level == 0 ? 1 : block.level, U'#') + U" " + block.inline_content.source;
-        case BlockKind::BlockQuote: {
-            auto body = serialize_blocks(block.children);
-            auto source_lines = lines(body);
-            std::u32string result;
-            for (std::size_t index = 0; index < source_lines.size(); ++index) {
-                if (index > 0) result += U"\n";
-                result += source_lines[index].empty() ? U">" : U"> " + source_lines[index];
-            }
+            return source_text(block.id, block.inline_content.source);
+        case BlockKind::Heading: {
+            auto result = generated(!block.opening_marker.empty() || !block.closing_marker.empty()
+                ? block.opening_marker
+                : std::u32string(block.level == 0 ? 1 : block.level, U'#') + U" ");
+            result.append(source_text(block.id, block.inline_content.source));
+            result.append_generated(block.closing_marker);
             return result;
         }
+        case BlockKind::BlockQuote:
+            return prefix_lines(serialize_blocks(block.children), [](std::size_t, std::u32string_view line) {
+                return line.empty() ? std::u32string(U">") : std::u32string(U"> ");
+            });
         case BlockKind::List:
         case BlockKind::TaskList:
             return serialize_list(block);
         case BlockKind::CodeBlock:
         case BlockKind::MathBlock:
-            return block.block_source.source;
+            return source_text(block.id, block.block_source.source);
         case BlockKind::Table: {
             if (block.children.empty()) return {};
-            std::u32string result = serialize_table_row(block.children.front()) + U"\n|";
+            auto result = serialize_table_row(block.children.front());
+            result.append_generated(U"\n|");
             for (std::size_t index = 0; index < block.children.front().children.size(); ++index) {
-                auto alignment = index < block.table_aligns.size() ? block.table_aligns[index] : TableAlignment::None;
-                if (alignment == TableAlignment::Left) result += U" :--- |";
-                else if (alignment == TableAlignment::Center) result += U" :---: |";
-                else if (alignment == TableAlignment::Right) result += U" ---: |";
-                else result += U" --- |";
+                const auto alignment = index < block.table_aligns.size()
+                    ? block.table_aligns[index] : TableAlignment::None;
+                if (alignment == TableAlignment::Left) result.append_generated(U" :--- |");
+                else if (alignment == TableAlignment::Center) result.append_generated(U" :---: |");
+                else if (alignment == TableAlignment::Right) result.append_generated(U" ---: |");
+                else result.append_generated(U" --- |");
             }
-            for (std::size_t index = 1; index < block.children.size(); ++index) result += U"\n" + serialize_table_row(block.children[index]);
+            for (std::size_t index = 1; index < block.children.size(); ++index) {
+                result.append_generated(U"\n");
+                result.append(serialize_table_row(block.children[index]));
+            }
             return result;
         }
         case BlockKind::ImageBlock: {
-            auto result = U"![" + utf8_to_cps(block.image_alt) + U"](" + utf8_to_cps(block.src);
-            if (block.image_title) result += U" \"" + utf8_to_cps(*block.image_title) + U"\"";
-            return result + U")";
+            auto value = U"![" + utf8_to_cps(block.image_alt) + U"](" + utf8_to_cps(block.src);
+            if (block.image_title) value += U" \"" + utf8_to_cps(*block.image_title) + U"\"";
+            return atomic_text(block.id, value + U")");
         }
         case BlockKind::Callout: {
-            std::u32string first = block.opening_marker.empty()
+            auto first = block.opening_marker.empty()
                 ? U"> [!" + utf8_to_cps(block.callout_kind) + U"]"
                 : block.opening_marker;
+            auto result = generated(first);
             if (block.callout_title) {
-                if (block.opening_marker.empty()) first += U" ";
-                first += block.callout_title->source;
+                if (block.opening_marker.empty()) result.append_generated(U" ");
+                result.append(source_text(block.id, block.callout_title->source));
             }
             auto body = serialize_blocks(block.children);
-            if (body.empty()) return first;
-            std::u32string result = first;
-            for (const auto& line : lines(body)) result += U"\n" + (line.empty() ? std::u32string(U">") : U"> " + line);
+            if (!body.text.empty()) {
+                result.append_generated(U"\n");
+                result.append(prefix_lines(std::move(body), [](std::size_t, std::u32string_view line) {
+                    return line.empty() ? std::u32string(U">") : std::u32string(U"> ");
+                }));
+            }
             return result;
         }
-        case BlockKind::FootnoteDefinition: {
+        case BlockKind::FootnoteDefinition:
             return serialize_footnote_definition(block);
-        }
         case BlockKind::Toc:
-            return block.toc_marker == TocMarkerKind::WikiToc ? U"[[TOC]]" : U"[TOC]";
+            return atomic_text(block.id, block.toc_marker == TocMarkerKind::WikiToc ? U"[[TOC]]" : U"[TOC]");
         case BlockKind::Frontmatter: {
-            std::u32string marker = block.fmt == FrontmatterFormat::Toml ? U"+++" : U"---";
-            return marker + U"\n" + utf8_to_cps(block.raw) + U"\n" + marker;
+            const std::u32string marker = block.fmt == FrontmatterFormat::Toml ? U"+++" : U"---";
+            return atomic_text(block.id, marker + U"\n" + utf8_to_cps(block.raw) + U"\n" + marker);
         }
         case BlockKind::ThematicBreak:
-            return U"---";
+            return atomic_text(block.id, U"---");
         case BlockKind::LinkDefinition:
         case BlockKind::UnsupportedMarkup:
-            return utf8_to_cps(block.raw);
+            return atomic_text(block.id, utf8_to_cps(block.raw));
         case BlockKind::Extension:
-            return U"[ext:" + utf8_to_cps(block.ext_name) + U"]";
+            return atomic_text(block.id, U"[ext:" + utf8_to_cps(block.ext_name) + U"]");
         case BlockKind::Document:
             return serialize_blocks(block.children);
         case BlockKind::ListItem:
@@ -170,7 +295,7 @@ inline std::u32string serialize_block(const BlockNode& block) {
         case BlockKind::TableRow:
             return serialize_table_row(block);
         case BlockKind::TableCell:
-            return block.inline_content.source;
+            return source_text(block.id, block.inline_content.source);
     }
     return {};
 }
@@ -183,39 +308,48 @@ inline std::u32string block_separator(const BlockNode& previous, const BlockNode
     if (current.separator_before) return *current.separator_before;
     if (is_empty_paragraph(previous)) return U"\n";
     const auto serialized = serialize_block(previous);
-    if (!serialized.empty() && serialized.back() == U'\n') return U"\n";
+    if (!serialized.text.empty() && serialized.text.back() == U'\n') return U"\n";
     return U"\n\n";
 }
 
-inline std::u32string serialize_blocks(const BlockVec& blocks) {
-    std::u32string result;
+inline ProjectedText serialize_blocks(const BlockVec& blocks) {
+    ProjectedText result;
     for (std::size_t index = 0; index < blocks.size(); ++index) {
-        if (index > 0) result += block_separator(blocks[index - 1], blocks[index]);
-        result += serialize_block(blocks[index]);
+        if (index > 0) result.append_generated(block_separator(blocks[index - 1], blocks[index]));
+        result.append(serialize_block(blocks[index]));
     }
     return result;
 }
 
-
+inline SerializedMarkdownProjection finish(ProjectedText projected) {
+    return {std::move(projected.text), std::move(projected.source_maps)};
 }
+
+}  // namespace serializer_detail
 
 // Serialize an already-structured Markdown fragment without treating it as a
 // complete-document save. Clipboard copy and local block reparse use this
 // path so normal editing never increments the full-document serialization
 // counter or invents a trailing newline owned by the document.
 inline std::u32string serialize_markdown_fragment(const BlockVec& blocks) {
-    return serializer_detail::serialize_blocks(blocks);
+    return serializer_detail::serialize_blocks(blocks).text;
+}
+
+inline SerializedMarkdownProjection serialize_markdown_projection(const EditorDocument& document) {
+    record_full_document_serialization();
+    auto projected = serializer_detail::serialize_blocks(document.root.children);
+    if (document.trailing_newline && (projected.text.empty() || projected.text.back() != U'\n')) {
+        projected.append_generated(U"\n");
+    }
+    return serializer_detail::finish(std::move(projected));
 }
 
 inline std::u32string serialize_markdown_cps(const EditorDocument& document) {
-    record_full_document_serialization();
-    auto result = serializer_detail::serialize_blocks(document.root.children);
-    if (document.trailing_newline && (result.empty() || result.back() != U'\n')) result.push_back(U'\n');
-    return result;
+    return serialize_markdown_projection(document).text;
 }
 
 inline std::string serialize_markdown(const EditorDocument& document) {
     return cps_to_utf8(serialize_markdown_cps(document));
 }
 
-}
+}  // namespace elmd

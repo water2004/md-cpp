@@ -6,6 +6,7 @@ import elmd.core.document_text;
 import elmd.core.document_footnotes;
 import elmd.core.render_builder;
 import elmd.core.render_model;
+import elmd.core.serializer;
 import elmd.core.source_editor;
 import elmd.core.source_render;
 import elmd.core.utf;
@@ -92,67 +93,26 @@ namespace winrt::ElMd
             std::u32string text;
         };
 
-        // Mode switches are the only place where a rich block-local position
-        // needs to be associated with the serialized Markdown source. This is
-        // deliberately a boundary projection, never editor state.
+        // Mode switches consume the serializer's exact source-boundary map.
+        // This remains a boundary projection and never becomes editor state.
         struct SerializedSourceProjection
         {
-            explicit SerializedSourceProjection(elmd::EditorDocument const& document, std::u32string serialized)
-                : text(std::move(serialized)), fragments(elmd::document_text_fragments(document))
-            {
-                std::size_t cursor = 0;
-                locations.reserve(fragments.size());
-                for (auto const& fragment : fragments)
-                {
-                    auto found = fragment.text.empty() ? cursor : text.find(fragment.text, cursor);
-                    if (found == std::u32string::npos)
-                    {
-                        locations.push_back(std::nullopt);
-                        continue;
-                    }
-                    locations.push_back(found);
-                    cursor = found + fragment.text.size();
-                }
-            }
+            explicit SerializedSourceProjection(elmd::SerializedMarkdownProjection value)
+                : projection(std::move(value)) {}
 
             std::size_t SourceOffset(elmd::TextPosition position) const
             {
-                for (std::size_t index = 0; index < fragments.size(); ++index)
-                {
-                    if (fragments[index].container_id != position.container_id || !locations[index]) continue;
-                    return *locations[index] + (std::min)(position.source_offset, fragments[index].text.size());
-                }
-                return (std::min)(position.source_offset, text.size());
+                return elmd::serialized_offset_for_source_position(projection, position)
+                    .value_or((std::min)(position.source_offset, projection.text.size()));
             }
 
             elmd::TextPosition Position(std::size_t sourceOffset, elmd::TextAffinity affinity) const
             {
-                sourceOffset = (std::min)(sourceOffset, text.size());
-                std::optional<elmd::TextPosition> preceding;
-                for (std::size_t index = 0; index < fragments.size(); ++index)
-                {
-                    if (!locations[index]) continue;
-                    auto start = *locations[index];
-                    auto end = start + fragments[index].text.size();
-                    if (sourceOffset >= start && sourceOffset <= end)
-                    {
-                        return {fragments[index].container_id, sourceOffset - start, affinity};
-                    }
-                    if (end < sourceOffset)
-                    {
-                        preceding = elmd::TextPosition{fragments[index].container_id, fragments[index].text.size(), affinity};
-                    }
-                    else if (sourceOffset < start)
-                    {
-                        return {fragments[index].container_id, 0, affinity};
-                    }
-                }
-                return preceding.value_or(elmd::TextPosition{});
+                return elmd::source_position_for_serialized_offset(projection, sourceOffset, affinity)
+                    .value_or(elmd::TextPosition{});
             }
 
-            std::u32string text;
-            std::vector<elmd::DocumentTextFragment> fragments;
-            std::vector<std::optional<std::size_t>> locations;
+            elmd::SerializedMarkdownProjection projection;
         };
 
         bool ExecuteSourceCommand(elmd::SourceEditor& editor, elmd::Command const& command)
@@ -237,15 +197,20 @@ namespace winrt::ElMd
     bool EditorSession::EnterSourceMode()
     {
         if (IsSourceMode()) return false;
-        auto markdown = core_->editor.markdown_cps();
-        SerializedSourceProjection projection(core_->editor.document(), markdown);
+        SerializedSourceProjection projection(elmd::serialize_markdown_projection(core_->editor.document()));
         auto richSelection = core_->editor.selection();
-        core_->sourceEditor.emplace(std::move(markdown));
-        core_->sourceEditor->set_selection({
+        auto sourceSelection = elmd::SourceSelection{
             projection.SourceOffset(richSelection.anchor),
             projection.SourceOffset(richSelection.active),
             richSelection.anchor.affinity,
             richSelection.active.affinity,
+        };
+        core_->sourceEditor.emplace(std::move(projection.projection.text));
+        core_->sourceEditor->set_selection({
+            sourceSelection.anchor,
+            sourceSelection.active,
+            sourceSelection.anchor_affinity,
+            sourceSelection.active_affinity,
         });
         ++revision_;
         RebuildRenderModel();
@@ -260,7 +225,7 @@ namespace winrt::ElMd
         {
             core_->editor = elmd::Editor(elmd::cps_to_utf8(core_->sourceEditor->source()));
         }
-        SerializedSourceProjection projection(core_->editor.document(), core_->editor.markdown_cps());
+        SerializedSourceProjection projection(elmd::serialize_markdown_projection(core_->editor.document()));
         auto anchor = projection.Position(sourceSelection.anchor, sourceSelection.anchor_affinity);
         auto active = projection.Position(sourceSelection.active, sourceSelection.active_affinity);
         core_->sourceEditor.reset();

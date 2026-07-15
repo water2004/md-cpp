@@ -515,7 +515,7 @@ public:
                 const auto serialized = serializer_detail::serialize_block(*b);
                 if (block_end > block_start
                     && cps[block_end - 1] == U'\n'
-                    && (serialized.empty() || serialized.back() != U'\n')) {
+                    && (serialized.text.empty() || serialized.text.back() != U'\n')) {
                     --block_end;
                 }
                 blocks.push_back(std::move(*b));

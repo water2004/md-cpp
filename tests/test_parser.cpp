@@ -8,6 +8,8 @@
 import elmd.core.parser;
 import elmd.core.ast;
 import elmd.core.block_source;
+import elmd.core.block_tree;
+import elmd.core.document_text;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
 import elmd.core.serializer;
@@ -493,6 +495,53 @@ suite parser_tests = [] {
         expect(fatal(bool(saved == source))) << source;
         const auto reloaded = parse_text(2, saved);
         expect(fatal(bool(serialize_markdown(reloaded.document) == source))) << source;
+    }
+};
+
+"serialized_projection_maps_repeated_nested_sources_without_text_search"_test = [] {
+    const std::vector<std::string> sources{
+        "> same\n>\n> same",
+        "[^q]: > same\n    >\n    > - same\n",
+        "> [!note]  same  \n> same",
+        "| same | same |\n| --- | --- |",
+        "```text\nsame\n```",
+        "same\n\nsame\n\nsame",
+    };
+    for (const auto& source : sources) {
+        const auto parsed = parse_text(1, source);
+        const auto projection = serialize_markdown_projection(parsed.document);
+        expect(fatal(projection.text == utf8_to_cps(source))) << source;
+
+        std::vector<std::size_t> nonemptyStarts;
+        walk_blocks(parsed.document.root, [&](const BlockNode& block) {
+            const auto* inlineSource = editable_inline_document(block);
+            const auto* rawSource = editable_raw_block_source(block);
+            const auto* localSource = inlineSource ? &inlineSource->source : rawSource;
+            if (!localSource) return;
+            const auto map = std::ranges::find(
+                projection.source_maps, block.id, &SerializedSourceMap::container_id);
+            expect(fatal(map != projection.source_maps.end()));
+            if (map == projection.source_maps.end()) return;
+            expect(fatal(map->source_to_serialized.size() == localSource->size() + 1));
+            if (!localSource->empty()) nonemptyStarts.push_back(map->source_to_serialized.front());
+            for (std::size_t offset = 0; offset < localSource->size(); ++offset) {
+                expect(fatal(map->source_to_serialized[offset] < projection.text.size()));
+                expect(fatal(projection.text[map->source_to_serialized[offset]] == (*localSource)[offset]));
+                expect(fatal(map->source_to_serialized[offset] < map->source_to_serialized[offset + 1]));
+                const auto serialized = serialized_offset_for_source_position(
+                    projection, {block.id, offset, TextAffinity::Downstream});
+                expect(fatal(serialized.has_value()));
+                if (!serialized) continue;
+                const auto restored = source_position_for_serialized_offset(
+                    projection, *serialized, TextAffinity::Downstream);
+                expect(fatal(restored.has_value()));
+                if (!restored) continue;
+                expect(fatal(restored->container_id == block.id));
+                expect(fatal(restored->source_offset == offset));
+            }
+        });
+        std::ranges::sort(nonemptyStarts);
+        expect(fatal(std::ranges::adjacent_find(nonemptyStarts) == nonemptyStarts.end()));
     }
 };
 
