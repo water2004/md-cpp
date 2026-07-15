@@ -1,63 +1,92 @@
 #include "pch.h"
 #include "MainWindow.xaml.h"
-#include "settings/SettingsDialog.h"
 
 namespace winrt::ElMd::implementation
 {
-    winrt::fire_and_forget MainWindow::ShowSettingsAsync()
+    void MainWindow::SetDocumentCommandsVisible(bool visible)
     {
-        auto lifetime = get_strong();
-        if (settingsOpen) co_return;
-        settingsOpen = true;
-        SettingsButton().IsEnabled(false);
-        struct ResetOpenState
-        {
-            MainWindow& owner;
-            ~ResetOpenState()
-            {
-                owner.settingsOpen = false;
-                owner.SettingsButton().IsEnabled(true);
-            }
-        } resetOpenState{ *this };
+        auto value = visible
+            ? Microsoft::UI::Xaml::Visibility::Visible
+            : Microsoft::UI::Xaml::Visibility::Collapsed;
+        SidebarToggleButton().Visibility(value);
+        OpenButton().Visibility(value);
+        SaveButton().Visibility(value);
+        ExportPdfButton().Visibility(value);
+        FileFormatSeparator().Visibility(value);
+        BoldButton().Visibility(value);
+        ItalicButton().Visibility(value);
+        StrikeButton().Visibility(value);
+        InlineCodeButton().Visibility(value);
+        InlineBlockSeparator().Visibility(value);
+        BlocksButton().Visibility(value);
+        InsertButton().Visibility(value);
+        SettingsSeparator().Visibility(value);
+    }
 
-        try
-        {
-            auto dialog = std::make_shared<winrt::ElMd::SettingsDialog>(
-                appSettings,
-                themeCatalog,
-                CurrentThemeVariant(),
-                WindowHandle());
-            auto accepted = co_await dialog->ShowAsync(Root().XamlRoot());
+    std::optional<winrt::hstring> MainWindow::ApplySettings(winrt::ElMd::AppSettings const& settings)
+    {
+        auto mathChanged = appSettings.mathRenderingEnabled != settings.mathRenderingEnabled;
+        auto themeChanged = appSettings.themeId != settings.themeId;
+        appSettings = settings;
+        auto saveError = winrt::ElMd::SaveAppSettings(appSettings);
+        if (mathChanged) editorRenderer.SetMathRenderingEnabled(appSettings.mathRenderingEnabled);
+        if (themeChanged) UpdateTheme();
+        else if (mathChanged) RenderEditorSurface();
+        if (saveError) SetStatus(*saveError);
+        return saveError;
+    }
 
-            themeCatalog.Refresh();
-            if (accepted)
+    void MainWindow::ToggleSettingsMode()
+    {
+        SetSettingsMode(!settingsMode);
+    }
+
+    void MainWindow::SetSettingsMode(bool enabled)
+    {
+        if (settingsMode == enabled)
+        {
+            SettingsButton().IsChecked(enabled);
+            return;
+        }
+
+        settingsMode = enabled;
+        SettingsButton().IsChecked(enabled);
+        SetDocumentCommandsVisible(!enabled);
+        if (enabled)
+        {
+            documentPaneWasOpen = DocumentNavigation().IsPaneOpen();
+            if (!settingsView)
             {
-                appSettings = dialog->Settings();
-            }
-            else if (appSettings.themeId != "system")
-            {
-                auto selected = std::ranges::find(themeCatalog.Entries(), appSettings.themeId,
-                    [](winrt::ElMd::ThemeEntry const& entry) { return entry.profile.id; });
-                if (selected == themeCatalog.Entries().end()) appSettings.themeId = "system";
-                else co_return;
+                settingsView = std::make_shared<winrt::ElMd::SettingsView>(
+                    appSettings,
+                    themeCatalog,
+                    CurrentThemeVariant(),
+                    WindowHandle(),
+                    [this](winrt::ElMd::AppSettings const& changed) { return ApplySettings(changed); });
+                SettingsViewHost().Children().Append(settingsView->Root());
             }
             else
             {
-                co_return;
+                settingsView->SetSystemVariant(CurrentThemeVariant());
             }
+            settingsView->SetNavigationWidth(themeProfile.layout.navigation_open_width);
 
-            if (auto error = winrt::ElMd::SaveAppSettings(appSettings)) SetStatus(*error);
-            editorRenderer.SetMathRenderingEnabled(appSettings.mathRenderingEnabled);
-            UpdateTheme();
-            RenderEditorSurface();
+            ShellCommandBar().IsOpen(false);
+            DocumentNavigation().Visibility(Microsoft::UI::Xaml::Visibility::Collapsed);
+            SettingsViewHost().Visibility(Microsoft::UI::Xaml::Visibility::Visible);
+            StatusBar().Visibility(Microsoft::UI::Xaml::Visibility::Collapsed);
+            TitleDocumentText().Text(L"Settings");
+            Title(L"el-md - Settings");
+            return;
         }
-        catch (winrt::hresult_error const& error)
-        {
-            SetStatus(L"Unable to open settings: " + error.message());
-        }
-        catch (std::exception const& error)
-        {
-            SetStatus(L"Unable to open settings: " + winrt::to_hstring(error.what()));
-        }
+
+        SettingsViewHost().Visibility(Microsoft::UI::Xaml::Visibility::Collapsed);
+        DocumentNavigation().Visibility(Microsoft::UI::Xaml::Visibility::Visible);
+        DocumentNavigation().IsPaneOpen(documentPaneWasOpen);
+        StatusBar().Visibility(Microsoft::UI::Xaml::Visibility::Visible);
+        Title(L"el-md - " + editorSession.DisplayName());
+        UpdateDocumentInfo();
+        RenderEditorSurface();
+        EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Programmatic);
     }
 }

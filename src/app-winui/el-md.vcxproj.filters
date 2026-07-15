@@ -240,7 +240,7 @@
     <ClCompile Include="settings\AppSettings.cpp">
       <Filter>Settings</Filter>
     </ClCompile>
-    <ClCompile Include="settings\SettingsDialog.cpp">
+    <ClCompile Include="settings\SettingsView.cpp">
       <Filter>Settings</Filter>
     </ClCompile>
     <ClCompile Include="MainWindow.Settings.cpp">
@@ -380,7 +380,7 @@
     <ClInclude Include="settings\AppSettings.h">
       <Filter>Settings</Filter>
     </ClInclude>
-    <ClInclude Include="settings\SettingsDialog.h">
+    <ClInclude Include="settings\SettingsView.h">
       <Filter>Settings</Filter>
     </ClInclude>
     <ClInclude Include="storage\AssetPaths.h">

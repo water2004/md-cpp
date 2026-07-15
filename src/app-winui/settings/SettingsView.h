@@ -5,14 +5,22 @@
 
 namespace winrt::ElMd
 {
-    class SettingsDialog
+    class SettingsView : public std::enable_shared_from_this<SettingsView>
     {
     public:
-        SettingsDialog(AppSettings settings, ThemeCatalog& catalog, elmd::Theme systemVariant, HWND owner);
+        using ApplySettings = std::function<std::optional<winrt::hstring>(AppSettings const&)>;
 
-        winrt::Windows::Foundation::IAsyncOperation<bool> ShowAsync(
-            winrt::Microsoft::UI::Xaml::XamlRoot const& xamlRoot);
-        AppSettings const& Settings() const { return staged_; }
+        SettingsView(
+            AppSettings settings,
+            std::shared_ptr<ThemeCatalog> catalog,
+            elmd::Theme systemVariant,
+            HWND owner,
+            ApplySettings applySettings);
+
+        winrt::Microsoft::UI::Xaml::Controls::NavigationView Root() const { return navigation_; }
+        void SetSystemVariant(elmd::Theme variant);
+        void SetNavigationWidth(double width) { navigation_.OpenPaneLength(width); }
+        void Detach();
 
     private:
         void Build();
@@ -22,15 +30,17 @@ namespace winrt::ElMd
         void Navigate(winrt::hstring const& page);
         void RefreshThemeList();
         void UpdateThemePreview();
+        void ApplyChangedSettings();
+        void SetGeneralStatus(winrt::hstring const& message, bool error = false);
         void SetThemeStatus(winrt::hstring const& message, bool error = false);
         winrt::fire_and_forget ImportThemeAsync();
         void RemoveSelectedTheme();
 
-        AppSettings staged_;
-        ThemeCatalog& catalog_;
+        AppSettings settings_;
+        std::shared_ptr<ThemeCatalog> catalog_;
         elmd::Theme systemVariant_ = elmd::Theme::Dark;
         HWND owner_ = nullptr;
-        winrt::Microsoft::UI::Xaml::Controls::ContentDialog dialog_;
+        ApplySettings applySettings_;
         winrt::Microsoft::UI::Xaml::Controls::NavigationView navigation_;
         winrt::Microsoft::UI::Xaml::UIElement generalPage_{ nullptr };
         winrt::Microsoft::UI::Xaml::UIElement themesPage_{ nullptr };
@@ -39,7 +49,10 @@ namespace winrt::ElMd
         winrt::Microsoft::UI::Xaml::Controls::ListView themeList_;
         winrt::Microsoft::UI::Xaml::Controls::Border themePreview_;
         winrt::Microsoft::UI::Xaml::Controls::Button removeThemeButton_;
+        winrt::Microsoft::UI::Xaml::Controls::TextBlock generalStatus_;
         winrt::Microsoft::UI::Xaml::Controls::TextBlock themeStatus_;
         std::vector<std::string> themeIds_;
+        bool refreshing_ = false;
+        bool detached_ = false;
     };
 }

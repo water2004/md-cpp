@@ -9,6 +9,7 @@
 #include "editor/interaction/EditorDocumentController.h"
 #include "editor/interaction/EditorSidebarController.h"
 #include "settings/AppSettings.h"
+#include "settings/SettingsView.h"
 #include "theme/ThemeCatalog.h"
 #include "theme/ThemeConfig.h"
 #include "MainWindow.g.h"
@@ -29,7 +30,10 @@ namespace winrt::ElMd::implementation
         void UpdateTheme();
         void ApplyShellTheme();
         elmd::Theme CurrentThemeVariant();
-        winrt::fire_and_forget ShowSettingsAsync();
+        void ToggleSettingsMode();
+        void SetSettingsMode(bool enabled);
+        void SetDocumentCommandsVisible(bool visible);
+        std::optional<winrt::hstring> ApplySettings(winrt::ElMd::AppSettings const& settings);
         void RegisterCommandHandlers();
         void ToggleSourceMode();
         void UpdateSourceModeUi();
@@ -54,10 +58,12 @@ namespace winrt::ElMd::implementation
         winrt::ElMd::EditorSidebarController sidebarController;
         winrt::Microsoft::UI::Xaml::Controls::Flyout footnoteFlyout{ nullptr };
         winrt::ElMd::AppSettings appSettings;
-        winrt::ElMd::ThemeCatalog themeCatalog;
+        std::shared_ptr<winrt::ElMd::ThemeCatalog> themeCatalog = std::make_shared<winrt::ElMd::ThemeCatalog>();
+        std::shared_ptr<winrt::ElMd::SettingsView> settingsView;
         elmd::ThemeProfile themeProfile = elmd::default_theme_profile();
         bool updatingTheme = false;
-        bool settingsOpen = false;
+        bool settingsMode = false;
+        bool documentPaneWasOpen = true;
     };
 }
 

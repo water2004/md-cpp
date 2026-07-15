@@ -28,7 +28,7 @@ namespace winrt::ElMd::implementation
         InitializeComponent();
         auto loadedSettings = winrt::ElMd::LoadAppSettings();
         appSettings = std::move(loadedSettings.settings);
-        themeCatalog.Refresh();
+        themeCatalog->Refresh();
         editorRenderer.SetMathRenderingEnabled(appSettings.mathRenderingEnabled);
         ExtendsContentIntoTitleBar(true);
         SetTitleBar(AppTitleBar());
@@ -39,7 +39,7 @@ namespace winrt::ElMd::implementation
         UpdateSourceModeUi();
         UpdateDocumentInfo();
         if (!loadedSettings.diagnostic.empty()) SetStatus(loadedSettings.diagnostic);
-        else if (!themeCatalog.Diagnostics().empty()) SetStatus(themeCatalog.Diagnostics().front());
+        else if (!themeCatalog->Diagnostics().empty()) SetStatus(themeCatalog->Diagnostics().front());
     }
 
     void MainWindow::UpdateDocumentInfo()
@@ -241,6 +241,7 @@ namespace winrt::ElMd::implementation
 
     void MainWindow::RenderEditorSurface()
     {
+        if (settingsMode) return;
         try
         {
             editorRenderer.Render(editorSession.RenderFrame());
@@ -302,8 +303,9 @@ namespace winrt::ElMd::implementation
             ~ResetUpdating() { value = false; }
         } resetUpdating{ updatingTheme };
 
-        themeCatalog.Refresh();
-        auto loaded = themeCatalog.Resolve(appSettings.themeId, CurrentThemeVariant());
+        themeCatalog->Refresh();
+        auto systemVariant = CurrentThemeVariant();
+        auto loaded = themeCatalog->Resolve(appSettings.themeId, systemVariant);
         themeProfile = std::move(loaded.profile);
         using Microsoft::UI::Xaml::ElementTheme;
         if (appSettings.themeId == "system" || themeProfile.variant == elmd::Theme::HighContrast)
@@ -315,6 +317,11 @@ namespace winrt::ElMd::implementation
         ApplyShellTheme();
         editorSession.SetTheme(themeProfile);
         editorRenderer.SetTheme(themeProfile);
+        if (settingsView)
+        {
+            settingsView->SetSystemVariant(systemVariant);
+            settingsView->SetNavigationWidth(themeProfile.layout.navigation_open_width);
+        }
         if (!loaded.diagnostic.empty()) SetStatus(loaded.diagnostic);
         RenderEditorSurface();
     }

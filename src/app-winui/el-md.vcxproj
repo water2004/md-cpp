@@ -117,7 +117,7 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="storage\AssetPaths.h" />
     <ClInclude Include="settings\AppSettings.h" />
-    <ClInclude Include="settings\SettingsDialog.h" />
+    <ClInclude Include="settings\SettingsView.h" />
     <ClInclude Include="theme\ThemeConfig.h" />
     <ClInclude Include="theme\ThemeCatalog.h" />
     <ClInclude Include="editor\session\EditorSession.h" />
@@ -329,7 +329,7 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="settings\AppSettings.cpp" />
-    <ClCompile Include="settings\SettingsDialog.cpp" />
+    <ClCompile Include="settings\SettingsView.cpp" />
     <ClCompile Include="storage\AssetPaths.cpp" />
     <ClCompile Include="theme\ThemeConfig.cpp" />
     <ClCompile Include="theme\ThemeCatalog.cpp" />

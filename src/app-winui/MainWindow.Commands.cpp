@@ -24,7 +24,7 @@ namespace winrt::ElMd::implementation
 
         SettingsButton().Click([this](auto const&, auto const&)
         {
-            ShowSettingsAsync();
+            ToggleSettingsMode();
         });
 
         BoldButton().Click([this](auto const&, auto const&)

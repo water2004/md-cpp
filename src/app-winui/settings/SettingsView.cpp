@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "settings/SettingsDialog.h"
+#include "settings/SettingsView.h"
 
 namespace
 {
@@ -68,30 +68,34 @@ namespace winrt::ElMd
     using namespace Microsoft::UI::Xaml;
     using namespace Microsoft::UI::Xaml::Controls;
 
-    SettingsDialog::SettingsDialog(AppSettings settings, ThemeCatalog& catalog, elmd::Theme systemVariant, HWND owner)
-        : staged_(std::move(settings)), catalog_(catalog), systemVariant_(systemVariant), owner_(owner)
+    SettingsView::SettingsView(
+        AppSettings settings,
+        std::shared_ptr<ThemeCatalog> catalog,
+        elmd::Theme systemVariant,
+        HWND owner,
+        ApplySettings applySettings)
+        : settings_(std::move(settings)),
+          catalog_(std::move(catalog)),
+          systemVariant_(systemVariant),
+          owner_(owner),
+          applySettings_(std::move(applySettings))
     {
         Build();
     }
 
-    void SettingsDialog::Build()
+    void SettingsView::Build()
     {
-        dialog_.Title(box_value(L"Settings"));
-        dialog_.PrimaryButtonText(L"Save");
-        dialog_.CloseButtonText(L"Cancel");
-        dialog_.DefaultButton(ContentDialogButton::Primary);
-        dialog_.MinWidth(820);
-        dialog_.Resources().Insert(box_value(L"ContentDialogMaxWidth"), box_value(920.0));
-
         navigation_.AlwaysShowHeader(false);
         navigation_.CompactPaneLength(0);
         navigation_.IsBackButtonVisible(NavigationViewBackButtonVisible::Collapsed);
         navigation_.IsPaneOpen(true);
         navigation_.IsPaneToggleButtonVisible(false);
         navigation_.IsSettingsVisible(false);
-        navigation_.OpenPaneLength(180);
+        navigation_.OpenPaneLength(280);
+        navigation_.PaneTitle(L"Settings");
         navigation_.PaneDisplayMode(NavigationViewPaneDisplayMode::Left);
-        navigation_.Height(520);
+        navigation_.HorizontalAlignment(HorizontalAlignment::Stretch);
+        navigation_.VerticalAlignment(VerticalAlignment::Stretch);
 
         auto general = NavigationItem(L"General", L"general", L"\xE713");
         auto themes = NavigationItem(L"Themes", L"themes", L"\xE790");
@@ -111,10 +115,9 @@ namespace winrt::ElMd
         });
         navigation_.SelectedItem(general);
         Navigate(L"general");
-        dialog_.Content(navigation_);
     }
 
-    UIElement SettingsDialog::BuildGeneralPage()
+    UIElement SettingsView::BuildGeneralPage()
     {
         auto panel = PagePanel();
         panel.Children().Append(PageHeading(L"General"));
@@ -125,7 +128,13 @@ namespace winrt::ElMd
         mathToggle_.Header(box_value(L"Render mathematical formulas"));
         mathToggle_.OnContent(box_value(L"MathJax service on"));
         mathToggle_.OffContent(box_value(L"Show Markdown source"));
-        mathToggle_.IsOn(staged_.mathRenderingEnabled);
+        mathToggle_.IsOn(settings_.mathRenderingEnabled);
+        mathToggle_.Toggled([this](auto const&, auto const&)
+        {
+            if (refreshing_) return;
+            settings_.mathRenderingEnabled = mathToggle_.IsOn();
+            ApplyChangedSettings();
+        });
         mathCard.Children().Append(mathToggle_);
         mathCard.Children().Append(Text(
             L"When disabled, el-md does not start the QuickJS MathJax worker. Disabling it also interrupts active work and releases the JavaScript runtime."));
@@ -135,13 +144,17 @@ namespace winrt::ElMd
         note.IsOpen(true);
         note.IsClosable(false);
         note.Severity(InfoBarSeverity::Informational);
-        note.Title(L"Changes apply after Save");
-        note.Message(L"Existing formulas immediately switch between rendered output and their Markdown source.");
+        note.Title(L"Changes apply immediately");
+        note.Message(L"Existing formulas switch between rendered output and Markdown source. The choice is saved automatically.");
         panel.Children().Append(note);
-        return panel;
+        generalStatus_.TextWrapping(TextWrapping::Wrap);
+        panel.Children().Append(generalStatus_);
+        ScrollViewer scroller;
+        scroller.Content(panel);
+        return scroller;
     }
 
-    UIElement SettingsDialog::BuildThemesPage()
+    UIElement SettingsView::BuildThemesPage()
     {
         Grid page;
         page.Margin(Thickness{ 24, 18, 24, 24 });
@@ -153,19 +166,34 @@ namespace winrt::ElMd
         page.ColumnDefinitions().Append(listColumn);
         page.ColumnDefinitions().Append(previewColumn);
 
-        StackPanel listPanel;
-        listPanel.Spacing(12);
-        listPanel.Children().Append(PageHeading(L"Themes"));
-        listPanel.Children().Append(Text(L"Choose a built-in theme or import a complete JSON profile."));
+        Grid listPanel;
+        listPanel.RowSpacing(12);
+        for (auto index = 0; index < 5; ++index)
+        {
+            RowDefinition row;
+            row.Height(index == 2
+                ? GridLengthHelper::FromValueAndType(1, GridUnitType::Star)
+                : GridLengthHelper::Auto());
+            listPanel.RowDefinitions().Append(row);
+        }
+        auto heading = PageHeading(L"Themes");
+        Grid::SetRow(heading, 0);
+        listPanel.Children().Append(heading);
+        auto description = Text(L"Choose a built-in theme or import a complete JSON profile.");
+        Grid::SetRow(description, 1);
+        listPanel.Children().Append(description);
         themeList_.SelectionMode(ListViewSelectionMode::Single);
-        themeList_.MinHeight(300);
+        themeList_.MinHeight(220);
         themeList_.SelectionChanged([this](auto const&, SelectionChangedEventArgs const&)
         {
             auto index = themeList_.SelectedIndex();
             if (index < 0 || static_cast<std::size_t>(index) >= themeIds_.size()) return;
-            staged_.themeId = themeIds_[static_cast<std::size_t>(index)];
+            if (refreshing_) return;
+            settings_.themeId = themeIds_[static_cast<std::size_t>(index)];
             UpdateThemePreview();
+            ApplyChangedSettings();
         });
+        Grid::SetRow(themeList_, 2);
         listPanel.Children().Append(themeList_);
 
         StackPanel buttons;
@@ -178,8 +206,10 @@ namespace winrt::ElMd
         removeThemeButton_.Click([this](auto const&, auto const&) { RemoveSelectedTheme(); });
         buttons.Children().Append(importButton);
         buttons.Children().Append(removeThemeButton_);
+        Grid::SetRow(buttons, 3);
         listPanel.Children().Append(buttons);
         themeStatus_.TextWrapping(TextWrapping::Wrap);
+        Grid::SetRow(themeStatus_, 4);
         listPanel.Children().Append(themeStatus_);
         Grid::SetColumn(listPanel, 0);
         page.Children().Append(listPanel);
@@ -192,7 +222,7 @@ namespace winrt::ElMd
         return page;
     }
 
-    UIElement SettingsDialog::BuildAboutPage()
+    UIElement SettingsView::BuildAboutPage()
     {
         auto panel = PagePanel();
         panel.Children().Append(PageHeading(L"About el-md"));
@@ -218,19 +248,23 @@ namespace winrt::ElMd
         auto note = Text(L"Application artwork will be updated when the final icon is provided.");
         note.Opacity(0.7);
         panel.Children().Append(note);
-        return panel;
+        ScrollViewer scroller;
+        scroller.Content(panel);
+        return scroller;
     }
 
-    void SettingsDialog::Navigate(hstring const& page)
+    void SettingsView::Navigate(hstring const& page)
     {
         if (page == L"themes") navigation_.Content(themesPage_);
         else if (page == L"about") navigation_.Content(aboutPage_);
         else navigation_.Content(generalPage_);
     }
 
-    void SettingsDialog::RefreshThemeList()
+    void SettingsView::RefreshThemeList()
     {
-        catalog_.Refresh();
+        refreshing_ = true;
+        struct ResetRefreshing { bool& value; ~ResetRefreshing() { value = false; } } reset{ refreshing_ };
+        catalog_->Refresh();
         themeIds_.clear();
         themeList_.Items().Clear();
 
@@ -252,7 +286,7 @@ namespace winrt::ElMd
         };
 
         append(L"Follow Windows", L"Automatic light, dark, and high contrast", "system");
-        for (auto const& entry : catalog_.Entries())
+        for (auto const& entry : catalog_->Entries())
         {
             append(
                 winrt::to_hstring(entry.profile.name),
@@ -260,10 +294,10 @@ namespace winrt::ElMd
                 entry.profile.id);
         }
 
-        auto found = std::ranges::find(themeIds_, staged_.themeId);
+        auto found = std::ranges::find(themeIds_, settings_.themeId);
         if (found == themeIds_.end())
         {
-            staged_.themeId = "system";
+            settings_.themeId = "system";
             themeList_.SelectedIndex(0);
         }
         else
@@ -273,9 +307,9 @@ namespace winrt::ElMd
         UpdateThemePreview();
     }
 
-    void SettingsDialog::UpdateThemePreview()
+    void SettingsView::UpdateThemePreview()
     {
-        auto resolved = catalog_.Resolve(staged_.themeId, systemVariant_);
+        auto resolved = catalog_->Resolve(settings_.themeId, systemVariant_);
         auto const& profile = resolved.profile;
         auto const& colors = profile.colors;
 
@@ -334,22 +368,30 @@ namespace winrt::ElMd
 
         auto index = themeList_.SelectedIndex();
         auto removable = index > 0
-            && static_cast<std::size_t>(index - 1) < catalog_.Entries().size()
-            && !catalog_.Entries()[static_cast<std::size_t>(index - 1)].builtIn;
+            && static_cast<std::size_t>(index - 1) < catalog_->Entries().size()
+            && !catalog_->Entries()[static_cast<std::size_t>(index - 1)].builtIn;
         removeThemeButton_.IsEnabled(removable);
         if (!resolved.loadedFromFile && !resolved.diagnostic.empty()) SetThemeStatus(resolved.diagnostic, true);
-        else if (!catalog_.Diagnostics().empty()) SetThemeStatus(catalog_.Diagnostics().front(), true);
+        else if (!catalog_->Diagnostics().empty()) SetThemeStatus(catalog_->Diagnostics().front(), true);
         else SetThemeStatus({});
     }
 
-    void SettingsDialog::SetThemeStatus(hstring const& message, bool error)
+    void SettingsView::SetGeneralStatus(hstring const& message, bool error)
+    {
+        generalStatus_.Text(message);
+        generalStatus_.Foreground(error ? Brush({ 196, 43, 28, 255 }) : nullptr);
+    }
+
+    void SettingsView::SetThemeStatus(hstring const& message, bool error)
     {
         themeStatus_.Text(message);
         themeStatus_.Foreground(error ? Brush({ 196, 43, 28, 255 }) : nullptr);
     }
 
-    fire_and_forget SettingsDialog::ImportThemeAsync()
+    fire_and_forget SettingsView::ImportThemeAsync()
     {
+        auto lifetime = shared_from_this();
+        if (detached_) co_return;
         try
         {
             Windows::Storage::Pickers::FileOpenPicker picker;
@@ -358,7 +400,7 @@ namespace winrt::ElMd
             auto initialize = picker.as<::IInitializeWithWindow>();
             check_hresult(initialize->Initialize(owner_));
             auto file = co_await picker.PickSingleFileAsync();
-            if (!file) co_return;
+            if (detached_ || !file) co_return;
             auto parsed = LoadThemeFile(std::filesystem::path(file.Path().c_str()));
             if (!parsed.profile)
             {
@@ -366,46 +408,68 @@ namespace winrt::ElMd
                 co_return;
             }
             auto id = parsed.profile->id;
-            if (auto error = catalog_.Import(std::filesystem::path(file.Path().c_str())))
+            if (auto error = catalog_->Import(std::filesystem::path(file.Path().c_str())))
             {
                 SetThemeStatus(*error, true);
                 co_return;
             }
-            staged_.themeId = std::move(id);
+            settings_.themeId = std::move(id);
             RefreshThemeList();
+            ApplyChangedSettings();
             SetThemeStatus(L"Theme imported");
         }
         catch (hresult_error const& error)
         {
+            if (detached_) co_return;
             SetThemeStatus(L"Unable to import theme: " + error.message(), true);
         }
         catch (std::exception const& error)
         {
+            if (detached_) co_return;
             SetThemeStatus(L"Unable to import theme: " + winrt::to_hstring(error.what()), true);
         }
     }
 
-    void SettingsDialog::RemoveSelectedTheme()
+    void SettingsView::RemoveSelectedTheme()
     {
         auto index = themeList_.SelectedIndex();
         if (index <= 0 || static_cast<std::size_t>(index) >= themeIds_.size()) return;
         auto id = themeIds_[static_cast<std::size_t>(index)];
-        if (auto error = catalog_.Remove(id))
+        if (auto error = catalog_->Remove(id))
         {
             SetThemeStatus(*error, true);
             return;
         }
-        staged_.themeId = "system";
+        auto removedActiveTheme = settings_.themeId == id;
+        if (removedActiveTheme) settings_.themeId = "system";
         RefreshThemeList();
+        if (removedActiveTheme) ApplyChangedSettings();
         SetThemeStatus(L"Custom theme removed");
     }
 
-    Windows::Foundation::IAsyncOperation<bool> SettingsDialog::ShowAsync(XamlRoot const& xamlRoot)
+    void SettingsView::ApplyChangedSettings()
     {
-        dialog_.XamlRoot(xamlRoot);
-        auto result = co_await dialog_.ShowAsync();
-        if (result != ContentDialogResult::Primary) co_return false;
-        staged_.mathRenderingEnabled = mathToggle_.IsOn();
-        co_return true;
+        if (detached_ || !applySettings_) return;
+        if (auto error = applySettings_(settings_))
+        {
+            SetGeneralStatus(*error, true);
+            SetThemeStatus(*error, true);
+            return;
+        }
+        SetGeneralStatus({});
+    }
+
+    void SettingsView::SetSystemVariant(elmd::Theme variant)
+    {
+        if (systemVariant_ == variant) return;
+        systemVariant_ = variant;
+        if (settings_.themeId == "system") UpdateThemePreview();
+    }
+
+    void SettingsView::Detach()
+    {
+        detached_ = true;
+        applySettings_ = {};
+        owner_ = nullptr;
     }
 }

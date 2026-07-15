@@ -75,12 +75,12 @@
             <AppBarButton x:Name="OpenButton" Icon="OpenFile" Label="Open" ToolTipService.ToolTip="Open a Markdown document"/>
             <AppBarButton x:Name="SaveButton" Icon="Save" Label="Save" ToolTipService.ToolTip="Save the current document"/>
             <AppBarButton x:Name="ExportPdfButton" Icon="Print" Label="PDF" ToolTipService.ToolTip="Export with Windows PDF printing"/>
-            <AppBarSeparator/>
+            <AppBarSeparator x:Name="FileFormatSeparator"/>
             <AppBarButton x:Name="BoldButton" Icon="Bold" Label="Bold" ToolTipService.ToolTip="Bold"/>
             <AppBarButton x:Name="ItalicButton" Icon="Italic" Label="Italic" ToolTipService.ToolTip="Italic"/>
             <AppBarButton x:Name="StrikeButton" Label="Strike" ToolTipService.ToolTip="Strikethrough"/>
             <AppBarButton x:Name="InlineCodeButton" Label="Inline Code" ToolTipService.ToolTip="Inline code"/>
-            <AppBarSeparator/>
+            <AppBarSeparator x:Name="InlineBlockSeparator"/>
             <AppBarButton x:Name="BlocksButton" Icon="Bullets" Label="Blocks" ToolTipService.ToolTip="Block structure">
                 <AppBarButton.Flyout>
                     <MenuFlyout>
@@ -118,8 +118,8 @@
                     </MenuFlyout>
                 </AppBarButton.Flyout>
             </AppBarButton>
-            <AppBarSeparator/>
-            <AppBarButton
+            <AppBarSeparator x:Name="SettingsSeparator"/>
+            <AppBarToggleButton
                 x:Name="SettingsButton"
                 Icon="Setting"
                 Label="Settings"
@@ -127,62 +127,64 @@
                 ToolTipService.ToolTip="Settings"/>
         </CommandBar>
 
-        <NavigationView
-            x:Name="DocumentNavigation"
-            Grid.Row="2"
-            AlwaysShowHeader="False"
-            CompactPaneLength="0"
-            IsBackButtonVisible="Collapsed"
-            IsPaneOpen="True"
-            IsPaneToggleButtonVisible="False"
-            IsSettingsVisible="False"
-            IsTitleBarAutoPaddingEnabled="False"
-            OpenPaneLength="280"
-            PaneDisplayMode="Left">
-            <NavigationView.PaneCustomContent>
-                <Grid Padding="8,8,8,8" RowDefinitions="Auto,*">
-                    <TextBlock
-                        Margin="8,4,8,8"
-                        FontWeight="SemiBold"
-                        Text="Outline"/>
-                    <ListView
-                        x:Name="OutlineList"
-                        Grid.Row="1"
-                        Background="Transparent"
-                        SelectionMode="Single"/>
-                </Grid>
-            </NavigationView.PaneCustomContent>
+        <Grid x:Name="WorkspaceHost" Grid.Row="2">
+            <NavigationView
+                x:Name="DocumentNavigation"
+                AlwaysShowHeader="False"
+                CompactPaneLength="0"
+                IsBackButtonVisible="Collapsed"
+                IsPaneOpen="True"
+                IsPaneToggleButtonVisible="False"
+                IsSettingsVisible="False"
+                IsTitleBarAutoPaddingEnabled="False"
+                OpenPaneLength="280"
+                PaneDisplayMode="Left">
+                <NavigationView.PaneCustomContent>
+                    <Grid Padding="8,8,8,8" RowDefinitions="Auto,*">
+                        <TextBlock
+                            Margin="8,4,8,8"
+                            FontWeight="SemiBold"
+                            Text="Outline"/>
+                        <ListView
+                            x:Name="OutlineList"
+                            Grid.Row="1"
+                            Background="Transparent"
+                            SelectionMode="Single"/>
+                    </Grid>
+                </NavigationView.PaneCustomContent>
 
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition x:Name="EditorScrollBarColumn" Width="16"/>
-                </Grid.ColumnDefinitions>
-                <SwapChainPanel x:Name="EditorSurface" Grid.Column="0" KeyboardAcceleratorPlacementMode="Hidden">
-                    <SwapChainPanel.ContextFlyout>
-                        <MenuFlyout>
-                            <MenuFlyoutItem x:Name="CutMenuItem" Text="Cut"/>
-                            <MenuFlyoutItem x:Name="CopyMenuItem" Text="Copy"/>
-                            <MenuFlyoutItem x:Name="PasteMenuItem" Text="Paste"/>
-                            <MenuFlyoutSeparator/>
-                            <MenuFlyoutItem x:Name="SelectAllMenuItem" Text="Select All"/>
-                        </MenuFlyout>
-                    </SwapChainPanel.ContextFlyout>
-                </SwapChainPanel>
-                <ScrollBar
-                    x:Name="EditorScrollBar"
-                    Grid.Column="1"
-                    Width="16"
-                    HorizontalAlignment="Stretch"
-                    VerticalAlignment="Stretch"
-                    Background="{ThemeResource ElMdShellLayerBrush}"
-                    IndicatorMode="MouseIndicator"
-                    IsTabStop="False"
-                    Minimum="0"
-                    Orientation="Vertical"
-                    SmallChange="48"/>
-            </Grid>
-        </NavigationView>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition x:Name="EditorScrollBarColumn" Width="16"/>
+                    </Grid.ColumnDefinitions>
+                    <SwapChainPanel x:Name="EditorSurface" Grid.Column="0" KeyboardAcceleratorPlacementMode="Hidden">
+                        <SwapChainPanel.ContextFlyout>
+                            <MenuFlyout>
+                                <MenuFlyoutItem x:Name="CutMenuItem" Text="Cut"/>
+                                <MenuFlyoutItem x:Name="CopyMenuItem" Text="Copy"/>
+                                <MenuFlyoutItem x:Name="PasteMenuItem" Text="Paste"/>
+                                <MenuFlyoutSeparator/>
+                                <MenuFlyoutItem x:Name="SelectAllMenuItem" Text="Select All"/>
+                            </MenuFlyout>
+                        </SwapChainPanel.ContextFlyout>
+                    </SwapChainPanel>
+                    <ScrollBar
+                        x:Name="EditorScrollBar"
+                        Grid.Column="1"
+                        Width="16"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Stretch"
+                        Background="{ThemeResource ElMdShellLayerBrush}"
+                        IndicatorMode="MouseIndicator"
+                        IsTabStop="False"
+                        Minimum="0"
+                        Orientation="Vertical"
+                        SmallChange="48"/>
+                </Grid>
+            </NavigationView>
+            <Grid x:Name="SettingsViewHost" Visibility="Collapsed"/>
+        </Grid>
 
         <Grid
             x:Name="StatusBar"

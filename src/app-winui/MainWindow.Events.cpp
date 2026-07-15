@@ -54,6 +54,7 @@ namespace winrt::ElMd::implementation
     {
         Closed([this](auto const&, auto const&)
         {
+            if (settingsView) settingsView->Detach();
             documentController.Detach();
             sidebarController.Detach();
             pointerController.Detach();
