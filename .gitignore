@@ -44,6 +44,10 @@ src/app-winui/Generated Files/
 src/app-winui/x64/
 src/app-winui/el-md/x64/
 src/app-winui/third_party/usvg-normalizer/bin/
+/Assets/
+/src/app-winui/Assets/settings.json
+/src/app-winui/Assets/settings.json.tmp
+/src/app-winui/Assets/themes/custom/
 
 # Restored WinUI NuGet packages
 src/app-winui/packages/

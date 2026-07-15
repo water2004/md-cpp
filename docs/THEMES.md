@@ -1,6 +1,6 @@
 # Theme configuration
 
-The application loads its active theme from `Assets/themes` beside the executable. The repository ships complete `dark.json`, `light.json`, and `high-contrast.json` profiles; MSBuild copies them to the output directory.
+The application loads built-in themes from `Assets/themes` and manages imported themes in `Assets/themes/custom`. The repository ships complete `dark.json`, `light.json`, and `high-contrast.json` profiles; MSBuild copies them to the configured Assets directory. Imported profiles can be previewed, selected, replaced by ID, and removed from the native Settings dialog. Built-in profiles cannot be removed.
 
 The theme file is the normal runtime source of truth for:
 
@@ -28,4 +28,21 @@ The `syntax` array has exactly eleven entries in this order:
 10. variable/property
 11. constant/special
 
-To customize a profile, edit the corresponding JSON file and restart the application. Theme changes caused by the Windows light/dark or high-contrast setting reload the matching profile and rebuild both the block render model and native DirectWrite/Direct2D resources.
+Theme changes selected in Settings rebuild both the block render model and native DirectWrite/Direct2D resources. The `Follow Windows` selection reloads the matching light, dark, or high-contrast profile when the Windows theme changes.
+
+## Assets directory
+
+All application data and resource paths are relative to one Assets root:
+
+- `settings.json` stores the selected theme and MathJax setting;
+- `themes/*.json` contains protected built-in profiles;
+- `themes/custom/*.json` contains user-managed profiles;
+- `mathjax/` contains the QuickJS MathJax bundle and its font modules.
+
+Without an explicit build value, the root is `./Assets` relative to the process working directory. Set the MSBuild property `ElMdAssetsDirectory` to name the Assets directory itself:
+
+```powershell
+msbuild src\app-winui\el-md.vcxproj /p:Configuration=Release /p:Platform=x64 /p:ElMdAssetsDirectory="C:\path with spaces\Assets"
+```
+
+The configured value is compiled into the application and static Assets are copied there after the build. Environment references such as `%LOCALAPPDATA%` are expanded by the application at runtime; packaging should pass or materialize an appropriate per-user Assets path rather than writing settings into the installed program directory.
