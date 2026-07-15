@@ -61,6 +61,32 @@ namespace winrt::ElMd
                     draw.advance = (std::max)(draw.width, availableWidth - pointX);
                 }
             }
+            draw.imageHeight = draw.height;
+            if (draw.block && !overlay.alt.empty())
+            {
+                draw.caption = winrt::to_hstring(overlay.alt).c_str();
+                draw.captionGap = 4.0f;
+                if (resources.dwriteFactory && resources.textFormat
+                    && SUCCEEDED(resources.dwriteFactory->CreateTextLayout(
+                        draw.caption.c_str(),
+                        static_cast<UINT32>(draw.caption.size()),
+                        resources.textFormat.Get(),
+                        draw.advance,
+                        4096.0f,
+                        draw.captionLayout.GetAddressOf()))
+                    && draw.captionLayout)
+                {
+                    draw.captionLayout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                    draw.captionLayout->SetFontSize(
+                        styleSheet.body.size * 0.88f,
+                        DWRITE_TEXT_RANGE{0, static_cast<UINT32>(draw.caption.size())});
+                    DWRITE_TEXT_METRICS captionMetrics{};
+                    if (SUCCEEDED(draw.captionLayout->GetMetrics(&captionMetrics)))
+                        draw.captionHeight = (std::max)(styleSheet.body.lineHeight, captionMetrics.height);
+                }
+                if (draw.captionHeight == 0.0f) draw.captionHeight = styleSheet.body.lineHeight;
+                draw.height += draw.captionGap + draw.captionHeight;
+            }
             ApplyInlinePlaceholder(layout, draw.displayStart, draw.advance, draw.height, draw.height);
             resolved.push_back(std::move(draw));
         }
@@ -97,7 +123,7 @@ namespace winrt::ElMd
             auto imageLeft = origin.x + pointX;
             if (image.block && image.advance > image.width)
                 imageLeft += (image.advance - image.width) * 0.5f;
-            auto rect = D2D1::RectF(imageLeft, origin.y + lineTop, imageLeft + image.width, origin.y + lineTop + image.height);
+            auto rect = D2D1::RectF(imageLeft, origin.y + lineTop, imageLeft + image.width, origin.y + lineTop + image.imageHeight);
             if (image.image)
             {
                 std::chrono::milliseconds untilNextFrame{0};
@@ -108,7 +134,34 @@ namespace winrt::ElMd
             }
             else
             {
-                resources.d2dContext->DrawTextW(image.alt.c_str(), static_cast<UINT32>(image.alt.size()), resources.textFormat.Get(), rect, resources.mutedBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                if (image.caption.empty())
+                    resources.d2dContext->DrawTextW(image.alt.c_str(), static_cast<UINT32>(image.alt.size()), resources.textFormat.Get(), rect, resources.mutedBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                else
+                    resources.d2dContext->FillRectangle(rect, resources.panelBrush.Get());
+            }
+            if (!image.caption.empty())
+            {
+                auto captionOrigin = D2D1::Point2F(
+                    origin.x + pointX,
+                    origin.y + lineTop + image.imageHeight + image.captionGap);
+                if (image.captionLayout)
+                    resources.d2dContext->DrawTextLayout(
+                        captionOrigin,
+                        image.captionLayout.Get(),
+                        resources.mutedBrush.Get(),
+                        D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                else
+                    resources.d2dContext->DrawTextW(
+                        image.caption.c_str(),
+                        static_cast<UINT32>(image.caption.size()),
+                        resources.textFormat.Get(),
+                        D2D1::RectF(
+                            captionOrigin.x,
+                            captionOrigin.y,
+                            captionOrigin.x + image.advance,
+                            captionOrigin.y + image.captionHeight),
+                        resources.mutedBrush.Get(),
+                        D2D1_DRAW_TEXT_OPTIONS_CLIP);
             }
         }
     }

@@ -15,8 +15,13 @@ namespace winrt::ElMd
             std::optional<EditorRenderCache::RasterImage> image;
             std::string source;
             std::wstring alt;
+            std::wstring caption;
+            ::Microsoft::WRL::ComPtr<IDWriteTextLayout> captionLayout;
             float width = 0.0f;
             float height = 0.0f;
+            float imageHeight = 0.0f;
+            float captionGap = 0.0f;
+            float captionHeight = 0.0f;
             float advance = 0.0f;
             bool block = false;
         };
