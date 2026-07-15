@@ -2212,16 +2212,6 @@ suite editor_tests = [] {
     expect(fatal(bool(outside)));
 };
 
-"theme_and_scale_are_orthogonal_to_document_state"_test = [] {
-    Editor editor("abc");
-    const auto source = editor.markdown_utf8();
-    editor.set_theme(Theme::Light);
-    editor.set_scale_factor(1.5f);
-    expect(fatal(bool(editor.theme() == Theme::Light)));
-    expect(fatal(bool(editor.scale_factor() == 1.5f)));
-    expect(fatal(bool(editor.markdown_utf8() == source)));
-};
-
 "all_editable_block_contexts_share_the_source_edit_history_pipeline"_test = [] {
     const std::vector<std::string> cases{
         "abc",

@@ -5,15 +5,6 @@ import elmd.core.theme;
 
 export namespace elmd {
 
-struct FontSettings {
-    std::string family = "Cascadia Code";
-    float size = 14.0f;
-    std::string code_family = "Cascadia Mono";
-    float code_size = 13.0f;
-    float line_height = 1.5f;
-    std::string fallback_family = "Segoe UI";
-};
-
 enum class MarkerVisibilityMode { AlwaysVisible, Dim, DimWhenFocused, HideWhenFocused };
 
 struct EditorBehavior {
@@ -56,8 +47,7 @@ struct AutosaveSettings {
 };
 
 struct EditorSettings {
-    FontSettings font;
-    Theme theme = Theme::Dark;
+    ThemeProfile theme = default_theme_profile();
     EditorBehavior editor;
     MathSettings math;
     ExportSettings export_opts;

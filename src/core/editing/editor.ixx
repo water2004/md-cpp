@@ -4,7 +4,6 @@ export module elmd.core.editor;
 import std;
 import elmd.core.types;
 import elmd.core.ids;
-import elmd.core.theme;
 import elmd.core.selection;
 import elmd.core.command;
 import elmd.core.input;
@@ -55,10 +54,6 @@ public:
             || selection.active.source_offset > *active_length) throw std::out_of_range("selection is outside editable source");
         selection_ = std::move(selection);
     }
-    void set_theme(Theme t) { theme_ = t; }
-    Theme theme() const { return theme_; }
-    void set_scale_factor(float s) { scale_factor_ = s; }
-    float scale_factor() const { return scale_factor_; }
     MarkdownDialect const& dialect() const { return dialect_; }
     void set_dialect(MarkdownDialect dialect) {
         auto markdown = serialize_markdown(document_);
@@ -462,8 +457,6 @@ private:
     Outline outline_;
     DocumentHistory document_history_{1000};
     TextSelection selection_{};
-    Theme theme_ = Theme::Dark;
-    float scale_factor_ = 1.0f;
     MarkdownDialect dialect_ = default_dialect();
 
     void rebuild_document_full_(

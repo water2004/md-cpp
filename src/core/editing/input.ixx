@@ -2,7 +2,6 @@
 export module elmd.core.input;
 import std;
 import elmd.core.types;
-import elmd.core.theme;
 import elmd.core.selection;
 import elmd.core.text_edit;
 import elmd.core.ids;
@@ -50,7 +49,7 @@ struct TextInputEvent {
 struct EditorInputEvent {
     enum class Kind {
         KeyDown, KeyUp, TextInput, PointerDown, PointerMove, PointerUp,
-        Wheel, ClipboardPaste, FocusGained, FocusLost, DpiChanged, ThemeChanged,
+        Wheel, ClipboardPaste, FocusGained, FocusLost, DpiChanged,
     };
     Kind kind = Kind::KeyDown;
     KeyEvent key{};
@@ -59,7 +58,6 @@ struct EditorInputEvent {
     WheelEvent wheel{};
     std::u32string paste_payload;
     float dpi = 0.0f;
-    Theme theme = Theme::Dark;
 };
 
 } // namespace elmd

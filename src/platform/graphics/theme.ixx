@@ -16,19 +16,24 @@ export namespace elmd::platform {
 
 struct ColorRgba { float r, g, b, a; };
 
-inline ColorRgba palette_color(elmd::Theme t, std::string_view token) {
-    bool dark = (t == elmd::Theme::Dark);
-    if (token == "text")        return dark ? ColorRgba{0.86f,0.86f,0.86f,1.f} : ColorRgba{0.13f,0.13f,0.13f,1.f};
-    if (token == "heading")     return dark ? ColorRgba{0.34f,0.61f,0.84f,1.f} : ColorRgba{0.18f,0.31f,0.55f,1.f};
-    if (token == "code")        return dark ? ColorRgba{0.88f,0.55f,0.45f,1.f} : ColorRgba{0.72f,0.40f,0.30f,1.f};
-    if (token == "marker")      return dark ? ColorRgba{0.40f,0.40f,0.43f,1.f} : ColorRgba{0.65f,0.65f,0.68f,1.f};
-    if (token == "caret")       return dark ? ColorRgba{0.92f,0.92f,0.92f,1.f} : ColorRgba{0.11f,0.11f,0.11f,1.f};
-    if (token == "selection")   return dark ? ColorRgba{0.30f,0.45f,0.70f,0.45f} : ColorRgba{0.55f,0.70f,0.90f,0.45f};
-    if (token == "background")  return dark ? ColorRgba{0.118f,0.118f,0.129f,1.f} : ColorRgba{1.f,1.f,1.f,1.f};
-    if (token == "code_bg")     return dark ? ColorRgba{0.16f,0.16f,0.18f,1.f} : ColorRgba{0.93f,0.93f,0.96f,1.f};
-    if (token == "quote_bar")   return dark ? ColorRgba{0.35f,0.40f,0.50f,1.f} : ColorRgba{0.55f,0.60f,0.70f,1.f};
-    if (token == "math")        return dark ? ColorRgba{0.78f,0.62f,0.40f,1.f} : ColorRgba{0.62f,0.42f,0.20f,1.f};
-    return dark ? ColorRgba{0.86f,0.86f,0.86f,1.f} : ColorRgba{0.13f,0.13f,0.13f,1.f};
+inline ColorRgba color_rgba(elmd::Color color) {
+    constexpr auto scale = 1.0f / 255.0f;
+    return {color.r * scale, color.g * scale, color.b * scale, color.a * scale};
+}
+
+inline ColorRgba palette_color(elmd::ThemeProfile const& theme, std::string_view token) {
+    auto const& colors = theme.colors;
+    if (token == "text") return color_rgba(colors.fg);
+    if (token == "heading") return color_rgba(colors.heading_fg);
+    if (token == "code") return color_rgba(colors.code_block_fg);
+    if (token == "marker") return color_rgba(colors.marker_fg);
+    if (token == "caret") return color_rgba(colors.caret_fg);
+    if (token == "selection") return color_rgba(colors.selection_bg);
+    if (token == "background") return color_rgba(colors.bg);
+    if (token == "code_bg") return color_rgba(colors.code_block_bg);
+    if (token == "quote_bar") return color_rgba(colors.blockquote_border);
+    if (token == "math") return color_rgba(colors.math_fg);
+    return color_rgba(colors.fg);
 }
 
 // Lazily create & cache ID2D1SolidColorBrush instances keyed by BrushId.
