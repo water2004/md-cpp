@@ -15,6 +15,7 @@ namespace winrt::ElMd
             std::function<void()> render);
         void Detach();
         void Sync();
+        void SetWidth(float value);
         void QueueScrollBy(float delta);
         void Stop();
 
@@ -42,5 +43,6 @@ namespace winrt::ElMd
         bool attached = false;
         bool rendering = false;
         bool synchronizing = false;
+        float width = 16.0f;
     };
 }

@@ -152,7 +152,18 @@ namespace winrt::ElMd
         if (scrollBar.Visibility() != visibility)
         {
             scrollBar.Visibility(visibility);
-            column.Width(winrt::Microsoft::UI::Xaml::GridLengthHelper::FromPixels(visible ? 16.0 : 0.0));
+            column.Width(winrt::Microsoft::UI::Xaml::GridLengthHelper::FromPixels(visible ? width : 0.0f));
+        }
+    }
+
+    void EditorScrollController::SetWidth(float value)
+    {
+        width = (std::max)(0.0f, value);
+        if (scrollBar) scrollBar.Width(width);
+        if (column)
+        {
+            const auto visible = scrollBar && scrollBar.Visibility() == winrt::Microsoft::UI::Xaml::Visibility::Visible;
+            column.Width(winrt::Microsoft::UI::Xaml::GridLengthHelper::FromPixels(visible ? width : 0.0f));
         }
     }
 

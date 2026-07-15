@@ -52,6 +52,9 @@
     <Filter Include="Resources">
       <UniqueIdentifier>{b56c9b65-797f-48cc-8449-ef437aeab428}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Theme">
+      <UniqueIdentifier>{ac059afc-bc91-44a7-97ec-42f0bca22c02}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\core\model\ast.ixx">
@@ -222,6 +225,9 @@
     <ClCompile Include="pch.cpp">
       <Filter>Application Shell</Filter>
     </ClCompile>
+    <ClCompile Include="theme\ThemeConfig.cpp">
+      <Filter>Theme</Filter>
+    </ClCompile>
     <ClCompile Include="editor\session\EditorSession.cpp">
       <Filter>Editor\Session</Filter>
     </ClCompile>
@@ -344,6 +350,9 @@
     <ClInclude Include="pch.h">
       <Filter>Application Shell</Filter>
     </ClInclude>
+    <ClInclude Include="theme\ThemeConfig.h">
+      <Filter>Theme</Filter>
+    </ClInclude>
     <ClInclude Include="editor\session\EditorSession.h">
       <Filter>Editor\Session</Filter>
     </ClInclude>
@@ -449,6 +458,17 @@
     <Midl Include="MainWindow.idl">
       <Filter>Resources</Filter>
     </Midl>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Assets\themes\dark.json">
+      <Filter>Theme</Filter>
+    </None>
+    <None Include="Assets\themes\light.json">
+      <Filter>Theme</Filter>
+    </None>
+    <None Include="Assets\themes\high-contrast.json">
+      <Filter>Theme</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="app.manifest">

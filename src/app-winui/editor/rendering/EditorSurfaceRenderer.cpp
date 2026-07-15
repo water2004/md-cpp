@@ -17,11 +17,11 @@ namespace winrt::ElMd
         invalidationState->callback = {};
     }
 
-    void EditorSurfaceRenderer::SetTheme(Theme value)
+    void EditorSurfaceRenderer::SetTheme(elmd::ThemeProfile const& value)
     {
-        if (theme == value) return;
-        theme = value;
-        styleSheet = CreateEditorStyleSheet(value == Theme::Dark);
+        themeProfile = value;
+        ++themeRevision;
+        styleSheet = CreateEditorStyleSheet(themeProfile);
         renderCache.ClearTextLayouts();
         renderCache.ClearSvgDocuments();
         resources.RebuildTextFormats(styleSheet);

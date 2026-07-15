@@ -9,6 +9,20 @@ import elmd.core.utf;
 
 namespace winrt::ElMd::implementation
 {
+    namespace
+    {
+        Microsoft::UI::Xaml::Media::SolidColorBrush Brush(elmd::Color color)
+        {
+            return Microsoft::UI::Xaml::Media::SolidColorBrush(
+                Windows::UI::Color{ color.a, color.r, color.g, color.b });
+        }
+
+        Microsoft::UI::Xaml::Media::FontFamily Font(std::string const& family)
+        {
+            return Microsoft::UI::Xaml::Media::FontFamily(winrt::to_hstring(family));
+        }
+    }
+
     MainWindow::MainWindow()
     {
         InitializeComponent();
@@ -116,8 +130,8 @@ namespace winrt::ElMd::implementation
         footnoteFlyout = Flyout();
 
         StackPanel panel;
-        panel.Spacing(8.0);
-        panel.MaxWidth(360.0);
+        panel.Spacing(themeProfile.layout.footnote_preview_spacing);
+        panel.MaxWidth(themeProfile.layout.footnote_preview_width);
 
         TextBlock heading;
         heading.Text(L"[^" + winrt::to_hstring(hit.label) + L"]");
@@ -232,16 +246,54 @@ namespace winrt::ElMd::implementation
         }
     }
 
-    winrt::ElMd::EditorSurfaceRenderer::Theme MainWindow::CurrentRendererTheme()
+    elmd::Theme MainWindow::CurrentThemeVariant()
     {
+        if (Windows::UI::ViewManagement::AccessibilitySettings().HighContrast())
+            return elmd::Theme::HighContrast;
         return Root().ActualTheme() == Microsoft::UI::Xaml::ElementTheme::Dark
-            ? winrt::ElMd::EditorSurfaceRenderer::Theme::Dark
-            : winrt::ElMd::EditorSurfaceRenderer::Theme::Light;
+            ? elmd::Theme::Dark
+            : elmd::Theme::Light;
+    }
+
+    void MainWindow::ApplyShellTheme()
+    {
+        auto const& colors = themeProfile.colors;
+        auto resources = Root().Resources();
+        resources.Insert(winrt::box_value(L"ElMdShellBackgroundBrush"), Brush(colors.shell_bg));
+        resources.Insert(winrt::box_value(L"ElMdShellLayerBrush"), Brush(colors.shell_layer_bg));
+        resources.Insert(winrt::box_value(L"ElMdShellBorderBrush"), Brush(colors.shell_border));
+        resources.Insert(winrt::box_value(L"ElMdShellForegroundBrush"), Brush(colors.shell_fg));
+        resources.Insert(winrt::box_value(L"ElMdShellMutedForegroundBrush"), Brush(colors.shell_muted_fg));
+        resources.Insert(winrt::box_value(L"ElMdShellAccentBrush"), Brush(colors.shell_accent));
+        resources.Insert(winrt::box_value(L"ElMdUiFontFamily"), Font(themeProfile.typography.ui.family));
+        resources.Insert(winrt::box_value(L"ElMdUiFontSize"), winrt::box_value(static_cast<double>(themeProfile.typography.ui.size)));
+        resources.Insert(winrt::box_value(L"ElMdMonoFontFamily"), Font(themeProfile.typography.ui_monospace.family));
+
+        Root().Background(Brush(colors.shell_bg));
+        AppTitleBar().Background(Brush(colors.shell_bg));
+        ShellCommandBar().Background(Brush(colors.shell_layer_bg));
+        ShellCommandBar().BorderBrush(Brush(colors.shell_border));
+        StatusBar().Background(Brush(colors.shell_layer_bg));
+        StatusBar().BorderBrush(Brush(colors.shell_border));
+        EditorScrollBar().Background(Brush(colors.shell_layer_bg));
+        Root().RowDefinitions().GetAt(0).Height(Microsoft::UI::Xaml::GridLengthHelper::FromPixels(themeProfile.layout.title_bar_height));
+        DocumentNavigation().OpenPaneLength(themeProfile.layout.navigation_open_width);
+        DocumentNavigation().CompactPaneLength(themeProfile.layout.navigation_compact_width);
+        EditorScrollBar().Width(themeProfile.layout.scrollbar_width);
+        EditorScrollBarColumn().Width(Microsoft::UI::Xaml::GridLengthHelper::FromPixels(themeProfile.layout.scrollbar_width));
+        scrollController.SetWidth(themeProfile.layout.scrollbar_width);
+        StatusBar().MinHeight(themeProfile.layout.status_bar_min_height);
+        SourceModeButton().FontFamily(Font(themeProfile.typography.ui_monospace.family));
     }
 
     void MainWindow::UpdateTheme()
     {
-        editorRenderer.SetTheme(CurrentRendererTheme());
+        auto loaded = winrt::ElMd::LoadThemeProfile(CurrentThemeVariant());
+        themeProfile = std::move(loaded.profile);
+        ApplyShellTheme();
+        editorSession.SetTheme(themeProfile);
+        editorRenderer.SetTheme(themeProfile);
+        if (!loaded.loadedFromFile) SetStatus(loaded.diagnostic);
         RenderEditorSurface();
     }
 

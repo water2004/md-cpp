@@ -49,7 +49,7 @@ namespace winrt::ElMd
         elmd::TextSelection selection{};
         float documentWidth = 0.0f;
         float totalHeight = 0.0f;
-        Theme theme = Theme::Dark;
+        std::uint64_t themeRevision = 0;
         std::vector<Block> blocks;
         std::vector<Placement> placements;
         std::unordered_set<std::size_t> embeddedBlocks;

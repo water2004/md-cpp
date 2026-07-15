@@ -6,6 +6,7 @@ import elmd.core.editor;
 import elmd.core.command;
 import elmd.core.render_model;
 import elmd.core.source_editor;
+import elmd.core.theme;
 
 namespace winrt::ElMd
 {
@@ -16,6 +17,7 @@ namespace winrt::ElMd
             elmd::Editor editor;
             std::optional<elmd::SourceEditor> sourceEditor;
             elmd::RenderModel renderModel;
+            elmd::ThemeProfile theme = elmd::default_theme_profile();
             std::wstring baseDirectory;
         };
     }
@@ -32,6 +34,7 @@ namespace winrt::ElMd
         void Open(winrt::Windows::Storage::StorageFile const& file, winrt::hstring const& text);
         void SaveAs(winrt::Windows::Storage::StorageFile const& file);
         void SetText(winrt::hstring const& text);
+        void SetTheme(elmd::ThemeProfile const& theme);
         bool IsSourceMode() const;
         bool EnterSourceMode();
         bool ExitSourceMode();

@@ -173,6 +173,12 @@ namespace winrt::ElMd
         RebuildCore();
     }
 
+    void EditorSession::SetTheme(elmd::ThemeProfile const& theme)
+    {
+        core_->theme = theme;
+        RebuildRenderModel();
+    }
+
     void EditorSession::RebuildCore()
     {
         core_->baseDirectory = file_ ? std::filesystem::path(file_.Path().c_str()).parent_path().wstring() : std::wstring{};
@@ -185,7 +191,7 @@ namespace winrt::ElMd
     {
         core_->renderModel = core_->sourceEditor
             ? elmd::build_source_render_model(*core_->sourceEditor)
-            : elmd::build_render_model(core_->editor.document(), core_->editor.outline());
+            : elmd::build_render_model(core_->editor.document(), core_->editor.outline(), core_->theme);
         core_->renderModel.revision = revision_;
     }
 

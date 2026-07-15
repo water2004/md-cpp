@@ -5,6 +5,8 @@
 #include <d2d1.h>
 #include <dwrite.h>
 
+import elmd.core.theme;
+
 namespace winrt::ElMd
 {
     struct EditorFontStyle
@@ -44,5 +46,5 @@ namespace winrt::ElMd
         float blockGap = 6.0f;
     };
 
-    EditorStyleSheet CreateEditorStyleSheet(bool dark);
+    EditorStyleSheet CreateEditorStyleSheet(elmd::ThemeProfile const& theme);
 }

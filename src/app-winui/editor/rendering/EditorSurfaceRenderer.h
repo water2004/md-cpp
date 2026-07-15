@@ -18,12 +18,6 @@ namespace winrt::ElMd
         EditorSurfaceRenderer();
         ~EditorSurfaceRenderer();
 
-        enum class Theme
-        {
-            Light,
-            Dark,
-        };
-
         enum class PdfExportResult
         {
             WaitingForAssets,
@@ -37,7 +31,7 @@ namespace winrt::ElMd
             std::filesystem::path const& path,
             std::wstring const& title,
             detail::EditorRenderFrame const& frame);
-        void SetTheme(Theme value);
+        void SetTheme(elmd::ThemeProfile const& value);
         void ResetDocumentCaches();
         void SetInvalidateCallback(std::function<void()> callback);
 
@@ -96,8 +90,9 @@ namespace winrt::ElMd
         TreeSitterHighlighter treeSitter;
         std::shared_ptr<InvalidationState> invalidationState = std::make_shared<InvalidationState>();
         std::atomic_bool mathInvalidationQueued = false;
-        Theme theme = Theme::Dark;
-        EditorStyleSheet styleSheet = CreateEditorStyleSheet(true);
+        elmd::ThemeProfile themeProfile = elmd::default_theme_profile();
+        std::uint64_t themeRevision = 1;
+        EditorStyleSheet styleSheet = CreateEditorStyleSheet(themeProfile);
         EditorInteractionMap interactionMap;
         std::vector<D2D1_RECT_F> nonInteractiveRegions;
         std::unique_ptr<PreparedDocument> preparedDocument;

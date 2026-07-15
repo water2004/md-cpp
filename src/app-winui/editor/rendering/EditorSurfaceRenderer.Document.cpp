@@ -502,7 +502,7 @@ namespace winrt::ElMd
                 && !frame.renderModel.blocks.front().source_mode
                 && !SameSelection(preparedDocument->selection, selection))
             || preparedDocument->documentWidth != documentWidth
-            || preparedDocument->theme != theme
+            || preparedDocument->themeRevision != themeRevision
             || preparedDocument->blocks.size() != frame.renderModel.blocks.size();
         if (rebuildAll)
         {
@@ -511,12 +511,12 @@ namespace winrt::ElMd
             preparedDocument->modelRevision = frame.renderModel.revision;
             preparedDocument->selection = selection;
             preparedDocument->documentWidth = documentWidth;
-            preparedDocument->theme = theme;
+            preparedDocument->themeRevision = themeRevision;
             preparedDocument->blocks.resize(frame.renderModel.blocks.size());
             preparedDocument->placements.resize(frame.renderModel.blocks.size());
             if (previous
                 && previous->documentWidth == documentWidth
-                && previous->theme == theme)
+                && previous->themeRevision == themeRevision)
             {
                 std::unordered_map<std::uint64_t, std::size_t> previousById;
                 previousById.reserve(previous->blocks.size());

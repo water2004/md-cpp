@@ -25,7 +25,8 @@ namespace winrt::ElMd
         auto originalScroll = scrollOffset;
         auto originalScrollTarget = scrollTarget;
         auto originalTotalHeight = totalDocumentHeight;
-        auto originalTheme = theme;
+        auto originalTheme = themeProfile;
+        auto originalThemeRevision = themeRevision;
         auto originalStyle = styleSheet;
         auto originalPrepared = std::move(preparedDocument);
         auto originalOwnerY = std::move(documentOwnerY);
@@ -44,7 +45,8 @@ namespace winrt::ElMd
             scrollOffset = originalScroll;
             scrollTarget = originalScrollTarget;
             totalDocumentHeight = originalTotalHeight;
-            theme = originalTheme;
+            themeProfile = originalTheme;
+            themeRevision = originalThemeRevision;
             styleSheet = originalStyle;
             printMode = false;
             preparedDocument = std::move(originalPrepared);
@@ -77,8 +79,9 @@ namespace winrt::ElMd
             constexpr float contentHeight = pageHeight - pageMargin * 2.0f;
 
             printMode = true;
-            theme = Theme::Light;
-            styleSheet = CreateEditorStyleSheet(false);
+            themeProfile = elmd::default_theme_profile(elmd::Theme::Light);
+            ++themeRevision;
+            styleSheet = CreateEditorStyleSheet(themeProfile);
             preparedDocument.reset();
             documentOwnerY.clear();
             interactionMap = {};

@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "elmd.high-contrast",
+  "name": "el-md High Contrast",
+  "variant": "high-contrast",
+  "typography": {
+    "body": { "family": "Microsoft YaHei UI", "size": 18, "lineHeight": 29, "weight": 400, "italic": false },
+    "heading1": { "family": "Microsoft YaHei UI", "size": 38, "lineHeight": 46, "weight": 600, "italic": false },
+    "heading2": { "family": "Microsoft YaHei UI", "size": 30, "lineHeight": 37, "weight": 600, "italic": false },
+    "heading3": { "family": "Microsoft YaHei UI", "size": 24, "lineHeight": 30, "weight": 600, "italic": false },
+    "code": { "family": "Cascadia Code", "size": 15, "lineHeight": 24, "weight": 400, "italic": false },
+    "ui": { "family": "Segoe UI Variable Text", "size": 14, "lineHeight": 20, "weight": 400, "italic": false },
+    "uiMonospace": { "family": "Cascadia Mono", "size": 14, "lineHeight": 20, "weight": 400, "italic": false }
+  },
+  "colors": {
+    "background": "#000000", "foreground": "#FFFFFF", "mutedForeground": "#DCDCDC", "accent": "#00FFFF",
+    "heading": "#FFFF00", "strong": "#FFFFFF", "emphasis": "#FFA500",
+    "inlineCodeBackground": "#282828", "inlineCodeForeground": "#FFFF00",
+    "codeBlockBackground": "#141414", "codeBlockForeground": "#FFFFFF",
+    "blockquoteBorder": "#00FFFF", "blockquoteBackground": "#141E28", "nestedQuoteBackground": "#0A0F14",
+    "link": "#00FFFF", "imageBorder": "#FFFFFF", "selectionBackground": "#FFFF00", "selectionForeground": "#000000",
+    "caret": "#FFFFFF", "marker": "#DCDCDC", "mathBackground": "#1E1E1E", "mathForeground": "#FFFFFF",
+    "calloutNoteBackground": "#00003C", "calloutNoteBorder": "#00FFFF",
+    "calloutWarningBackground": "#3C1E00", "calloutWarningBorder": "#FFA500",
+    "calloutTipBackground": "#002800", "calloutTipBorder": "#00FF00",
+    "calloutImportantBackground": "#28003C", "calloutImportantBorder": "#FF00FF",
+    "calloutCautionBackground": "#3C0000", "calloutCautionBorder": "#FF0000",
+    "frontmatterBackground": "#14141E", "frontmatterForeground": "#FFFFFF",
+    "tableBorder": "#FFFFFF", "tableHeaderBackground": "#3C3C3C", "lineNumber": "#DCDCDC",
+    "strikethrough": "#FFFFFF", "unsupportedBackground": "#3C2800", "unsupportedForeground": "#FFC800",
+    "shellBackground": "#000000", "shellLayerBackground": "#141414", "shellBorder": "#FFFFFF",
+    "shellForeground": "#FFFFFF", "shellMutedForeground": "#DCDCDC", "shellAccent": "#00FFFF",
+    "syntax": ["#FFFFFF", "#FF00FF", "#00FFFF", "#FFFF00", "#FFA500", "#00FF00", "#00FF00", "#FFFFFF", "#FF00FF", "#00FFFF", "#00FFFF"]
+  },
+  "layout": {
+    "documentHorizontalPadding": 48, "documentVerticalPadding": 40, "blockGap": 6,
+    "paragraphMarginBottom": 8, "listMarginBottom": 8, "listPaddingLeft": 20, "thematicBreakMargin": 8,
+    "headingMarginTop": [24, 20, 16, 12, 8, 4], "headingMarginBottom": 4,
+    "codeMargin": 8, "codePaddingVertical": 8, "codePaddingHorizontal": 12,
+    "quoteMargin": 8, "quotePaddingVertical": 6, "quotePaddingLeft": 18, "quotePaddingRight": 8, "quoteBorderWidth": 3,
+    "mathMargin": 12, "mathPaddingVertical": 8, "mathPaddingHorizontal": 12,
+    "tableMargin": 8, "imageMargin": 12, "tocMargin": 12, "tocPaddingLeft": 8, "tocBorderWidth": 2,
+    "calloutMargin": 8, "calloutPaddingVertical": 8, "calloutPaddingLeft": 16, "calloutBorderWidth": 4,
+    "frontmatterMarginBottom": 12, "frontmatterPaddingVertical": 8, "frontmatterPaddingHorizontal": 12,
+    "footnoteMargin": 8, "footnotePaddingVertical": 8, "footnotePaddingHorizontal": 12,
+    "unsupportedMargin": 8, "unsupportedPaddingVertical": 4, "unsupportedPaddingLeft": 12, "extensionMargin": 4,
+    "titleBarHeight": 40, "navigationOpenWidth": 280, "navigationCompactWidth": 48, "scrollbarWidth": 16,
+    "statusBarMinHeight": 32, "footnotePreviewWidth": 360, "footnotePreviewSpacing": 8
+  }
+}

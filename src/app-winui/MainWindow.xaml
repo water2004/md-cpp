@@ -11,12 +11,28 @@
         <MicaBackdrop Kind="Base"/>
     </Window.SystemBackdrop>
 
-    <Grid x:Name="Root" RowDefinitions="40,Auto,*,Auto">
+    <Grid x:Name="Root" RowDefinitions="40,Auto,*,Auto" Background="{ThemeResource ElMdShellBackgroundBrush}">
+        <Grid.Resources>
+            <SolidColorBrush x:Key="ElMdShellBackgroundBrush" Color="#121419"/>
+            <SolidColorBrush x:Key="ElMdShellLayerBrush" Color="#191C23"/>
+            <SolidColorBrush x:Key="ElMdShellBorderBrush" Color="#343A46"/>
+            <SolidColorBrush x:Key="ElMdShellForegroundBrush" Color="#E4E8F0"/>
+            <SolidColorBrush x:Key="ElMdShellMutedForegroundBrush" Color="#8B95AA"/>
+            <SolidColorBrush x:Key="ElMdShellAccentBrush" Color="#7AA2F7"/>
+            <FontFamily x:Key="ElMdUiFontFamily">Segoe UI Variable Text</FontFamily>
+            <FontFamily x:Key="ElMdMonoFontFamily">Cascadia Mono</FontFamily>
+            <x:Double x:Key="ElMdUiFontSize">14</x:Double>
+            <Style TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{ThemeResource ElMdUiFontFamily}"/>
+                <Setter Property="FontSize" Value="{ThemeResource ElMdUiFontSize}"/>
+                <Setter Property="Foreground" Value="{ThemeResource ElMdShellForegroundBrush}"/>
+            </Style>
+        </Grid.Resources>
         <Grid
             x:Name="AppTitleBar"
             Grid.Row="0"
             Padding="12,0,144,0"
-            Background="Transparent"
+            Background="{ThemeResource ElMdShellBackgroundBrush}"
             ColumnDefinitions="Auto,Auto,*">
             <TextBlock
                 VerticalAlignment="Center"
@@ -29,21 +45,22 @@
                 Height="14"
                 Margin="12,0"
                 VerticalAlignment="Center"
-                Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
+                Background="{ThemeResource ElMdShellBorderBrush}"/>
             <TextBlock
                 x:Name="TitleDocumentText"
                 Grid.Column="2"
                 VerticalAlignment="Center"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Foreground="{ThemeResource ElMdShellMutedForegroundBrush}"
                 Text="Untitled.md"
                 TextTrimming="CharacterEllipsis"/>
         </Grid>
 
         <CommandBar
+            x:Name="ShellCommandBar"
             Grid.Row="1"
             Padding="4,0"
-            Background="{ThemeResource LayerFillColorDefaultBrush}"
-            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+            Background="{ThemeResource ElMdShellLayerBrush}"
+            BorderBrush="{ThemeResource ElMdShellBorderBrush}"
             BorderThickness="0,0,0,1"
             DefaultLabelPosition="Right"
             IsDynamicOverflowEnabled="True">
@@ -143,7 +160,7 @@
                     Width="16"
                     HorizontalAlignment="Stretch"
                     VerticalAlignment="Stretch"
-                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                    Background="{ThemeResource ElMdShellLayerBrush}"
                     IndicatorMode="MouseIndicator"
                     IsTabStop="False"
                     Minimum="0"
@@ -153,17 +170,18 @@
         </NavigationView>
 
         <Grid
+            x:Name="StatusBar"
             Grid.Row="3"
             MinHeight="32"
             Padding="10,3,8,3"
-            Background="{ThemeResource LayerFillColorDefaultBrush}"
-            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+            Background="{ThemeResource ElMdShellLayerBrush}"
+            BorderBrush="{ThemeResource ElMdShellBorderBrush}"
             BorderThickness="0,1,0,0"
             ColumnDefinitions="*,Auto">
             <TextBlock
                 x:Name="StatusText"
                 VerticalAlignment="Center"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Foreground="{ThemeResource ElMdShellMutedForegroundBrush}"
                 Text="Ready"
                 TextTrimming="CharacterEllipsis"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="14">
@@ -176,18 +194,18 @@
                 <TextBlock
                     x:Name="CharacterCountText"
                     VerticalAlignment="Center"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Foreground="{ThemeResource ElMdShellMutedForegroundBrush}"
                     Text="0 characters"/>
                 <TextBlock
                     x:Name="RevisionText"
                     VerticalAlignment="Center"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Foreground="{ThemeResource ElMdShellMutedForegroundBrush}"
                     Text="Revision 0"/>
                 <ToggleButton
                     x:Name="SourceModeButton"
                     MinWidth="36"
                     Padding="8,2"
-                    FontFamily="Consolas"
+                    FontFamily="{ThemeResource ElMdMonoFontFamily}"
                     Content="&lt;/&gt;"
                     ToolTipService.ToolTip="Source mode"/>
             </StackPanel>
