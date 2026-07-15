@@ -22,6 +22,7 @@ namespace winrt::ElMd
         {
             ImageDraw draw;
             draw.displayStart = overlay.displayStart;
+            draw.block = overlay.block;
             draw.image = cache.LoadRasterImage(resources, baseDirectory, overlay.source);
             draw.alt = winrt::to_hstring(overlay.alt.empty() ? std::string("image") : overlay.alt).c_str();
             if (draw.image)
@@ -39,7 +40,23 @@ namespace winrt::ElMd
                 draw.width = overlay.width.value_or((std::min)((std::max)(48.0f, static_cast<float>(draw.alt.size()) * styleSheet.body.size * 0.56f), (std::max)(48.0f, availableWidth)));
                 draw.height = overlay.height.value_or(styleSheet.body.lineHeight);
             }
-            ApplyInlinePlaceholder(layout, draw.displayStart, draw.width, draw.height, draw.height);
+            draw.advance = draw.width;
+            if (draw.block)
+            {
+                float pointX = 0.0f;
+                float pointY = 0.0f;
+                DWRITE_HIT_TEST_METRICS hit{};
+                if (SUCCEEDED(layout->HitTestTextPosition(
+                        draw.displayStart,
+                        FALSE,
+                        &pointX,
+                        &pointY,
+                        &hit)))
+                {
+                    draw.advance = (std::max)(draw.width, availableWidth - pointX);
+                }
+            }
+            ApplyInlinePlaceholder(layout, draw.displayStart, draw.advance, draw.height, draw.height);
             resolved.push_back(std::move(draw));
         }
         return resolved;
@@ -67,10 +84,17 @@ namespace winrt::ElMd
                 lineStart = lineEnd;
                 lineTop += lineMetrics[line].height;
             }
-            auto rect = D2D1::RectF(origin.x + pointX, origin.y + lineTop, origin.x + pointX + image.width, origin.y + lineTop + image.height);
+            auto imageLeft = origin.x + pointX;
+            if (image.block && image.advance > image.width)
+                imageLeft += (image.advance - image.width) * 0.5f;
+            auto rect = D2D1::RectF(imageLeft, origin.y + lineTop, imageLeft + image.width, origin.y + lineTop + image.height);
             if (image.image)
             {
-                resources.d2dContext->DrawBitmap(image.image->bitmap.Get(), rect, 1.0f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+                std::chrono::milliseconds untilNextFrame{0};
+                auto bitmap = cache.CurrentBitmap(*image.image, untilNextFrame);
+                if (bitmap)
+                    resources.d2dContext->DrawBitmap(bitmap, rect, 1.0f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+                if (untilNextFrame.count() > 0) cache.RequestAnimationFrame(untilNextFrame);
             }
             else
             {

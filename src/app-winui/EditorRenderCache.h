@@ -10,7 +10,21 @@ namespace winrt::ElMd
     {
         struct RasterImage
         {
+            struct Frame
+            {
+                ::Microsoft::WRL::ComPtr<ID2D1Bitmap1> bitmap;
+                std::chrono::milliseconds duration{100};
+            };
+
+            struct Animation
+            {
+                std::vector<Frame> frames;
+                std::chrono::milliseconds cycle{0};
+                std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+            };
+
             ::Microsoft::WRL::ComPtr<ID2D1Bitmap1> bitmap;
+            std::shared_ptr<Animation> animation;
             float width = 0.0f;
             float height = 0.0f;
             std::size_t bytes = 0;
@@ -25,6 +39,8 @@ namespace winrt::ElMd
         void ClearDeviceResources();
         std::uint64_t RemoteImageGeneration() const;
         std::optional<RasterImage> LoadRasterImage(EditorRenderResources const& resources, std::wstring const& baseDirectory, std::string_view source);
+        ID2D1Bitmap1* CurrentBitmap(RasterImage const& image, std::chrono::milliseconds& untilNextFrame) const;
+        void RequestAnimationFrame(std::chrono::milliseconds delay);
         ::Microsoft::WRL::ComPtr<IDWriteTextLayout> FindTextLayout(std::uint64_t key);
         void StoreTextLayout(std::uint64_t key, ::Microsoft::WRL::ComPtr<IDWriteTextLayout> const& layout, std::size_t bytes);
         ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> FindOrCreateSvgDocument(ID2D1DeviceContext5* context, std::uint64_t renderId, std::string const& source, float width, float height);
@@ -70,5 +86,8 @@ namespace winrt::ElMd
         std::list<std::uint64_t> svgDocumentOrder;
         std::size_t svgDocumentBytes = 0;
         std::shared_ptr<RemoteState> remoteState = std::make_shared<RemoteState>();
+        winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer animationTimer{ nullptr };
+        winrt::event_token animationTickToken{};
+        std::optional<std::chrono::steady_clock::time_point> animationDeadline;
     };
 }

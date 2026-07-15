@@ -16,6 +16,8 @@ namespace winrt::ElMd
             std::wstring alt;
             float width = 0.0f;
             float height = 0.0f;
+            float advance = 0.0f;
+            bool block = false;
         };
 
         EditorInlineImageRenderer(EditorRenderResources& resources, EditorRenderCache& cache, EditorStyleSheet const& styleSheet, std::wstring const& baseDirectory);

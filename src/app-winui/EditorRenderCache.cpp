@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "EditorRenderCache.h"
+#include "EditorGifDecoder.h"
 
 import elmd.core.render_model;
 import elmd.core.types;
@@ -15,14 +16,36 @@ namespace winrt::ElMd
 
     void EditorRenderCache::Attach(winrt::Microsoft::UI::Dispatching::DispatcherQueue const& dispatcher, std::function<void()> invalidate)
     {
-        std::scoped_lock lock(remoteState->mutex);
-        remoteState->dispatcher = dispatcher;
-        remoteState->invalidate = std::move(invalidate);
-        remoteState->active = true;
+        {
+            std::scoped_lock lock(remoteState->mutex);
+            remoteState->dispatcher = dispatcher;
+            remoteState->invalidate = std::move(invalidate);
+            remoteState->active = true;
+        }
+        animationTimer = dispatcher.CreateTimer();
+        animationTimer.IsRepeating(false);
+        animationTickToken = animationTimer.Tick([this](auto const&, auto const&)
+        {
+            animationDeadline.reset();
+            std::function<void()> invalidate;
+            {
+                std::scoped_lock lock(remoteState->mutex);
+                if (remoteState->active) invalidate = remoteState->invalidate;
+            }
+            if (invalidate) invalidate();
+        });
     }
 
     void EditorRenderCache::Detach()
     {
+        if (animationTimer)
+        {
+            animationTimer.Stop();
+            if (animationTickToken.value) animationTimer.Tick(animationTickToken);
+        }
+        animationTickToken = {};
+        animationTimer = nullptr;
+        animationDeadline.reset();
         {
             std::scoped_lock lock(remoteState->mutex);
             remoteState->active = false;
@@ -65,6 +88,48 @@ namespace winrt::ElMd
     std::uint64_t EditorRenderCache::RemoteImageGeneration() const
     {
         return remoteState->generation.load();
+    }
+
+    ID2D1Bitmap1* EditorRenderCache::CurrentBitmap(
+        RasterImage const& image,
+        std::chrono::milliseconds& untilNextFrame) const
+    {
+        untilNextFrame = std::chrono::milliseconds{0};
+        if (!image.animation || image.animation->frames.size() < 2
+            || image.animation->cycle.count() <= 0)
+        {
+            return image.bitmap.Get();
+        }
+
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - image.animation->started);
+        auto position = elapsed.count() % image.animation->cycle.count();
+        auto boundary = std::int64_t{0};
+        for (auto const& frame : image.animation->frames)
+        {
+            boundary += frame.duration.count();
+            if (position < boundary)
+            {
+                untilNextFrame = std::chrono::milliseconds{(std::max)(
+                    std::int64_t{1},
+                    boundary - position)};
+                return frame.bitmap.Get();
+            }
+        }
+        untilNextFrame = image.animation->frames.front().duration;
+        return image.animation->frames.front().bitmap.Get();
+    }
+
+    void EditorRenderCache::RequestAnimationFrame(std::chrono::milliseconds delay)
+    {
+        if (!animationTimer || delay.count() <= 0) return;
+        delay = (std::clamp)(delay, std::chrono::milliseconds{1}, std::chrono::milliseconds{10000});
+        auto deadline = std::chrono::steady_clock::now() + delay;
+        if (animationDeadline && *animationDeadline <= deadline) return;
+        animationDeadline = deadline;
+        animationTimer.Stop();
+        animationTimer.Interval(std::chrono::duration_cast<winrt::Windows::Foundation::TimeSpan>(delay));
+        animationTimer.Start();
     }
 
     void EditorRenderCache::QueueRemoteImage(std::string source)
@@ -217,21 +282,51 @@ namespace winrt::ElMd
             if (FAILED(resources.wicFactory->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad, decoder.GetAddressOf()))) return fail();
         }
         else if (FAILED(resources.wicFactory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad, decoder.GetAddressOf()))) return fail();
-        ::Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> frame;
-        if (FAILED(decoder->GetFrame(0, frame.GetAddressOf()))) return fail();
-        UINT width = 0;
-        UINT height = 0;
-        if (FAILED(frame->GetSize(&width, &height)) || width == 0 || height == 0) return fail();
-        auto pixels = static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height);
-        if (pixels > 16ull * 1024ull * 1024ull) return fail();
-        ::Microsoft::WRL::ComPtr<IWICFormatConverter> converter;
-        if (FAILED(resources.wicFactory->CreateFormatConverter(converter.GetAddressOf()))) return fail();
-        if (FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeMedianCut))) return fail();
         RasterImage image;
-        if (FAILED(resources.d2dContext->CreateBitmapFromWicBitmap(converter.Get(), nullptr, image.bitmap.GetAddressOf())) || !image.bitmap) return fail();
-        image.width = static_cast<float>(width);
-        image.height = static_cast<float>(height);
-        image.bytes = static_cast<std::size_t>(pixels * 4);
+        if (auto decoded = DecodeGifAnimation(
+                resources.wicFactory.Get(),
+                resources.d2dContext.Get(),
+                decoder.Get(),
+                64u * 1024u * 1024u))
+        {
+            auto animation = std::make_shared<RasterImage::Animation>();
+            animation->cycle = decoded->cycle;
+            animation->frames.reserve(decoded->frames.size());
+            for (auto& frame : decoded->frames)
+                animation->frames.push_back(RasterImage::Frame{ std::move(frame.bitmap), frame.duration });
+            image.bitmap = animation->frames.front().bitmap;
+            image.animation = std::move(animation);
+            image.width = static_cast<float>(decoded->width);
+            image.height = static_cast<float>(decoded->height);
+            image.bytes = decoded->bytes;
+        }
+        else
+        {
+            ::Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> frame;
+            UINT width = 0;
+            UINT height = 0;
+            if (FAILED(decoder->GetFrame(0, frame.GetAddressOf())) || !frame
+                || FAILED(frame->GetSize(&width, &height)) || width == 0 || height == 0) return fail();
+            auto pixels = static_cast<std::uint64_t>(width) * height;
+            if (pixels > 16ull * 1024ull * 1024ull) return fail();
+            ::Microsoft::WRL::ComPtr<IWICFormatConverter> converter;
+            if (FAILED(resources.wicFactory->CreateFormatConverter(converter.GetAddressOf()))
+                || FAILED(converter->Initialize(
+                    frame.Get(),
+                    GUID_WICPixelFormat32bppPBGRA,
+                    WICBitmapDitherTypeNone,
+                    nullptr,
+                    0.0,
+                    WICBitmapPaletteTypeMedianCut))
+                || FAILED(resources.d2dContext->CreateBitmapFromWicBitmap(
+                    converter.Get(),
+                    nullptr,
+                    image.bitmap.GetAddressOf())) || !image.bitmap) return fail();
+            image.width = static_cast<float>(width);
+            image.height = static_cast<float>(height);
+            image.bytes = static_cast<std::size_t>(pixels * 4);
+        }
+
         while (!rasterImageOrder.empty() && (rasterImages.size() >= 32 || rasterImageBytes + image.bytes > 64 * 1024 * 1024))
         {
             auto oldest = std::move(rasterImageOrder.front());

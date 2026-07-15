@@ -117,6 +117,7 @@
     <ClInclude Include="EditorDisplayMapping.h" />
     <ClInclude Include="EditorContentPreparation.h" />
     <ClInclude Include="EditorRenderResources.h" />
+    <ClInclude Include="EditorGifDecoder.h" />
     <ClInclude Include="EditorRenderCache.h" />
     <ClInclude Include="EditorSvgPainter.h" />
     <ClInclude Include="EditorTextLayoutEngine.h" />
@@ -289,6 +290,7 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="EditorSession.cpp" />
+    <ClCompile Include="EditorGifDecoder.cpp" />
     <ClCompile Include="EditorStyleSheet.cpp" />
     <ClCompile Include="EditorInteractionMap.cpp" />
     <ClCompile Include="EditorContentPreparation.cpp" />
