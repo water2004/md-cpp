@@ -15,6 +15,7 @@
         <CommandBar Grid.Row="0" Grid.ColumnSpan="2" DefaultLabelPosition="Right">
             <AppBarButton x:Name="OpenButton" Icon="OpenFile" Label="Open"/>
             <AppBarButton x:Name="SaveButton" Icon="Save" Label="Save"/>
+            <AppBarButton x:Name="ExportPdfButton" Icon="Print" Label="PDF"/>
             <AppBarToggleButton x:Name="SidebarButton" Label="Sidebar" IsChecked="True"/>
             <AppBarSeparator/>
             <AppBarButton x:Name="BoldButton" Icon="Bold" Label="Bold"/>

@@ -32,6 +32,7 @@ namespace winrt::ElMd
         void OpenDocument();
         void SaveDocument();
         void SaveDocumentAs();
+        void ExportPdf();
         void InsertImage();
         void OpenLink(std::string href);
         void CopySelection();
@@ -44,6 +45,7 @@ namespace winrt::ElMd
         static winrt::fire_and_forget OpenDocumentAsync(std::shared_ptr<State> state, std::uint64_t generation);
         static winrt::fire_and_forget SaveDocumentAsync(std::shared_ptr<State> state, std::uint64_t generation);
         static winrt::fire_and_forget SaveDocumentAsAsync(std::shared_ptr<State> state, std::uint64_t generation);
+        static winrt::fire_and_forget ExportPdfAsync(std::shared_ptr<State> state, std::uint64_t generation);
         static winrt::fire_and_forget InsertImageAsync(std::shared_ptr<State> state, std::uint64_t generation);
         static winrt::fire_and_forget OpenLinkAsync(std::shared_ptr<State> state, std::uint64_t generation, std::string href);
         static winrt::fire_and_forget PasteClipboardAsync(std::shared_ptr<State> state, std::uint64_t generation);

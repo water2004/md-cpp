@@ -181,6 +181,11 @@ namespace winrt::ElMd::implementation
             documentController.SaveDocument();
         });
 
+        ExportPdfButton().Click([this](auto const&, auto const&)
+        {
+            documentController.ExportPdf();
+        });
+
         BoldButton().Click([this](auto const&, auto const&)
         {
             elmd::Command command;

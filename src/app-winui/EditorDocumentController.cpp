@@ -77,6 +77,11 @@ namespace winrt::ElMd
         SaveDocumentAsAsync(state_, state_->generation.load());
     }
 
+    void EditorDocumentController::ExportPdf()
+    {
+        ExportPdfAsync(state_, state_->generation.load());
+    }
+
     void EditorDocumentController::InsertImage()
     {
         InsertImageAsync(state_, state_->generation.load());
@@ -222,6 +227,59 @@ namespace winrt::ElMd
         catch (winrt::hresult_error const& error)
         {
             if (Active(state, generation) && state->setStatus) state->setStatus(L"Save failed: " + error.message());
+        }
+    }
+
+    winrt::fire_and_forget EditorDocumentController::ExportPdfAsync(std::shared_ptr<State> state, std::uint64_t generation)
+    {
+        try
+        {
+            if (!Active(state, generation) || !state->windowHandle || !state->renderer) co_return;
+            auto picker = winrt::Windows::Storage::Pickers::FileSavePicker();
+            picker.DefaultFileExtension(L".pdf");
+            auto displayName = state->session->DisplayName();
+            auto suggested = std::filesystem::path(displayName.c_str()).stem().wstring();
+            picker.SuggestedFileName(suggested.empty() ? L"Untitled.pdf" : suggested + L".pdf");
+            picker.FileTypeChoices().Insert(L"PDF document", winrt::single_threaded_vector<winrt::hstring>({L".pdf"}));
+            auto initializeWithWindow = picker.as<IInitializeWithWindow>();
+            winrt::check_hresult(initializeWithWindow->Initialize(state->windowHandle()));
+            auto file = co_await picker.PickSaveFileAsync();
+            if (!Active(state, generation)) co_return;
+            if (!file)
+            {
+                if (state->setStatus) state->setStatus(L"PDF export cancelled");
+                co_return;
+            }
+
+            // Export the exact document snapshot that existed when the picker
+            // closed. Asset preparation may yield to the UI thread, but later
+            // edits must not leak into this print job.
+            auto renderModel = state->session->RenderModel();
+            auto baseDirectory = state->session->BaseDirectory();
+            auto title = std::filesystem::path(displayName.c_str()).stem().wstring();
+            detail::EditorRenderFrame frame{renderModel, {}, baseDirectory};
+            auto outputPath = std::filesystem::path(file.Path().c_str());
+            if (state->setStatus) state->setStatus(L"Preparing PDF…");
+            winrt::apartment_context uiContext;
+            for (;;)
+            {
+                if (!Active(state, generation)) co_return;
+                auto result = state->renderer->ExportPdf(outputPath, title, frame);
+                if (result == EditorSurfaceRenderer::PdfExportResult::Completed) break;
+                if (state->setStatus) state->setStatus(L"Preparing PDF assets…");
+                co_await winrt::resume_after(std::chrono::milliseconds(80));
+                co_await uiContext;
+            }
+            if (Active(state, generation) && state->setStatus)
+                state->setStatus(L"Exported PDF: " + file.Path());
+        }
+        catch (winrt::hresult_error const& error)
+        {
+            if (Active(state, generation) && state->setStatus) state->setStatus(L"PDF export failed: " + error.message());
+        }
+        catch (std::exception const& error)
+        {
+            if (Active(state, generation) && state->setStatus) state->setStatus(L"PDF export failed: " + winrt::to_hstring(error.what()));
         }
     }
 
