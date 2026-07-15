@@ -11,7 +11,7 @@
         <MicaBackdrop Kind="Base"/>
     </Window.SystemBackdrop>
 
-    <Grid x:Name="Root" RowDefinitions="40,Auto,*,Auto" Background="{ThemeResource ElMdShellBackgroundBrush}">
+    <Grid x:Name="Root" RowDefinitions="40,Auto,*,Auto">
         <Grid.Resources>
             <SolidColorBrush x:Key="ElMdShellBackgroundBrush" Color="#121419"/>
             <SolidColorBrush x:Key="ElMdShellLayerBrush" Color="#191C23"/>
