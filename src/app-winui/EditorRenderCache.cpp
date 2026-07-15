@@ -7,6 +7,47 @@ import elmd.core.types;
 
 #include "EditorContentPreparation.h"
 
+namespace
+{
+    bool HasGifMagic(std::vector<std::uint8_t> const& bytes)
+    {
+        if (bytes.size() < 6) return false;
+        auto header = std::string_view(reinterpret_cast<char const*>(bytes.data()), 6);
+        return header == "GIF87a" || header == "GIF89a";
+    }
+
+    bool HasGifExtension(std::filesystem::path const& path)
+    {
+        auto extension = path.extension().wstring();
+        return _wcsicmp(extension.c_str(), L".gif") == 0;
+    }
+
+    std::optional<std::wstring> RasterImageKey(
+        std::wstring const& baseDirectory,
+        std::string_view source)
+    {
+        if (source.empty()) return std::nullopt;
+        if (source.starts_with("https://") || source.starts_with("http://"))
+            return L"url:" + std::wstring(winrt::to_hstring(std::string(source)));
+        if (source.starts_with("data:image/"))
+            return L"data:" + std::to_wstring(source.size()) + L":"
+                + std::to_wstring(std::hash<std::string_view>{}(source));
+        auto sourceText = winrt::to_hstring(std::string(source));
+        auto path = std::filesystem::path(sourceText.c_str());
+        if (path.has_root_directory() && !path.has_root_name() && !baseDirectory.empty())
+            path = std::filesystem::path(baseDirectory) / path.relative_path();
+        if (path.is_relative())
+        {
+            if (baseDirectory.empty()) return std::nullopt;
+            path = std::filesystem::path(baseDirectory) / path;
+        }
+        std::error_code error;
+        auto absolute = std::filesystem::weakly_canonical(path, error);
+        if (error) absolute = path.lexically_normal();
+        return absolute.wstring();
+    }
+}
+
 namespace winrt::ElMd
 {
     EditorRenderCache::~EditorRenderCache()
@@ -61,6 +102,7 @@ namespace winrt::ElMd
         ClearTextLayouts();
         ClearSvgDocuments();
         rasterImages.clear();
+        pendingGifImages.clear();
         rasterImageFailures.clear();
         rasterImageOrder.clear();
         rasterImageBytes = 0;
@@ -206,14 +248,15 @@ namespace winrt::ElMd
     std::optional<EditorRenderCache::RasterImage> EditorRenderCache::LoadRasterImage(EditorRenderResources const& resources, std::wstring const& baseDirectory, std::string_view source)
     {
         if (!resources.wicFactory || !resources.d2dContext || source.empty()) return std::nullopt;
-        std::wstring key;
+        auto resolvedKey = RasterImageKey(baseDirectory, source);
+        if (!resolvedKey) return std::nullopt;
+        auto key = std::move(*resolvedKey);
         std::vector<std::uint8_t> encoded;
         auto remote = source.starts_with("https://") || source.starts_with("http://");
         auto data = source.starts_with("data:image/");
         std::filesystem::path path;
         if (remote)
         {
-            key = L"url:" + std::wstring(winrt::to_hstring(std::string(source)));
             if (auto found = rasterImages.find(key); found != rasterImages.end()) return found->second;
             if (rasterImageFailures.contains(key)) return std::nullopt;
             {
@@ -231,7 +274,6 @@ namespace winrt::ElMd
         {
             auto comma = source.find(',');
             if (comma == std::string_view::npos || source.substr(0, comma).find(";base64") == std::string_view::npos) return std::nullopt;
-            key = L"data:" + std::to_wstring(source.size()) + L":" + std::to_wstring(std::hash<std::string_view>{}(source));
             if (auto found = rasterImages.find(key); found != rasterImages.end()) return found->second;
             if (rasterImageFailures.contains(key)) return std::nullopt;
             auto decoded = DecodeBase64(source.substr(comma + 1));
@@ -248,11 +290,7 @@ namespace winrt::ElMd
                 if (baseDirectory.empty()) return std::nullopt;
                 path = std::filesystem::path(baseDirectory) / path;
             }
-            std::error_code error;
-            auto absolute = std::filesystem::weakly_canonical(path, error);
-            if (error) absolute = path.lexically_normal();
-            key = absolute.wstring();
-            path = std::move(absolute);
+            path = std::filesystem::path(key);
         }
         if (auto found = rasterImages.find(key); found != rasterImages.end()) return found->second;
         if (rasterImageFailures.contains(key)) return std::nullopt;
@@ -262,13 +300,66 @@ namespace winrt::ElMd
             return std::nullopt;
         };
 
+        std::shared_ptr<std::vector<std::uint8_t>> encodedBacking;
+        std::shared_ptr<GifInitialFrame const> gifInitial;
+        auto gifCandidate = !encoded.empty() ? HasGifMagic(encoded) : HasGifExtension(path);
+        if (gifCandidate)
+        {
+            auto pending = pendingGifImages.find(key);
+            if (pending == pendingGifImages.end())
+            {
+                if (!encoded.empty())
+                    encodedBacking = std::make_shared<std::vector<std::uint8_t>>(std::move(encoded));
+                auto state = remoteState;
+                auto completion = [state]
+                {
+                    winrt::Microsoft::UI::Dispatching::DispatcherQueue dispatcher{ nullptr };
+                    {
+                        std::scoped_lock lock(state->mutex);
+                        if (!state->active) return;
+                        ++state->generation;
+                        dispatcher = state->dispatcher;
+                    }
+                    if (dispatcher)
+                    {
+                        dispatcher.TryEnqueue([state]
+                        {
+                            std::function<void()> invalidate;
+                            {
+                                std::scoped_lock lock(state->mutex);
+                                if (state->active) invalidate = state->invalidate;
+                            }
+                            if (invalidate) invalidate();
+                        });
+                    }
+                };
+                auto decode = QueueGifInitialDecode(
+                    path,
+                    encodedBacking,
+                    std::move(completion),
+                    64u * 1024u * 1024u);
+                pendingGifImages.emplace(key, PendingGifImage{ std::move(decode), std::move(encodedBacking), path });
+                return std::nullopt;
+            }
+            if (!pending->second.decode->Complete()) return std::nullopt;
+            if (pending->second.decode->Failed())
+            {
+                pendingGifImages.erase(pending);
+                return fail();
+            }
+            gifInitial = pending->second.decode->Result();
+            encodedBacking = pending->second.encodedBacking;
+            path = pending->second.path;
+            pendingGifImages.erase(pending);
+        }
+
         ::Microsoft::WRL::ComPtr<IWICBitmapDecoder> decoder;
         ::Microsoft::WRL::ComPtr<IWICStream> stream;
-        std::shared_ptr<std::vector<std::uint8_t>> encodedBacking;
-        if (!encoded.empty())
-        {
-            if (encoded.size() > (std::numeric_limits<DWORD>::max)()) return fail();
+        if (!encodedBacking && !encoded.empty())
             encodedBacking = std::make_shared<std::vector<std::uint8_t>>(std::move(encoded));
+        if (encodedBacking && !encodedBacking->empty())
+        {
+            if (encodedBacking->size() > (std::numeric_limits<DWORD>::max)()) return fail();
             if (FAILED(resources.wicFactory->CreateStream(stream.GetAddressOf()))
                 || FAILED(stream->InitializeFromMemory(encodedBacking->data(), static_cast<DWORD>(encodedBacking->size())))) return fail();
             if (FAILED(resources.wicFactory->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad, decoder.GetAddressOf()))) return fail();
@@ -280,6 +371,29 @@ namespace winrt::ElMd
                 resources.d2dContext.Get(),
                 decoder.Get(),
                 encodedBacking,
+                gifInitial,
+                path,
+                [state = remoteState]
+                {
+                    winrt::Microsoft::UI::Dispatching::DispatcherQueue dispatcher{ nullptr };
+                    {
+                        std::scoped_lock lock(state->mutex);
+                        if (!state->active) return;
+                        dispatcher = state->dispatcher;
+                    }
+                    if (dispatcher)
+                    {
+                        dispatcher.TryEnqueue([state]
+                        {
+                            std::function<void()> invalidate;
+                            {
+                                std::scoped_lock lock(state->mutex);
+                                if (state->active) invalidate = state->invalidate;
+                            }
+                            if (invalidate) invalidate();
+                        });
+                    }
+                },
                 64u * 1024u * 1024u))
         {
             image.bitmap = decoded->Bitmap();
@@ -331,6 +445,27 @@ namespace winrt::ElMd
             rasterImages.emplace(key, image);
         }
         return image;
+    }
+
+    void EditorRenderCache::ReleaseGifImage(
+        std::wstring const& baseDirectory,
+        std::string_view source)
+    {
+        auto key = RasterImageKey(baseDirectory, source);
+        if (!key) return;
+        if (auto pending = pendingGifImages.find(*key); pending != pendingGifImages.end())
+        {
+            pending->second.decode->Cancel();
+            pendingGifImages.erase(pending);
+        }
+        auto found = rasterImages.find(*key);
+        if (found == rasterImages.end() || !found->second.animation) return;
+        // The cache owns one reference. Other prepared blocks keep the shared
+        // animation alive and prevent a duplicate decoder from being created.
+        if (found->second.animation.use_count() != 1) return;
+        rasterImageBytes -= found->second.bytes;
+        rasterImages.erase(found);
+        std::erase(rasterImageOrder, *key);
     }
 
     ::Microsoft::WRL::ComPtr<IDWriteTextLayout> EditorRenderCache::FindTextLayout(std::uint64_t key)

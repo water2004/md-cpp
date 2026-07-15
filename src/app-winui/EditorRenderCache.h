@@ -7,6 +7,7 @@
 namespace winrt::ElMd
 {
     struct DecodedGifAnimation;
+    struct GifInitialDecode;
 
     struct EditorRenderCache
     {
@@ -28,6 +29,7 @@ namespace winrt::ElMd
         void ClearDeviceResources();
         std::uint64_t RemoteImageGeneration() const;
         std::optional<RasterImage> LoadRasterImage(EditorRenderResources const& resources, std::wstring const& baseDirectory, std::string_view source);
+        void ReleaseGifImage(std::wstring const& baseDirectory, std::string_view source);
         ID2D1Bitmap1* CurrentBitmap(RasterImage const& image, std::chrono::milliseconds& untilNextFrame) const;
         void RequestAnimationFrame(std::chrono::milliseconds delay);
         ::Microsoft::WRL::ComPtr<IDWriteTextLayout> FindTextLayout(std::uint64_t key);
@@ -46,6 +48,13 @@ namespace winrt::ElMd
         {
             ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
             std::size_t bytes = 0;
+        };
+
+        struct PendingGifImage
+        {
+            std::shared_ptr<GifInitialDecode> decode;
+            std::shared_ptr<std::vector<std::uint8_t>> encodedBacking;
+            std::filesystem::path path;
         };
 
         struct RemoteState
@@ -69,6 +78,7 @@ namespace winrt::ElMd
         std::deque<std::uint64_t> textLayoutOrder;
         std::size_t textLayoutBytes = 0;
         std::unordered_map<std::wstring, RasterImage> rasterImages;
+        std::unordered_map<std::wstring, PendingGifImage> pendingGifImages;
         std::unordered_set<std::wstring> rasterImageFailures;
         std::deque<std::wstring> rasterImageOrder;
         std::size_t rasterImageBytes = 0;
