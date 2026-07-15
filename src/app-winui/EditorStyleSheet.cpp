@@ -34,6 +34,12 @@ namespace winrt::ElMd
             sheet.codeTextColor = Rgba(0.180f, 0.205f, 0.250f);
             sheet.panelColor = Rgba(0.940f, 0.945f, 0.955f);
             sheet.nestedQuoteColor = Rgba(0.958f, 0.961f, 0.968f);
+            sheet.calloutNoteBackgroundColor = Rgb(0xEAF3FF);
+            sheet.calloutNoteBorderColor = Rgb(0x4F8FE8);
+            sheet.calloutTipBackgroundColor = Rgb(0xEAF8F0);
+            sheet.calloutTipBorderColor = Rgb(0x28A36A);
+            sheet.calloutWarningBackgroundColor = Rgb(0xFFF6DD);
+            sheet.calloutWarningBorderColor = Rgb(0xD49A16);
             sheet.selectionColor = Rgba(0.370f, 0.570f, 0.960f, 0.30f);
             sheet.caretColor = Rgba(0.065f, 0.075f, 0.090f);
             sheet.syntaxColors = { sheet.codeTextColor, Rgb(0xAF00DB), Rgb(0x267F99), Rgb(0x795E26), Rgb(0xA31515), Rgb(0x098658), Rgb(0x008000), Rgb(0x303030), Rgb(0x800080), Rgb(0x001080), Rgb(0x0070C1) };
@@ -47,6 +53,12 @@ namespace winrt::ElMd
         sheet.codeTextColor = Rgba(0.875f, 0.895f, 0.925f);
         sheet.panelColor = Rgba(0.100f, 0.113f, 0.140f);
         sheet.nestedQuoteColor = Rgba(0.085f, 0.096f, 0.119f);
+        sheet.calloutNoteBackgroundColor = Rgb(0x162238);
+        sheet.calloutNoteBorderColor = Rgb(0x6CB6FF);
+        sheet.calloutTipBackgroundColor = Rgb(0x122D24);
+        sheet.calloutTipBorderColor = Rgb(0x34D399);
+        sheet.calloutWarningBackgroundColor = Rgb(0x352A12);
+        sheet.calloutWarningBorderColor = Rgb(0xFBBF24);
         sheet.selectionColor = Rgba(0.255f, 0.390f, 0.700f, 0.44f);
         sheet.caretColor = Rgba(0.965f, 0.975f, 1.000f);
         sheet.syntaxColors = { sheet.codeTextColor, Rgb(0xC586C0), Rgb(0x4EC9B0), Rgb(0xDCDCAA), Rgb(0xCE9178), Rgb(0xB5CEA8), Rgb(0x6A9955), Rgb(0xD4D4D4), Rgb(0xC586C0), Rgb(0x9CDCFE), Rgb(0x4FC1FF) };

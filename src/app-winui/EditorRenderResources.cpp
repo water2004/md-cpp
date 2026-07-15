@@ -49,6 +49,12 @@ namespace winrt::ElMd
         panelBrush = nullptr;
         canvasBrush = nullptr;
         nestedQuoteBrush = nullptr;
+        calloutNoteBackgroundBrush = nullptr;
+        calloutNoteBorderBrush = nullptr;
+        calloutTipBackgroundBrush = nullptr;
+        calloutTipBorderBrush = nullptr;
+        calloutWarningBackgroundBrush = nullptr;
+        calloutWarningBorderBrush = nullptr;
         selectionBrush = nullptr;
         caretBrush = nullptr;
         for (auto& brush : syntaxBrushes) brush = nullptr;
@@ -212,6 +218,12 @@ namespace winrt::ElMd
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.panelColor, panelBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.canvasColor, canvasBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.nestedQuoteColor, nestedQuoteBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.calloutNoteBackgroundColor, calloutNoteBackgroundBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.calloutNoteBorderColor, calloutNoteBorderBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.calloutTipBackgroundColor, calloutTipBackgroundBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.calloutTipBorderColor, calloutTipBorderBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.calloutWarningBackgroundColor, calloutWarningBackgroundBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.calloutWarningBorderColor, calloutWarningBorderBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.selectionColor, selectionBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.caretColor, caretBrush.GetAddressOf()));
             for (std::size_t index = 0; index < syntaxBrushes.size(); ++index)

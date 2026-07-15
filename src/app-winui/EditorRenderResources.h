@@ -44,6 +44,12 @@ namespace winrt::ElMd
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> panelBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> canvasBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> nestedQuoteBrush;
+        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> calloutNoteBackgroundBrush;
+        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> calloutNoteBorderBrush;
+        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> calloutTipBackgroundBrush;
+        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> calloutTipBorderBrush;
+        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> calloutWarningBackgroundBrush;
+        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> calloutWarningBorderBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> selectionBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> caretBrush;
         std::array<::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush>, 11> syntaxBrushes;

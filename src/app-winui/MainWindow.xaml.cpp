@@ -303,13 +303,16 @@ namespace winrt::ElMd::implementation
             ExecuteEditorCommand(command);
         });
 
-        CalloutButton().Click([this](auto const&, auto const&)
+        auto toggleCallout = [this](std::u32string kind)
         {
             elmd::Command command;
             command.kind = elmd::CommandKind::ToggleCallout;
-            command.callout_kind = U"NOTE";
+            command.callout_kind = std::move(kind);
             ExecuteEditorCommand(command);
-        });
+        };
+        CalloutNoteMenuItem().Click([toggleCallout](auto const&, auto const&) { toggleCallout(U"NOTE"); });
+        CalloutTipMenuItem().Click([toggleCallout](auto const&, auto const&) { toggleCallout(U"TIP"); });
+        CalloutWarningMenuItem().Click([toggleCallout](auto const&, auto const&) { toggleCallout(U"WARNING"); });
 
         TocButton().Click([this](auto const&, auto const&)
         {

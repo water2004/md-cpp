@@ -2,6 +2,7 @@
 #include "EditorSurfaceRenderer.h"
 
 import elmd.core.render_model;
+import elmd.core.callout;
 import elmd.core.utf;
 
 #include "EditorContentPreparation.h"
@@ -564,6 +565,23 @@ namespace winrt::ElMd
                 }
                 return true;
             };
+            auto calloutBrushes = [&](std::string_view kind) {
+                switch (elmd::callout_visual_kind(kind)) {
+                    case elmd::CalloutVisualKind::Tip:
+                        return std::pair{
+                            resources.calloutTipBackgroundBrush.Get(),
+                            resources.calloutTipBorderBrush.Get()};
+                    case elmd::CalloutVisualKind::Warning:
+                        return std::pair{
+                            resources.calloutWarningBackgroundBrush.Get(),
+                            resources.calloutWarningBorderBrush.Get()};
+                    case elmd::CalloutVisualKind::Note:
+                    default:
+                        return std::pair{
+                            resources.calloutNoteBackgroundBrush.Get(),
+                            resources.calloutNoteBorderBrush.Get()};
+                }
+            };
             auto draw = [&](auto& self, elmd::RenderBlock const& nested, bool root, std::size_t parentIndentColumns) -> void
             {
                 auto indentColumns = parentIndentColumns + nested.flow_local_indent_columns;
@@ -582,18 +600,28 @@ namespace winrt::ElMd
                         if (contentLeft && accumulateRange(*range, top, bottom)) {
                             auto left = (std::clamp)(*contentLeft, origin.x, documentRight);
                             auto rect = D2D1::RectF(left, top - 4.0f, documentRight, bottom + 4.0f);
-                            auto brush = nested.kind == elmd::RenderBlockKind::Code
-                                || nested.kind == elmd::RenderBlockKind::Callout
-                                ? resources.panelBrush.Get()
-                                : resources.nestedQuoteBrush.Get();
-                            resources.d2dContext->FillRectangle(rect, brush);
+                            auto calloutPalette = calloutBrushes(nested.callout_kind);
+                            auto brush = nested.kind == elmd::RenderBlockKind::Callout
+                                ? calloutPalette.first
+                                : nested.kind == elmd::RenderBlockKind::Code
+                                    ? resources.panelBrush.Get()
+                                    : resources.nestedQuoteBrush.Get();
+                            if (nested.kind == elmd::RenderBlockKind::Callout) {
+                                resources.d2dContext->FillRoundedRectangle(
+                                    D2D1::RoundedRect(rect, 6.0f, 6.0f),
+                                    brush);
+                            } else {
+                                resources.d2dContext->FillRectangle(rect, brush);
+                            }
                             if (nested.kind == elmd::RenderBlockKind::Quote || nested.kind == elmd::RenderBlockKind::Callout) {
                                 auto borderWidth = nested.block_style.border_left ? nested.block_style.border_left->width : 3.0f;
                                 auto lineX = left + borderWidth * 0.5f;
                                 resources.d2dContext->DrawLine(
                                     D2D1::Point2F(lineX, rect.top + 3.0f),
                                     D2D1::Point2F(lineX, rect.bottom - 3.0f),
-                                    resources.mutedBrush.Get(),
+                                    nested.kind == elmd::RenderBlockKind::Callout
+                                        ? calloutPalette.second
+                                        : resources.mutedBrush.Get(),
                                     borderWidth);
                             }
                         }

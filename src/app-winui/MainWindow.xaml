@@ -35,7 +35,15 @@
             <AppBarButton x:Name="LinkButton" Label="Link"/>
             <AppBarButton x:Name="ImageButton" Label="Image"/>
             <AppBarButton x:Name="FootnoteButton" Label="Footnote"/>
-            <AppBarButton x:Name="CalloutButton" Label="Callout"/>
+            <AppBarButton x:Name="CalloutButton" Label="Callout">
+                <AppBarButton.Flyout>
+                    <MenuFlyout>
+                        <MenuFlyoutItem x:Name="CalloutNoteMenuItem" Text="Note"/>
+                        <MenuFlyoutItem x:Name="CalloutTipMenuItem" Text="Tip"/>
+                        <MenuFlyoutItem x:Name="CalloutWarningMenuItem" Text="Warning"/>
+                    </MenuFlyout>
+                </AppBarButton.Flyout>
+            </AppBarButton>
             <AppBarButton x:Name="TocButton" Label="TOC"/>
         </CommandBar>
 

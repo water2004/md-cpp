@@ -30,6 +30,12 @@ namespace winrt::ElMd
         D2D1_COLOR_F codeTextColor{};
         D2D1_COLOR_F panelColor{};
         D2D1_COLOR_F nestedQuoteColor{};
+        D2D1_COLOR_F calloutNoteBackgroundColor{};
+        D2D1_COLOR_F calloutNoteBorderColor{};
+        D2D1_COLOR_F calloutTipBackgroundColor{};
+        D2D1_COLOR_F calloutTipBorderColor{};
+        D2D1_COLOR_F calloutWarningBackgroundColor{};
+        D2D1_COLOR_F calloutWarningBorderColor{};
         D2D1_COLOR_F selectionColor{};
         D2D1_COLOR_F caretColor{};
         std::array<D2D1_COLOR_F, 11> syntaxColors{};
