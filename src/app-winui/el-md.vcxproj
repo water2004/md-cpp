@@ -184,7 +184,10 @@
     <ClCompile Include="..\core\editing\document_block_reparse.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\core\editing\document_clipboard.ixx">
+    <ClCompile Include="..\core\editing\document_copy.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\document_paste.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\core\editing\document_footnotes.ixx">

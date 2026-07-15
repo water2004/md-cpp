@@ -87,7 +87,10 @@
     <ClCompile Include="..\core\editing\document_block_reparse.ixx">
       <Filter>Core Modules\Editing</Filter>
     </ClCompile>
-    <ClCompile Include="..\core\editing\document_clipboard.ixx">
+    <ClCompile Include="..\core\editing\document_copy.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\document_paste.ixx">
       <Filter>Core Modules\Editing</Filter>
     </ClCompile>
     <ClCompile Include="..\core\editing\document_footnotes.ixx">
