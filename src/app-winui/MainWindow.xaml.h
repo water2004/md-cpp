@@ -21,13 +21,12 @@ namespace winrt::ElMd::implementation
         void InitializeTextInput();
         void ResizeEditorSurface(double width, double height);
         void RenderEditorSurface();
-        void SetSidebarExpanded(bool expanded);
         void UpdateTheme();
         winrt::ElMd::EditorSurfaceRenderer::Theme CurrentRendererTheme();
         void RegisterCommandHandlers();
         void ToggleSourceMode();
         void UpdateSourceModeUi();
-        winrt::hstring DocumentStatus() const;
+        void UpdateDocumentInfo();
         bool ExecuteEditorCommand(elmd::Command const& command);
         void ShowFootnoteFlyout(
             winrt::ElMd::EditorSurfaceRenderer::FootnoteHit const& hit,

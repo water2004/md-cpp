@@ -169,7 +169,7 @@ namespace winrt::ElMd
             }
             if (state->textInput) state->textInput->NotifyTextChanged();
             if (state->documentChanged) state->documentChanged();
-            if (state->setStatus) state->setStatus(state->session->Path() + L" | " + winrt::to_hstring(state->session->Text().size()) + L" chars | rev " + winrt::to_hstring(state->session->Revision()));
+            if (state->setStatus) state->setStatus(L"Opened " + file.Name());
         }
         catch (winrt::hresult_error const& error)
         {
@@ -191,7 +191,7 @@ namespace winrt::ElMd
             auto text = state->session->Text();
             co_await winrt::Windows::Storage::FileIO::WriteTextAsync(file, text);
             if (!Active(state, generation)) co_return;
-            if (state->setStatus) state->setStatus(L"Saved " + state->session->Path() + L" | " + winrt::to_hstring(state->session->Text().size()) + L" chars | rev " + winrt::to_hstring(state->session->Revision()));
+            if (state->setStatus) state->setStatus(L"Saved " + file.Name());
         }
         catch (winrt::hresult_error const& error)
         {
@@ -222,7 +222,7 @@ namespace winrt::ElMd
             if (!Active(state, generation)) co_return;
             state->session->SaveAs(file);
             if (state->documentChanged) state->documentChanged();
-            if (state->setStatus) state->setStatus(L"Saved " + state->session->Path() + L" | " + winrt::to_hstring(state->session->Text().size()) + L" chars | rev " + winrt::to_hstring(state->session->Revision()));
+            if (state->setStatus) state->setStatus(L"Saved " + file.Name());
         }
         catch (winrt::hresult_error const& error)
         {

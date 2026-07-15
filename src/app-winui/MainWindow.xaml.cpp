@@ -12,6 +12,8 @@ namespace winrt::ElMd::implementation
     MainWindow::MainWindow()
     {
         InitializeComponent();
+        ExtendsContentIntoTitleBar(true);
+        SetTitleBar(AppTitleBar());
         RegisterCommandHandlers();
         InitializeTextInput();
         sidebarController.Attach(
@@ -31,6 +33,7 @@ namespace winrt::ElMd::implementation
             {
                 Title(L"el-md - " + editorSession.DisplayName());
                 UpdateSourceModeUi();
+                UpdateDocumentInfo();
                 sidebarController.Refresh();
                 RenderEditorSurface();
             },
@@ -64,12 +67,6 @@ namespace winrt::ElMd::implementation
             keyboardController.Detach();
             textInputController.Detach();
             scrollController.Detach();
-        });
-
-        SidebarButton().Click([this](auto const&, auto const&)
-        {
-            auto checked = SidebarButton().IsChecked();
-            SetSidebarExpanded(checked && checked.Value());
         });
 
         SourceModeButton().Click([this](auto const&, auto const&)
@@ -167,6 +164,8 @@ namespace winrt::ElMd::implementation
             }
         });
 
+        UpdateSourceModeUi();
+        UpdateDocumentInfo();
     }
 
     void MainWindow::RegisterCommandHandlers()
@@ -349,13 +348,16 @@ namespace winrt::ElMd::implementation
         });
     }
 
-    winrt::hstring MainWindow::DocumentStatus() const
+    void MainWindow::UpdateDocumentInfo()
     {
-        auto status = editorSession.DisplayName()
-            + L" | " + winrt::to_hstring(editorSession.TextView().size())
-            + L" chars | rev " + winrt::to_hstring(editorSession.Revision());
-        if (editorSession.IsSourceMode()) status = status + L" | Source";
-        return status;
+        auto const displayName = editorSession.DisplayName();
+        auto const detail = editorSession.HasFile() ? editorSession.Path() : displayName;
+        TitleDocumentText().Text(displayName);
+        DocumentNameText().Text(displayName);
+        Microsoft::UI::Xaml::Controls::ToolTipService::SetToolTip(TitleDocumentText(), winrt::box_value(detail));
+        Microsoft::UI::Xaml::Controls::ToolTipService::SetToolTip(DocumentNameText(), winrt::box_value(detail));
+        CharacterCountText().Text(winrt::to_hstring(editorSession.TextView().size()) + L" characters");
+        RevisionText().Text(L"Revision " + winrt::to_hstring(editorSession.Revision()));
     }
 
     void MainWindow::UpdateSourceModeUi()
@@ -366,21 +368,8 @@ namespace winrt::ElMd::implementation
         ItalicButton().IsEnabled(!source);
         StrikeButton().IsEnabled(!source);
         InlineCodeButton().IsEnabled(!source);
-        Heading1Button().IsEnabled(!source);
-        Heading2Button().IsEnabled(!source);
-        QuoteButton().IsEnabled(!source);
-        UnorderedListButton().IsEnabled(!source);
-        OrderedListButton().IsEnabled(!source);
-        TaskListButton().IsEnabled(!source);
-        CodeBlockButton().IsEnabled(!source);
-        TableButton().IsEnabled(!source);
-        InlineMathButton().IsEnabled(!source);
-        BlockMathButton().IsEnabled(!source);
-        LinkButton().IsEnabled(!source);
-        ImageButton().IsEnabled(!source);
-        FootnoteButton().IsEnabled(!source);
-        CalloutButton().IsEnabled(!source);
-        TocButton().IsEnabled(!source);
+        BlocksButton().IsEnabled(!source);
+        InsertButton().IsEnabled(!source);
     }
 
     void MainWindow::ToggleSourceMode()
@@ -393,9 +382,8 @@ namespace winrt::ElMd::implementation
         keyboardController.ResetCaretGoal();
         editorRenderer.ResetDocumentCaches();
         UpdateSourceModeUi();
-        auto status = DocumentStatus();
-        lastCommand = status;
-        StatusText().Text(status);
+        UpdateDocumentInfo();
+        SetStatus(editorSession.IsSourceMode() ? L"Source mode" : L"Rendered mode");
         sidebarController.Refresh();
         textInputController.NotifyTextChanged();
         RenderEditorSurface();
@@ -424,9 +412,7 @@ namespace winrt::ElMd::implementation
             return false;
         }
 
-        auto status = DocumentStatus();
-        lastCommand = status;
-        StatusText().Text(status);
+        if (editorSession.Revision() != oldRevision) UpdateDocumentInfo();
         sidebarController.Refresh();
         RenderEditorSurface();
         if (editorRenderer.ScrollToPosition(editorSession.Selection().active)) RenderEditorSurface();
@@ -526,7 +512,6 @@ namespace winrt::ElMd::implementation
     {
         lastCommand = text;
         StatusText().Text(text);
-        RenderEditorSurface();
     }
 
     HWND MainWindow::WindowHandle()
@@ -571,12 +556,6 @@ namespace winrt::ElMd::implementation
         {
             SetStatus(L"Render failed: " + error.message());
         }
-    }
-
-    void MainWindow::SetSidebarExpanded(bool expanded)
-    {
-        SidebarPanel().Visibility(expanded ? Microsoft::UI::Xaml::Visibility::Visible : Microsoft::UI::Xaml::Visibility::Collapsed);
-        SidebarColumn().Width(Microsoft::UI::Xaml::GridLengthHelper::FromPixels(expanded ? 280.0 : 0.0));
     }
 
     winrt::ElMd::EditorSurfaceRenderer::Theme MainWindow::CurrentRendererTheme()

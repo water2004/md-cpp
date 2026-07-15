@@ -6,91 +6,191 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    Title="el-md - Native Markdown Editor">
-    <Grid x:Name="Root" RowDefinitions="Auto,*,Auto">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition x:Name="SidebarColumn" Width="280"/>
-            <ColumnDefinition Width="*"/>
-        </Grid.ColumnDefinitions>
-        <CommandBar Grid.Row="0" Grid.ColumnSpan="2" DefaultLabelPosition="Right">
-            <AppBarButton x:Name="OpenButton" Icon="OpenFile" Label="Open"/>
-            <AppBarButton x:Name="SaveButton" Icon="Save" Label="Save"/>
-            <AppBarButton x:Name="ExportPdfButton" Icon="Print" Label="PDF"/>
-            <AppBarToggleButton x:Name="SidebarButton" Label="Sidebar" IsChecked="True"/>
+    Title="el-md">
+    <Window.SystemBackdrop>
+        <MicaBackdrop Kind="Base"/>
+    </Window.SystemBackdrop>
+
+    <Grid x:Name="Root" RowDefinitions="40,Auto,*,Auto">
+        <Grid
+            x:Name="AppTitleBar"
+            Grid.Row="0"
+            Padding="12,0,144,0"
+            Background="Transparent"
+            ColumnDefinitions="Auto,Auto,*">
+            <TextBlock
+                VerticalAlignment="Center"
+                FontSize="14"
+                FontWeight="SemiBold"
+                Text="el-md"/>
+            <Border
+                Grid.Column="1"
+                Width="1"
+                Height="14"
+                Margin="12,0"
+                VerticalAlignment="Center"
+                Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
+            <TextBlock
+                x:Name="TitleDocumentText"
+                Grid.Column="2"
+                VerticalAlignment="Center"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Text="Untitled.md"
+                TextTrimming="CharacterEllipsis"/>
+        </Grid>
+
+        <CommandBar
+            Grid.Row="1"
+            Padding="4,0"
+            Background="{ThemeResource LayerFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+            BorderThickness="0,0,0,1"
+            DefaultLabelPosition="Right"
+            IsDynamicOverflowEnabled="True">
+            <AppBarButton x:Name="OpenButton" Icon="OpenFile" Label="Open" ToolTipService.ToolTip="Open a Markdown document"/>
+            <AppBarButton x:Name="SaveButton" Icon="Save" Label="Save" ToolTipService.ToolTip="Save the current document"/>
+            <AppBarButton x:Name="ExportPdfButton" Icon="Print" Label="PDF" ToolTipService.ToolTip="Export with Windows PDF printing"/>
             <AppBarSeparator/>
-            <AppBarButton x:Name="BoldButton" Icon="Bold" Label="Bold"/>
-            <AppBarButton x:Name="ItalicButton" Icon="Italic" Label="Italic"/>
-            <AppBarButton x:Name="StrikeButton" Label="Strike"/>
-            <AppBarButton x:Name="InlineCodeButton" Label="Inline Code"/>
+            <AppBarButton x:Name="BoldButton" Icon="Bold" Label="Bold" ToolTipService.ToolTip="Bold"/>
+            <AppBarButton x:Name="ItalicButton" Icon="Italic" Label="Italic" ToolTipService.ToolTip="Italic"/>
+            <AppBarButton x:Name="StrikeButton" Label="Strike" ToolTipService.ToolTip="Strikethrough"/>
+            <AppBarButton x:Name="InlineCodeButton" Label="Inline Code" ToolTipService.ToolTip="Inline code"/>
             <AppBarSeparator/>
-            <AppBarButton x:Name="Heading1Button" Label="H1"/>
-            <AppBarButton x:Name="Heading2Button" Label="H2"/>
-            <AppBarButton x:Name="QuoteButton" Label="Quote"/>
-            <AppBarButton x:Name="UnorderedListButton" Label="Bullet"/>
-            <AppBarButton x:Name="OrderedListButton" Label="Numbered"/>
-            <AppBarButton x:Name="TaskListButton" Label="Task"/>
-            <AppBarButton x:Name="CodeBlockButton" Label="Code"/>
-            <AppBarButton x:Name="TableButton" Label="Table"/>
-            <AppBarButton x:Name="InlineMathButton" Label="Inline Math"/>
-            <AppBarButton x:Name="BlockMathButton" Label="Block Math"/>
-            <AppBarButton x:Name="LinkButton" Label="Link"/>
-            <AppBarButton x:Name="ImageButton" Label="Image"/>
-            <AppBarButton x:Name="FootnoteButton" Label="Footnote"/>
-            <AppBarButton x:Name="CalloutButton" Label="Callout">
+            <AppBarButton x:Name="BlocksButton" Icon="Bullets" Label="Blocks" ToolTipService.ToolTip="Block structure">
                 <AppBarButton.Flyout>
                     <MenuFlyout>
-                        <MenuFlyoutItem x:Name="CalloutNoteMenuItem" Text="Note"/>
-                        <MenuFlyoutItem x:Name="CalloutTipMenuItem" Text="Tip"/>
-                        <MenuFlyoutItem x:Name="CalloutWarningMenuItem" Text="Warning"/>
+                        <MenuFlyoutSubItem Text="Heading">
+                            <MenuFlyoutItem x:Name="Heading1Button" Text="Heading 1"/>
+                            <MenuFlyoutItem x:Name="Heading2Button" Text="Heading 2"/>
+                        </MenuFlyoutSubItem>
+                        <MenuFlyoutItem x:Name="QuoteButton" Text="Quote"/>
+                        <MenuFlyoutSubItem Text="List">
+                            <MenuFlyoutItem x:Name="UnorderedListButton" Text="Bulleted list"/>
+                            <MenuFlyoutItem x:Name="OrderedListButton" Text="Numbered list"/>
+                            <MenuFlyoutItem x:Name="TaskListButton" Text="Task list"/>
+                        </MenuFlyoutSubItem>
+                        <MenuFlyoutSeparator/>
+                        <MenuFlyoutItem x:Name="CodeBlockButton" Text="Code block"/>
+                        <MenuFlyoutItem x:Name="BlockMathButton" Text="Math block"/>
+                        <MenuFlyoutSubItem Text="Callout">
+                            <MenuFlyoutItem x:Name="CalloutNoteMenuItem" Text="Note"/>
+                            <MenuFlyoutItem x:Name="CalloutTipMenuItem" Text="Tip"/>
+                            <MenuFlyoutItem x:Name="CalloutWarningMenuItem" Text="Warning"/>
+                        </MenuFlyoutSubItem>
                     </MenuFlyout>
                 </AppBarButton.Flyout>
             </AppBarButton>
-            <AppBarButton x:Name="TocButton" Label="TOC"/>
+            <AppBarButton x:Name="InsertButton" Icon="Add" Label="Insert" ToolTipService.ToolTip="Insert content">
+                <AppBarButton.Flyout>
+                    <MenuFlyout>
+                        <MenuFlyoutItem x:Name="TableButton" Text="Table"/>
+                        <MenuFlyoutItem x:Name="InlineMathButton" Text="Inline math"/>
+                        <MenuFlyoutItem x:Name="LinkButton" Text="Link"/>
+                        <MenuFlyoutItem x:Name="ImageButton" Text="Image"/>
+                        <MenuFlyoutItem x:Name="FootnoteButton" Text="Footnote"/>
+                        <MenuFlyoutSeparator/>
+                        <MenuFlyoutItem x:Name="TocButton" Text="Table of contents"/>
+                    </MenuFlyout>
+                </AppBarButton.Flyout>
+            </AppBarButton>
         </CommandBar>
 
-        <Border x:Name="SidebarPanel" Grid.Row="1" Grid.Column="0" Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,1,0">
-            <Grid Padding="10,10">
-                <TabView IsAddTabButtonVisible="False">
-                    <TabViewItem Header="Outline" IsClosable="False">
-                        <ListView x:Name="OutlineList" SelectionMode="Single" Background="Transparent"/>
-                    </TabViewItem>
-                    <TabViewItem Header="Diagnostics" IsClosable="False">
-                        <ListView x:Name="DiagnosticsList" SelectionMode="Single" Background="Transparent"/>
-                    </TabViewItem>
-                </TabView>
+        <NavigationView
+            x:Name="DocumentNavigation"
+            Grid.Row="2"
+            AlwaysShowHeader="False"
+            CompactPaneLength="48"
+            IsBackButtonVisible="Collapsed"
+            IsPaneOpen="True"
+            IsPaneToggleButtonVisible="True"
+            IsSettingsVisible="False"
+            IsTitleBarAutoPaddingEnabled="False"
+            OpenPaneLength="280"
+            PaneDisplayMode="Left"
+            PaneTitle="Document">
+            <NavigationView.PaneCustomContent>
+                <Grid Padding="8,4,8,8">
+                    <TabView IsAddTabButtonVisible="False">
+                        <TabViewItem Header="Outline" IsClosable="False">
+                            <ListView x:Name="OutlineList" SelectionMode="Single" Background="Transparent"/>
+                        </TabViewItem>
+                        <TabViewItem Header="Diagnostics" IsClosable="False">
+                            <ListView x:Name="DiagnosticsList" SelectionMode="Single" Background="Transparent"/>
+                        </TabViewItem>
+                    </TabView>
+                </Grid>
+            </NavigationView.PaneCustomContent>
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition x:Name="EditorScrollBarColumn" Width="16"/>
+                </Grid.ColumnDefinitions>
+                <SwapChainPanel x:Name="EditorSurface" Grid.Column="0" KeyboardAcceleratorPlacementMode="Hidden">
+                    <SwapChainPanel.ContextFlyout>
+                        <MenuFlyout>
+                            <MenuFlyoutItem x:Name="CutMenuItem" Text="Cut"/>
+                            <MenuFlyoutItem x:Name="CopyMenuItem" Text="Copy"/>
+                            <MenuFlyoutItem x:Name="PasteMenuItem" Text="Paste"/>
+                            <MenuFlyoutSeparator/>
+                            <MenuFlyoutItem x:Name="SelectAllMenuItem" Text="Select All"/>
+                        </MenuFlyout>
+                    </SwapChainPanel.ContextFlyout>
+                </SwapChainPanel>
+                <ScrollBar
+                    x:Name="EditorScrollBar"
+                    Grid.Column="1"
+                    Width="16"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch"
+                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                    IndicatorMode="MouseIndicator"
+                    IsTabStop="False"
+                    Minimum="0"
+                    Orientation="Vertical"
+                    SmallChange="48"/>
             </Grid>
-        </Border>
+        </NavigationView>
 
-        <Grid Grid.Row="1" Grid.Column="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition x:Name="EditorScrollBarColumn" Width="16"/>
-            </Grid.ColumnDefinitions>
-            <SwapChainPanel x:Name="EditorSurface" Grid.Column="0" KeyboardAcceleratorPlacementMode="Hidden">
-                <SwapChainPanel.ContextFlyout>
-                    <MenuFlyout>
-                        <MenuFlyoutItem x:Name="CutMenuItem" Text="Cut"/>
-                        <MenuFlyoutItem x:Name="CopyMenuItem" Text="Copy"/>
-                        <MenuFlyoutItem x:Name="PasteMenuItem" Text="Paste"/>
-                        <MenuFlyoutSeparator/>
-                        <MenuFlyoutItem x:Name="SelectAllMenuItem" Text="Select All"/>
-                    </MenuFlyout>
-                </SwapChainPanel.ContextFlyout>
-            </SwapChainPanel>
-            <ScrollBar x:Name="EditorScrollBar" Grid.Column="1" Orientation="Vertical" IndicatorMode="MouseIndicator" Background="{ThemeResource LayerFillColorDefaultBrush}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Width="16" Minimum="0" SmallChange="48" IsTabStop="False"/>
-        </Grid>
-
-        <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto">
-            <TextBlock x:Name="StatusText" Padding="12,6" Text="Ready"/>
-            <ToggleButton
-                x:Name="SourceModeButton"
-                Grid.Column="1"
-                Margin="4,2,8,2"
-                Padding="8,2"
-                MinWidth="36"
-                FontFamily="Consolas"
-                Content="&lt;/&gt;"
-                ToolTipService.ToolTip="Source mode"/>
+        <Grid
+            Grid.Row="3"
+            MinHeight="32"
+            Padding="10,3,8,3"
+            Background="{ThemeResource LayerFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+            BorderThickness="0,1,0,0"
+            ColumnDefinitions="*,Auto">
+            <TextBlock
+                x:Name="StatusText"
+                VerticalAlignment="Center"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Text="Ready"
+                TextTrimming="CharacterEllipsis"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="14">
+                <TextBlock
+                    x:Name="DocumentNameText"
+                    MaxWidth="320"
+                    VerticalAlignment="Center"
+                    Text="Untitled.md"
+                    TextTrimming="CharacterEllipsis"/>
+                <TextBlock
+                    x:Name="CharacterCountText"
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="0 characters"/>
+                <TextBlock
+                    x:Name="RevisionText"
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="Revision 0"/>
+                <ToggleButton
+                    x:Name="SourceModeButton"
+                    MinWidth="36"
+                    Padding="8,2"
+                    FontFamily="Consolas"
+                    Content="&lt;/&gt;"
+                    ToolTipService.ToolTip="Source mode"/>
+            </StackPanel>
         </Grid>
     </Grid>
 </Window>
