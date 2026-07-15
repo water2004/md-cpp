@@ -181,6 +181,15 @@
     <ClCompile Include="..\core\editing\document_edit_support.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\core\editing\document_edit_primitives.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\document_block_edit.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\document_edit_validation.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\core\editing\document_block_reparse.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>

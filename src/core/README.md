@@ -10,7 +10,7 @@
 - `rendering/`: platform-neutral render model, layout plan/tree, hit testing, selection geometry, and math/render descriptions.
 - `source/`: source-mode editing and syntax-style projection.
 
-Editing modules should expose narrow operations and keep dependency direction explicit. For example, block input is split into marker recognition, list transformations, non-list block transformations, and a small public coordinator; document copy and paste are separate because selection slicing and semantic tree splicing have different invariants.
+Editing modules should expose narrow operations and keep dependency direction explicit. Block input is split into marker recognition, list transformations, non-list block transformations, and a small public coordinator. Document copy and paste are separate because selection slicing and semantic tree splicing have different invariants. Shared edit support is an aggregate over source-edit primitives, reversible block mutations, and invariant validation rather than one catch-all implementation file.
 
 Some large files are intentionally cohesive:
 
