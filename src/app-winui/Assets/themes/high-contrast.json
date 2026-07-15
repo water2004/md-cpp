@@ -44,7 +44,7 @@
     "frontmatterMarginBottom": 12, "frontmatterPaddingVertical": 8, "frontmatterPaddingHorizontal": 12,
     "footnoteMargin": 8, "footnotePaddingVertical": 8, "footnotePaddingHorizontal": 12,
     "unsupportedMargin": 8, "unsupportedPaddingVertical": 4, "unsupportedPaddingLeft": 12, "extensionMargin": 4,
-    "titleBarHeight": 40, "navigationOpenWidth": 280, "navigationCompactWidth": 48, "scrollbarWidth": 16,
+    "titleBarHeight": 40, "navigationOpenWidth": 280, "scrollbarWidth": 16,
     "statusBarMinHeight": 32, "footnotePreviewWidth": 360, "footnotePreviewSpacing": 8
   }
 }

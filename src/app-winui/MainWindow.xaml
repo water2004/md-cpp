@@ -64,6 +64,14 @@
             BorderThickness="0,0,0,1"
             DefaultLabelPosition="Right"
             IsDynamicOverflowEnabled="True">
+            <CommandBar.Content>
+                <AppBarButton
+                    x:Name="SidebarToggleButton"
+                    Icon="GlobalNavigationButton"
+                    Label="Sidebar"
+                    LabelPosition="Collapsed"
+                    ToolTipService.ToolTip="Toggle outline"/>
+            </CommandBar.Content>
             <AppBarButton x:Name="OpenButton" Icon="OpenFile" Label="Open" ToolTipService.ToolTip="Open a Markdown document"/>
             <AppBarButton x:Name="SaveButton" Icon="Save" Label="Save" ToolTipService.ToolTip="Save the current document"/>
             <AppBarButton x:Name="ExportPdfButton" Icon="Print" Label="PDF" ToolTipService.ToolTip="Export with Windows PDF printing"/>
@@ -116,25 +124,25 @@
             x:Name="DocumentNavigation"
             Grid.Row="2"
             AlwaysShowHeader="False"
-            CompactPaneLength="48"
+            CompactPaneLength="0"
             IsBackButtonVisible="Collapsed"
             IsPaneOpen="True"
-            IsPaneToggleButtonVisible="True"
+            IsPaneToggleButtonVisible="False"
             IsSettingsVisible="False"
             IsTitleBarAutoPaddingEnabled="False"
             OpenPaneLength="280"
-            PaneDisplayMode="Left"
-            PaneTitle="Document">
+            PaneDisplayMode="Left">
             <NavigationView.PaneCustomContent>
-                <Grid Padding="8,4,8,8">
-                    <TabView IsAddTabButtonVisible="False">
-                        <TabViewItem Header="Outline" IsClosable="False">
-                            <ListView x:Name="OutlineList" SelectionMode="Single" Background="Transparent"/>
-                        </TabViewItem>
-                        <TabViewItem Header="Diagnostics" IsClosable="False">
-                            <ListView x:Name="DiagnosticsList" SelectionMode="Single" Background="Transparent"/>
-                        </TabViewItem>
-                    </TabView>
+                <Grid Padding="8,8,8,8" RowDefinitions="Auto,*">
+                    <TextBlock
+                        Margin="8,4,8,8"
+                        FontWeight="SemiBold"
+                        Text="Outline"/>
+                    <ListView
+                        x:Name="OutlineList"
+                        Grid.Row="1"
+                        Background="Transparent"
+                        SelectionMode="Single"/>
                 </Grid>
             </NavigationView.PaneCustomContent>
 

@@ -170,7 +170,6 @@ namespace
             {L"unsupportedPaddingLeft", &elmd::ThemeLayout::unsupported_padding_left},
             {L"extensionMargin", &elmd::ThemeLayout::extension_margin}, {L"titleBarHeight", &elmd::ThemeLayout::title_bar_height},
             {L"navigationOpenWidth", &elmd::ThemeLayout::navigation_open_width},
-            {L"navigationCompactWidth", &elmd::ThemeLayout::navigation_compact_width},
             {L"scrollbarWidth", &elmd::ThemeLayout::scrollbar_width}, {L"statusBarMinHeight", &elmd::ThemeLayout::status_bar_min_height},
             {L"footnotePreviewWidth", &elmd::ThemeLayout::footnote_preview_width},
             {L"footnotePreviewSpacing", &elmd::ThemeLayout::footnote_preview_spacing},

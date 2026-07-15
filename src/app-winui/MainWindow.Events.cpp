@@ -12,7 +12,6 @@ namespace winrt::ElMd::implementation
             editorRenderer,
             textInputController,
             OutlineList(),
-            DiagnosticsList(),
             [this] { RenderEditorSurface(); });
         documentController.Attach(
             editorSession,
@@ -66,6 +65,11 @@ namespace winrt::ElMd::implementation
         SourceModeButton().Click([this](auto const&, auto const&)
         {
             ToggleSourceMode();
+        });
+
+        SidebarToggleButton().Click([this](auto const&, auto const&)
+        {
+            DocumentNavigation().IsPaneOpen(!DocumentNavigation().IsPaneOpen());
         });
 
         EditorSurface().Loaded([this](auto const&, auto const&)
@@ -150,12 +154,5 @@ namespace winrt::ElMd::implementation
             }
         });
 
-        DiagnosticsList().SelectionChanged([this](auto const&, Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const& args)
-        {
-            if (args.AddedItems().Size() > 0)
-            {
-                sidebarController.SelectDiagnostic(args.AddedItems().GetAt(0));
-            }
-        });
     }
 }

@@ -278,7 +278,6 @@ namespace winrt::ElMd::implementation
         EditorScrollBar().Background(Brush(colors.shell_layer_bg));
         Root().RowDefinitions().GetAt(0).Height(Microsoft::UI::Xaml::GridLengthHelper::FromPixels(themeProfile.layout.title_bar_height));
         DocumentNavigation().OpenPaneLength(themeProfile.layout.navigation_open_width);
-        DocumentNavigation().CompactPaneLength(themeProfile.layout.navigation_compact_width);
         EditorScrollBar().Width(themeProfile.layout.scrollbar_width);
         EditorScrollBarColumn().Width(Microsoft::UI::Xaml::GridLengthHelper::FromPixels(themeProfile.layout.scrollbar_width));
         scrollController.SetWidth(themeProfile.layout.scrollbar_width);
