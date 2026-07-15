@@ -8,6 +8,8 @@
 #include "editor/interaction/EditorKeyboardController.h"
 #include "editor/interaction/EditorDocumentController.h"
 #include "editor/interaction/EditorSidebarController.h"
+#include "settings/AppSettings.h"
+#include "theme/ThemeCatalog.h"
 #include "theme/ThemeConfig.h"
 #include "MainWindow.g.h"
 
@@ -27,6 +29,7 @@ namespace winrt::ElMd::implementation
         void UpdateTheme();
         void ApplyShellTheme();
         elmd::Theme CurrentThemeVariant();
+        winrt::fire_and_forget ShowSettingsAsync();
         void RegisterCommandHandlers();
         void ToggleSourceMode();
         void UpdateSourceModeUi();
@@ -50,7 +53,11 @@ namespace winrt::ElMd::implementation
         winrt::ElMd::EditorDocumentController documentController;
         winrt::ElMd::EditorSidebarController sidebarController;
         winrt::Microsoft::UI::Xaml::Controls::Flyout footnoteFlyout{ nullptr };
+        winrt::ElMd::AppSettings appSettings;
+        winrt::ElMd::ThemeCatalog themeCatalog;
         elmd::ThemeProfile themeProfile = elmd::default_theme_profile();
+        bool updatingTheme = false;
+        bool settingsOpen = false;
     };
 }
 

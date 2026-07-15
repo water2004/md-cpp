@@ -240,6 +240,12 @@
     <ClCompile Include="settings\AppSettings.cpp">
       <Filter>Settings</Filter>
     </ClCompile>
+    <ClCompile Include="settings\SettingsDialog.cpp">
+      <Filter>Settings</Filter>
+    </ClCompile>
+    <ClCompile Include="MainWindow.Settings.cpp">
+      <Filter>Settings</Filter>
+    </ClCompile>
     <ClCompile Include="storage\AssetPaths.cpp">
       <Filter>Storage</Filter>
     </ClCompile>
@@ -372,6 +378,9 @@
       <Filter>Theme</Filter>
     </ClInclude>
     <ClInclude Include="settings\AppSettings.h">
+      <Filter>Settings</Filter>
+    </ClInclude>
+    <ClInclude Include="settings\SettingsDialog.h">
       <Filter>Settings</Filter>
     </ClInclude>
     <ClInclude Include="storage\AssetPaths.h">

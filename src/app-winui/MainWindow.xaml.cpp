@@ -26,6 +26,10 @@ namespace winrt::ElMd::implementation
     MainWindow::MainWindow()
     {
         InitializeComponent();
+        auto loadedSettings = winrt::ElMd::LoadAppSettings();
+        appSettings = std::move(loadedSettings.settings);
+        themeCatalog.Refresh();
+        editorRenderer.SetMathRenderingEnabled(appSettings.mathRenderingEnabled);
         ExtendsContentIntoTitleBar(true);
         SetTitleBar(AppTitleBar());
         RegisterCommandHandlers();
@@ -34,6 +38,8 @@ namespace winrt::ElMd::implementation
         RegisterWindowHandlers();
         UpdateSourceModeUi();
         UpdateDocumentInfo();
+        if (!loadedSettings.diagnostic.empty()) SetStatus(loadedSettings.diagnostic);
+        else if (!themeCatalog.Diagnostics().empty()) SetStatus(themeCatalog.Diagnostics().front());
     }
 
     void MainWindow::UpdateDocumentInfo()
@@ -250,9 +256,10 @@ namespace winrt::ElMd::implementation
     {
         if (Windows::UI::ViewManagement::AccessibilitySettings().HighContrast())
             return elmd::Theme::HighContrast;
-        return Root().ActualTheme() == Microsoft::UI::Xaml::ElementTheme::Dark
-            ? elmd::Theme::Dark
-            : elmd::Theme::Light;
+        auto background = Windows::UI::ViewManagement::UISettings().GetColorValue(
+            Windows::UI::ViewManagement::UIColorType::Background);
+        auto luminance = 0.2126 * background.R + 0.7152 * background.G + 0.0722 * background.B;
+        return luminance < 128.0 ? elmd::Theme::Dark : elmd::Theme::Light;
     }
 
     void MainWindow::ApplyShellTheme()
@@ -287,12 +294,28 @@ namespace winrt::ElMd::implementation
 
     void MainWindow::UpdateTheme()
     {
-        auto loaded = winrt::ElMd::LoadThemeProfile(CurrentThemeVariant());
+        if (updatingTheme) return;
+        updatingTheme = true;
+        struct ResetUpdating
+        {
+            bool& value;
+            ~ResetUpdating() { value = false; }
+        } resetUpdating{ updatingTheme };
+
+        themeCatalog.Refresh();
+        auto loaded = themeCatalog.Resolve(appSettings.themeId, CurrentThemeVariant());
         themeProfile = std::move(loaded.profile);
+        using Microsoft::UI::Xaml::ElementTheme;
+        if (appSettings.themeId == "system" || themeProfile.variant == elmd::Theme::HighContrast)
+            Root().RequestedTheme(ElementTheme::Default);
+        else
+            Root().RequestedTheme(themeProfile.variant == elmd::Theme::Dark
+                ? ElementTheme::Dark
+                : ElementTheme::Light);
         ApplyShellTheme();
         editorSession.SetTheme(themeProfile);
         editorRenderer.SetTheme(themeProfile);
-        if (!loaded.loadedFromFile) SetStatus(loaded.diagnostic);
+        if (!loaded.diagnostic.empty()) SetStatus(loaded.diagnostic);
         RenderEditorSurface();
     }
 

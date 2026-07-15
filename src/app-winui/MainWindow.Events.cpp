@@ -89,7 +89,7 @@ namespace winrt::ElMd::implementation
 
         Root().ActualThemeChanged([this](auto const&, auto const&)
         {
-            UpdateTheme();
+            if (appSettings.themeId == "system") UpdateTheme();
         });
 
         EditorSurface().IsTabStop(true);

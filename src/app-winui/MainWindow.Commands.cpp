@@ -22,6 +22,11 @@ namespace winrt::ElMd::implementation
             documentController.ExportPdf();
         });
 
+        SettingsButton().Click([this](auto const&, auto const&)
+        {
+            ShowSettingsAsync();
+        });
+
         BoldButton().Click([this](auto const&, auto const&)
         {
             elmd::Command command;

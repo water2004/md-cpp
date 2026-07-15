@@ -118,6 +118,13 @@
                     </MenuFlyout>
                 </AppBarButton.Flyout>
             </AppBarButton>
+            <AppBarSeparator/>
+            <AppBarButton
+                x:Name="SettingsButton"
+                Icon="Setting"
+                Label="Settings"
+                LabelPosition="Collapsed"
+                ToolTipService.ToolTip="Settings"/>
         </CommandBar>
 
         <NavigationView
