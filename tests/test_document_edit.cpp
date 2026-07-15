@@ -13,6 +13,8 @@ import elmd.core.block_source;
 import elmd.core.block_tree;
 import elmd.core.document;
 import elmd.core.document_edit;
+import elmd.core.document_history;
+import elmd.core.document_operation_apply;
 import elmd.core.document_symbols;
 import elmd.core.document_text;
 import elmd.core.inline_cst;
@@ -270,6 +272,66 @@ suite document_edit_tests = [] {
     expect(transaction->revision_before == revision_before);
     expect(transaction->revision_after == document.revision);
     expect(transaction->revision_after == revision_before + 1);
+    expect_document_valid(document);
+};
+
+"operation_replay_rolls_back_an_earlier_edit_when_a_later_edit_is_invalid"_test = [] {
+    auto document = parse_document("alpha");
+    const auto before = serialize_markdown(document);
+    const auto id = document.root.children.front().id;
+    std::vector<DocumentOperation> operations;
+    operations.emplace_back(DocumentTextOperation{
+        TextEdit{id, {2, 2}, U"X"},
+        TextEdit{id, {2, 3}, {}},
+    });
+    operations.emplace_back(DocumentTextOperation{
+        TextEdit{NodeId{999999}, {0, 0}, U"Y"},
+        TextEdit{NodeId{999999}, {0, 1}, {}},
+    });
+
+    expect(!apply_document_operations(document, operations, true));
+    expect(serialize_markdown(document) == before);
+    expect_document_valid(document);
+};
+
+"invalid_cross_parent_move_does_not_remove_the_source_block"_test = [] {
+    auto document = parse_document("alpha\n\nbeta");
+    const auto before = serialize_markdown(document);
+    DocumentTreeEdit move;
+    move.kind = DocumentTreeEditKind::Move;
+    move.parent_id = document.root.id;
+    move.index = 0;
+    move.other_parent_id = NodeId{999999};
+    move.other_index = 0;
+
+    expect(!apply_document_operation(document, DocumentOperation{move}, true));
+    expect(serialize_markdown(document) == before);
+    expect(document.root.children.size() == 2u);
+    expect_document_valid(document);
+};
+
+"failed_history_replay_preserves_the_document_selection_and_stack"_test = [] {
+    auto document = parse_document("alpha");
+    const auto before = serialize_markdown(document);
+    auto selection = caret(document.root.children.front(), 2);
+    const auto selection_before = selection;
+    DocumentTransaction transaction;
+    transaction.selection_before = selection;
+    transaction.selection_after = selection;
+    transaction.revision_before = document.revision;
+    transaction.revision_after = document.revision + 1;
+    transaction.operations.emplace_back(DocumentTextOperation{
+        TextEdit{NodeId{999999}, {0, 0}, U"X"},
+        TextEdit{NodeId{999999}, {0, 1}, {}},
+    });
+    DocumentHistory history;
+    history.push(transaction);
+
+    expect(!history.undo(document, selection));
+    expect(history.has_undo());
+    expect(!history.has_redo());
+    expect(serialize_markdown(document) == before);
+    expect(selection == selection_before);
     expect_document_valid(document);
 };
 

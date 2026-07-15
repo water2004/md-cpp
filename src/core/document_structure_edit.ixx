@@ -179,6 +179,7 @@ inline std::optional<DocumentTransaction> document_toggle_block_quote(EditorDocu
     auto* parent = block_at_path(after.root, range->parent_path);
     if (!parent || range->last >= parent->children.size()) return std::nullopt;
     std::vector<DocumentOperation> operations;
+    document_edit_detail::MutationRollback rollback(after, operations, revision_before);
     if (range->first == range->last && parent->children[range->first].kind == BlockKind::BlockQuote) {
         if (!document_structure_detail::unwrap_container(after, *range, operations)) return std::nullopt;
     } else {
@@ -189,6 +190,7 @@ inline std::optional<DocumentTransaction> document_toggle_block_quote(EditorDocu
                 after, *range, std::move(quote), operations)) return std::nullopt;
     }
     ++after.revision;
+    rollback.commit();
     return make_recorded_document_transaction(
         std::move(operations), selection, selection,
         revision_before, after.revision, DocumentTransactionReason::Structure);
@@ -211,6 +213,7 @@ inline std::optional<DocumentTransaction> document_toggle_callout(EditorDocument
     auto* parent = block_at_path(after.root, range->parent_path);
     if (!parent || range->last >= parent->children.size()) return std::nullopt;
     std::vector<DocumentOperation> operations;
+    document_edit_detail::MutationRollback rollback(after, operations, revision_before);
     if (range->first == range->last && parent->children[range->first].kind == BlockKind::Callout) {
         const auto callout_id = parent->children[range->first].id;
         auto* callout = find_block(after.root, callout_id);
@@ -263,6 +266,7 @@ inline std::optional<DocumentTransaction> document_toggle_callout(EditorDocument
                 after, *range, std::move(callout), operations)) return std::nullopt;
     }
     ++after.revision;
+    rollback.commit();
     return make_recorded_document_transaction(
         std::move(operations), selection, selection,
         revision_before, after.revision, DocumentTransactionReason::Structure);
@@ -285,6 +289,7 @@ inline std::optional<DocumentTransaction> document_toggle_list(EditorDocument& d
     if (!parent || range->last >= parent->children.size()) return std::nullopt;
     const auto parent_id = parent->id;
     std::vector<DocumentOperation> operations;
+    document_edit_detail::MutationRollback rollback(after, operations, revision_before);
     if (range->first == range->last
         && (parent->children[range->first].kind == BlockKind::List
             || parent->children[range->first].kind == BlockKind::TaskList)) {
@@ -385,6 +390,7 @@ inline std::optional<DocumentTransaction> document_toggle_list(EditorDocument& d
         }
     }
     ++after.revision;
+    rollback.commit();
     return make_recorded_document_transaction(
         std::move(operations), selection, selection,
         revision_before, after.revision, DocumentTransactionReason::Structure);
@@ -446,12 +452,12 @@ inline BlockNode make_math_block() {
 inline BlockNode make_toc_block() { BlockNode block; block.kind = BlockKind::Toc; return block; }
 
 inline BlockNode make_table_block(const EditorDocument& document, std::size_t rows, std::size_t columns) {
-    auto working = document; document_edit_detail::NodeAllocator allocator(working);
+    document_edit_detail::NodeAllocator allocator(document);
     BlockNode table; table.kind = BlockKind::Table; columns = (std::max)(columns, std::size_t{1}); table.table_aligns.assign(columns, TableAlignment::None);
     BlockNode header; header.id = allocator.allocate(); header.kind = BlockKind::TableRow; header.table_header_row = true;
     for (std::size_t column = 0; column < columns; ++column) {
         BlockNode cell; cell.id = allocator.allocate(); cell.kind = BlockKind::TableCell;
-        cell.inline_content = document_edit_detail::make_inline(U"Header", working, allocator);
+        cell.inline_content = document_edit_detail::make_inline(U"Header", document, allocator);
         header.children.push_back(std::move(cell));
     }
     table.children.push_back(std::move(header));
@@ -459,7 +465,7 @@ inline BlockNode make_table_block(const EditorDocument& document, std::size_t ro
         BlockNode row; row.id = allocator.allocate(); row.kind = BlockKind::TableRow;
         for (std::size_t column = 0; column < columns; ++column) {
             BlockNode cell; cell.id = allocator.allocate(); cell.kind = BlockKind::TableCell;
-            cell.inline_content = document_edit_detail::make_inline(U"Cell", working, allocator);
+            cell.inline_content = document_edit_detail::make_inline(U"Cell", document, allocator);
             row.children.push_back(std::move(cell));
         }
         table.children.push_back(std::move(row));
@@ -495,6 +501,7 @@ inline std::optional<DocumentTransaction> document_insert_atomic_block(EditorDoc
         };
     }
     std::vector<DocumentOperation> operations;
+    document_edit_detail::MutationRollback rollback(after, operations, revision_before);
     const auto replace_empty_paragraph = parent->children[index].kind == BlockKind::Paragraph
         && parent->children[index].inline_content.source.empty();
     if (replace_empty_paragraph) {
@@ -528,6 +535,7 @@ inline std::optional<DocumentTransaction> document_insert_atomic_block(EditorDoc
         if (!insert_block(*parent, index + 1, std::move(block))) return std::nullopt;
     }
     ++after.revision;
+    rollback.commit();
     return make_recorded_document_transaction(
         std::move(operations),
         selection,
@@ -564,6 +572,7 @@ inline std::optional<DocumentTransaction> document_indent_list_item(EditorDocume
         nested = &previous->children.back();
     }
     std::vector<DocumentOperation> operations;
+    document_edit_detail::MutationRollback rollback(after, operations, revision_before);
     if (!nested) {
         BlockNode created;
         created.id = allocator.allocate();
@@ -596,6 +605,7 @@ inline std::optional<DocumentTransaction> document_indent_list_item(EditorDocume
     if (!item || !nested || !insert_block(*nested, target_index, std::move(*item))) return std::nullopt;
     operations.emplace_back(std::move(move));
     ++after.revision;
+    rollback.commit();
     return make_recorded_document_transaction(
         std::move(operations), selection, selection,
         revision_before, after.revision, DocumentTransactionReason::Structure);
@@ -669,6 +679,7 @@ inline std::optional<DocumentTransaction> document_edit_table(
     const auto table_id = table->id;
     const auto table_payload_before = document_transaction_detail::payload_shell(*table);
     std::vector<DocumentOperation> operations;
+    document_edit_detail::MutationRollback rollback(after, operations, revision_before);
     bool payload_changed = false;
     auto insert_node = [&](NodeId parent_id, std::size_t index, BlockNode node) {
         auto* owner = find_block(after.root, parent_id);
@@ -869,6 +880,7 @@ inline std::optional<DocumentTransaction> document_edit_table(
     }
     if (changed) ++after.revision;
     const auto target = TextSelection::caret(TextPosition{target_id, 0, TextAffinity::Downstream});
+    rollback.commit();
     return make_recorded_document_transaction(
         std::move(operations),
         selection,

@@ -200,6 +200,9 @@
     <ClCompile Include="..\core\document_transaction.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\core\document_operation_apply.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\core\document_history.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>

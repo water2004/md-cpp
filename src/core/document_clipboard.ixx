@@ -818,6 +818,7 @@ inline std::optional<DocumentTransaction> document_paste_text(
     auto& working = document;
     auto current = selection;
     std::vector<DocumentOperation> operations;
+    document_edit_detail::MutationRollback rollback(working, operations, revision_before);
     if (!current.is_caret()) {
         auto deletion = document_delete_selection(working, current);
         if (!deletion) return std::nullopt;
@@ -861,6 +862,7 @@ inline std::optional<DocumentTransaction> document_paste_text(
     }
     if (!target || operations.empty()) return std::nullopt;
     working.revision = revision_before + 1;
+    rollback.commit();
     return make_recorded_document_transaction(
         std::move(operations),
         selection,

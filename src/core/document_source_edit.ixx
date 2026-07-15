@@ -44,18 +44,19 @@ inline DocumentTransaction source_transaction_with_block_reparse(
     std::uint64_t revision_before,
     DocumentTransactionReason reason) {
     std::vector<DocumentOperation> operations;
+    const auto reparse_edit = edit;
+    document_edit_detail::append_source_operation(operations, std::move(edit));
+    document_edit_detail::MutationRollback rollback(after, operations, revision_before);
     document_edit_detail::NodeAllocator allocator(after);
     if (auto reclassified = document_edit_detail::reparse_edited_direct_block(
-            after, target, allocator, &edit)) {
+            after, target, allocator, &reparse_edit)) {
         target = reclassified->target;
-        document_edit_detail::append_source_operation(operations, std::move(edit));
         operations.insert(
             operations.end(),
             std::make_move_iterator(reclassified->operations.begin()),
             std::make_move_iterator(reclassified->operations.end()));
-    } else {
-        document_edit_detail::append_source_operation(operations, std::move(edit));
     }
+    rollback.commit();
     return make_recorded_document_transaction(
         std::move(operations),
         selection_before,
@@ -71,6 +72,7 @@ inline std::optional<DocumentTransaction> document_insert_text(EditorDocument& d
     auto& working = document;
     auto current = selection;
     std::vector<DocumentOperation> operations;
+    document_edit_detail::MutationRollback rollback(working, operations, revision_before);
     if (!selection.is_caret()) {
         auto deletion = document_delete_selection(working, selection);
         if (!deletion) return std::nullopt;
@@ -105,6 +107,7 @@ inline std::optional<DocumentTransaction> document_insert_text(EditorDocument& d
             std::make_move_iterator(reclassified->operations.end()));
     }
     working.revision = revision_before + 1;
+    rollback.commit();
     return make_recorded_document_transaction(
         std::move(operations),
         selection,
@@ -119,6 +122,7 @@ inline std::optional<DocumentTransaction> document_enter(EditorDocument& documen
     auto& after = document;
     auto current = selection;
     std::vector<DocumentOperation> operations;
+    document_edit_detail::MutationRollback rollback(after, operations, revision_before);
     if (!current.is_caret()) {
         auto deletion = document_delete_selection(after, current);
         if (!deletion) return std::nullopt;
@@ -184,19 +188,19 @@ inline std::optional<DocumentTransaction> document_enter(EditorDocument& documen
     }
     after.revision = revision_before + 1;
     if (source_edit) {
+        const auto reparse_edit = *source_edit;
+        document_edit_detail::append_source_operation(operations, std::move(*source_edit));
         if (auto reclassified = document_edit_detail::reparse_edited_direct_block(
-                after, target, allocator, &*source_edit)) {
-            document_edit_detail::append_source_operation(operations, std::move(*source_edit));
+                after, target, allocator, &reparse_edit)) {
             target = reclassified->target;
             operations.insert(
                 operations.end(),
                 std::make_move_iterator(reclassified->operations.begin()),
                 std::make_move_iterator(reclassified->operations.end()));
-        } else {
-            document_edit_detail::append_source_operation(operations, std::move(*source_edit));
         }
     }
     if (operations.empty()) return std::nullopt;
+    rollback.commit();
     return make_recorded_document_transaction(
         std::move(operations),
         selection,
@@ -462,6 +466,7 @@ inline std::optional<DocumentTransaction> document_delete_selection(EditorDocume
     const auto reparse_edit = *source_edit;
     std::vector<DocumentOperation> operations;
     document_edit_detail::append_source_operation(operations, std::move(*source_edit));
+    document_edit_detail::MutationRollback rollback(after, operations, revision_before);
     for (std::size_t index = *anchor_index + 1; index <= *active_index; ++index) {
         auto remove = document_edit_detail::remove_node_recorded(
             after,
@@ -490,6 +495,7 @@ inline std::optional<DocumentTransaction> document_delete_selection(EditorDocume
             std::make_move_iterator(reclassified->operations.begin()),
             std::make_move_iterator(reclassified->operations.end()));
     }
+    rollback.commit();
     return make_recorded_document_transaction(
         std::move(operations),
         selection,

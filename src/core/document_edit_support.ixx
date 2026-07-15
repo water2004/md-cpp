@@ -5,6 +5,7 @@ import elmd.core.ast;
 import elmd.core.block_source;
 import elmd.core.block_tree;
 import elmd.core.document;
+import elmd.core.document_operation_apply;
 import elmd.core.document_text;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
@@ -28,6 +29,32 @@ enum class DocumentMove { Left, Right, Up, Down, LineStart, LineEnd, DocumentSta
 struct DocumentInvariantError { NodeId node_id{}; std::string message; };
 
 namespace document_edit_detail {
+
+class MutationRollback {
+public:
+    MutationRollback(
+        EditorDocument& document,
+        const std::vector<DocumentOperation>& operations,
+        std::uint64_t revision_before)
+        : document_(&document), operations_(&operations), revision_before_(revision_before) {}
+
+    MutationRollback(const MutationRollback&) = delete;
+    MutationRollback& operator=(const MutationRollback&) = delete;
+
+    ~MutationRollback() {
+        if (!active_) return;
+        if (!apply_document_operations(*document_, *operations_, false)) std::terminate();
+        document_->revision = revision_before_;
+    }
+
+    void commit() noexcept { active_ = false; }
+
+private:
+    EditorDocument* document_;
+    const std::vector<DocumentOperation>* operations_;
+    std::uint64_t revision_before_;
+    bool active_ = true;
+};
 
 inline bool text_block(BlockKind kind) { return kind == BlockKind::Paragraph || kind == BlockKind::Heading; }
 inline bool atomic_block(BlockKind kind) {

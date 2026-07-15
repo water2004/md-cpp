@@ -160,9 +160,11 @@ inline std::optional<DocumentTransaction> document_create_footnote_definition(
     insert.index = after.root.children.size();
     insert.after = definition;
     std::vector<DocumentOperation> operations;
+    document_edit_detail::MutationRollback rollback(after, operations, revision_before);
     operations.emplace_back(std::move(insert));
     after.root.children.push_back(std::move(definition));
     ++after.revision;
+    rollback.commit();
     return make_recorded_document_transaction(
         std::move(operations),
         selection,
@@ -197,11 +199,13 @@ inline std::optional<DocumentTransaction> document_insert_footnote(
         allocator);
     if (!source_edit) return std::nullopt;
 
+    std::vector<DocumentOperation> operations;
+    document_edit_detail::append_source_operation(operations, std::move(*source_edit));
+    document_edit_detail::MutationRollback rollback(after, operations, revision_before);
+
     auto definition = document_footnotes_detail::make_definition(after, allocator, label);
     const auto target = document_edit_detail::first_editable_position(definition);
     if (!target) return std::nullopt;
-    std::vector<DocumentOperation> operations;
-    document_edit_detail::append_source_operation(operations, std::move(*source_edit));
     DocumentTreeEdit insert;
     insert.kind = DocumentTreeEditKind::Insert;
     insert.parent_id = after.root.id;
@@ -210,6 +214,7 @@ inline std::optional<DocumentTransaction> document_insert_footnote(
     operations.emplace_back(std::move(insert));
     after.root.children.push_back(std::move(definition));
     ++after.revision;
+    rollback.commit();
     return make_recorded_document_transaction(
         std::move(operations),
         selection,
