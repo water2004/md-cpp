@@ -22,7 +22,6 @@ namespace winrt::ElMd
             Action paste,
             Render render);
         void Detach();
-        bool Character(char32_t character);
         bool Key(winrt::Windows::System::VirtualKey key);
         bool InsertNewline();
         void ResetCaretGoal();

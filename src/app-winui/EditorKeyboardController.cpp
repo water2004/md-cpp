@@ -39,24 +39,10 @@ namespace winrt::ElMd
         ResetCaretGoal();
     }
 
-    bool EditorKeyboardController::Character(char32_t character)
-    {
-        if (!session_ || !executeCommand_) return false;
-        if (character == U'\r' || character == U'\n') return InsertNewline();
-        if (character < 0x20 || character == 0x7f) return false;
-        auto selection = session_->Selection();
-        auto start = (std::min)(session_->AcpOffset(selection.anchor), session_->AcpOffset(selection.active));
-        std::u32string text(1, character);
-        if (!executeCommand_(elmd::Command::InsertText(text))) return false;
-        if (textInput_) textInput_->RecordCharacterTextUpdate(start, std::move(text));
-        return true;
-    }
-
     bool EditorKeyboardController::Key(winrt::Windows::System::VirtualKey key)
     {
         if (!session_ || !renderer_ || !executeCommand_) return false;
         elmd::Command command;
-        if (textInput_) textInput_->ClearPendingCharacterTextUpdate();
         auto ctrl = KeyDown(winrt::Windows::System::VirtualKey::Control)
             || KeyDown(winrt::Windows::System::VirtualKey::LeftControl)
             || KeyDown(winrt::Windows::System::VirtualKey::RightControl);
@@ -235,7 +221,6 @@ namespace winrt::ElMd
     bool EditorKeyboardController::InsertNewline()
     {
         if (!executeCommand_) return false;
-        if (textInput_) textInput_->ClearPendingCharacterTextUpdate();
         auto shift = KeyDown(winrt::Windows::System::VirtualKey::Shift)
             || KeyDown(winrt::Windows::System::VirtualKey::LeftShift)
             || KeyDown(winrt::Windows::System::VirtualKey::RightShift);

@@ -98,11 +98,6 @@ namespace winrt::ElMd::implementation
         });
 
         EditorSurface().IsTabStop(true);
-        EditorSurface().CharacterReceived([this](auto const&, Microsoft::UI::Xaml::Input::CharacterReceivedRoutedEventArgs const& args)
-        {
-            args.Handled(keyboardController.Character(args.Character()));
-        });
-
         EditorSurface().KeyDown([this](auto const&, Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args)
         {
             args.Handled(keyboardController.Key(args.Key()));
@@ -382,7 +377,6 @@ namespace winrt::ElMd::implementation
 
     void MainWindow::ToggleSourceMode()
     {
-        auto oldTextLength = editorSession.AcpLength();
         if (!editorSession.ToggleSourceMode())
         {
             UpdateSourceModeUi();
@@ -395,7 +389,7 @@ namespace winrt::ElMd::implementation
         lastCommand = status;
         StatusText().Text(status);
         sidebarController.Refresh();
-        textInputController.NotifyTextChanged(oldTextLength);
+        textInputController.NotifyTextChanged();
         RenderEditorSurface();
         if (editorRenderer.ScrollToPosition(editorSession.Selection().active)) RenderEditorSurface();
         EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Programmatic);
@@ -416,7 +410,7 @@ namespace winrt::ElMd::implementation
     bool MainWindow::ExecuteEditorCommand(elmd::Command const& command)
     {
         keyboardController.ResetCaretGoal();
-        auto oldTextLength = editorSession.AcpLength();
+        auto oldRevision = editorSession.Revision();
         if (!editorSession.ExecuteCommand(command))
         {
             return false;
@@ -428,7 +422,8 @@ namespace winrt::ElMd::implementation
         sidebarController.Refresh();
         RenderEditorSurface();
         if (editorRenderer.ScrollToPosition(editorSession.Selection().active)) RenderEditorSurface();
-        textInputController.NotifyTextChanged(oldTextLength);
+        if (editorSession.Revision() != oldRevision) textInputController.NotifyTextChanged();
+        else textInputController.NotifySelectionChanged();
         return true;
     }
 

@@ -26,13 +26,13 @@ namespace winrt::ElMd
         void Detach();
         void FocusEnter();
         void FocusLeave();
-        void NotifyTextChanged(std::size_t oldLength);
+        void NotifyTextChanged();
         void NotifySelectionChanged();
-        void RecordCharacterTextUpdate(std::size_t start, std::u32string text);
-        void ClearPendingCharacterTextUpdate();
 
     private:
         winrt::Windows::UI::Text::Core::CoreTextRange CurrentSelection() const;
+        void QueueSynchronization();
+        void SynchronizeTextStore();
         void RegisterHandlers();
         void RevokeHandlers();
 
@@ -48,11 +48,11 @@ namespace winrt::ElMd
         winrt::event_token layoutRequestedToken_{};
         winrt::event_token selectionUpdatingToken_{};
         winrt::event_token textUpdatingToken_{};
-        std::size_t knownLength_ = 0;
+        std::wstring knownText_;
+        std::shared_ptr<int> lifetime_;
         bool focused_ = false;
         bool updating_ = false;
-        bool pendingCharacterUpdate_ = false;
-        std::size_t pendingCharacterStart_ = 0;
-        std::u32string pendingCharacterText_;
+        bool notifying_ = false;
+        bool synchronizationQueued_ = false;
     };
 }
