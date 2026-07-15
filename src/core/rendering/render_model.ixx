@@ -36,10 +36,14 @@ struct MathDiagnostic {
 struct MathStyle {
     float font_size = 14.0f;
     MathDisplayMode display = MathDisplayMode::Inline;
-    Color color = Color(212, 212, 212);
-    Color background = Color(45, 45, 50);
-    static MathStyle inline_default() { MathStyle s; s.font_size = 14.0f; s.display = MathDisplayMode::Inline; return s; }
-    static MathStyle block_default() { MathStyle s; s.font_size = 14.0f; s.display = MathDisplayMode::Block; return s; }
+    Color color{};
+    Color background{};
+    static MathStyle inline_default(ThemeProfile const& theme = default_theme_profile()) {
+        return {theme.typography.body.size, MathDisplayMode::Inline, theme.colors.math_fg, theme.colors.math_bg};
+    }
+    static MathStyle block_default(ThemeProfile const& theme = default_theme_profile()) {
+        return {theme.typography.body.size, MathDisplayMode::Block, theme.colors.math_fg, theme.colors.math_bg};
+    }
 };
 
 enum class RenderedMathKind { NativeGlyphRuns, VectorPicture, RasterImage, PlainTextFallback };
@@ -72,70 +76,89 @@ struct BlockStyle {
     std::optional<Color> background;
     std::optional<BorderSide> border_left, border_right, border_top, border_bottom;
 
-    static BlockStyle paragraph() { BlockStyle s; s.margin_bottom = 8; return s; }
-    static BlockStyle list() { BlockStyle s; s.margin_bottom = 8; s.padding_left = 20; return s; }
-    static BlockStyle thematic_break() { BlockStyle s; s.margin_top = 8; s.margin_bottom = 8; return s; }
-    static BlockStyle heading(std::uint8_t level) {
+    static BlockStyle paragraph(ThemeLayout const& theme = default_theme_profile().layout) {
+        BlockStyle s; s.margin_bottom = theme.paragraph_margin_bottom; return s;
+    }
+    static BlockStyle list(ThemeLayout const& theme = default_theme_profile().layout) {
+        BlockStyle s; s.margin_bottom = theme.list_margin_bottom; s.padding_left = theme.list_padding_left; return s;
+    }
+    static BlockStyle thematic_break(ThemeLayout const& theme = default_theme_profile().layout) {
+        BlockStyle s; s.margin_top = theme.thematic_break_margin; s.margin_bottom = theme.thematic_break_margin; return s;
+    }
+    static BlockStyle heading(std::uint8_t level, ThemeLayout const& theme = default_theme_profile().layout) {
         BlockStyle s;
-        switch (level) {
-            case 1: s.margin_top = 24; break; case 2: s.margin_top = 20; break;
-            case 3: s.margin_top = 16; break; case 4: s.margin_top = 12; break;
-            case 5: s.margin_top = 8;  break; default: s.margin_top = 4; break;
-        }
-        s.margin_bottom = 4;
+        const auto index = (std::min)(std::size_t{5}, level == 0 ? std::size_t{} : static_cast<std::size_t>(level - 1));
+        s.margin_top = theme.heading_margin_top[index];
+        s.margin_bottom = theme.heading_margin_bottom;
         return s;
     }
-    static BlockStyle code() {
-        BlockStyle s; s.margin_top = 8; s.margin_bottom = 8;
-        s.padding_top = 8; s.padding_bottom = 8; s.padding_left = 12; s.padding_right = 12;
+    static BlockStyle code(ThemeLayout const& theme = default_theme_profile().layout) {
+        BlockStyle s; s.margin_top = theme.code_margin; s.margin_bottom = theme.code_margin;
+        s.padding_top = theme.code_padding_vertical; s.padding_bottom = theme.code_padding_vertical;
+        s.padding_left = theme.code_padding_horizontal; s.padding_right = theme.code_padding_horizontal;
         return s;
     }
-    static BlockStyle blockquote() {
-        BlockStyle s; s.margin_top = 8; s.margin_bottom = 8;
-        s.padding_top = 6; s.padding_bottom = 6; s.padding_left = 18; s.padding_right = 8;
-        s.border_left = BorderSide{3.0f, {}};
+    static BlockStyle blockquote(ThemeLayout const& theme = default_theme_profile().layout) {
+        BlockStyle s; s.margin_top = theme.quote_margin; s.margin_bottom = theme.quote_margin;
+        s.padding_top = theme.quote_padding_vertical; s.padding_bottom = theme.quote_padding_vertical;
+        s.padding_left = theme.quote_padding_left; s.padding_right = theme.quote_padding_right;
+        s.border_left = BorderSide{theme.quote_border_width, {}};
         return s;
     }
-    static BlockStyle math() {
-        BlockStyle s; s.margin_top = 12; s.margin_bottom = 12;
-        s.padding_top = 8; s.padding_bottom = 8; s.padding_left = 12; s.padding_right = 12;
+    static BlockStyle math(ThemeLayout const& theme = default_theme_profile().layout) {
+        BlockStyle s; s.margin_top = theme.math_margin; s.margin_bottom = theme.math_margin;
+        s.padding_top = theme.math_padding_vertical; s.padding_bottom = theme.math_padding_vertical;
+        s.padding_left = theme.math_padding_horizontal; s.padding_right = theme.math_padding_horizontal;
         // Display math is an atomic editable block. Keep its container
         // visible while the source delimiters are revealed for editing.
         s.background = Color{};
         return s;
     }
-    static BlockStyle table()  { BlockStyle s; s.margin_top = 8; s.margin_bottom = 8; return s; }
-    static BlockStyle image()  { BlockStyle s; s.margin_top = 12; s.margin_bottom = 12; return s; }
-    static BlockStyle toc()    { BlockStyle s; s.margin_top = 12; s.margin_bottom = 12; s.padding_left = 8; s.border_left = BorderSide{2.0f, {}}; return s; }
-    static BlockStyle callout(std::string_view /*kind*/) {
-        BlockStyle s; s.margin_top = 8; s.margin_bottom = 8; s.padding_left = 16;
-        s.padding_top = 8; s.padding_bottom = 8; s.border_left = BorderSide{4.0f, {}};
+    static BlockStyle table(ThemeLayout const& theme = default_theme_profile().layout) {
+        BlockStyle s; s.margin_top = theme.table_margin; s.margin_bottom = theme.table_margin; return s;
+    }
+    static BlockStyle image(ThemeLayout const& theme = default_theme_profile().layout) {
+        BlockStyle s; s.margin_top = theme.image_margin; s.margin_bottom = theme.image_margin; return s;
+    }
+    static BlockStyle toc(ThemeLayout const& theme = default_theme_profile().layout) {
+        BlockStyle s; s.margin_top = theme.toc_margin; s.margin_bottom = theme.toc_margin;
+        s.padding_left = theme.toc_padding_left; s.border_left = BorderSide{theme.toc_border_width, {}}; return s;
+    }
+    static BlockStyle callout(std::string_view /*kind*/, ThemeLayout const& theme = default_theme_profile().layout) {
+        BlockStyle s; s.margin_top = theme.callout_margin; s.margin_bottom = theme.callout_margin;
+        s.padding_left = theme.callout_padding_left;
+        s.padding_top = theme.callout_padding_vertical; s.padding_bottom = theme.callout_padding_vertical;
+        s.border_left = BorderSide{theme.callout_border_width, {}};
         return s;
     }
-    static BlockStyle frontmatter() {
-        BlockStyle s; s.margin_bottom = 12;
-        s.padding_top = 8; s.padding_bottom = 8; s.padding_left = 12; s.padding_right = 12;
+    static BlockStyle frontmatter(ThemeLayout const& theme = default_theme_profile().layout) {
+        BlockStyle s; s.margin_bottom = theme.frontmatter_margin_bottom;
+        s.padding_top = theme.frontmatter_padding_vertical; s.padding_bottom = theme.frontmatter_padding_vertical;
+        s.padding_left = theme.frontmatter_padding_horizontal; s.padding_right = theme.frontmatter_padding_horizontal;
         return s;
     }
-    static BlockStyle footnote() {
+    static BlockStyle footnote(ThemeLayout const& theme = default_theme_profile().layout) {
         BlockStyle s;
-        s.margin_top = 8;
-        s.margin_bottom = 8;
-        s.padding_top = 8;
-        s.padding_bottom = 8;
-        s.padding_left = 12;
-        s.padding_right = 12;
+        s.margin_top = theme.footnote_margin;
+        s.margin_bottom = theme.footnote_margin;
+        s.padding_top = theme.footnote_padding_vertical;
+        s.padding_bottom = theme.footnote_padding_vertical;
+        s.padding_left = theme.footnote_padding_horizontal;
+        s.padding_right = theme.footnote_padding_horizontal;
         // A definition is one list item container whose children may contain
         // paragraphs, lists, quotes, code, and other block content.
         s.background = Color{};
         return s;
     }
-    static BlockStyle unsupported() {
-        BlockStyle s; s.margin_top = 8; s.margin_bottom = 8; s.padding_left = 12;
-        s.padding_top = 4; s.padding_bottom = 4;
+    static BlockStyle unsupported(ThemeLayout const& theme = default_theme_profile().layout) {
+        BlockStyle s; s.margin_top = theme.unsupported_margin; s.margin_bottom = theme.unsupported_margin;
+        s.padding_left = theme.unsupported_padding_left;
+        s.padding_top = theme.unsupported_padding_vertical; s.padding_bottom = theme.unsupported_padding_vertical;
         return s;
     }
-    static BlockStyle extension() { BlockStyle s; s.margin_top = 4; s.margin_bottom = 4; return s; }
+    static BlockStyle extension(ThemeLayout const& theme = default_theme_profile().layout) {
+        BlockStyle s; s.margin_top = theme.extension_margin; s.margin_bottom = theme.extension_margin; return s;
+    }
 };
 
 struct InlineRenderItem {

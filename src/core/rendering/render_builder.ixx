@@ -96,6 +96,9 @@ inline void push_marker(
 }
 
 struct Builder {
+    explicit Builder(ThemeProfile const& profile) : theme(profile) {}
+
+    ThemeProfile const& theme;
     std::unordered_map<std::string, std::size_t> footnote_ordinals;
 
     std::u32string footnote_display_label(std::string_view label) const {
@@ -214,12 +217,12 @@ struct Builder {
 
     BlockStyle flow_container_style(BlockKind kind, std::string_view callout_kind = {}) const {
         switch (kind) {
-            case BlockKind::BlockQuote: return BlockStyle::blockquote();
-            case BlockKind::Callout: return BlockStyle::callout(callout_kind);
-            case BlockKind::FootnoteDefinition: return BlockStyle::footnote();
+            case BlockKind::BlockQuote: return BlockStyle::blockquote(theme.layout);
+            case BlockKind::Callout: return BlockStyle::callout(callout_kind, theme.layout);
+            case BlockKind::FootnoteDefinition: return BlockStyle::footnote(theme.layout);
             case BlockKind::List:
-            case BlockKind::TaskList: return BlockStyle::list();
-            default: return BlockStyle::paragraph();
+            case BlockKind::TaskList: return BlockStyle::list(theme.layout);
+            default: return BlockStyle::paragraph(theme.layout);
         }
     }
 
@@ -669,7 +672,7 @@ struct Builder {
         switch (b.kind) {
             case BK::Paragraph:
             case BK::TableCell: {
-                auto rb = base(BlockStyle::paragraph());
+                auto rb = base(BlockStyle::paragraph(theme.layout));
                 if (b.inline_content.source.empty() && b.opening_marker.empty() && b.closing_marker.empty()) {
                     rb.kind = RenderBlockKind::Blank;
                     return rb;
@@ -703,7 +706,7 @@ struct Builder {
                 return rb;
             }
             case BK::Heading: {
-                auto rb = base(BlockStyle::heading(b.level));
+                auto rb = base(BlockStyle::heading(b.level, theme.layout));
                 InlineStyle s = InlineStyle::plain(); s.heading_level = b.level;
                 auto append_heading_marker = [&](
                     std::u32string const& text,
@@ -745,7 +748,7 @@ struct Builder {
                 return rb;
             }
             case BK::CodeBlock: {
-                auto rb = base(BlockStyle::code());
+                auto rb = base(BlockStyle::code(theme.layout));
                 rb.raw_source = b.block_source.source;
                 rb.content_to_source = b.block_source.tree.content_to_source;
                 rb.language = b.block_source.tree.language;
@@ -759,7 +762,7 @@ struct Builder {
                 return rb;
             }
             case BK::MathBlock: {
-                auto rb = base(BlockStyle::math());
+                auto rb = base(BlockStyle::math(theme.layout));
                 rb.raw_source = b.block_source.source;
                 rb.content_to_source = b.block_source.tree.content_to_source;
                 rb.tex = block_source_content(b.block_source);
@@ -770,7 +773,7 @@ struct Builder {
                 return rb;
             }
             case BK::Table: {
-                auto rb = base(BlockStyle::table());
+                auto rb = base(BlockStyle::table(theme.layout));
                 rb.table_aligns = b.table_aligns;
                 rb.table_header_row = !b.children.empty() && b.children.front().table_header_row;
                 rb.column_count = b.children.empty() ? 0 : b.children.front().children.size();
@@ -783,43 +786,46 @@ struct Builder {
                 return rb;
             }
             case BK::ImageBlock: {
-                auto rb = base(BlockStyle::image());
+                auto rb = base(BlockStyle::image(theme.layout));
                 rb.alt = b.image_alt; rb.src = b.src; rb.title = b.image_title; rb.link = b.image_link;
                 rb.image_width = b.image_width; rb.image_height = b.image_height;
                 return rb;
             }
             case BK::Toc: {
-                return base(BlockStyle::toc());
+                return base(BlockStyle::toc(theme.layout));
             }
             case BK::Frontmatter: {
-                auto rb = base(BlockStyle::frontmatter());
+                auto rb = base(BlockStyle::frontmatter(theme.layout));
                 rb.raw = b.raw;
                 return rb;
             }
             case BK::ThematicBreak: {
-                return base(BlockStyle::thematic_break());
+                return base(BlockStyle::thematic_break(theme.layout));
             }
             case BK::LinkDefinition: {
-                return base(BlockStyle::paragraph());
+                return base(BlockStyle::paragraph(theme.layout));
             }
             case BK::UnsupportedMarkup: {
-                auto rb = base(BlockStyle::unsupported());
+                auto rb = base(BlockStyle::unsupported(theme.layout));
                 rb.raw = b.raw;
                 rb.reason_text = unsupported_reason_message(b.unsup_reason);
                 return rb;
             }
             case BK::Extension: {
-                auto rb = base(BlockStyle::extension());
+                auto rb = base(BlockStyle::extension(theme.layout));
                 rb.extension_name = b.ext_name;
                 return rb;
             }
         }
-        return base(BlockStyle::paragraph());
+        return base(BlockStyle::paragraph(theme.layout));
     }
 };
 
-inline RenderModel build_render_model(const EditorDocument& doc, const Outline& outline) {
-    Builder bd;
+inline RenderModel build_render_model(
+    const EditorDocument& doc,
+    const Outline& outline,
+    ThemeProfile const& theme) {
+    Builder bd(theme);
     const auto symbols = build_document_symbol_index(doc);
     std::size_t next_footnote_ordinal = 1;
     auto assign_footnote_ordinal = [&](std::string const& label) {
@@ -851,6 +857,10 @@ inline RenderModel build_render_model(const EditorDocument& doc, const Outline& 
     };
     for (auto const& block : doc.root.children) collect_editable(collect_editable, block);
     return m;
+}
+
+inline RenderModel build_render_model(const EditorDocument& doc, const Outline& outline) {
+    return build_render_model(doc, outline, default_theme_profile());
 }
 
 } // namespace elmd
