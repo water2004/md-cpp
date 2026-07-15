@@ -82,7 +82,7 @@
       <AdditionalOptions>%(AdditionalOptions) /bigobj</AdditionalOptions>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$(IntDir)quickjs\quickjs.lib;d2d1.lib;d3d11.lib;dwrite.lib;dxgi.lib;windowscodecs.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(IntDir)quickjs\quickjs.lib;d2d1.lib;d3d11.lib;dwrite.lib;dxgi.lib;windowscodecs.lib;shlwapi.lib;winspool.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>%(AdditionalOptions) /STACK:33554432</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
@@ -130,6 +130,7 @@
     <ClInclude Include="EditorPointerController.h" />
     <ClInclude Include="EditorKeyboardController.h" />
     <ClInclude Include="EditorDocumentController.h" />
+    <ClInclude Include="EditorPdfPrintJob.h" />
     <ClInclude Include="EditorSidebarController.h" />
     <ClInclude Include="EditorSurfaceRenderer.h" />
     <ClInclude Include="MathJaxRenderer.h" />
@@ -309,6 +310,7 @@
     <ClCompile Include="EditorPointerController.cpp" />
     <ClCompile Include="EditorKeyboardController.cpp" />
     <ClCompile Include="EditorDocumentController.cpp" />
+    <ClCompile Include="EditorPdfPrintJob.cpp" />
     <ClCompile Include="EditorSidebarController.cpp" />
     <ClCompile Include="EditorSurfaceRenderer.cpp" />
     <ClCompile Include="MathJaxRenderer.cpp" />

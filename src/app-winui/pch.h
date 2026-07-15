@@ -4,6 +4,7 @@
 #include <unknwn.h>
 #include <restrictederrorinfo.h>
 #include <hstring.h>
+#include <DocumentTarget.h>
 #include <d2d1_1.h>
 #include <d2d1_3.h>
 #include <d3d11_4.h>
@@ -13,6 +14,8 @@
 #include <microsoft.ui.xaml.window.h>
 #include <microsoft.ui.xaml.media.dxinterop.h>
 #include <shobjidl_core.h>
+#include <shlwapi.h>
+#include <winspool.h>
 #include <wrl/client.h>
 #include <wrl/implements.h>
 #include <algorithm>
@@ -34,6 +37,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <thread>
