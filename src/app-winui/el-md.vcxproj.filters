@@ -243,6 +243,12 @@
     <ClCompile Include="editor\rendering\EditorRenderCache.cpp">
       <Filter>Editor\Rendering</Filter>
     </ClCompile>
+    <ClCompile Include="editor\rendering\EditorRenderCache.Images.cpp">
+      <Filter>Editor\Rendering</Filter>
+    </ClCompile>
+    <ClCompile Include="editor\rendering\EditorRenderCache.Layout.cpp">
+      <Filter>Editor\Rendering</Filter>
+    </ClCompile>
     <ClCompile Include="editor\rendering\EditorSvgPainter.cpp">
       <Filter>Editor\Rendering</Filter>
     </ClCompile>
