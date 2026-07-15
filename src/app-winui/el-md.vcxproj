@@ -76,6 +76,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderOutputFile>$(IntDir)pch.pch</PrecompiledHeaderOutputFile>
+      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WarningLevel>Level4</WarningLevel>
       <LanguageStandard Condition="'$(VisualStudioVersion)' &gt;= '18.0'">stdcpplatest</LanguageStandard>
       <LanguageStandard Condition="'$(VisualStudioVersion)' &lt; '18.0'">stdcpp17</LanguageStandard>
@@ -110,33 +111,33 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
-    <ClInclude Include="EditorSession.h" />
-    <ClInclude Include="EditorRenderFrame.h" />
-    <ClInclude Include="EditorStyleSheet.h" />
-    <ClInclude Include="EditorInteractionMap.h" />
-    <ClInclude Include="EditorDisplayMapping.h" />
-    <ClInclude Include="EditorContentPreparation.h" />
-    <ClInclude Include="EditorRenderResources.h" />
-    <ClInclude Include="EditorGifDecoder.h" />
-    <ClInclude Include="EditorRenderCache.h" />
-    <ClInclude Include="EditorSvgPainter.h" />
-    <ClInclude Include="EditorTextLayoutEngine.h" />
-    <ClInclude Include="EditorTableInteraction.h" />
-    <ClInclude Include="EditorInlineImageRenderer.h" />
-    <ClInclude Include="EditorEmbeddedDraw.h" />
-    <ClInclude Include="EditorTableBlockRenderer.h" />
-    <ClInclude Include="EditorScrollController.h" />
-    <ClInclude Include="EditorTextInputController.h" />
-    <ClInclude Include="EditorPointerController.h" />
-    <ClInclude Include="EditorKeyboardController.h" />
-    <ClInclude Include="EditorDocumentController.h" />
-    <ClInclude Include="EditorPdfPrintJob.h" />
-    <ClInclude Include="EditorSidebarController.h" />
-    <ClInclude Include="EditorSurfaceRenderer.h" />
-    <ClInclude Include="MathJaxRenderer.h" />
-    <ClInclude Include="MermaidRenderer.h" />
-    <ClInclude Include="SvgNormalizer.h" />
-    <ClInclude Include="TreeSitterHighlighter.h" />
+    <ClInclude Include="editor\session\EditorSession.h" />
+    <ClInclude Include="editor\session\EditorRenderFrame.h" />
+    <ClInclude Include="editor\rendering\EditorStyleSheet.h" />
+    <ClInclude Include="editor\interaction\EditorInteractionMap.h" />
+    <ClInclude Include="editor\session\EditorDisplayMapping.h" />
+    <ClInclude Include="editor\rendering\EditorContentPreparation.h" />
+    <ClInclude Include="editor\rendering\EditorRenderResources.h" />
+    <ClInclude Include="media\EditorGifDecoder.h" />
+    <ClInclude Include="editor\rendering\EditorRenderCache.h" />
+    <ClInclude Include="editor\rendering\EditorSvgPainter.h" />
+    <ClInclude Include="editor\rendering\EditorTextLayoutEngine.h" />
+    <ClInclude Include="editor\interaction\EditorTableInteraction.h" />
+    <ClInclude Include="editor\rendering\EditorInlineImageRenderer.h" />
+    <ClInclude Include="editor\rendering\EditorEmbeddedDraw.h" />
+    <ClInclude Include="editor\rendering\EditorTableBlockRenderer.h" />
+    <ClInclude Include="editor\interaction\EditorScrollController.h" />
+    <ClInclude Include="editor\interaction\EditorTextInputController.h" />
+    <ClInclude Include="editor\interaction\EditorPointerController.h" />
+    <ClInclude Include="editor\interaction\EditorKeyboardController.h" />
+    <ClInclude Include="editor\interaction\EditorDocumentController.h" />
+    <ClInclude Include="export\EditorPdfPrintJob.h" />
+    <ClInclude Include="editor\interaction\EditorSidebarController.h" />
+    <ClInclude Include="editor\rendering\EditorSurfaceRenderer.h" />
+    <ClInclude Include="media\MathJaxRenderer.h" />
+    <ClInclude Include="media\MermaidRenderer.h" />
+    <ClInclude Include="media\SvgNormalizer.h" />
+    <ClInclude Include="media\TreeSitterHighlighter.h" />
     <ClInclude Include="App.xaml.h">
       <DependentUpon>App.xaml</DependentUpon>
     </ClInclude>
@@ -296,30 +297,30 @@
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="EditorSession.cpp" />
-    <ClCompile Include="EditorGifDecoder.cpp" />
-    <ClCompile Include="EditorStyleSheet.cpp" />
-    <ClCompile Include="EditorInteractionMap.cpp" />
-    <ClCompile Include="EditorContentPreparation.cpp" />
-    <ClCompile Include="EditorRenderResources.cpp" />
-    <ClCompile Include="EditorRenderCache.cpp" />
-    <ClCompile Include="EditorSvgPainter.cpp" />
-    <ClCompile Include="EditorTextLayoutEngine.cpp" />
-    <ClCompile Include="EditorTableInteraction.cpp" />
-    <ClCompile Include="EditorInlineImageRenderer.cpp" />
-    <ClCompile Include="EditorTableBlockRenderer.cpp" />
-    <ClCompile Include="EditorScrollController.cpp" />
-    <ClCompile Include="EditorTextInputController.cpp" />
-    <ClCompile Include="EditorPointerController.cpp" />
-    <ClCompile Include="EditorKeyboardController.cpp" />
-    <ClCompile Include="EditorDocumentController.cpp" />
-    <ClCompile Include="EditorPdfPrintJob.cpp" />
-    <ClCompile Include="EditorSidebarController.cpp" />
-    <ClCompile Include="EditorSurfaceRenderer.cpp" />
-    <ClCompile Include="MathJaxRenderer.cpp" />
-    <ClCompile Include="MermaidRenderer.cpp" />
-    <ClCompile Include="SvgNormalizer.cpp" />
-    <ClCompile Include="TreeSitterHighlighter.cpp">
+    <ClCompile Include="editor\session\EditorSession.cpp" />
+    <ClCompile Include="media\EditorGifDecoder.cpp" />
+    <ClCompile Include="editor\rendering\EditorStyleSheet.cpp" />
+    <ClCompile Include="editor\interaction\EditorInteractionMap.cpp" />
+    <ClCompile Include="editor\rendering\EditorContentPreparation.cpp" />
+    <ClCompile Include="editor\rendering\EditorRenderResources.cpp" />
+    <ClCompile Include="editor\rendering\EditorRenderCache.cpp" />
+    <ClCompile Include="editor\rendering\EditorSvgPainter.cpp" />
+    <ClCompile Include="editor\rendering\EditorTextLayoutEngine.cpp" />
+    <ClCompile Include="editor\interaction\EditorTableInteraction.cpp" />
+    <ClCompile Include="editor\rendering\EditorInlineImageRenderer.cpp" />
+    <ClCompile Include="editor\rendering\EditorTableBlockRenderer.cpp" />
+    <ClCompile Include="editor\interaction\EditorScrollController.cpp" />
+    <ClCompile Include="editor\interaction\EditorTextInputController.cpp" />
+    <ClCompile Include="editor\interaction\EditorPointerController.cpp" />
+    <ClCompile Include="editor\interaction\EditorKeyboardController.cpp" />
+    <ClCompile Include="editor\interaction\EditorDocumentController.cpp" />
+    <ClCompile Include="export\EditorPdfPrintJob.cpp" />
+    <ClCompile Include="editor\interaction\EditorSidebarController.cpp" />
+    <ClCompile Include="editor\rendering\EditorSurfaceRenderer.cpp" />
+    <ClCompile Include="media\MathJaxRenderer.cpp" />
+    <ClCompile Include="media\MermaidRenderer.cpp" />
+    <ClCompile Include="media\SvgNormalizer.cpp" />
+    <ClCompile Include="media\TreeSitterHighlighter.cpp">
       <AdditionalIncludeDirectories>third_party\tree-sitter\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <ClCompile Include="third_party\tree-sitter\runtime\lib.c">
@@ -328,7 +329,7 @@
       <AdditionalIncludeDirectories>third_party\tree-sitter\include;third_party\tree-sitter\runtime;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ObjectFileName>$(IntDir)tree_sitter_runtime.obj</ObjectFileName>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;TREE_SITTER_HIDE_SYMBOLS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <DisableSpecificWarnings>4018;4100;4201;4232;4133;4244;4267;4996;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <DisableSpecificWarnings>4018;4100;4201;4232;4133;4244;4267;4701;4996;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <ClCompile Include="third_party\tree-sitter\grammars\*.c">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>

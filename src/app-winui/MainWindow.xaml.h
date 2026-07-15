@@ -1,13 +1,13 @@
 #pragma once
 
-#include "EditorSession.h"
-#include "EditorSurfaceRenderer.h"
-#include "EditorScrollController.h"
-#include "EditorTextInputController.h"
-#include "EditorPointerController.h"
-#include "EditorKeyboardController.h"
-#include "EditorDocumentController.h"
-#include "EditorSidebarController.h"
+#include "editor/session/EditorSession.h"
+#include "editor/rendering/EditorSurfaceRenderer.h"
+#include "editor/interaction/EditorScrollController.h"
+#include "editor/interaction/EditorTextInputController.h"
+#include "editor/interaction/EditorPointerController.h"
+#include "editor/interaction/EditorKeyboardController.h"
+#include "editor/interaction/EditorDocumentController.h"
+#include "editor/interaction/EditorSidebarController.h"
 #include "MainWindow.g.h"
 
 namespace winrt::ElMd::implementation

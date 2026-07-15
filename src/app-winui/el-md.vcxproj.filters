@@ -1,273 +1,432 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="Source Files">
+    <Filter Include="Application Shell">
       <UniqueIdentifier>{21a301c6-b366-4088-ab57-b7bb2dbc80df}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Header Files">
-      <UniqueIdentifier>{76c150fc-f5f1-4648-ae20-8bc8d901f571}</UniqueIdentifier>
+    <Filter Include="Editor">
+      <UniqueIdentifier>{d66d082f-cb5d-4f22-9865-670fe1bd5691}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Resource Files">
-      <UniqueIdentifier>{b56c9b65-797f-48cc-8449-ef437aeab428}</UniqueIdentifier>
+    <Filter Include="Editor\Session">
+      <UniqueIdentifier>{d5a063a8-6ccf-4806-88fd-d423b283d0c5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Editor\Interaction">
+      <UniqueIdentifier>{7bb05fe1-267a-4881-85b4-b98e989413ef}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Editor\Rendering">
+      <UniqueIdentifier>{8b8ff884-cf1c-4a02-b084-f8f3d6c26263}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Media Services">
+      <UniqueIdentifier>{b6e56fcf-6f17-4d8d-8be1-92ff4a332750}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Export">
+      <UniqueIdentifier>{15147dba-5cd9-45ba-852d-3522a077d31b}</UniqueIdentifier>
     </Filter>
     <Filter Include="Core Modules">
       <UniqueIdentifier>{1d794d6b-38a8-41d2-89a5-74cdbff8ce3f}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Core Modules\Model">
+      <UniqueIdentifier>{ee4c35f8-b913-438b-83f5-2754d6595c5d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Core Modules\Parsing">
+      <UniqueIdentifier>{3bafaa15-0ccb-4dcf-8e05-b4fa0b950914}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Core Modules\Editing">
+      <UniqueIdentifier>{850d83f6-bc7f-41af-861d-c7b68df9821f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Core Modules\Query">
+      <UniqueIdentifier>{90f7a303-5330-4d88-8b9a-27f6ab5f4ef8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Core Modules\Rendering">
+      <UniqueIdentifier>{c59b2f1f-a34f-4e79-a00a-23cf65dc253b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Core Modules\Source">
+      <UniqueIdentifier>{00f03dc6-c8ea-48eb-b74b-9bb5b65127f2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Core Modules\Support">
+      <UniqueIdentifier>{ed439d88-b4eb-4daf-894e-62d49461c772}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Third Party">
       <UniqueIdentifier>{c15f70e8-7f12-4e04-ac76-8d246b5e3ca4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Resources">
+      <UniqueIdentifier>{b56c9b65-797f-48cc-8449-ef437aeab428}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\core\model\ast.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\model\callout.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\caret.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\editing\command.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\support\diagnostics.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\parsing\dialect.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\model\document.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\editing\document_edit.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\editing\document_block_reparse.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\editing\document_edit_support.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\editing\document_input_rules.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\editing\document_source_edit.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\editing\document_structure_edit.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\editing\document_footnotes.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\editing\document_transaction.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\editing\document_operation_apply.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\query\document_symbols.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\query\document_text.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\editing\editor.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\support\error.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\model\extension.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\model\ids.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\editing\input.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\model\metadata.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\query\outline.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\parsing\parser.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\rendering\render_builder.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\rendering\render_model.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\source\source_style.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\source\source_editor.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\source\source_render.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\editing\selection.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\parsing\serializer.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\parsing\slug.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\model\symbols.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\rendering\theme.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\support\types.ixx"><Filter>Core Modules</Filter></ClCompile>
-    <ClCompile Include="..\core\support\utf.ixx"><Filter>Core Modules</Filter></ClCompile>
+    <ClCompile Include="..\core\model\ast.ixx">
+      <Filter>Core Modules\Model</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\parsing\block_source.ixx">
+      <Filter>Core Modules\Parsing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\model\block_tree.ixx">
+      <Filter>Core Modules\Model</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\model\callout.ixx">
+      <Filter>Core Modules\Model</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\command.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\support\diagnostics.ixx">
+      <Filter>Core Modules\Support</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\parsing\dialect.ixx">
+      <Filter>Core Modules\Parsing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\model\document.ixx">
+      <Filter>Core Modules\Model</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\document_edit.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\document_edit_support.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\document_block_reparse.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\document_clipboard.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\document_footnotes.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\document_input_rules.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\document_source_edit.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\document_structure_edit.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\document_transaction.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\document_operation_apply.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\document_history.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\query\document_symbols.ixx">
+      <Filter>Core Modules\Query</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\query\document_text.ixx">
+      <Filter>Core Modules\Query</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\editor.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\support\error.ixx">
+      <Filter>Core Modules\Support</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\model\extension.ixx">
+      <Filter>Core Modules\Model</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\model\ids.ixx">
+      <Filter>Core Modules\Model</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\input.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\support\instrumentation.ixx">
+      <Filter>Core Modules\Support</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\model\inline_cst.ixx">
+      <Filter>Core Modules\Model</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\model\inline_document.ixx">
+      <Filter>Core Modules\Model</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\parsing\inline_parser.ixx">
+      <Filter>Core Modules\Parsing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\inline_source_edit.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\rendering\layout_plan.ixx">
+      <Filter>Core Modules\Rendering</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\model\metadata.ixx">
+      <Filter>Core Modules\Model</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\query\outline.ixx">
+      <Filter>Core Modules\Query</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\parsing\parser.ixx">
+      <Filter>Core Modules\Parsing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\rendering\render_builder.ixx">
+      <Filter>Core Modules\Rendering</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\rendering\render_model.ixx">
+      <Filter>Core Modules\Rendering</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\source\source_style.ixx">
+      <Filter>Core Modules\Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\source\source_editor.ixx">
+      <Filter>Core Modules\Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\source\source_render.ixx">
+      <Filter>Core Modules\Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\selection.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\parsing\serializer.ixx">
+      <Filter>Core Modules\Parsing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\parsing\slug.ixx">
+      <Filter>Core Modules\Parsing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\model\symbols.ixx">
+      <Filter>Core Modules\Model</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\rendering\theme.ixx">
+      <Filter>Core Modules\Rendering</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\editing\text_edit.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\support\types.ixx">
+      <Filter>Core Modules\Support</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\support\utf.ixx">
+      <Filter>Core Modules\Support</Filter>
+    </ClCompile>
     <ClCompile Include="pch.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>Application Shell</Filter>
     </ClCompile>
-    <ClCompile Include="App.xaml.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="editor\session\EditorSession.cpp">
+      <Filter>Editor\Session</Filter>
     </ClCompile>
-    <ClCompile Include="MainWindow.xaml.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="media\EditorGifDecoder.cpp">
+      <Filter>Media Services</Filter>
     </ClCompile>
-    <ClCompile Include="EditorSession.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="editor\rendering\EditorStyleSheet.cpp">
+      <Filter>Editor\Rendering</Filter>
     </ClCompile>
-    <ClCompile Include="EditorStyleSheet.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="editor\interaction\EditorInteractionMap.cpp">
+      <Filter>Editor\Interaction</Filter>
     </ClCompile>
-    <ClCompile Include="EditorInteractionMap.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="editor\rendering\EditorContentPreparation.cpp">
+      <Filter>Editor\Rendering</Filter>
     </ClCompile>
-    <ClCompile Include="EditorContentPreparation.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="editor\rendering\EditorRenderResources.cpp">
+      <Filter>Editor\Rendering</Filter>
     </ClCompile>
-    <ClCompile Include="EditorRenderResources.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="editor\rendering\EditorRenderCache.cpp">
+      <Filter>Editor\Rendering</Filter>
     </ClCompile>
-    <ClCompile Include="EditorRenderCache.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="editor\rendering\EditorSvgPainter.cpp">
+      <Filter>Editor\Rendering</Filter>
     </ClCompile>
-    <ClCompile Include="EditorGifDecoder.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="editor\rendering\EditorTextLayoutEngine.cpp">
+      <Filter>Editor\Rendering</Filter>
     </ClCompile>
-    <ClCompile Include="EditorSvgPainter.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="editor\interaction\EditorTableInteraction.cpp">
+      <Filter>Editor\Interaction</Filter>
     </ClCompile>
-    <ClCompile Include="EditorTextLayoutEngine.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="editor\rendering\EditorInlineImageRenderer.cpp">
+      <Filter>Editor\Rendering</Filter>
     </ClCompile>
-    <ClCompile Include="EditorTableInteraction.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="editor\rendering\EditorTableBlockRenderer.cpp">
+      <Filter>Editor\Rendering</Filter>
     </ClCompile>
-    <ClCompile Include="EditorInlineImageRenderer.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="editor\interaction\EditorScrollController.cpp">
+      <Filter>Editor\Interaction</Filter>
     </ClCompile>
-    <ClCompile Include="EditorTableBlockRenderer.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="editor\interaction\EditorTextInputController.cpp">
+      <Filter>Editor\Interaction</Filter>
     </ClCompile>
-    <ClCompile Include="EditorScrollController.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="editor\interaction\EditorPointerController.cpp">
+      <Filter>Editor\Interaction</Filter>
     </ClCompile>
-    <ClCompile Include="EditorTextInputController.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="editor\interaction\EditorKeyboardController.cpp">
+      <Filter>Editor\Interaction</Filter>
     </ClCompile>
-    <ClCompile Include="EditorPointerController.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="editor\interaction\EditorDocumentController.cpp">
+      <Filter>Editor\Interaction</Filter>
     </ClCompile>
-    <ClCompile Include="EditorKeyboardController.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="export\EditorPdfPrintJob.cpp">
+      <Filter>Export</Filter>
     </ClCompile>
-    <ClCompile Include="EditorDocumentController.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="editor\interaction\EditorSidebarController.cpp">
+      <Filter>Editor\Interaction</Filter>
     </ClCompile>
-    <ClCompile Include="EditorSidebarController.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="editor\rendering\EditorSurfaceRenderer.cpp">
+      <Filter>Editor\Rendering</Filter>
     </ClCompile>
-    <ClCompile Include="EditorSurfaceRenderer.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="media\MathJaxRenderer.cpp">
+      <Filter>Media Services</Filter>
     </ClCompile>
-    <ClCompile Include="MathJaxRenderer.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="media\MermaidRenderer.cpp">
+      <Filter>Media Services</Filter>
     </ClCompile>
-    <ClCompile Include="MermaidRenderer.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="media\SvgNormalizer.cpp">
+      <Filter>Media Services</Filter>
     </ClCompile>
-    <ClCompile Include="SvgNormalizer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="TreeSitterHighlighter.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="media\TreeSitterHighlighter.cpp">
+      <Filter>Media Services</Filter>
     </ClCompile>
     <ClCompile Include="third_party\tree-sitter\runtime\lib.c">
-      <Filter>Source Files</Filter>
+      <Filter>Third Party</Filter>
     </ClCompile>
     <ClCompile Include="third_party\tree-sitter\grammars\*.c">
-      <Filter>Source Files</Filter>
+      <Filter>Third Party</Filter>
+    </ClCompile>
+    <ClCompile Include="App.xaml.cpp">
+      <Filter>Application Shell</Filter>
+    </ClCompile>
+    <ClCompile Include="MainWindow.xaml.cpp">
+      <Filter>Application Shell</Filter>
+    </ClCompile>
+    <ClCompile Include="$(GeneratedFilesDir)module.g.cpp">
+      <Filter>Application Shell</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
-      <Filter>Header Files</Filter>
+      <Filter>Application Shell</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\session\EditorSession.h">
+      <Filter>Editor\Session</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\session\EditorRenderFrame.h">
+      <Filter>Editor\Session</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\rendering\EditorStyleSheet.h">
+      <Filter>Editor\Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\interaction\EditorInteractionMap.h">
+      <Filter>Editor\Interaction</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\session\EditorDisplayMapping.h">
+      <Filter>Editor\Session</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\rendering\EditorContentPreparation.h">
+      <Filter>Editor\Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\rendering\EditorRenderResources.h">
+      <Filter>Editor\Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="media\EditorGifDecoder.h">
+      <Filter>Media Services</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\rendering\EditorRenderCache.h">
+      <Filter>Editor\Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\rendering\EditorSvgPainter.h">
+      <Filter>Editor\Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\rendering\EditorTextLayoutEngine.h">
+      <Filter>Editor\Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\interaction\EditorTableInteraction.h">
+      <Filter>Editor\Interaction</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\rendering\EditorInlineImageRenderer.h">
+      <Filter>Editor\Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\rendering\EditorEmbeddedDraw.h">
+      <Filter>Editor\Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\rendering\EditorTableBlockRenderer.h">
+      <Filter>Editor\Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\interaction\EditorScrollController.h">
+      <Filter>Editor\Interaction</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\interaction\EditorTextInputController.h">
+      <Filter>Editor\Interaction</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\interaction\EditorPointerController.h">
+      <Filter>Editor\Interaction</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\interaction\EditorKeyboardController.h">
+      <Filter>Editor\Interaction</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\interaction\EditorDocumentController.h">
+      <Filter>Editor\Interaction</Filter>
+    </ClInclude>
+    <ClInclude Include="export\EditorPdfPrintJob.h">
+      <Filter>Export</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\interaction\EditorSidebarController.h">
+      <Filter>Editor\Interaction</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\rendering\EditorSurfaceRenderer.h">
+      <Filter>Editor\Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="media\MathJaxRenderer.h">
+      <Filter>Media Services</Filter>
+    </ClInclude>
+    <ClInclude Include="media\MermaidRenderer.h">
+      <Filter>Media Services</Filter>
+    </ClInclude>
+    <ClInclude Include="media\SvgNormalizer.h">
+      <Filter>Media Services</Filter>
+    </ClInclude>
+    <ClInclude Include="media\TreeSitterHighlighter.h">
+      <Filter>Media Services</Filter>
     </ClInclude>
     <ClInclude Include="App.xaml.h">
-      <Filter>Header Files</Filter>
+      <Filter>Application Shell</Filter>
     </ClInclude>
     <ClInclude Include="MainWindow.xaml.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorSession.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorRenderFrame.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorStyleSheet.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorInteractionMap.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorDisplayMapping.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorContentPreparation.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorRenderResources.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorRenderCache.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorGifDecoder.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorSvgPainter.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorTextLayoutEngine.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorTableInteraction.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorInlineImageRenderer.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorEmbeddedDraw.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorTableBlockRenderer.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorScrollController.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorTextInputController.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorPointerController.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorKeyboardController.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorDocumentController.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorSidebarController.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EditorSurfaceRenderer.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="MathJaxRenderer.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="MermaidRenderer.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="SvgNormalizer.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="TreeSitterHighlighter.h">
-      <Filter>Header Files</Filter>
+      <Filter>Application Shell</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ApplicationDefinition Include="App.xaml">
-      <Filter>Resource Files</Filter>
+      <Filter>Resources</Filter>
     </ApplicationDefinition>
+  </ItemGroup>
+  <ItemGroup>
     <Page Include="MainWindow.xaml">
-      <Filter>Resource Files</Filter>
+      <Filter>Resources</Filter>
     </Page>
+  </ItemGroup>
+  <ItemGroup>
     <Midl Include="MainWindow.idl">
-      <Filter>Resource Files</Filter>
+      <Filter>Resources</Filter>
     </Midl>
+  </ItemGroup>
+  <ItemGroup>
     <Manifest Include="app.manifest">
-      <Filter>Resource Files</Filter>
+      <Filter>Resources</Filter>
     </Manifest>
+  </ItemGroup>
+  <ItemGroup>
     <AppxManifest Include="Package.appxmanifest">
-      <Filter>Resource Files</Filter>
+      <Filter>Resources</Filter>
     </AppxManifest>
   </ItemGroup>
   <ItemGroup>
     <Image Include="Assets\LockScreenLogo.scale-200.png">
-      <Filter>Resource Files</Filter>
+      <Filter>Resources</Filter>
     </Image>
     <Image Include="Assets\SplashScreen.scale-200.png">
-      <Filter>Resource Files</Filter>
+      <Filter>Resources</Filter>
     </Image>
     <Image Include="Assets\Square150x150Logo.scale-200.png">
-      <Filter>Resource Files</Filter>
+      <Filter>Resources</Filter>
     </Image>
     <Image Include="Assets\Square44x44Logo.scale-200.png">
-      <Filter>Resource Files</Filter>
+      <Filter>Resources</Filter>
     </Image>
     <Image Include="Assets\Square44x44Logo.targetsize-24_altform-unplated.png">
-      <Filter>Resource Files</Filter>
+      <Filter>Resources</Filter>
     </Image>
     <Image Include="Assets\StoreLogo.png">
-      <Filter>Resource Files</Filter>
+      <Filter>Resources</Filter>
     </Image>
     <Image Include="Assets\Wide310x150Logo.scale-200.png">
-      <Filter>Resource Files</Filter>
+      <Filter>Resources</Filter>
     </Image>
   </ItemGroup>
 </Project>
