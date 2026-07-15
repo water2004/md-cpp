@@ -210,49 +210,6 @@ inline std::optional<DocumentTransaction> document_enter(EditorDocument& documen
         DocumentTransactionReason::Structure);
 }
 
-inline std::u32string format_marker(InlineFormat format) {
-    switch (format) {
-        case InlineFormat::Emphasis: return U"*";
-        case InlineFormat::Strong: return U"**";
-        case InlineFormat::Strikethrough: return U"~~";
-        case InlineFormat::Code: return U"`";
-        case InlineFormat::Math: return U"$";
-    }
-    return {};
-}
-
-inline std::optional<DocumentTransaction> document_toggle_inline_format(EditorDocument& document, const TextSelection& selection, InlineFormat format) {
-    if (selection.anchor.container_id != selection.active.container_id) return std::nullopt;
-    const auto revision_before = document.revision;
-    auto& after = document;
-    document_edit_detail::NodeAllocator allocator(after);
-    auto* inline_document = document_edit_detail::find_inline_owner(after.root, selection.active.container_id);
-    if (!inline_document) return std::nullopt;
-    auto start = (std::min)(selection.anchor.source_offset, selection.active.source_offset);
-    auto end = (std::max)(selection.anchor.source_offset, selection.active.source_offset);
-    start = (std::min)(start, inline_document->source.size()); end = (std::min)(end, inline_document->source.size());
-    const auto marker = format_marker(format);
-    SourceRange edit_range{start, end};
-    std::u32string replacement;
-    TextSelection result = selection;
-    if (start >= marker.size() && end + marker.size() <= inline_document->source.size()
-        && inline_document->source.substr(start - marker.size(), marker.size()) == marker
-        && inline_document->source.substr(end, marker.size()) == marker) {
-        edit_range = {start - marker.size(), end + marker.size()};
-        replacement = inline_document->source.substr(start, end - start);
-        result.anchor.source_offset -= marker.size(); result.active.source_offset -= marker.size();
-    } else {
-        replacement = marker + inline_document->source.substr(start, end - start) + marker;
-        result.anchor.source_offset += marker.size(); result.active.source_offset += marker.size();
-        if (selection.is_caret()) result = TextSelection::caret(TextPosition{selection.active.container_id, start + marker.size(), TextAffinity::Downstream});
-    }
-    auto applied = document_edit_detail::edit_inline(after, selection.active.container_id, edit_range, std::move(replacement), allocator);
-    if (!applied) return std::nullopt;
-    ++after.revision;
-    return document_edit_detail::source_transaction(
-        after, std::move(*applied), selection, result, revision_before, DocumentTransactionReason::Format);
-}
-
 inline std::optional<DocumentTransaction> document_insert_link(EditorDocument& document, const TextSelection& selection, std::string href, std::optional<std::string> title) {
     if (selection.anchor.container_id != selection.active.container_id) return std::nullopt;
     const auto revision_before = document.revision;

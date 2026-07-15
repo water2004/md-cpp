@@ -129,6 +129,9 @@
     <ClCompile Include="..\core\editing\document_source_edit.ixx">
       <Filter>Core Modules\Editing</Filter>
     </ClCompile>
+    <ClCompile Include="..\core\editing\document_inline_format.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
     <ClCompile Include="..\core\editing\document_structure_edit.ixx">
       <Filter>Core Modules\Editing</Filter>
     </ClCompile>
