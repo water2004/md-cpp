@@ -140,7 +140,10 @@
                 OpenPaneLength="280"
                 PaneDisplayMode="Left">
                 <NavigationView.PaneCustomContent>
-                    <Grid Padding="8,8,8,8" RowDefinitions="Auto,*">
+                    <Grid
+                        MaxHeight="{Binding ActualHeight, ElementName=WorkspaceHost}"
+                        Padding="8,8,8,8"
+                        RowDefinitions="Auto,*">
                         <TextBlock
                             Margin="8,4,8,8"
                             FontWeight="SemiBold"
