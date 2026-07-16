@@ -21,9 +21,16 @@ namespace winrt::ElMd
             scrollOffset = scrollTarget;
             return false;
         }
-        constexpr float responseHalfLifeSeconds = 0.040f;
+        // Keep wheel motion responsive at the start while preserving a visible
+        // inertial tail. Capping the step prevents accumulated wheel input from
+        // turning the exponential response into an abrupt high-speed jump.
+        constexpr float responseHalfLifeSeconds = 0.065f;
+        constexpr float maximumSpeedDipPerSecond = 1500.0f;
         auto response = 1.0f - std::exp2(-elapsed / responseHalfLifeSeconds);
-        scrollOffset += distance * response;
+        auto step = distance * response;
+        auto maximumStep = maximumSpeedDipPerSecond * elapsed;
+        if (std::fabs(step) > maximumStep) step = std::copysign(maximumStep, step);
+        scrollOffset += step;
         return true;
     }
 
