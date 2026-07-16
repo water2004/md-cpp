@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "settings/AppSettings.h"
+#include "localization/Localization.h"
 #include "storage/AssetPaths.h"
 
 namespace
@@ -30,21 +31,26 @@ namespace winrt::ElMd
         try
         {
             auto root = Windows::Data::Json::JsonObject::Parse(winrt::to_hstring(ReadUtf8(path)));
-            if (root.GetNamedNumber(L"schemaVersion") != 1.0)
+            auto schemaVersion = root.GetNamedNumber(L"schemaVersion");
+            if (schemaVersion != 1.0 && schemaVersion != 2.0)
                 throw std::runtime_error("unsupported settings schema version");
             AppSettings settings;
             settings.mathRenderingEnabled = root.GetNamedBoolean(L"mathRenderingEnabled");
             settings.themeId = winrt::to_string(root.GetNamedString(L"themeId"));
+            if (schemaVersion >= 2.0)
+                settings.languageId = winrt::to_string(root.GetNamedString(L"languageId"));
             if (settings.themeId.empty()) throw std::runtime_error("themeId cannot be empty");
+            if (!IsSupportedLanguage(settings.languageId))
+                throw std::runtime_error("unsupported languageId");
             return { std::move(settings), true, {} };
         }
         catch (winrt::hresult_error const& error)
         {
-            return { {}, false, L"Settings fallback: " + error.message() };
+            return { {}, false, LocalizeFormat(L"SettingsFallback", { error.message() }) };
         }
         catch (std::exception const& error)
         {
-            return { {}, false, L"Settings fallback: " + winrt::to_hstring(error.what()) };
+            return { {}, false, LocalizeFormat(L"SettingsFallback", { winrt::to_hstring(error.what()) }) };
         }
     }
 
@@ -55,9 +61,10 @@ namespace winrt::ElMd
             auto directory = AssetsDirectory();
             std::filesystem::create_directories(directory);
             Windows::Data::Json::JsonObject root;
-            root.Insert(L"schemaVersion", Windows::Data::Json::JsonValue::CreateNumberValue(1));
+            root.Insert(L"schemaVersion", Windows::Data::Json::JsonValue::CreateNumberValue(2));
             root.Insert(L"mathRenderingEnabled", Windows::Data::Json::JsonValue::CreateBooleanValue(settings.mathRenderingEnabled));
             root.Insert(L"themeId", Windows::Data::Json::JsonValue::CreateStringValue(winrt::to_hstring(settings.themeId)));
+            root.Insert(L"languageId", Windows::Data::Json::JsonValue::CreateStringValue(winrt::to_hstring(settings.languageId)));
             auto target = directory / L"settings.json";
             auto temporary = directory / L"settings.json.tmp";
             WriteUtf8(temporary, winrt::to_string(root.Stringify()));
@@ -67,11 +74,11 @@ namespace winrt::ElMd
         }
         catch (winrt::hresult_error const& error)
         {
-            return L"Unable to save settings: " + error.message();
+            return LocalizeFormat(L"UnableSaveSettings", { error.message() });
         }
         catch (std::exception const& error)
         {
-            return L"Unable to save settings: " + winrt::to_hstring(error.what());
+            return LocalizeFormat(L"UnableSaveSettings", { winrt::to_hstring(error.what()) });
         }
     }
 }

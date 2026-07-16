@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="AppName" xml:space="preserve"><value>Folia</value></data>
+  <data name="AppDescription" xml:space="preserve"><value>A native, self-rendered Markdown editor for Windows.</value></data>
+  <data name="WindowTitleDocument" xml:space="preserve"><value>Folia — {0}</value></data>
+  <data name="WindowTitleSettings" xml:space="preserve"><value>Folia — Settings</value></data>
+  <data name="UntitledMarkdown" xml:space="preserve"><value>Untitled.md</value></data>
+  <data name="UntitledPdf" xml:space="preserve"><value>Untitled.pdf</value></data>
+  <data name="Outline" xml:space="preserve"><value>Outline</value></data>
+  <data name="Sidebar" xml:space="preserve"><value>Sidebar</value></data>
+  <data name="ToggleOutline" xml:space="preserve"><value>Toggle outline</value></data>
+  <data name="Open" xml:space="preserve"><value>Open</value></data>
+  <data name="OpenTooltip" xml:space="preserve"><value>Open a Markdown document</value></data>
+  <data name="Save" xml:space="preserve"><value>Save</value></data>
+  <data name="SaveTooltip" xml:space="preserve"><value>Save the current document</value></data>
+  <data name="Pdf" xml:space="preserve"><value>PDF</value></data>
+  <data name="PdfTooltip" xml:space="preserve"><value>Export with Windows PDF printing</value></data>
+  <data name="Bold" xml:space="preserve"><value>Bold</value></data>
+  <data name="Italic" xml:space="preserve"><value>Italic</value></data>
+  <data name="Strike" xml:space="preserve"><value>Strike</value></data>
+  <data name="Strikethrough" xml:space="preserve"><value>Strikethrough</value></data>
+  <data name="InlineCode" xml:space="preserve"><value>Inline Code</value></data>
+  <data name="Blocks" xml:space="preserve"><value>Blocks</value></data>
+  <data name="BlockStructure" xml:space="preserve"><value>Block structure</value></data>
+  <data name="Heading" xml:space="preserve"><value>Heading</value></data>
+  <data name="Heading1" xml:space="preserve"><value>Heading 1</value></data>
+  <data name="Heading2" xml:space="preserve"><value>Heading 2</value></data>
+  <data name="Quote" xml:space="preserve"><value>Quote</value></data>
+  <data name="List" xml:space="preserve"><value>List</value></data>
+  <data name="BulletedList" xml:space="preserve"><value>Bulleted list</value></data>
+  <data name="NumberedList" xml:space="preserve"><value>Numbered list</value></data>
+  <data name="TaskList" xml:space="preserve"><value>Task list</value></data>
+  <data name="CodeBlock" xml:space="preserve"><value>Code block</value></data>
+  <data name="MathBlock" xml:space="preserve"><value>Math block</value></data>
+  <data name="Callout" xml:space="preserve"><value>Callout</value></data>
+  <data name="Note" xml:space="preserve"><value>Note</value></data>
+  <data name="Tip" xml:space="preserve"><value>Tip</value></data>
+  <data name="Warning" xml:space="preserve"><value>Warning</value></data>
+  <data name="Insert" xml:space="preserve"><value>Insert</value></data>
+  <data name="InsertContent" xml:space="preserve"><value>Insert content</value></data>
+  <data name="Table" xml:space="preserve"><value>Table</value></data>
+  <data name="InlineMath" xml:space="preserve"><value>Inline math</value></data>
+  <data name="Link" xml:space="preserve"><value>Link</value></data>
+  <data name="Image" xml:space="preserve"><value>Image</value></data>
+  <data name="Footnote" xml:space="preserve"><value>Footnote</value></data>
+  <data name="TableOfContents" xml:space="preserve"><value>Table of contents</value></data>
+  <data name="Settings" xml:space="preserve"><value>Settings</value></data>
+  <data name="Cut" xml:space="preserve"><value>Cut</value></data>
+  <data name="Copy" xml:space="preserve"><value>Copy</value></data>
+  <data name="Paste" xml:space="preserve"><value>Paste</value></data>
+  <data name="SelectAll" xml:space="preserve"><value>Select All</value></data>
+  <data name="Ready" xml:space="preserve"><value>Ready</value></data>
+  <data name="CancelOperation" xml:space="preserve"><value>Cancel operation</value></data>
+  <data name="SourceMode" xml:space="preserve"><value>Source mode</value></data>
+  <data name="RenderedMode" xml:space="preserve"><value>Rendered mode</value></data>
+  <data name="CharacterCount" xml:space="preserve"><value>{0} characters</value></data>
+  <data name="Revision" xml:space="preserve"><value>Revision {0}</value></data>
+  <data name="EmptyFootnoteDefinition" xml:space="preserve"><value>Empty footnote definition.</value></data>
+  <data name="ReferenceHasNoDefinition" xml:space="preserve"><value>This reference has no definition.</value></data>
+  <data name="ReturnToFirstReference" xml:space="preserve"><value>Return to the first reference.</value></data>
+  <data name="DefinitionHasNoReference" xml:space="preserve"><value>This definition has no reference.</value></data>
+  <data name="GoToDefinition" xml:space="preserve"><value>Go to definition</value></data>
+  <data name="BackToReference" xml:space="preserve"><value>Back to reference</value></data>
+  <data name="CreateDefinition" xml:space="preserve"><value>Create definition</value></data>
+  <data name="ResizeFailed" xml:space="preserve"><value>Resize failed: {0}</value></data>
+  <data name="RenderFailed" xml:space="preserve"><value>Render failed: {0}</value></data>
+  <data name="Formula" xml:space="preserve"><value>formula</value></data>
+  <data name="EmptyDocumentHint" xml:space="preserve"><value>Open a Markdown file or start editing.</value></data>
+  <data name="StatusCancellingPdf" xml:space="preserve"><value>Cancelling PDF export…</value></data>
+  <data name="StatusPdfCancelled" xml:space="preserve"><value>PDF export cancelled</value></data>
+  <data name="StatusCopiedSelection" xml:space="preserve"><value>Copied selection</value></data>
+  <data name="StatusOpenCancelled" xml:space="preserve"><value>Open cancelled</value></data>
+  <data name="StatusReadingFile" xml:space="preserve"><value>Reading {0}…</value></data>
+  <data name="StatusParsingFile" xml:space="preserve"><value>Parsing {0}…</value></data>
+  <data name="StatusOpenedFile" xml:space="preserve"><value>Opened {0}</value></data>
+  <data name="StatusOpenFailed" xml:space="preserve"><value>Open failed: {0}</value></data>
+  <data name="StatusSavedFile" xml:space="preserve"><value>Saved {0}</value></data>
+  <data name="StatusSaveFailed" xml:space="preserve"><value>Save failed: {0}</value></data>
+  <data name="MarkdownFileType" xml:space="preserve"><value>Markdown</value></data>
+  <data name="TextFileType" xml:space="preserve"><value>Text</value></data>
+  <data name="StatusSaveCancelled" xml:space="preserve"><value>Save cancelled</value></data>
+  <data name="PdfFileType" xml:space="preserve"><value>PDF document</value></data>
+  <data name="StatusPreparingPdf" xml:space="preserve"><value>Preparing PDF…</value></data>
+  <data name="StatusExportingPdfPage" xml:space="preserve"><value>Exporting PDF page {0} of {1}…</value></data>
+  <data name="StatusPreparingPdfAssets" xml:space="preserve"><value>Preparing PDF assets…</value></data>
+  <data name="StatusExportedPdf" xml:space="preserve"><value>Exported PDF: {0}</value></data>
+  <data name="StatusPdfFailed" xml:space="preserve"><value>PDF export failed: {0}</value></data>
+  <data name="StatusImageInsertFailed" xml:space="preserve"><value>Image insert failed: {0}</value></data>
+  <data name="StatusOpenLinkFailed" xml:space="preserve"><value>Open link failed: {0}</value></data>
+  <data name="StatusPasteFailed" xml:space="preserve"><value>Paste failed: {0}</value></data>
+  <data name="General" xml:space="preserve"><value>General</value></data>
+  <data name="Themes" xml:space="preserve"><value>Themes</value></data>
+  <data name="About" xml:space="preserve"><value>About</value></data>
+  <data name="GeneralDescription" xml:space="preserve"><value>Control optional rendering services and editor behavior.</value></data>
+  <data name="RenderMath" xml:space="preserve"><value>Render mathematical formulas</value></data>
+  <data name="MathJaxOn" xml:space="preserve"><value>MathJax service on</value></data>
+  <data name="ShowMarkdownSource" xml:space="preserve"><value>Show Markdown source</value></data>
+  <data name="MathServiceDescription" xml:space="preserve"><value>When disabled, Folia does not start the QuickJS MathJax worker. Disabling it also interrupts active work and releases the JavaScript runtime.</value></data>
+  <data name="ChangesApplyImmediately" xml:space="preserve"><value>Changes apply immediately</value></data>
+  <data name="MathChangesDescription" xml:space="preserve"><value>Existing formulas switch between rendered output and Markdown source. The choice is saved automatically.</value></data>
+  <data name="Language" xml:space="preserve"><value>Language</value></data>
+  <data name="ApplicationLanguage" xml:space="preserve"><value>Application language</value></data>
+  <data name="FollowWindowsLanguage" xml:space="preserve"><value>Follow Windows</value></data>
+  <data name="EnglishLanguage" xml:space="preserve"><value>English</value></data>
+  <data name="SimplifiedChineseLanguage" xml:space="preserve"><value>Simplified Chinese</value></data>
+  <data name="LanguageRestartDescription" xml:space="preserve"><value>The selected language is used the next time Folia starts.</value></data>
+  <data name="LanguageSavedRestart" xml:space="preserve"><value>Language saved. Restart Folia to apply it.</value></data>
+  <data name="ThemesDescription" xml:space="preserve"><value>Choose a built-in theme or import a complete JSON profile. Selection only changes the preview until Apply.</value></data>
+  <data name="Apply" xml:space="preserve"><value>Apply</value></data>
+  <data name="Import" xml:space="preserve"><value>Import…</value></data>
+  <data name="Remove" xml:space="preserve"><value>Remove</value></data>
+  <data name="AboutApp" xml:space="preserve"><value>About Folia</value></data>
+  <data name="Version" xml:space="preserve"><value>Version {0}</value></data>
+  <data name="BuiltForWindows" xml:space="preserve"><value>Built for Windows</value></data>
+  <data name="TechnologyDescription" xml:space="preserve"><value>WinUI 3 shell · C++23 document engine · DirectWrite/Direct2D rendering · QuickJS MathJax integration</value></data>
+  <data name="FollowWindowsTheme" xml:space="preserve"><value>Follow Windows</value></data>
+  <data name="AutomaticThemeDescription" xml:space="preserve"><value>Automatic light, dark, and high contrast</value></data>
+  <data name="BuiltIn" xml:space="preserve"><value>Built-in</value></data>
+  <data name="Custom" xml:space="preserve"><value>Custom</value></data>
+  <data name="ThemePreviewBody" xml:space="preserve"><value>Markdown can be calm, readable, and expressive.</value></data>
+  <data name="ThemePreviewQuote" xml:space="preserve"><value>A theme preview uses the profile's real fonts and colors.</value></data>
+  <data name="LightProfile" xml:space="preserve"><value>Light profile</value></data>
+  <data name="HighContrastProfile" xml:space="preserve"><value>High contrast profile</value></data>
+  <data name="DarkProfile" xml:space="preserve"><value>Dark profile</value></data>
+  <data name="ThemeImported" xml:space="preserve"><value>Theme imported. Select Apply to use it.</value></data>
+  <data name="ThemeImportFailed" xml:space="preserve"><value>Unable to import theme: {0}</value></data>
+  <data name="ApplyThemeBeforeRemove" xml:space="preserve"><value>Apply another theme before removing the active theme.</value></data>
+  <data name="CustomThemeRemoved" xml:space="preserve"><value>Custom theme removed</value></data>
+  <data name="ThemeApplied" xml:space="preserve"><value>Theme applied</value></data>
+  <data name="SettingsFallback" xml:space="preserve"><value>Settings fallback: {0}</value></data>
+  <data name="UnableSaveSettings" xml:space="preserve"><value>Unable to save settings: {0}</value></data>
+</root>

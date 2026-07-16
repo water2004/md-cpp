@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "App.xaml.h"
 #include "MainWindow.xaml.h"
+#include "localization/Localization.h"
+#include "settings/AppSettings.h"
 
 using namespace winrt;
 using namespace winrt::Microsoft::UI::Xaml;
@@ -23,6 +25,7 @@ namespace winrt::ElMd::implementation
 
     void App::OnLaunched([[maybe_unused]] LaunchActivatedEventArgs const& e)
     {
+        ApplyLanguageOverride(LoadAppSettings().settings.languageId);
         window = make<MainWindow>();
         window.Activate();
     }

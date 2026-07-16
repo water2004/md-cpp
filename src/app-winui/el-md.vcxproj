@@ -118,6 +118,7 @@
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="storage\AssetPaths.h" />
+    <ClInclude Include="localization\Localization.h" />
     <ClInclude Include="settings\AppSettings.h" />
     <ClInclude Include="settings\SettingsView.h" />
     <ClInclude Include="theme\ThemeConfig.h" />
@@ -344,6 +345,7 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="settings\AppSettings.cpp" />
+    <ClCompile Include="localization\Localization.cpp" />
     <ClCompile Include="settings\SettingsView.cpp" />
     <ClCompile Include="storage\AssetPaths.cpp" />
     <ClCompile Include="theme\ThemeConfig.cpp" />
@@ -414,6 +416,10 @@
       <SubType>Code</SubType>
       <DependentUpon>MainWindow.xaml</DependentUpon>
     </Midl>
+  </ItemGroup>
+  <ItemGroup>
+    <PRIResource Include="Strings\en-US\Resources.resw" />
+    <PRIResource Include="Strings\zh-CN\Resources.resw" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

@@ -10,6 +10,7 @@ namespace winrt::ElMd
     {
         bool mathRenderingEnabled = true;
         std::string themeId = "system";
+        std::string languageId = "system";
 
         bool operator==(AppSettings const&) const = default;
     };

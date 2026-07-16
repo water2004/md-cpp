@@ -64,6 +64,9 @@
     <Filter Include="Storage">
       <UniqueIdentifier>{fa0552ea-8304-4269-8534-12ed0641c419}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Localization">
+      <UniqueIdentifier>{f4dd7992-dd3d-4f8b-b856-29eb068e406e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\core\model\ast.ixx">
@@ -369,6 +372,9 @@
     <ClCompile Include="MainWindow.xaml.cpp">
       <Filter>Application Shell</Filter>
     </ClCompile>
+    <ClCompile Include="localization\Localization.cpp">
+      <Filter>Localization</Filter>
+    </ClCompile>
     <ClCompile Include="MainWindow.Events.cpp">
       <Filter>Application Shell</Filter>
     </ClCompile>
@@ -382,6 +388,9 @@
   <ItemGroup>
     <ClInclude Include="pch.h">
       <Filter>Application Shell</Filter>
+    </ClInclude>
+    <ClInclude Include="localization\Localization.h">
+      <Filter>Localization</Filter>
     </ClInclude>
     <ClInclude Include="theme\ThemeConfig.h">
       <Filter>Theme</Filter>
@@ -506,6 +515,14 @@
     <Midl Include="MainWindow.idl">
       <Filter>Resources</Filter>
     </Midl>
+  </ItemGroup>
+  <ItemGroup>
+    <PRIResource Include="Strings\en-US\Resources.resw">
+      <Filter>Localization</Filter>
+    </PRIResource>
+    <PRIResource Include="Strings\zh-CN\Resources.resw">
+      <Filter>Localization</Filter>
+    </PRIResource>
   </ItemGroup>
   <ItemGroup>
     <None Include="Assets\branding\Folia.svg">

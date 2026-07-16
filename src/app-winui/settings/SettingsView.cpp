@@ -1,11 +1,22 @@
 #include "pch.h"
 #include "settings/SettingsView.h"
+#include "localization/Localization.h"
 #include "storage/AssetPaths.h"
 
 namespace
 {
     namespace Xaml = winrt::Microsoft::UI::Xaml;
     namespace Controls = winrt::Microsoft::UI::Xaml::Controls;
+
+    constexpr std::array<std::string_view, 3> LanguageIds{ "system", "en-US", "zh-CN" };
+
+    std::int32_t LanguageIndex(std::string_view languageId)
+    {
+        auto found = std::ranges::find(LanguageIds, languageId);
+        return found == LanguageIds.end()
+            ? 0
+            : static_cast<std::int32_t>(std::distance(LanguageIds.begin(), found));
+    }
 
     Xaml::Media::SolidColorBrush Brush(elmd::Color color)
     {
@@ -101,14 +112,14 @@ namespace winrt::ElMd
         navigation_.IsPaneToggleButtonVisible(false);
         navigation_.IsSettingsVisible(false);
         navigation_.OpenPaneLength(280);
-        navigation_.PaneTitle(L"Settings");
+        navigation_.PaneTitle(Localize(L"Settings"));
         navigation_.PaneDisplayMode(NavigationViewPaneDisplayMode::Left);
         navigation_.HorizontalAlignment(HorizontalAlignment::Stretch);
         navigation_.VerticalAlignment(VerticalAlignment::Stretch);
 
-        auto general = NavigationItem(L"General", L"general", L"\xE713");
-        auto themes = NavigationItem(L"Themes", L"themes", L"\xE790");
-        auto about = NavigationItem(L"About", L"about", L"\xE946");
+        auto general = NavigationItem(Localize(L"General"), L"general", L"\xE713");
+        auto themes = NavigationItem(Localize(L"Themes"), L"themes", L"\xE790");
+        auto about = NavigationItem(Localize(L"About"), L"about", L"\xE946");
         navigation_.MenuItems().Append(general);
         navigation_.MenuItems().Append(themes);
         navigation_.MenuItems().Append(about);
@@ -129,14 +140,14 @@ namespace winrt::ElMd
     UIElement SettingsView::BuildGeneralPage()
     {
         auto panel = PagePanel();
-        panel.Children().Append(PageHeading(L"General"));
-        panel.Children().Append(Text(L"Control optional rendering services and editor behavior."));
+        panel.Children().Append(PageHeading(Localize(L"General")));
+        panel.Children().Append(Text(Localize(L"GeneralDescription")));
 
         StackPanel mathCard;
         mathCard.Spacing(8);
-        mathToggle_.Header(box_value(L"Render mathematical formulas"));
-        mathToggle_.OnContent(box_value(L"MathJax service on"));
-        mathToggle_.OffContent(box_value(L"Show Markdown source"));
+        mathToggle_.Header(box_value(Localize(L"RenderMath")));
+        mathToggle_.OnContent(box_value(Localize(L"MathJaxOn")));
+        mathToggle_.OffContent(box_value(Localize(L"ShowMarkdownSource")));
         mathToggle_.IsOn(settings_.mathRenderingEnabled);
         mathToggle_.Toggled([this](auto const&, auto const&)
         {
@@ -145,16 +156,37 @@ namespace winrt::ElMd
             ApplyMathSetting();
         });
         mathCard.Children().Append(mathToggle_);
-        mathCard.Children().Append(Text(
-            L"When disabled, el-md does not start the QuickJS MathJax worker. Disabling it also interrupts active work and releases the JavaScript runtime."));
+        mathCard.Children().Append(Text(Localize(L"MathServiceDescription")));
         panel.Children().Append(Card(mathCard));
+
+        StackPanel languageCard;
+        languageCard.Spacing(8);
+        auto languageHeading = Text(Localize(L"Language"), 18);
+        languageHeading.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
+        languageCard.Children().Append(languageHeading);
+        languageCombo_.Header(box_value(Localize(L"ApplicationLanguage")));
+        languageCombo_.Items().Append(box_value(Localize(L"FollowWindowsLanguage")));
+        languageCombo_.Items().Append(box_value(Localize(L"EnglishLanguage")));
+        languageCombo_.Items().Append(box_value(Localize(L"SimplifiedChineseLanguage")));
+        languageCombo_.SelectedIndex(LanguageIndex(settings_.languageId));
+        languageCombo_.SelectionChanged([this](auto const&, SelectionChangedEventArgs const&)
+        {
+            if (refreshing_) return;
+            auto index = languageCombo_.SelectedIndex();
+            if (index < 0 || static_cast<std::size_t>(index) >= LanguageIds.size()) return;
+            settings_.languageId = LanguageIds[static_cast<std::size_t>(index)];
+            ApplyLanguageSetting();
+        });
+        languageCard.Children().Append(languageCombo_);
+        languageCard.Children().Append(Text(Localize(L"LanguageRestartDescription")));
+        panel.Children().Append(Card(languageCard));
 
         InfoBar note;
         note.IsOpen(true);
         note.IsClosable(false);
         note.Severity(InfoBarSeverity::Informational);
-        note.Title(L"Changes apply immediately");
-        note.Message(L"Existing formulas switch between rendered output and Markdown source. The choice is saved automatically.");
+        note.Title(Localize(L"ChangesApplyImmediately"));
+        note.Message(Localize(L"MathChangesDescription"));
         panel.Children().Append(note);
         generalStatus_.TextWrapping(TextWrapping::Wrap);
         panel.Children().Append(generalStatus_);
@@ -185,10 +217,10 @@ namespace winrt::ElMd
                 : GridLengthHelper::Auto());
             listPanel.RowDefinitions().Append(row);
         }
-        auto heading = PageHeading(L"Themes");
+        auto heading = PageHeading(Localize(L"Themes"));
         Grid::SetRow(heading, 0);
         listPanel.Children().Append(heading);
-        auto description = Text(L"Choose a built-in theme or import a complete JSON profile. Selection only changes the preview until Apply.");
+        auto description = Text(Localize(L"ThemesDescription"));
         Grid::SetRow(description, 1);
         listPanel.Children().Append(description);
         themeList_.SelectionMode(ListViewSelectionMode::Single);
@@ -207,14 +239,14 @@ namespace winrt::ElMd
         StackPanel buttons;
         buttons.Orientation(Orientation::Horizontal);
         buttons.Spacing(8);
-        applyThemeButton_.Content(box_value(L"Apply"));
+        applyThemeButton_.Content(box_value(Localize(L"Apply")));
         applyThemeButton_.Click([this](auto const&, auto const&) { ApplyPendingTheme(); });
         if (auto accentStyle = Application::Current().Resources().TryLookup(box_value(L"AccentButtonStyle")).try_as<Style>())
             applyThemeButton_.Style(accentStyle);
         Button importButton;
-        importButton.Content(box_value(L"Import…"));
+        importButton.Content(box_value(Localize(L"Import")));
         importButton.Click([this](auto const&, auto const&) { ImportThemeAsync(); });
-        removeThemeButton_.Content(box_value(L"Remove"));
+        removeThemeButton_.Content(box_value(Localize(L"Remove")));
         removeThemeButton_.Click([this](auto const&, auto const&) { RemoveSelectedTheme(); });
         buttons.Children().Append(applyThemeButton_);
         buttons.Children().Append(importButton);
@@ -238,7 +270,7 @@ namespace winrt::ElMd
     UIElement SettingsView::BuildAboutPage()
     {
         auto panel = PagePanel();
-        panel.Children().Append(PageHeading(L"About Folia"));
+        panel.Children().Append(PageHeading(Localize(L"AboutApp")));
 
         Grid identity;
         identity.ColumnSpacing(16);
@@ -259,22 +291,21 @@ namespace winrt::ElMd
 
         StackPanel copy;
         copy.Spacing(8);
-        auto name = Text(L"Folia", 30);
+        auto name = Text(Localize(L"AppName"), 30);
         name.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
         copy.Children().Append(name);
-        copy.Children().Append(Text(L"Version 0.1.0"));
-        copy.Children().Append(Text(L"A native, self-rendered Markdown editor for Windows."));
+        copy.Children().Append(Text(LocalizeFormat(L"Version", { L"0.1.0" })));
+        copy.Children().Append(Text(Localize(L"AppDescription")));
         Grid::SetColumn(copy, 1);
         identity.Children().Append(copy);
         panel.Children().Append(Card(identity));
 
         StackPanel technology;
         technology.Spacing(8);
-        auto heading = Text(L"Built for Windows", 18);
+        auto heading = Text(Localize(L"BuiltForWindows"), 18);
         heading.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
         technology.Children().Append(heading);
-        technology.Children().Append(Text(
-            L"WinUI 3 shell · C++23 document engine · DirectWrite/Direct2D rendering · QuickJS MathJax integration"));
+        technology.Children().Append(Text(Localize(L"TechnologyDescription")));
         panel.Children().Append(Card(technology));
 
         ScrollViewer scroller;
@@ -314,12 +345,12 @@ namespace winrt::ElMd
             themeList_.Items().Append(item);
         };
 
-        append(L"Follow Windows", L"Automatic light, dark, and high contrast", "system");
+        append(Localize(L"FollowWindowsTheme"), Localize(L"AutomaticThemeDescription"), "system");
         for (auto const& entry : catalog_->Entries())
         {
             append(
                 winrt::to_hstring(entry.profile.name),
-                entry.builtIn ? L"Built-in" : L"Custom",
+                entry.builtIn ? Localize(L"BuiltIn") : Localize(L"Custom"),
                 entry.profile.id);
         }
 
@@ -351,7 +382,7 @@ namespace winrt::ElMd
         title.Foreground(Brush(colors.heading_fg));
         preview.Children().Append(title);
 
-        auto body = Text(L"Markdown can be calm, readable, and expressive.", profile.typography.body.size);
+        auto body = Text(Localize(L"ThemePreviewBody"), profile.typography.body.size);
         body.FontFamily(Font(profile.typography.body.family));
         body.Foreground(Brush(colors.fg));
         preview.Children().Append(body);
@@ -377,16 +408,16 @@ namespace winrt::ElMd
         Border bar;
         bar.Background(Brush(colors.blockquote_border));
         quote.Children().Append(bar);
-        auto quoteText = Text(L"A theme preview uses the profile's real fonts and colors.", profile.typography.body.size);
+        auto quoteText = Text(Localize(L"ThemePreviewQuote"), profile.typography.body.size);
         quoteText.Foreground(Brush(colors.fg));
         Grid::SetColumn(quoteText, 1);
         quote.Children().Append(quoteText);
         preview.Children().Append(quote);
 
         auto metadata = Text(
-            profile.variant == elmd::Theme::Light ? L"Light profile"
-                : profile.variant == elmd::Theme::HighContrast ? L"High contrast profile"
-                : L"Dark profile",
+            profile.variant == elmd::Theme::Light ? Localize(L"LightProfile")
+                : profile.variant == elmd::Theme::HighContrast ? Localize(L"HighContrastProfile")
+                : Localize(L"DarkProfile"),
             12);
         metadata.Foreground(Brush(colors.muted_fg));
         preview.Children().Append(metadata);
@@ -440,17 +471,17 @@ namespace winrt::ElMd
             }
             settings_.themeId = std::move(id);
             RefreshThemeList();
-            SetThemeStatus(L"Theme imported. Select Apply to use it.");
+            SetThemeStatus(Localize(L"ThemeImported"));
         }
         catch (hresult_error const& error)
         {
             if (detached_) co_return;
-            SetThemeStatus(L"Unable to import theme: " + error.message(), true);
+            SetThemeStatus(LocalizeFormat(L"ThemeImportFailed", { error.message() }), true);
         }
         catch (std::exception const& error)
         {
             if (detached_) co_return;
-            SetThemeStatus(L"Unable to import theme: " + winrt::to_hstring(error.what()), true);
+            SetThemeStatus(LocalizeFormat(L"ThemeImportFailed", { winrt::to_hstring(error.what()) }), true);
         }
     }
 
@@ -461,7 +492,7 @@ namespace winrt::ElMd
         auto id = themeIds_[static_cast<std::size_t>(index)];
         if (id == appliedSettings_.themeId)
         {
-            SetThemeStatus(L"Apply another theme before removing the active theme.", true);
+            SetThemeStatus(Localize(L"ApplyThemeBeforeRemove"), true);
             return;
         }
         if (auto error = catalog_->Remove(id))
@@ -471,7 +502,7 @@ namespace winrt::ElMd
         }
         if (settings_.themeId == id) settings_.themeId = appliedSettings_.themeId;
         RefreshThemeList();
-        SetThemeStatus(L"Custom theme removed");
+        SetThemeStatus(Localize(L"CustomThemeRemoved"));
     }
 
     void SettingsView::ApplyMathSetting()
@@ -492,6 +523,24 @@ namespace winrt::ElMd
         SetGeneralStatus({});
     }
 
+    void SettingsView::ApplyLanguageSetting()
+    {
+        if (detached_ || !applySettings_ || settings_.languageId == appliedSettings_.languageId) return;
+        auto proposed = appliedSettings_;
+        proposed.languageId = settings_.languageId;
+        if (auto error = applySettings_(proposed))
+        {
+            SetGeneralStatus(*error, true);
+            refreshing_ = true;
+            settings_.languageId = appliedSettings_.languageId;
+            languageCombo_.SelectedIndex(LanguageIndex(settings_.languageId));
+            refreshing_ = false;
+            return;
+        }
+        appliedSettings_.languageId = proposed.languageId;
+        SetGeneralStatus(Localize(L"LanguageSavedRestart"));
+    }
+
     void SettingsView::ApplyPendingTheme()
     {
         if (detached_ || !applySettings_ || settings_.themeId == appliedSettings_.themeId) return;
@@ -503,7 +552,7 @@ namespace winrt::ElMd
             return;
         }
         appliedSettings_.themeId = proposed.themeId;
-        SetThemeStatus(L"Theme applied");
+        SetThemeStatus(Localize(L"ThemeApplied"));
         UpdateThemeActions();
     }
 
@@ -526,6 +575,7 @@ namespace winrt::ElMd
         systemVariant_ = systemVariant;
         refreshing_ = true;
         mathToggle_.IsOn(settings_.mathRenderingEnabled);
+        languageCombo_.SelectedIndex(LanguageIndex(settings_.languageId));
         refreshing_ = false;
         RefreshThemeList();
         SetGeneralStatus({});

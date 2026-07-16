@@ -75,4 +75,6 @@
 #include <winrt/Microsoft.UI.Xaml.Navigation.h>
 #include <winrt/Microsoft.UI.Xaml.Shapes.h>
 #include <winrt/Microsoft.UI.Dispatching.h>
+#include <winrt/Microsoft.Windows.ApplicationModel.Resources.h>
+#include <winrt/Microsoft.Windows.Globalization.h>
 #include <wil/cppwinrt_helpers.h>

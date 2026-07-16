@@ -32,6 +32,7 @@ namespace winrt::ElMd
         void RefreshThemeList();
         void UpdateThemePreview();
         void ApplyMathSetting();
+        void ApplyLanguageSetting();
         void ApplyPendingTheme();
         void UpdateThemeActions();
         void SetGeneralStatus(winrt::hstring const& message, bool error = false);
@@ -50,6 +51,7 @@ namespace winrt::ElMd
         winrt::Microsoft::UI::Xaml::UIElement themesPage_{ nullptr };
         winrt::Microsoft::UI::Xaml::UIElement aboutPage_{ nullptr };
         winrt::Microsoft::UI::Xaml::Controls::ToggleSwitch mathToggle_;
+        winrt::Microsoft::UI::Xaml::Controls::ComboBox languageCombo_;
         winrt::Microsoft::UI::Xaml::Controls::ListView themeList_;
         winrt::Microsoft::UI::Xaml::Controls::Border themePreview_;
         winrt::Microsoft::UI::Xaml::Controls::Button applyThemeButton_;
