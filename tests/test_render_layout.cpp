@@ -1154,6 +1154,8 @@ suite render_layout_tests = [] {
     expect(fatal(bool(incremental.editable_index == full.editable_index)));
     expect(fatal(bool(incremental.editable_top_level == full.editable_top_level)));
     expect(fatal(bool(incremental.rebuilt_block_count == 1u)));
+    expect(fatal(incremental.incremental_update));
+    expect(fatal(bool(incremental.changed_block_indices == std::vector<std::size_t>{2u})));
     expect(fatal(bool(incremental_counters.render_source_key_derivations == 1u)));
     expect(fatal(bool(incremental.reused_block_count + incremental.rebuilt_block_count
         == incremental.blocks.size())));

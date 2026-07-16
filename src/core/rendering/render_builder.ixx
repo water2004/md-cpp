@@ -1021,6 +1021,45 @@ inline RenderModel build_render_model_incremental(
         }
     }
 
+    if (local_invalidation) {
+        std::vector<std::size_t> changed_indices;
+        changed_indices.reserve(changed_top_levels.size());
+        for (auto top_level : changed_top_levels) {
+            auto path = document_block_path(doc, NodeId{top_level});
+            if (!path || path->size() != 1 || path->front() >= previous.blocks.size()) {
+                local_invalidation = false;
+                break;
+            }
+            changed_indices.push_back(path->front());
+        }
+        if (local_invalidation) {
+            std::ranges::sort(changed_indices);
+            changed_indices.erase(
+                std::unique(changed_indices.begin(), changed_indices.end()),
+                changed_indices.end());
+            for (auto index : changed_indices) {
+                auto const& block = doc.root.children[index];
+                auto rendered = builder.build_block(block);
+                rendered.source_key = render_key_detail::source_key(block, dependency_key);
+                rendered.presentation_key = rendered.source_key;
+                previous.blocks[index] = std::move(rendered);
+            }
+            previous.revision = doc.revision;
+            if (previous.outline.content_key == outline.content_key) {
+                previous.outline.revision = outline.revision;
+                previous.outline.content_revision = outline.content_revision;
+            } else {
+                previous.outline = outline;
+            }
+            previous.document_dependency_key = dependency_key;
+            previous.rebuilt_block_count = changed_indices.size();
+            previous.reused_block_count = previous.blocks.size() - changed_indices.size();
+            previous.incremental_update = true;
+            previous.changed_block_indices = std::move(changed_indices);
+            return previous;
+        }
+    }
+
     std::unordered_map<std::uint64_t, std::size_t> previous_by_id;
     if (!local_invalidation) {
         previous_by_id.reserve(previous.blocks.size());
@@ -1068,6 +1107,8 @@ inline RenderModel build_render_model_incremental(
     model.document_dependency_key = dependency_key;
     model.rebuilt_block_count = rebuilt;
     model.reused_block_count = reused;
+    model.incremental_update = false;
+    model.changed_block_indices.clear();
     return model;
 }
 

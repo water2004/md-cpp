@@ -285,6 +285,10 @@ struct RenderModel {
     std::uint64_t document_dependency_key = 0;
     std::size_t rebuilt_block_count = 0;
     std::size_t reused_block_count = 0;
+    // Populated only when the previous model was updated in place without a
+    // structural or document-wide dependency change.
+    bool incremental_update = false;
+    std::vector<std::size_t> changed_block_indices;
 };
 
 } // namespace elmd
