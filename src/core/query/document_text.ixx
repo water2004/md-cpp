@@ -114,6 +114,19 @@ inline std::vector<DocumentTextFragment> document_text_fragments(const EditorDoc
     return result;
 }
 
+inline std::size_t document_text_character_count(const EditorDocument& document) {
+    std::size_t character_count = 0;
+    std::size_t fragment_count = 0;
+    walk_blocks(document.root, [&](const BlockNode& block) {
+        if (block.kind == BlockKind::Document) return;
+        if (auto text = editable_block_text_view(block)) {
+            character_count += text->size();
+            ++fragment_count;
+        }
+    });
+    return character_count + (fragment_count == 0 ? 0 : fragment_count - 1);
+}
+
 inline std::optional<std::u32string> document_editable_text(
     const EditorDocument& document,
     NodeId container_id) {
@@ -121,6 +134,13 @@ inline std::optional<std::u32string> document_editable_text(
     if (!block) return std::nullopt;
     auto text = editable_block_text_view(*block);
     return text ? std::optional<std::u32string>{std::u32string{*text}} : std::nullopt;
+}
+
+inline std::optional<std::u32string_view> document_editable_text_view(
+    const EditorDocument& document,
+    NodeId container_id) {
+    const auto* block = find_document_block(document, container_id);
+    return block ? editable_block_text_view(*block) : std::nullopt;
 }
 
 inline std::optional<std::u32string> document_selected_text(

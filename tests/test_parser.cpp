@@ -460,6 +460,7 @@ suite parser_tests = [] {
 
     const auto fragments = document_text_fragments(parsed.document);
     expect(fatal(bool(fragments.size() == 2u)));
+    expect(fatal(bool(document_text_character_count(parsed.document) == 12u)));
     if (fragments.size() == 2u) {
         expect(fatal(bool(fragments[0].container_id == title.id)));
         expect(fatal(bool(fragments[0].text == U"_title_")));

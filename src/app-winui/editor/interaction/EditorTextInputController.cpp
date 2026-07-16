@@ -44,7 +44,9 @@ namespace winrt::ElMd
         context_ = manager.CreateEditContext();
         context_.InputScope(winrt::Windows::UI::Text::Core::CoreTextInputScope::Text);
         context_.InputPaneDisplayPolicy(winrt::Windows::UI::Text::Core::CoreTextInputPaneDisplayPolicy::Automatic);
-        knownLength_ = session_->BoundaryTextUtf16().size();
+        activeContainer_ = session_->Selection().active.container_id;
+        knownText_ = session_->TextInputTextUtf16(activeContainer_);
+        knownLength_ = knownText_.size();
         knownRevision_ = session_->Revision();
         forceFullSynchronization_ = false;
         lifetime_ = std::make_shared<int>(0);
@@ -71,6 +73,8 @@ namespace winrt::ElMd
         synchronizationQueued_ = false;
         knownLength_ = 0;
         knownRevision_ = 0;
+        activeContainer_ = {};
+        knownText_.clear();
         forceFullSynchronization_ = false;
         lifetime_.reset();
     }
@@ -78,6 +82,7 @@ namespace winrt::ElMd
     void EditorTextInputController::FocusEnter()
     {
         if (!context_ || focused_) return;
+        SynchronizeTextStore();
         focused_ = true;
         context_.NotifyFocusEnter();
         NotifySelectionChanged();
@@ -107,6 +112,11 @@ namespace winrt::ElMd
         if (updating_ || notifying_ || synchronizationQueued_)
         {
             QueueSynchronization();
+            return;
+        }
+        if (session_->Selection().active.container_id != activeContainer_)
+        {
+            SynchronizeTextStore();
             return;
         }
         try
@@ -145,38 +155,12 @@ namespace winrt::ElMd
             return;
         }
 
-        auto const& current = session_->BoundaryTextUtf16();
-        auto const& localChange = session_->LastBoundaryTextChange();
+        auto const container = session_->Selection().active.container_id;
+        auto current = session_->TextInputTextUtf16(container);
         if (!forceFullSynchronization_
-            && localChange
-            && localChange->revisionBefore == knownRevision_
-            && localChange->revisionAfter == session_->Revision()
-            && localChange->utf16Start <= knownLength_
-            && localChange->utf16OldLength <= knownLength_ - localChange->utf16Start)
-        {
-            notifying_ = true;
-            try
-            {
-                context_.NotifyTextChanged(
-                    {
-                        SafeAcp(localChange->utf16Start),
-                        SafeAcp(localChange->utf16Start + localChange->utf16OldLength),
-                    },
-                    SafeAcp(localChange->replacement.size()),
-                    CurrentSelection());
-                knownLength_ = knownLength_ - localChange->utf16OldLength
-                    + localChange->replacement.size();
-                knownRevision_ = localChange->revisionAfter;
-            }
-            catch (winrt::hresult_error const&)
-            {
-            }
-            notifying_ = false;
-            return;
-        }
-        if (!forceFullSynchronization_
+            && activeContainer_ == container
             && knownRevision_ == session_->Revision()
-            && knownLength_ == current.size())
+            && knownText_ == current)
         {
             NotifySelectionChanged();
             return;
@@ -185,11 +169,23 @@ namespace winrt::ElMd
         notifying_ = true;
         try
         {
+            auto const selection = session_->Selection();
+            auto const active = (std::min)(
+                session_->TextInputAcpOffset(selection.active),
+                current.size());
+            auto const anchor = selection.anchor.container_id == container
+                ? (std::min)(session_->TextInputAcpOffset(selection.anchor), current.size())
+                : active;
             context_.NotifyTextChanged(
                 {0, SafeAcp(knownLength_)},
                 SafeAcp(current.size()),
-                CurrentSelection());
-            knownLength_ = current.size();
+                {
+                    SafeAcp(anchor),
+                    SafeAcp(active),
+                });
+            activeContainer_ = container;
+            knownText_ = std::move(current);
+            knownLength_ = knownText_.size();
             knownRevision_ = session_->Revision();
             forceFullSynchronization_ = false;
         }
@@ -203,9 +199,12 @@ namespace winrt::ElMd
     {
         if (!session_) return {};
         auto selection = session_->Selection();
-        const auto length = session_->AcpLength();
-        const auto anchor = (std::min)(session_->AcpOffset(selection.anchor), length);
-        const auto active = (std::min)(session_->AcpOffset(selection.active), length);
+        if (selection.active.container_id != activeContainer_) return {};
+        const auto length = knownText_.size();
+        const auto active = (std::min)(session_->TextInputAcpOffset(selection.active), length);
+        const auto anchor = selection.anchor.container_id == activeContainer_
+            ? (std::min)(session_->TextInputAcpOffset(selection.anchor), length)
+            : active;
         return {SafeAcp(anchor), SafeAcp(active)};
     }
 
@@ -216,7 +215,7 @@ namespace winrt::ElMd
             if (!session_) return;
             auto request = args.Request();
             auto range = request.Range();
-            auto const& boundary = session_->BoundaryTextUtf16();
+            auto const& boundary = knownText_;
             auto textLength = SafeAcp(boundary.size());
             auto start = (std::max)(0, (std::min)(range.StartCaretPosition, textLength));
             auto end = (std::max)(start, (std::min)(range.EndCaretPosition, textLength));
@@ -270,12 +269,12 @@ namespace winrt::ElMd
         {
             if (!session_) return;
             auto selection = args.Selection();
-            auto length = session_->AcpLength();
+            auto length = knownText_.size();
             auto start = static_cast<std::size_t>((std::max)(0, selection.StartCaretPosition));
             auto end = static_cast<std::size_t>((std::max)(0, selection.EndCaretPosition));
             session_->SetSelection(
-                session_->PositionFromAcp((std::min)(start, length)),
-                session_->PositionFromAcp((std::min)(end, length)));
+                session_->TextInputPositionFromAcp(activeContainer_, (std::min)(start, length)),
+                session_->TextInputPositionFromAcp(activeContainer_, (std::min)(end, length)));
             if (render_) render_();
             args.Result(winrt::Windows::UI::Text::Core::CoreTextSelectionUpdatingResult::Succeeded);
         });
@@ -288,15 +287,17 @@ namespace winrt::ElMd
                 return;
             }
             auto range = args.Range();
-            auto length = session_->AcpLength();
+            auto length = knownText_.size();
             auto start = static_cast<std::size_t>((std::max)(0, range.StartCaretPosition));
             auto end = static_cast<std::size_t>((std::max)(0, range.EndCaretPosition));
             auto incomingHstring = args.Text();
             auto incoming = elmd::utf8_to_cps(winrt::to_string(incomingHstring));
             auto isIncomingNewline = incoming == U"\r" || incoming == U"\n" || incoming == U"\r\n";
             auto selection = session_->Selection();
-            auto const& text = session_->BoundaryTextUtf16();
-            auto activeAcp = session_->AcpOffset(selection.active);
+            auto const& text = knownText_;
+            auto activeAcp = selection.active.container_id == activeContainer_
+                ? session_->TextInputAcpOffset(selection.active)
+                : 0u;
             if (isIncomingNewline && start < text.size() && text[start] == L'\n' && selection.is_caret() && activeAcp == start + 1)
             {
                 // Enter is handled as a semantic structure command by the key
@@ -312,6 +313,8 @@ namespace winrt::ElMd
             auto incomingText = std::wstring_view{incomingHstring.c_str(), incomingHstring.size()};
             auto previousKnownLength = knownLength_;
             auto previousKnownRevision = knownRevision_;
+            auto previousKnownText = knownText_;
+            auto previousActiveContainer = activeContainer_;
             auto previousForceFullSynchronization = forceFullSynchronization_;
             // Once this callback succeeds, CoreText will know the requested
             // replacement. Semantic marker conversions can produce a
@@ -319,9 +322,17 @@ namespace winrt::ElMd
             // extra delta only after this callback has returned.
             knownLength_ = knownLength_ - (storeEnd - storeStart) + incomingText.size();
 
-            session_->SetSelection(
-                session_->PositionFromAcp((std::min)(start, length)),
-                session_->PositionFromAcp((std::min)(end, length)));
+            auto preserveCrossBlockSelection = selection.anchor.container_id
+                    != selection.active.container_id
+                && selection.active.container_id == activeContainer_
+                && start == end
+                && start == activeAcp;
+            if (!preserveCrossBlockSelection)
+            {
+                session_->SetSelection(
+                    session_->TextInputPositionFromAcp(activeContainer_, (std::min)(start, length)),
+                    session_->TextInputPositionFromAcp(activeContainer_, (std::min)(end, length)));
+            }
             auto command = elmd::Command::InsertText(incoming);
             if (isIncomingNewline) command.kind = elmd::CommandKind::InsertNewline;
             else if (incoming.empty()) command.kind = elmd::CommandKind::DeleteSelection;
@@ -340,20 +351,24 @@ namespace winrt::ElMd
             {
                 knownLength_ = previousKnownLength;
                 knownRevision_ = previousKnownRevision;
+                knownText_ = std::move(previousKnownText);
+                activeContainer_ = previousActiveContainer;
                 forceFullSynchronization_ = previousForceFullSynchronization;
                 args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Failed);
                 QueueSynchronization();
                 return;
             }
-            auto const& localChange = session_->LastBoundaryTextChange();
-            if (localChange
-                && localChange->revisionBefore == previousKnownRevision
-                && localChange->revisionAfter == session_->Revision()
-                && localChange->utf16Start == storeStart
-                && localChange->utf16OldLength == storeEnd - storeStart
-                && localChange->replacement == incomingText)
+            auto nextSelection = session_->Selection();
+            auto nextText = session_->TextInputTextUtf16(nextSelection.active.container_id);
+            auto predicted = previousKnownText;
+            predicted.replace(storeStart, storeEnd - storeStart, incomingText);
+            if (nextSelection.active.container_id == previousActiveContainer
+                && nextText == predicted)
             {
-                knownRevision_ = localChange->revisionAfter;
+                activeContainer_ = previousActiveContainer;
+                knownText_ = std::move(nextText);
+                knownLength_ = knownText_.size();
+                knownRevision_ = session_->Revision();
                 forceFullSynchronization_ = false;
             }
             else

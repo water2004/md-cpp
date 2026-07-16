@@ -50,6 +50,8 @@ namespace winrt::ElMd
         winrt::event_token textUpdatingToken_{};
         std::size_t knownLength_ = 0;
         std::uint64_t knownRevision_ = 0;
+        elmd::NodeId activeContainer_{};
+        std::wstring knownText_;
         std::shared_ptr<int> lifetime_;
         bool focused_ = false;
         bool updating_ = false;

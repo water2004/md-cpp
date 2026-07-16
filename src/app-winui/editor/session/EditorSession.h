@@ -18,42 +18,6 @@ namespace winrt::ElMd
 
     namespace detail
     {
-        struct BoundaryOffsetIndex
-        {
-            void Reset(std::vector<std::size_t> const& spans);
-            bool CanAdd(std::size_t index, std::ptrdiff_t delta) const;
-            bool Add(std::size_t index, std::ptrdiff_t delta);
-            std::size_t Prefix(std::size_t count) const;
-            std::size_t Find(std::size_t offset) const;
-
-            std::vector<std::size_t> tree;
-        };
-
-        struct BoundaryFragment
-        {
-            elmd::NodeId containerId{};
-            std::size_t codepointLength = 0;
-            std::size_t utf16Length = 0;
-        };
-
-        struct BoundaryProjection
-        {
-            std::wstring utf16;
-            std::vector<BoundaryFragment> fragments;
-            std::unordered_map<std::uint64_t, std::size_t> fragmentIndex;
-            BoundaryOffsetIndex codepointOffsets;
-            BoundaryOffsetIndex utf16Offsets;
-        };
-
-        struct BoundaryTextChange
-        {
-            std::uint64_t revisionBefore = 0;
-            std::uint64_t revisionAfter = 0;
-            std::size_t utf16Start = 0;
-            std::size_t utf16OldLength = 0;
-            std::wstring replacement;
-        };
-
         struct EditorSessionCore
         {
             elmd::Editor editor;
@@ -61,7 +25,7 @@ namespace winrt::ElMd
             elmd::RenderModel renderModel;
             elmd::ThemeProfile theme = elmd::default_theme_profile();
             std::wstring baseDirectory;
-            mutable std::optional<BoundaryProjection> boundaryProjection;
+            std::size_t characterCount = 0;
         };
     }
 
@@ -93,15 +57,16 @@ namespace winrt::ElMd
         winrt::hstring DisplayName() const;
         winrt::hstring Path() const;
         uint64_t Revision() const;
-        std::size_t AcpLength() const;
         std::size_t CharacterCount() const;
-        std::wstring const& BoundaryTextUtf16() const;
-        std::optional<detail::BoundaryTextChange> const& LastBoundaryTextChange() const;
+        std::wstring TextInputTextUtf16(elmd::NodeId containerId) const;
+        std::size_t TextInputAcpOffset(elmd::TextPosition position) const;
+        elmd::TextPosition TextInputPositionFromAcp(
+            elmd::NodeId containerId,
+            std::size_t offset,
+            elmd::TextAffinity affinity = elmd::TextAffinity::Downstream) const;
         std::optional<std::u32string> EditableSource(elmd::NodeId id) const;
         std::optional<EditorDocumentInteraction> InteractionAt(elmd::TextPosition position) const;
         elmd::TextSelection Selection() const;
-        std::size_t AcpOffset(elmd::TextPosition position) const;
-        elmd::TextPosition PositionFromAcp(std::size_t offset, elmd::TextAffinity affinity = elmd::TextAffinity::Downstream) const;
         elmd::RenderModel const& RenderModel() const;
         elmd::RenderModel BuildPrintRenderModel() const;
         std::optional<elmd::TextPosition> FootnoteDefinitionTarget(std::string_view label) const;
@@ -116,14 +81,12 @@ namespace winrt::ElMd
         bool ShouldVirtualizeRenderModel() const;
         void MaterializeRenderBlocks(std::size_t begin, std::size_t end);
         void ReleaseRenderBlocksOutside(std::size_t begin, std::size_t end);
-        void InvalidateBoundaryProjection();
-        bool ApplyBoundaryProjectionChange(elmd::EditorDocumentChange const& change);
-        detail::BoundaryProjection const& BoundaryProjection() const;
+        void RefreshCharacterCount();
+        std::optional<std::u32string_view> TextInputSourceView(elmd::NodeId containerId) const;
 
         winrt::Windows::Storage::StorageFile file_{ nullptr };
         winrt::hstring text_;
         uint64_t revision_ = 0;
         std::unique_ptr<detail::EditorSessionCore> core_;
-        std::optional<detail::BoundaryTextChange> lastBoundaryTextChange_;
     };
 }
