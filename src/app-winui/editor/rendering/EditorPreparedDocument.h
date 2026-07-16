@@ -38,6 +38,30 @@ namespace winrt::ElMd
             bool valid = false;
             std::uint64_t embeddedGeneration = 0;
             std::uint64_t remoteImageGeneration = 0;
+
+            // Drop heavyweight DirectWrite/D2D/image state while retaining
+            // exact measured geometry and stable block metadata. PDF export
+            // uses this after each page so its working set is page-local.
+            void ReleaseVisualContent()
+            {
+                auto measuredHeight = height;
+                auto retainedSourceId = sourceId;
+                auto retainedPresentationKey = presentationKey;
+                auto retainedOwners = std::move(owners);
+                auto retainedSourceMode = sourceMode;
+                auto retainedCode = code;
+                auto retainedContainsMath = containsMath;
+                auto retainedContainsImage = containsImage;
+                *this = {};
+                height = measuredHeight;
+                sourceId = retainedSourceId;
+                presentationKey = retainedPresentationKey;
+                owners = std::move(retainedOwners);
+                sourceMode = retainedSourceMode;
+                code = retainedCode;
+                containsMath = retainedContainsMath;
+                containsImage = retainedContainsImage;
+            }
         };
 
         std::uint64_t modelRevision = 0;

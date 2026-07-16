@@ -1045,7 +1045,20 @@ namespace winrt::ElMd
 
             if (printMode)
             {
-                prepareForward(0, frame.renderModel.blocks.size());
+                // PDF export is a streaming viewport. Preparing every block
+                // here retained the entire document's DirectWrite layouts and
+                // also required every MathJax result to coexist in a bounded
+                // cache. Refine only the current page and a small look-ahead;
+                // ExportPdfStep retries when corrected geometry exposes a new
+                // block at the page boundary.
+                auto pageTop = (std::max)(0.0f, scrollOffset - viewportOverscan);
+                auto pageBottom = scrollOffset + resources.surfaceHeightDip + viewportOverscan;
+                auto pageBegin = firstIntersecting(pageTop);
+                auto pageEnd = pageBegin;
+                while (pageEnd < frame.renderModel.blocks.size()
+                    && preparedDocument->geometry.At(pageEnd).top <= pageBottom)
+                    ++pageEnd;
+                prepareForward(pageBegin, pageEnd);
             }
             else
             {
@@ -1167,10 +1180,16 @@ namespace winrt::ElMd
         if (geometryChanged)
             preparedDocument->totalHeight = preparedDocument->geometry.TotalHeight();
 
-        if (!printMode)
         {
-            auto retentionBefore = (std::max)(2400.0f, resources.surfaceHeightDip * 2.5f);
-            auto retentionAfter = (std::max)(3200.0f, resources.surfaceHeightDip * 3.0f);
+            // Screen rendering keeps a multi-viewport cache for responsive
+            // reverse scrolling. Printing intentionally keeps only the page
+            // being emitted plus its measurement look-ahead.
+            auto retentionBefore = printMode
+                ? 1.0f
+                : (std::max)(2400.0f, resources.surfaceHeightDip * 2.5f);
+            auto retentionAfter = printMode
+                ? viewportOverscan
+                : (std::max)(3200.0f, resources.surfaceHeightDip * 3.0f);
             auto retentionTop = scrollOffset - retentionBefore;
             auto retentionBottom = scrollOffset + resources.surfaceHeightDip + retentionAfter;
             auto retentionBegin = firstIntersecting(retentionTop);
@@ -1186,7 +1205,6 @@ namespace winrt::ElMd
                 if (index >= frame.renderModel.blocks.size()) continue;
                 auto placement = preparedDocument->geometry.At(index);
                 if (placement.bottom >= retentionTop && placement.top <= retentionBottom) continue;
-                auto const& block = frame.renderModel.blocks[index];
                 auto& prepared = preparedDocument->blocks[index];
                 std::vector<std::string> imageSources;
                 for (auto const& image : prepared.images)
@@ -1197,15 +1215,12 @@ namespace winrt::ElMd
                         for (auto const& image : cellImages)
                             if (!image.source.empty()) imageSources.push_back(image.source);
                 }
-                auto measuredHeight = prepared.height;
-                prepared = {};
-                initializePreparedMetadata(prepared, block);
-                prepared.height = measuredHeight;
+                prepared.ReleaseVisualContent();
                 for (auto const& source : imageSources) inlineImages.ReleaseGif(source);
                 preparedDocument->embeddedBlocks.erase(index);
                 preparedDocument->layoutBlocks.erase(index);
             }
-            if (frame.releaseBlocksOutside)
+            if (!printMode && frame.releaseBlocksOutside)
                 frame.releaseBlocksOutside(retentionBegin, retentionEnd);
         }
 

@@ -50,6 +50,89 @@ struct PrintPageSlice {
     float height() const { return source_bottom - source_top; }
 };
 
+struct PrintPageStep {
+    PrintPageSlice slice;
+    // Number of leading extents that no longer need to participate in the
+    // next step. This remains zero while an oversized block is split across
+    // multiple pages.
+    std::size_t consumed_blocks = 0;
+    float next_source_top = 0.0f;
+    bool has_more = false;
+};
+
+// Plan only the next page from an already ordered suffix of block extents.
+// PDF export uses this form so page N does not rescan or allocate a plan for
+// every later page. The result has the same block-splitting semantics as
+// plan_print_pages: fitting blocks stay intact and only a block taller than a
+// page is split.
+inline PrintPageStep plan_next_print_page(
+    std::span<PrintBlockExtent const> remaining,
+    float document_top,
+    float document_bottom,
+    float page_extent)
+{
+    constexpr float epsilon = 0.01f;
+    page_extent = std::isfinite(page_extent) ? (std::max)(1.0f, page_extent) : 1.0f;
+    document_top = std::isfinite(document_top) ? document_top : 0.0f;
+    document_bottom = std::isfinite(document_bottom)
+        ? (std::max)(document_top, document_bottom)
+        : document_top;
+
+    auto valid = [](PrintBlockExtent extent) {
+        return std::isfinite(extent.top) && std::isfinite(extent.bottom);
+    };
+    auto cursor = std::size_t{0};
+    while (cursor < remaining.size()
+        && (!valid(remaining[cursor]) || remaining[cursor].bottom <= document_top + epsilon))
+        ++cursor;
+
+    if (cursor >= remaining.size()) {
+        auto bottom = (std::min)(document_top + page_extent, document_bottom);
+        if (bottom <= document_top + epsilon) bottom = document_top + page_extent;
+        return {{document_top, bottom}, remaining.size(), bottom, false};
+    }
+
+    auto first = cursor;
+    auto limit = document_top + page_extent;
+    auto page_bottom = document_top;
+    auto fitted = false;
+    while (cursor < remaining.size()) {
+        auto extent = remaining[cursor];
+        if (!valid(extent)) { ++cursor; continue; }
+        extent.top = (std::max)(document_top, extent.top);
+        extent.bottom = (std::max)(extent.top, extent.bottom);
+        if (extent.bottom > limit + epsilon) break;
+        page_bottom = (std::max)(page_bottom, extent.bottom);
+        fitted = true;
+        ++cursor;
+    }
+
+    if (fitted) {
+        auto has_more = cursor < remaining.size();
+        auto next_top = page_bottom;
+        if (has_more && valid(remaining[cursor]))
+            next_top = (std::max)(page_bottom, remaining[cursor].top);
+        return {{document_top, page_bottom}, cursor, next_top, has_more};
+    }
+
+    // No complete block fits. Advance within the first oversized block, but
+    // consume only invalid/finished leading entries so the same block remains
+    // available to the following page when it still crosses the boundary.
+    auto first_extent = remaining[first];
+    first_extent.top = (std::max)(document_top, first_extent.top);
+    first_extent.bottom = (std::max)(first_extent.top, first_extent.bottom);
+    page_bottom = (std::min)(limit, first_extent.bottom);
+    if (page_bottom <= document_top + epsilon) page_bottom = limit;
+
+    auto consumed = first;
+    if (page_bottom >= first_extent.bottom - epsilon) consumed = first + 1;
+    auto has_more = consumed < remaining.size();
+    auto next_top = page_bottom;
+    if (has_more && consumed > first && valid(remaining[consumed]))
+        next_top = (std::max)(page_bottom, remaining[consumed].top);
+    return {{document_top, page_bottom}, consumed, next_top, has_more};
+}
+
 // Plan pages in document coordinates. Blocks that fit are never split; an
 // individual block taller than a page is the only case where a page boundary
 // may fall inside a block. Inter-block gaps are not carried to the top of the

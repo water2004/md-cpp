@@ -24,8 +24,11 @@ namespace winrt::ElMd
         EditorInteractionMap interaction;
         std::vector<D2D1_RECT_F> nonInteractive;
         float totalHeight = 0.0f;
-        std::vector<elmd::PrintPageSlice> slices;
-        std::size_t nextPage = 0;
+        std::vector<elmd::PrintBlockExtent> extents;
+        std::size_t nextBlock = 0;
+        float nextSourceTop = 0.0f;
+        std::size_t completedPages = 0;
+        std::size_t estimatedTotalPages = 0;
         std::unique_ptr<EditorPdfPrintJob> printJob;
         bool completed = false;
 
@@ -50,8 +53,8 @@ namespace winrt::ElMd
         {
             return {
                 PdfExportResult::WaitingForAssets,
-                pdfExportState ? pdfExportState->nextPage : 0,
-                pdfExportState ? pdfExportState->slices.size() : 0,
+                pdfExportState ? pdfExportState->completedPages : 0,
+                pdfExportState ? pdfExportState->estimatedTotalPages : 0,
             };
         }
         if (pdfExportState && (pdfExportState->path != path || pdfExportState->title != title))
@@ -150,87 +153,160 @@ namespace winrt::ElMd
                 return page;
             };
 
-            if (state->slices.empty())
-            {
-                // The discarded preflight establishes print-width geometry and
-                // starts asynchronous image/math preparation. Page count is
-                // exact once these assets have settled.
-                auto preflight = recordPage(0.0f, PdfContentHeight);
-                (void)preflight;
-                auto pendingMath = preparedDocument && std::any_of(
-                    preparedDocument->blocks.begin(),
-                    preparedDocument->blocks.end(),
-                    [](PreparedDocument::Block const& block) { return block.pendingMath; });
-                if (pendingMath || renderCache.HasPendingImages())
-                {
-                    // A completed MathJax/image request advances the renderer's
-                    // resource generations, but a retained print preparation
-                    // still carries its old pending flags. Recreate the print
-                    // preparation on the next step so every top-level block
-                    // observes the newly available resources. The asset caches
-                    // themselves remain intact.
-                    preparedDocument.reset();
-                    interactionMap = {};
-                    nonInteractiveRegions.clear();
-                    finishStep();
-                    return {PdfExportResult::WaitingForAssets, 0, 0};
-                }
+            // The first recording for a page is a disposable preparation pass.
+            // DrawDocument refines only this page's estimated geometry and
+            // queues only this page's embedded resources.
+            auto preparation = recordPage(state->nextSourceTop, PdfContentHeight);
+            (void)preparation;
 
-                std::vector<elmd::PrintBlockExtent> extents;
-                if (preparedDocument)
-                {
-                    extents.reserve(preparedDocument->geometry.Size());
-                    for (std::size_t index = 0; index < preparedDocument->geometry.Size(); ++index)
-                    {
-                        auto placement = preparedDocument->geometry.At(index);
-                        extents.push_back({placement.top, placement.bottom});
-                    }
-                }
-                auto documentBottom = preparedDocument
-                    ? preparedDocument->totalHeight
-                    : PdfContentHeight;
-                state->slices = elmd::plan_print_pages(
-                    extents,
-                    0.0f,
-                    documentBottom,
-                    PdfContentHeight);
-                if (state->slices.empty())
-                    state->slices.push_back({0.0f, PdfContentHeight});
-                state->printJob = EditorPdfPrintJob::Begin(
-                    path,
-                    title,
-                    resources.d2dDevice.Get(),
-                    resources.wicFactory.Get());
-                auto total = state->slices.size();
+            if (!preparedDocument || !preparedDocument->geometry.Initialized())
+            {
                 finishStep();
-                return {PdfExportResult::InProgress, 0, total};
+                return {
+                    PdfExportResult::WaitingForAssets,
+                    state->completedPages,
+                    state->estimatedTotalPages,
+                };
             }
 
-            auto const& slice = state->slices[state->nextPage];
+            if (state->extents.size() != preparedDocument->geometry.Size())
+            {
+                state->extents.resize(preparedDocument->geometry.Size());
+                for (std::size_t index = 0; index < preparedDocument->geometry.Size(); ++index)
+                {
+                    auto placement = preparedDocument->geometry.At(index);
+                    state->extents[index] = {placement.top, placement.bottom};
+                }
+            }
+
+            auto updateEstimatedTotal = [&]
+            {
+                auto remainingHeight = (std::max)(
+                    0.0f,
+                    preparedDocument->totalHeight - state->nextSourceTop);
+                auto remainingPages = (std::max)(
+                    std::size_t{1},
+                    static_cast<std::size_t>(std::ceil(remainingHeight / PdfContentHeight)));
+                state->estimatedTotalPages = state->completedPages + remainingPages;
+            };
+            updateEstimatedTotal();
+
+            auto imageStillLoading = [](PreparedDocument::Block const& block)
+            {
+                if (std::ranges::any_of(
+                        block.images,
+                        [](auto const& image) { return !image.image.has_value(); }))
+                    return true;
+                return block.table && std::ranges::any_of(
+                    block.table->imageDraws,
+                    [](auto const& images)
+                    {
+                        return std::ranges::any_of(
+                            images,
+                            [](auto const& image) { return !image.image.has_value(); });
+                    });
+            };
+
+            auto pageLimit = state->nextSourceTop + PdfContentHeight;
+            auto windowBegin = preparedDocument->geometry.FirstIntersecting(state->nextSourceTop);
+            auto windowEnd = windowBegin;
+            auto ready = true;
+            auto imagesPending = renderCache.HasPendingImages();
+            std::vector<std::size_t> pendingBlocks;
+            while (windowEnd < preparedDocument->geometry.Size())
+            {
+                auto placement = preparedDocument->geometry.At(windowEnd);
+                if (placement.top > pageLimit) break;
+                state->extents[windowEnd] = {placement.top, placement.bottom};
+                auto const& block = preparedDocument->blocks[windowEnd];
+                if (!block.valid)
+                {
+                    ready = false;
+                }
+                else if (block.pendingMath
+                    || (imagesPending && block.containsImage && imageStillLoading(block)))
+                {
+                    pendingBlocks.push_back(windowEnd);
+                }
+                ++windowEnd;
+            }
+            // Keep the first block after the page boundary's top coordinate in
+            // sync. It becomes the next page origin when the current page ends
+            // at the previous complete block.
+            if (windowEnd < preparedDocument->geometry.Size())
+            {
+                auto placement = preparedDocument->geometry.At(windowEnd);
+                state->extents[windowEnd] = {placement.top, placement.bottom};
+            }
+
+            if (!pendingBlocks.empty())
+            {
+                // Poll asynchronous resources by rematerializing only the
+                // affected page blocks. Do not release GIF sources here: that
+                // would cancel the decode we are waiting for.
+                for (auto index : pendingBlocks)
+                {
+                    preparedDocument->blocks[index].ReleaseVisualContent();
+                    preparedDocument->embeddedBlocks.erase(index);
+                    preparedDocument->layoutBlocks.erase(index);
+                }
+            }
+            if (!ready || !pendingBlocks.empty())
+            {
+                finishStep();
+                return {
+                    PdfExportResult::WaitingForAssets,
+                    state->completedPages,
+                    state->estimatedTotalPages,
+                };
+            }
+
+            auto remaining = std::span<elmd::PrintBlockExtent const>{state->extents}
+                .subspan((std::min)(state->nextBlock, state->extents.size()));
+            auto pageStep = elmd::plan_next_print_page(
+                remaining,
+                state->nextSourceTop,
+                preparedDocument->totalHeight,
+                PdfContentHeight);
+            auto const& slice = pageStep.slice;
             auto page = recordPage(
                 slice.source_top,
                 (std::min)(PdfContentHeight, slice.height()));
             resources.d2dContext->SetTarget(originalTarget.Get());
             resources.d2dContext->SetTransform(originalTransform);
-            state->printJob->AddPage(page);
-            ++state->nextPage;
-            auto completed = state->nextPage;
-            auto total = state->slices.size();
-            if (completed < total)
+            if (!state->printJob)
             {
+                state->printJob = EditorPdfPrintJob::Begin(
+                    path,
+                    title,
+                    resources.d2dDevice.Get(),
+                    resources.wicFactory.Get());
+            }
+            state->printJob->AddPage(page);
+            ++state->completedPages;
+            state->nextBlock += pageStep.consumed_blocks;
+            state->nextSourceTop = pageStep.next_source_top;
+            if (pageStep.has_more)
+            {
+                updateEstimatedTotal();
                 finishStep();
-                return {PdfExportResult::InProgress, completed, total};
+                return {
+                    PdfExportResult::InProgress,
+                    state->completedPages,
+                    state->estimatedTotalPages,
+                };
             }
 
             state->printJob->Complete();
             state->completed = true;
+            auto completed = state->completedPages;
             finishStep();
             pdfExportState.reset();
             renderCache.ClearTextLayouts();
             renderCache.ClearSvgDocuments();
             ClearPreparedDocument();
             Invalidate();
-            return {PdfExportResult::Completed, completed, total};
+            return {PdfExportResult::Completed, completed, completed};
         }
         catch (...)
         {
