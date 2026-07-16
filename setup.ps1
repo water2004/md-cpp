@@ -9,8 +9,8 @@ $PackagesConfig = Join-Path $Root 'src\app-winui\packages.config'
 $PackagesDirectory = Join-Path $Root 'src\app-winui\packages'
 $SvgNormalizerDirectory = Join-Path $Root 'src\app-winui\third_party\usvg-normalizer'
 $SvgNormalizerManifest = Join-Path $SvgNormalizerDirectory 'Cargo.toml'
-$SvgNormalizerOutput = Join-Path $SvgNormalizerDirectory 'target\release\elmd_svg_normalizer.dll'
-$SvgNormalizerBin = Join-Path $SvgNormalizerDirectory 'bin\x64\elmd_svg_normalizer.dll'
+$SvgNormalizerTarget = Join-Path $Root 'build\dependencies\usvg-normalizer'
+$SvgNormalizerOutput = Join-Path $SvgNormalizerTarget 'release\elmd_svg_normalizer.dll'
 $ToolDirectory = Join-Path $Root '.tools'
 $NuGetPath = Join-Path $ToolDirectory 'nuget.exe'
 $NuGetUrl = 'https://dist.nuget.org/win-x86-commandline/latest/nuget.exe'
@@ -45,7 +45,7 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
 }
 
 Write-Host 'Building the native SVG normalizer...'
-& cargo build --locked --release --manifest-path $SvgNormalizerManifest
+& cargo build --locked --release --manifest-path $SvgNormalizerManifest --target-dir $SvgNormalizerTarget
 if ($LASTEXITCODE -ne 0) {
     throw "SVG normalizer build failed with exit code $LASTEXITCODE"
 }
@@ -54,6 +54,4 @@ if (-not (Test-Path -LiteralPath $SvgNormalizerOutput)) {
     throw "SVG normalizer output was not produced: $SvgNormalizerOutput"
 }
 
-New-Item -ItemType Directory -Force -Path (Split-Path -Parent $SvgNormalizerBin) | Out-Null
-Copy-Item -LiteralPath $SvgNormalizerOutput -Destination $SvgNormalizerBin -Force
-Write-Host "Native SVG normalizer copied to $SvgNormalizerBin."
+Write-Host "Native SVG normalizer built at $SvgNormalizerOutput."

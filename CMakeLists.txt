@@ -1,4 +1,4 @@
-# el-md (C++) — native self-rendered WYSIWYG Markdown editor.
+# Folia (C++) — native self-rendered WYSIWYG Markdown editor.
 #
 # Build design:
 #   - C++23 with C++ modules (CMake FILE_SET CXX_MODULES) + `import std;`.
@@ -6,7 +6,7 @@
 #   - Platform library `elmd_platform` is the ONLY layer touching Win32 /
 #     Direct2D / DirectWrite / DXGI / TSF / Clipboard (Windows headers stay
 #     in that translation unit's global module fragment so no macros leak).
-#   - App `el-md` is a WinUI 3 shell hosting a self-drawn EditorView surface.
+#   - App `Folia` is a WinUI 3 shell hosting a self-drawn EditorView surface.
 #
 # `import std;` is experimental in CMake 4.3; the UUID below is the official
 # activation token for the CxxImportStd experimental feature in CMake 4.3.
@@ -14,10 +14,10 @@ set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b")
 
 cmake_minimum_required(VERSION 4.0)
 
-project(el_md_cpp
+project(folia
     VERSION 0.1.0
     LANGUAGES CXX
-    DESCRIPTION "el-md: native self-rendered WYSIWYG Markdown editor (C++)")
+    DESCRIPTION "Folia: native self-rendered WYSIWYG Markdown editor (C++)")
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -30,7 +30,7 @@ endif()
 
 # Require Ninja (needed for CMake's C++ module dependency scanning with MSVC).
 if(NOT CMAKE_GENERATOR MATCHES "Ninja")
-    message(FATAL_ERROR "el-md requires the Ninja generator for C++ module support. Reconfigure with -G Ninja.")
+    message(FATAL_ERROR "Folia requires the Ninja generator for C++ module support. Reconfigure with -G Ninja.")
 endif()
 
 if(MSVC)
@@ -45,10 +45,10 @@ endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-option(ELMD_BUILD_WINUI "Build the WinUI 3 C++/WinRT application shell" OFF)
+option(FOLIA_BUILD_WINUI "Build the WinUI 3 C++/WinRT application shell" OFF)
 
-if(ELMD_BUILD_WINUI)
-    message(FATAL_ERROR "The WinUI 3 shell is built with MSBuild at src/app-winui/el-md.vcxproj so XAML/IDL/C++WinRT generation runs through the Windows App SDK targets. Keep CMake for elmd_core, elmd_platform, and tests.")
+if(FOLIA_BUILD_WINUI)
+    message(FATAL_ERROR "The WinUI 3 shell is built with MSBuild at src/app-winui/Folia.vcxproj so XAML/IDL/C++WinRT generation runs through the Windows App SDK targets. Keep CMake for elmd_core, elmd_platform, and tests.")
 endif()
 
 # ---------------------------------------------------------------------------

@@ -17,13 +17,10 @@ CMakeSettings.json
 .tools/
 .reference/
 tools/mathjax-bundle/node_modules/
-tools/mathjax-bundle/quickjs-smoke.exe
-tools/mathjax-bundle/quickjs-smoke.obj
 tools/mermaid-bundle/node_modules/
-/src/app-winui/third_party/usvg-normalizer/target/
-!el-md.sln
-!src/app-winui/el-md.vcxproj
-!src/app-winui/el-md.vcxproj.filters
+!Folia.sln
+!src/app-winui/Folia.vcxproj
+!src/app-winui/Folia.vcxproj.filters
 
 # CMake
 CMakeFiles/
@@ -40,10 +37,6 @@ compile_commands.json
 *.exp
 
 # WinUI/MSBuild output
-src/app-winui/Generated Files/
-src/app-winui/x64/
-src/app-winui/el-md/x64/
-src/app-winui/third_party/usvg-normalizer/bin/
 /Assets/
 /src/app-winui/Assets/settings.json
 /src/app-winui/Assets/settings.json.tmp

@@ -1,8 +1,8 @@
 #include "pch.h"
 #include "storage/AssetPaths.h"
 
-#ifndef ELMD_ASSETS_DIRECTORY
-#define ELMD_ASSETS_DIRECTORY L""
+#ifndef FOLIA_ASSETS_DIRECTORY
+#define FOLIA_ASSETS_DIRECTORY L""
 #endif
 
 namespace
@@ -25,7 +25,7 @@ namespace winrt::ElMd
     {
         static auto const directory = []
         {
-            std::wstring configured = ELMD_ASSETS_DIRECTORY;
+            std::wstring configured = FOLIA_ASSETS_DIRECTORY;
             if (!configured.empty()) return ExpandEnvironment(configured);
             return std::filesystem::current_path() / L"Assets";
         }();
