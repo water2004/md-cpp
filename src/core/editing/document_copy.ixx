@@ -13,43 +13,53 @@ export namespace elmd {
 namespace document_copy_detail {
 
 struct OrderedSelection {
+    const EditorDocument* document = nullptr;
     TextPosition start;
     TextPosition end;
     std::size_t start_index = 0;
     std::size_t end_index = 0;
-    std::vector<DocumentTextFragment> fragments;
-    std::unordered_map<std::uint64_t, std::size_t> index_by_id;
 };
+
+inline std::optional<std::u32string_view> owner_text(
+    const OrderedSelection& selection,
+    std::size_t index) {
+    if (!selection.document
+        || index >= selection.document->cached_editable_order.size()) {
+        return std::nullopt;
+    }
+    const auto* block = find_document_block(
+        *selection.document,
+        selection.document->cached_editable_order[index]);
+    return block ? editable_block_text_view(*block) : std::nullopt;
+}
 
 inline std::optional<OrderedSelection> order_selection(
     const EditorDocument& document,
     const TextSelection& selection) {
     OrderedSelection ordered;
-    ordered.fragments = document_text_fragments(document);
-    for (std::size_t index = 0; index < ordered.fragments.size(); ++index) {
-        ordered.index_by_id.emplace(ordered.fragments[index].container_id.v, index);
-    }
-    const auto anchor = ordered.index_by_id.find(selection.anchor.container_id.v);
-    const auto active = ordered.index_by_id.find(selection.active.container_id.v);
-    if (anchor == ordered.index_by_id.end() || active == ordered.index_by_id.end()) {
-        return std::nullopt;
-    }
+    ordered.document = &document;
+    const auto anchor = document_editable_order_position(
+        document, selection.anchor.container_id);
+    const auto active = document_editable_order_position(
+        document, selection.active.container_id);
+    if (!anchor || !active) return std::nullopt;
     ordered.start = selection.anchor;
     ordered.end = selection.active;
-    ordered.start_index = anchor->second;
-    ordered.end_index = active->second;
+    ordered.start_index = *anchor;
+    ordered.end_index = *active;
     if (ordered.end_index < ordered.start_index
         || (ordered.start_index == ordered.end_index
             && ordered.end.source_offset < ordered.start.source_offset)) {
         std::swap(ordered.start, ordered.end);
         std::swap(ordered.start_index, ordered.end_index);
     }
+    const auto start_text = owner_text(ordered, ordered.start_index);
+    const auto end_text = owner_text(ordered, ordered.end_index);
+    if (!start_text || !end_text) return std::nullopt;
     ordered.start.source_offset = (std::min)(
-        ordered.start.source_offset,
-        ordered.fragments[ordered.start_index].text.size());
+        ordered.start.source_offset, start_text->size());
     ordered.end.source_offset = (std::min)(
-        ordered.end.source_offset,
-        ordered.fragments[ordered.end_index].text.size());
+        ordered.end.source_offset, end_text->size());
     return ordered;
 }
 
@@ -57,7 +67,9 @@ inline SourceRange selected_range(
     const OrderedSelection& selection,
     std::size_t index) {
     if (index < selection.start_index || index > selection.end_index) return {};
-    const auto length = selection.fragments[index].text.size();
+    const auto text = owner_text(selection, index);
+    if (!text) return {};
+    const auto length = text->size();
     const auto start = index == selection.start_index
         ? selection.start.source_offset
         : 0;
@@ -71,8 +83,10 @@ inline std::optional<std::pair<std::size_t, std::size_t>> descendant_fragment_sp
     const BlockNode& block,
     const OrderedSelection& selection) {
     std::optional<std::pair<std::size_t, std::size_t>> span;
-    const auto self = selection.index_by_id.find(block.id.v);
-    if (self != selection.index_by_id.end()) span = {self->second, self->second};
+    const auto self = selection.document
+        ? document_editable_order_position(*selection.document, block.id)
+        : std::nullopt;
+    if (self) span = {*self, *self};
     for (const auto& child : block.children) {
         auto child_span = descendant_fragment_span(child, selection);
         if (!child_span) continue;
@@ -128,14 +142,16 @@ inline std::optional<BlockNode> slice_block(
     BlockNode copy = block;
     copy.children.clear();
     bool has_selected_owner = false;
-    const auto self = selection.index_by_id.find(block.id.v);
-    if (self != selection.index_by_id.end()
-        && self->second >= selection.start_index
-        && self->second <= selection.end_index) {
-        const auto range = selected_range(selection, self->second);
+    const auto self = selection.document
+        ? document_editable_order_position(*selection.document, block.id)
+        : std::nullopt;
+    if (self && *self >= selection.start_index && *self <= selection.end_index) {
+        const auto range = selected_range(selection, *self);
         if (!range.empty()) {
             has_selected_owner = true;
-            truncate_owner(copy, range, selection.fragments[self->second].text.size());
+            const auto text = owner_text(selection, *self);
+            if (!text) return std::nullopt;
+            truncate_owner(copy, range, text->size());
         }
     }
 
@@ -163,9 +179,10 @@ inline std::optional<std::u32string> document_selected_markdown(
         const auto range = document_copy_detail::selected_range(
             *ordered,
             ordered->start_index);
-        return std::u32string{ordered->fragments[ordered->start_index].text.substr(
-            range.start,
-            range.length())};
+        const auto text = document_copy_detail::owner_text(
+            *ordered, ordered->start_index);
+        if (!text) return std::nullopt;
+        return std::u32string{text->substr(range.start, range.length())};
     }
 
     BlockVec selected;

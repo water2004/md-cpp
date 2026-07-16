@@ -2013,7 +2013,11 @@ suite editor_tests = [] {
     marked.set_selection({
         {marked_id, 1, TextAffinity::Downstream},
         {marked_id, 6, TextAffinity::Upstream}});
+    reset_core_operation_counters();
     expect(fatal(bool(marked.selected_markdown_cps() == U"*one*"))) << "same owner";
+    auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_text_projections == 0u)));
+    expect(fatal(bool(counters.full_document_block_index_scans == 0u)));
 
     Editor into_list("foo\n\n- one\n- two");
     const auto& first = into_list.document().root.children.front();
@@ -2047,7 +2051,11 @@ suite editor_tests = [] {
     nested.set_selection({
         {fragments[0].container_id, 2, TextAffinity::Downstream},
         {gamma->container_id, 3, TextAffinity::Upstream}});
+    reset_core_operation_counters();
     const auto copied = nested.selected_markdown_cps();
+    counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_text_projections == 0u)));
+    expect(fatal(bool(counters.full_document_block_index_scans == 0u)));
     expect(fatal(bool(copied.starts_with(U"> ")))) << "nested quote prefix";
     expect(fatal(bool(copied.find(U"- beta") != std::u32string::npos))) << "nested list";
     expect(fatal(bool(copied.find(U"- gam") != std::u32string::npos))) << "nested list boundary";
