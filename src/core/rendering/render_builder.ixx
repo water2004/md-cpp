@@ -1001,16 +1001,16 @@ inline RenderModel build_render_model_incremental(
     RenderModelUpdate const& update) {
     Builder builder(theme);
     auto dependency_key = configure_render_dependencies(builder, symbols);
-    bool structure_unchanged = !update.structural
-        && previous.blocks.size() == doc.root.children.size();
-    if (structure_unchanged) {
+    bool top_level_identity_unchanged = previous.blocks.size() == doc.root.children.size();
+    if (top_level_identity_unchanged) {
         for (std::size_t index = 0; index < previous.blocks.size(); ++index) {
             if (previous.blocks[index].id != doc.root.children[index].id) {
-                structure_unchanged = false;
+                top_level_identity_unchanged = false;
                 break;
             }
         }
     }
+    const bool structure_unchanged = !update.structural && top_level_identity_unchanged;
 
     std::unordered_set<std::uint64_t> changed_top_levels;
     bool local_invalidation = structure_unchanged
@@ -1127,8 +1127,18 @@ inline RenderModel build_render_model_incremental(
     model.document_dependency_key = dependency_key;
     model.rebuilt_block_count = rebuilt;
     model.reused_block_count = reused;
-    model.incremental_update = false;
-    model.changed_block_indices.clear();
+    model.incremental_update = trusted_structural_locality
+        && top_level_identity_unchanged;
+    if (model.incremental_update) {
+        model.changed_block_indices.reserve(changed_top_levels.size());
+        for (std::size_t index = 0; index < doc.root.children.size(); ++index) {
+            if (changed_top_levels.contains(doc.root.children[index].id.v)) {
+                model.changed_block_indices.push_back(index);
+            }
+        }
+    } else {
+        model.changed_block_indices.clear();
+    }
     return model;
 }
 

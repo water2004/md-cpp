@@ -514,6 +514,73 @@ suite editor_tests = [] {
     expect(fatal(bool(render_model.reused_block_count == block_count - 1u)));
 };
 
+"nested_structural_edits_invalidate_only_the_stable_top_level_render_block"_test = [] {
+    Editor editor("- first\n- second\n\noutside");
+    auto render_model = build_render_model(
+        editor.document(),
+        editor.outline(),
+        editor.symbols(),
+        default_theme_profile());
+    expect(fatal(bool(render_model.blocks.size() == 2u)));
+
+    const auto owner = first_text(editor).id;
+    editor.set_selection(TextSelection::caret({owner, 2, TextAffinity::Downstream}));
+    expect(fatal(editor.execute_command(Command{.kind = CommandKind::InsertNewline})));
+    auto change = editor.take_last_document_change();
+    expect(fatal(bool(change.has_value())));
+    if (!change) return;
+    expect(fatal(bool(change->structural)));
+    expect(fatal(bool(change->structural_locality_known)));
+
+    auto update_model = [&](const EditorDocumentChange& current) {
+        RenderModelUpdate update;
+        update.structural = current.structural;
+        update.structural_locality_known = current.structural_locality_known;
+        update.structural_anchors = current.structural_anchors;
+        for (const auto& operation : current.text_operations) {
+            update.changed_owners.push_back(
+                (current.forward ? operation.forward : operation.inverse).container_id);
+        }
+        reset_core_operation_counters();
+        render_model = build_render_model_incremental(
+            editor.document(),
+            editor.outline(),
+            editor.symbols(),
+            default_theme_profile(),
+            std::move(render_model),
+            update);
+        return read_core_operation_counters();
+    };
+
+    auto counters = update_model(*change);
+    expect(fatal(bool(counters.render_source_key_derivations == 1u)));
+    expect(fatal(bool(render_model.incremental_update)));
+    expect(fatal(bool(render_model.changed_block_indices == std::vector<std::size_t>{0})));
+    expect(fatal(bool(render_model.rebuilt_block_count == 1u)));
+    expect(fatal(bool(render_model.reused_block_count == 1u)));
+    auto full = build_render_model(
+        editor.document(),
+        editor.outline(),
+        editor.symbols(),
+        default_theme_profile());
+    expect(fatal(bool(render_model.blocks.size() == full.blocks.size())));
+    for (std::size_t index = 0; index < full.blocks.size(); ++index) {
+        expect(fatal(bool(render_model.blocks[index].presentation_key
+            == full.blocks[index].presentation_key)));
+    }
+
+    expect(fatal(editor.undo()));
+    change = editor.take_last_document_change();
+    expect(fatal(bool(change.has_value())));
+    if (!change) return;
+    counters = update_model(*change);
+    expect(fatal(bool(counters.render_source_key_derivations == 1u)));
+    expect(fatal(bool(render_model.incremental_update)));
+    expect(fatal(bool(render_model.changed_block_indices == std::vector<std::size_t>{0})));
+    expect(fatal(bool(render_model.rebuilt_block_count == 1u)));
+    expect(fatal(bool(render_model.reused_block_count == 1u)));
+};
+
 "externally_assembled_documents_calibrate_node_ids_once"_test = [] {
     EditorDocument document;
     document.root.id = NodeId{41};
