@@ -1092,15 +1092,9 @@ inline RenderModel finish_render_model(
     m.editable_index = doc.cached_editable_index;
     m.editable_top_level.reserve(m.editable_order.size());
     for (auto owner : m.editable_order) {
-        auto found = doc.cached_block_paths.find(owner.v);
-        if (found == doc.cached_block_paths.end()
-            || found->second.empty()
-            || found->second.front() >= doc.root.children.size()) {
-            continue;
+        if (auto top_level = document_top_level_block_id(doc, owner)) {
+            m.editable_top_level.emplace(owner.v, *top_level);
         }
-        m.editable_top_level.emplace(
-            owner.v,
-            doc.root.children[found->second.front()].id);
     }
     return m;
 }

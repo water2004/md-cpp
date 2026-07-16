@@ -52,22 +52,23 @@ bool document_indexes_are_exact(const EditorDocument& document) {
     std::size_t block_count = 0;
     std::vector<NodeId> editable_order;
     BlockPath path;
-    auto visit = [&](auto& self, const BlockNode& block) -> void {
+    auto visit = [&](auto& self, const BlockNode& block, NodeId parent_id, std::size_t child_index) -> void {
         ++block_count;
-        const auto cached = document.cached_block_paths.find(block.id.v);
+        const auto cached = document.cached_block_locators.find(block.id.v);
         valid = valid
-            && cached != document.cached_block_paths.end()
-            && cached->second == path;
+            && cached != document.cached_block_locators.end()
+            && cached->second == BlockLocator{parent_id, child_index}
+            && document_block_path(document, block.id) == std::optional<BlockPath>{path};
         if (is_editable_block_owner(block.kind)) editable_order.push_back(block.id);
         for (std::size_t index = 0; index < block.children.size(); ++index) {
             path.push_back(index);
-            self(self, block.children[index]);
+            self(self, block.children[index], block.id, index);
             path.pop_back();
         }
     };
-    visit(visit, document.root);
+    visit(visit, document.root, NodeId{}, 0);
     valid = valid
-        && document.cached_block_paths.size() == block_count
+        && document.cached_block_locators.size() == block_count
         && document.cached_editable_order == editable_order
         && document.cached_editable_index.size() == editable_order.size();
     for (std::size_t index = 0; index < editable_order.size(); ++index) {
@@ -254,7 +255,7 @@ suite editor_tests = [] {
     expect(fatal(bool(undo.inline_reparses == 1u)));
 };
 
-"opening_a_nonempty_document_builds_the_block_path_index_once"_test = [] {
+"opening_a_nonempty_document_builds_the_compact_block_locator_index_once"_test = [] {
     reset_core_operation_counters();
     Editor editor("alpha\n\nbeta\n\ngamma");
     const auto counters = read_core_operation_counters();

@@ -1,4 +1,4 @@
-// Incremental maintenance for EditorDocument's derived block-path and
+// Incremental maintenance for EditorDocument's derived block-locator and
 // editable-owner order indexes. The block tree remains authoritative.
 export module elmd.core.document_index_update;
 import std;
@@ -27,24 +27,22 @@ inline void collect_ids(
 inline void index_subtree(
     EditorDocument& document,
     const BlockNode& block,
-    BlockPath& path) {
-    document.cached_block_paths[block.id.v] = path;
+    NodeId parent_id,
+    std::size_t child_index) {
+    document.cached_block_locators[block.id.v] = {parent_id, child_index};
     for (std::size_t index = 0; index < block.children.size(); ++index) {
-        path.push_back(index);
-        index_subtree(document, block.children[index], path);
-        path.pop_back();
+        index_subtree(document, block.children[index], block.id, index);
     }
 }
 
 inline std::optional<BlockPath> validated_cached_path(
     const EditorDocument& document,
     NodeId id) {
-    if (id == document.root.id) return BlockPath{};
-    const auto found = document.cached_block_paths.find(id.v);
-    if (found == document.cached_block_paths.end()) return std::nullopt;
-    const auto* block = block_at_path(document.root, found->second);
+    auto path = cached_document_block_path(document, id);
+    if (!path) return std::nullopt;
+    const auto* block = block_at_path(document.root, *path);
     return block && block->id == id
-        ? std::optional<BlockPath>{found->second}
+        ? std::move(path)
         : std::nullopt;
 }
 
@@ -151,7 +149,7 @@ inline bool update_document_block_index(
         }
     }
 
-    for (const auto id : removed_blocks) document.cached_block_paths.erase(id);
+    for (const auto id : removed_blocks) document.cached_block_locators.erase(id);
 
     struct PendingParent {
         NodeId id{};
@@ -181,12 +179,9 @@ inline bool update_document_block_index(
             if (!parent_path) continue;
             auto* parent = block_at_path(document.root, *parent_path);
             if (!parent || parent->id != item.id) return false;
-            document.cached_block_paths[item.id.v] = *parent_path;
             const auto start = (std::min)(item.start, parent->children.size());
             for (std::size_t index = start; index < parent->children.size(); ++index) {
-                auto child_path = *parent_path;
-                child_path.push_back(index);
-                index_subtree(document, parent->children[index], child_path);
+                index_subtree(document, parent->children[index], parent->id, index);
             }
             item.done = true;
             --remaining;
