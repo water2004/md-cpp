@@ -1786,6 +1786,7 @@ inline ParseOutput parse(const ParseInput& input) {
     auto blocks = p.parse_blocks(nullptr);
     EditorDocument doc;
     doc.root.id = NodeId(p.node_counter++);
+    doc.next_node_id = p.node_counter;
     doc.dialect = input.dialect;
     doc.revision = input.revision;
     doc.root.children = std::move(blocks);

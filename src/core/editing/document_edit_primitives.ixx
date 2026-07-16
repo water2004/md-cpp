@@ -6,6 +6,7 @@ import elmd.core.ast;
 import elmd.core.block_source;
 import elmd.core.block_tree;
 import elmd.core.document;
+import elmd.core.document_ids;
 import elmd.core.document_operation_apply;
 import elmd.core.document_text;
 import elmd.core.inline_cst;
@@ -98,30 +99,12 @@ inline std::optional<TextPosition> last_editable_position(const BlockNode& block
     return std::nullopt;
 }
 
-inline void scan_inline_ids(const InlineCstNodes& nodes, std::uint64_t& maximum) {
-    for (const auto& node : nodes) {
-        maximum = (std::max)(maximum, node.id.v);
-        scan_inline_ids(node.children, maximum);
-    }
-}
-inline void scan_inline_ids(const InlineDocument& document, std::uint64_t& maximum) {
-    scan_inline_ids(document.tree.nodes, maximum);
-    for (const auto& token : document.tree.tokens) maximum = (std::max)(maximum, token.id.v);
-}
-inline void scan_block_ids(const BlockNode& block, std::uint64_t& maximum) {
-    maximum = (std::max)(maximum, block.id.v);
-    if (const auto* document = editable_inline_document(block)) scan_inline_ids(*document, maximum);
-    for (const auto& child : block.children) scan_block_ids(child, maximum);
-}
-
 struct NodeAllocator {
-    std::uint64_t next = 1;
-    explicit NodeAllocator(const EditorDocument& document) {
-        std::uint64_t maximum = document.root.id.v;
-        for (const auto& block : document.root.children) scan_block_ids(block, maximum);
-        next = maximum + 1;
+    EditorDocument* document = nullptr;
+    explicit NodeAllocator(EditorDocument& owner) : document(&owner) {
+        ensure_document_node_id_cursor(owner);
     }
-    NodeId allocate() { return NodeId{next++}; }
+    NodeId allocate() { return allocate_document_node_id(*document); }
 };
 
 inline InlineParseContext parse_context(const EditorDocument& document, NodeAllocator& allocator) {

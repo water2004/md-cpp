@@ -5,6 +5,7 @@ import elmd.core.block_source;
 import elmd.core.block_tree;
 import elmd.core.callout;
 import elmd.core.document;
+import elmd.core.document_ids;
 import elmd.core.ids;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
@@ -433,7 +434,7 @@ inline BlockNode make_math_block() {
 }
 inline BlockNode make_toc_block() { BlockNode block; block.kind = BlockKind::Toc; return block; }
 
-inline BlockNode make_table_block(const EditorDocument& document, std::size_t rows, std::size_t columns) {
+inline BlockNode make_table_block(EditorDocument& document, std::size_t rows, std::size_t columns) {
     document_edit_detail::NodeAllocator allocator(document);
     BlockNode table; table.kind = BlockKind::Table; columns = (std::max)(columns, std::size_t{1}); table.table_aligns.assign(columns, TableAlignment::None);
     BlockNode header; header.id = allocator.allocate(); header.kind = BlockKind::TableRow; header.table_header_row = true;
@@ -460,9 +461,7 @@ inline std::optional<DocumentTransaction> document_insert_atomic_block(EditorDoc
     const auto revision_before = document.revision;
     auto& after = document;
     document_edit_detail::NodeAllocator allocator(after);
-    std::uint64_t block_maximum = 0;
-    document_edit_detail::scan_block_ids(block, block_maximum);
-    allocator.next = (std::max)(allocator.next, block_maximum + 1);
+    reserve_document_node_ids(after, block);
     document_edit_detail::assign_missing_ids(block, after, allocator);
     auto path = block_path(after.root, selection.active.container_id);
     if (!path || path->empty()) return std::nullopt;

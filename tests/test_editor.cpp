@@ -12,6 +12,7 @@ import elmd.core.command;
 import elmd.core.dialect;
 import elmd.core.document;
 import elmd.core.document_edit;
+import elmd.core.document_ids;
 import elmd.core.document_text;
 import elmd.core.editor;
 import elmd.core.inline_cst;
@@ -129,6 +130,7 @@ suite editor_tests = [] {
     expect(fatal(bool(edit.full_document_parses == 0u)));
     expect(fatal(bool(edit.full_document_serializations == 0u)));
     expect(fatal(bool(edit.full_tree_transaction_diffs == 0u)));
+    expect(fatal(bool(edit.full_document_node_id_scans == 0u)));
     expect(fatal(bool(edit.inline_reparses == 1u)));
 
     reset_core_operation_counters();
@@ -137,7 +139,52 @@ suite editor_tests = [] {
     expect(fatal(bool(undo.full_document_parses == 0u)));
     expect(fatal(bool(undo.full_document_serializations == 0u)));
     expect(fatal(bool(undo.full_tree_transaction_diffs == 0u)));
+    expect(fatal(bool(undo.full_document_node_id_scans == 0u)));
     expect(fatal(bool(undo.inline_reparses == 1u)));
+};
+
+"node_ids_are_document_owned_monotonic_and_normal_edits_never_scan_the_tree"_test = [] {
+    Editor editor("abc");
+    const auto parsed_cursor = editor.document().next_node_id;
+    expect(fatal(bool(parsed_cursor > 0u)));
+
+    editor.set_selection(caret(first_text(editor), 1));
+    reset_core_operation_counters();
+    expect(fatal(editor.execute_command(Command::InsertText(U"X"))));
+    const auto edited_cursor = editor.document().next_node_id;
+    expect(fatal(bool(edited_cursor > parsed_cursor)));
+    expect(fatal(bool(read_core_operation_counters().full_document_node_id_scans == 0u)));
+
+    reset_core_operation_counters();
+    expect(fatal(editor.undo()));
+    const auto undone_cursor = editor.document().next_node_id;
+    expect(fatal(bool(undone_cursor > edited_cursor)));
+    expect(fatal(bool(read_core_operation_counters().full_document_node_id_scans == 0u)));
+
+    reset_core_operation_counters();
+    expect(fatal(editor.redo()));
+    expect(fatal(bool(editor.document().next_node_id > undone_cursor)));
+    expect(fatal(bool(read_core_operation_counters().full_document_node_id_scans == 0u)));
+};
+
+"externally_assembled_documents_calibrate_node_ids_once"_test = [] {
+    EditorDocument document;
+    document.root.id = NodeId{41};
+    BlockNode paragraph;
+    paragraph.id = NodeId{99};
+    InlineCstNode inline_node;
+    inline_node.id = NodeId{149};
+    paragraph.inline_content.tree.nodes.push_back(inline_node);
+    InlineToken token;
+    token.id = NodeId{200};
+    paragraph.inline_content.tree.tokens.push_back(token);
+    document.root.children.push_back(paragraph);
+
+    reset_core_operation_counters();
+    expect(fatal(bool(allocate_document_node_id(document) == NodeId{201})));
+    expect(fatal(bool(allocate_document_node_id(document) == NodeId{202})));
+    const auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_node_id_scans == 1u)));
 };
 
 "paste_composes_recorded_source_operations_without_a_final_tree_diff"_test = [] {

@@ -12,6 +12,10 @@ export namespace elmd {
 
 struct EditorDocument {
     std::uint64_t revision = 1;
+    // Monotonic identity source for every block, inline CST node, and inline
+    // token owned by this document. Zero is reserved for externally assembled
+    // documents that need one lazy calibration before their first edit.
+    std::uint64_t next_node_id = 0;
     MarkdownDialect dialect = default_dialect();
     BlockNode root = [] {
         BlockNode node;
@@ -30,6 +34,7 @@ struct EditorDocument {
         paragraph.id = NodeId(2);
         paragraph.kind = BlockKind::Paragraph;
         d.root.children.push_back(paragraph);
+        d.next_node_id = 3;
         return d;
     }
 };

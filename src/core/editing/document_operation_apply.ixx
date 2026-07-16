@@ -6,6 +6,7 @@ import elmd.core.ast;
 import elmd.core.block_source;
 import elmd.core.block_tree;
 import elmd.core.document;
+import elmd.core.document_ids;
 import elmd.core.document_text;
 import elmd.core.document_transaction;
 import elmd.core.ids;
@@ -110,22 +111,6 @@ inline bool apply_tree_edit(BlockNode& root, const DocumentTreeEdit& edit, bool 
     return false;
 }
 
-inline void scan_ids(const InlineCstNodes& nodes, std::uint64_t& maximum) {
-    for (const auto& node : nodes) {
-        maximum = (std::max)(maximum, node.id.v);
-        scan_ids(node.children, maximum);
-    }
-}
-
-inline void scan_ids(const BlockNode& block, std::uint64_t& maximum) {
-    maximum = (std::max)(maximum, block.id.v);
-    scan_ids(block.inline_content.tree.nodes, maximum);
-    for (const auto& token : block.inline_content.tree.tokens) {
-        maximum = (std::max)(maximum, token.id.v);
-    }
-    for (const auto& child : block.children) scan_ids(child, maximum);
-}
-
 inline bool apply_text_edit(
     EditorDocument& document,
     const DocumentTextOperation& operation,
@@ -133,11 +118,10 @@ inline bool apply_text_edit(
     const auto& edit = forward ? operation.forward : operation.inverse;
     if (auto* owner = inline_owner(document.root, edit.container_id)) {
         if (!edit.range.valid_for(owner->source.size())) return false;
-        std::uint64_t maximum = 0;
-        scan_ids(document.root, maximum);
+        ensure_document_node_id_cursor(document);
         InlineParseContext context;
         context.dialect = document.dialect;
-        context.allocate_id = [next = maximum + 1]() mutable { return NodeId{next++}; };
+        context.allocate_id = [&document] { return allocate_document_node_id(document); };
         apply_inline_source_edit(edit.container_id, *owner, edit, context);
         return true;
     }

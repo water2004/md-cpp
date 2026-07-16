@@ -96,6 +96,9 @@
     <ClCompile Include="..\core\editing\document_edit_primitives.ixx">
       <Filter>Core Modules\Editing</Filter>
     </ClCompile>
+    <ClCompile Include="..\core\editing\document_ids.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
     <ClCompile Include="..\core\editing\document_block_edit.ixx">
       <Filter>Core Modules\Editing</Filter>
     </ClCompile>
