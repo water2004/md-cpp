@@ -67,9 +67,9 @@ Renderer:     node CST + selection -> visual representation; hit-test returns Te
 
 Markdown syntax recognition belongs to the inline CST parser, Markdown formatting belongs to the serializer, and keyboard interaction belongs to block-tree/source editing.
 
-## Module boundaries and migration discipline
+## Module boundaries and architectural discipline
 
-New work introduces separate, narrowly-scoped modules for source editing, CST parsing, selection, and history, and progressively shrinks `src/core/document_edit.ixx` rather than adding more special cases to it. There is a single source of truth and no old/new dual track, no feature flag, and no fallback to a prior model — the migration is completed in one pass, and legacy paths are deleted, not deprecated.
+Source editing, CST parsing, selection, and history remain separate, narrowly-scoped modules. `src/core/document_edit.ixx` is a thin facade and must not accumulate feature-specific editing logic. There is one source of truth: do not introduce an old/new dual track, a compatibility path, a feature flag selecting a prior model, or a fallback to legacy behavior. Reintroducing any of these is an architectural regression, not an incremental migration step.
 
 ## Invariants and testing
 
@@ -77,6 +77,6 @@ The CST must satisfy, continuously: `flatten_tokens(parse(source)) == source` an
 
 ## Agent workflow
 
-Before changing editing interaction, understand the existing AST, document positions, transactions, normalization, selection, history, and serializer design. If implementation conflicts with these principles, call out the architectural debt and fix the responsible boundary when the task requires it. Do not begin a broad migration unless the task explicitly asks for one, and do not expand legacy source-driven editing paths.
+Before changing editing interaction, understand the existing block tree, inline source/CST, document positions, transactions, normalization, selection, history, and serializer design. Treat the model in this document as the established architecture, not as an active migration. If implementation conflicts with these principles, call out the architectural regression and fix the responsible boundary when the task requires it. Do not add compatibility layers or revive legacy full-document/string-driven editing paths.
 
 Keep changes scoped, preserve unrelated user work, and verify with the narrowest relevant tests plus a build when practical. Commit in small, reviewable batches — never one dump of hundreds of files. Do not use destructive Git operations unless the user explicitly authorizes them.

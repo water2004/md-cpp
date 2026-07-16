@@ -1,9 +1,12 @@
-# Inline CST 迁移工作计划
+# Inline CST 架构落地记录（已完成）
 
-基线: `ecadd1b docs: rewrite AGENTS.md` (基于 `bf94bf6`)
-目标: 块级结构树 + 块内 source-backed lossless editable inline CST + 块内统一源码坐标 + TextEdit 编辑系统。旧模型彻底删除，无双轨。
+状态：已于 2026-07-13 完成。本文保留为历史实施与验证记录，不代表仍在进行迁移。
 
-## 不可变不变量（任务完成的定义）
+实施基线：`ecadd1b docs: rewrite AGENTS.md`（基于 `bf94bf6`）
+
+已落地架构：块级结构树 + 块内 source-backed lossless editable inline CST + 块内统一源码坐标 + TextEdit 编辑系统。旧模型和兼容路径已经删除；这些要求现由 `AGENTS.md` 作为长期代码规范维护。
+
+## 长期架构不变量
 1. 每个可编辑内容节点拥有唯一 inline source (InlineDocument.source)
 2. 所有块内位置只使用该 source 的统一 offset (container_id + source_offset + affinity)
 3. CST 逐字符覆盖 source (flatten(parse(s))==s 逐字符相等)
@@ -13,7 +16,7 @@
 7. 文档只有一套 Selection (TextSelection)
 8. 编辑器只有一套事实来源
 9. 不存在新旧模型双轨
-10. 任务结束时旧模型和兼容层已彻底删除
+10. 旧模型和兼容层不得重新引入
 
 ## 已完成任务
 1. 设计并落地新核心类型模块 — inline_cst.ixx / inline_document.ixx / text_edit.ixx；改 ast.ixx
@@ -35,8 +38,7 @@
 - WinUI 应用层: `setup.ps1` 恢复依赖后，以 MSBuild Debug x64 构建验证
 - 提交纪律: 小批量分步 commit，不一次性 dump
 
-## 进度日志
-(每完成一个任务在此追加一行: 日期 - 任务# - commit hash - 状态)
+## 完成记录
 
 - 2026-07-12 基线提交 ecadd1b (AGENTS.md 新纲领)
 - 2026-07-12 测试框架迁移到仓库 fork 的 Boost.UT C++23 module (`third_party/ut`):
