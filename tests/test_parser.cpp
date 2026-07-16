@@ -55,6 +55,34 @@ void expect_lossless(const InlineDocument& document) {
 
 suite parser_tests = [] {
 
+"top_level_parse_progress_is_monotonic_and_reaches_source_end"_test = [] {
+    const std::string source =
+        "# heading\n\n"
+        "> quote\n"
+        "> - nested\n\n"
+        "paragraph\n";
+    std::vector<std::pair<std::size_t, std::size_t>> reports;
+    const auto parsed = parse_text(
+        1,
+        source,
+        default_dialect(),
+        [&](std::size_t consumed, std::size_t total) {
+            reports.emplace_back(consumed, total);
+        });
+
+    expect(fatal(!reports.empty()));
+    const auto expectedTotal = utf8_to_cps(source).size();
+    std::size_t previous = 0;
+    for (auto [consumed, total] : reports) {
+        expect(total == expectedTotal);
+        expect(consumed >= previous);
+        expect(consumed <= total);
+        previous = consumed;
+    }
+    expect(previous == expectedTotal);
+    expect(serialize_markdown(parsed.document) == source);
+};
+
 "block_kind_payload_copies_with_value_semantics"_test = [] {
     static_assert(sizeof(BlockNodeSpecial) <= 7 * sizeof(void*));
     static_assert(sizeof(InlineToken) == sizeof(std::uint64_t));

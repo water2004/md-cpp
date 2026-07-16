@@ -95,8 +95,13 @@ inline EditorDocumentChange summarize_document_change(
 class Editor {
 public:
     Editor() { rebuild_document_full_({}); }
-    explicit Editor(std::string text, MarkdownDialect dialect = default_dialect())
-        : dialect_(std::move(dialect)) { rebuild_document_full_(std::move(text)); }
+    explicit Editor(
+        std::string text,
+        MarkdownDialect dialect = default_dialect(),
+        ParseProgressCallback progress = {})
+        : dialect_(std::move(dialect)) {
+        rebuild_document_full_(std::move(text), std::nullopt, std::move(progress));
+    }
 
     const EditorDocument& document() const { return document_; }
     const DocumentSymbolIndex& symbols() const { return symbols_; }
@@ -552,9 +557,10 @@ private:
 
     void rebuild_document_full_(
         std::string markdown,
-        std::optional<std::uint64_t> requested_revision = std::nullopt) {
+        std::optional<std::uint64_t> requested_revision = std::nullopt,
+        ParseProgressCallback progress = {}) {
         const auto revision = requested_revision.value_or(document_.revision);
-        auto parsed = parse_text(revision, std::move(markdown), dialect_);
+        auto parsed = parse_text(revision, std::move(markdown), dialect_, std::move(progress));
         document_ = std::move(parsed.document);
         symbols_ = std::move(parsed.symbols);
         symbol_contributions_ = std::move(parsed.symbol_contributions);

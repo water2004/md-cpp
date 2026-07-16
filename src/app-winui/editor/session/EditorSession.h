@@ -31,6 +31,8 @@ namespace winrt::ElMd
 
     struct EditorSession
     {
+        using LoadProgress = std::function<void(std::size_t consumed, std::size_t total)>;
+
         EditorSession();
         ~EditorSession();
         EditorSession(EditorSession const&) = delete;
@@ -38,7 +40,10 @@ namespace winrt::ElMd
         EditorSession(EditorSession&&) noexcept;
         EditorSession& operator=(EditorSession&&) noexcept;
 
-        void Open(winrt::Windows::Storage::StorageFile const& file, winrt::hstring const& text);
+        void Open(
+            winrt::Windows::Storage::StorageFile const& file,
+            winrt::hstring const& text,
+            LoadProgress progress = {});
         void SaveAs(winrt::Windows::Storage::StorageFile const& file);
         void SetText(winrt::hstring const& text);
         void SetTheme(elmd::ThemeProfile const& theme);
@@ -76,7 +81,7 @@ namespace winrt::ElMd
         detail::EditorRenderFrame RenderFrame();
 
     private:
-        void RebuildCore();
+        void RebuildCore(LoadProgress progress = {});
         void RebuildRenderModel(elmd::EditorDocumentChange const* change = nullptr);
         bool ShouldVirtualizeRenderModel() const;
         void MaterializeRenderBlocks(std::size_t begin, std::size_t end);

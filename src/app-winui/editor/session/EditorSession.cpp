@@ -118,12 +118,15 @@ namespace winrt::ElMd
     EditorSession::EditorSession(EditorSession&&) noexcept = default;
     EditorSession& EditorSession::operator=(EditorSession&&) noexcept = default;
 
-    void EditorSession::Open(winrt::Windows::Storage::StorageFile const& file, winrt::hstring const& text)
+    void EditorSession::Open(
+        winrt::Windows::Storage::StorageFile const& file,
+        winrt::hstring const& text,
+        LoadProgress progress)
     {
         file_ = file;
         text_ = text;
         ++revision_;
-        RebuildCore();
+        RebuildCore(std::move(progress));
     }
 
     void EditorSession::SaveAs(winrt::Windows::Storage::StorageFile const& file)
@@ -145,11 +148,14 @@ namespace winrt::ElMd
         RebuildRenderModel();
     }
 
-    void EditorSession::RebuildCore()
+    void EditorSession::RebuildCore(LoadProgress progress)
     {
         core_->baseDirectory = file_ ? std::filesystem::path(file_.Path().c_str()).parent_path().wstring() : std::wstring{};
         core_->sourceEditor.reset();
-        core_->editor = elmd::Editor(winrt::to_string(text_));
+        core_->editor = elmd::Editor(
+            winrt::to_string(text_),
+            elmd::default_dialect(),
+            std::move(progress));
         text_ = {};
         RefreshCharacterCount();
         RebuildRenderModel();

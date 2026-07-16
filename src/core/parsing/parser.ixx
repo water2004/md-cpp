@@ -41,14 +41,21 @@ import elmd.core.text_edit;
 
 export namespace elmd {
 
+using ParseProgressCallback = std::function<void(std::size_t consumed, std::size_t total)>;
+
 struct ParseInput {
     std::uint64_t revision = 1;
     std::string text;                       // UTF-8 source
     MarkdownDialect dialect = default_dialect();
+    ParseProgressCallback progress;
 
     ParseInput() = default;
-    ParseInput(std::uint64_t rev, std::string t, MarkdownDialect d = default_dialect())
-        : revision(rev), text(std::move(t)), dialect(d) {}
+    ParseInput(
+        std::uint64_t rev,
+        std::string t,
+        MarkdownDialect d = default_dialect(),
+        ParseProgressCallback callback = {})
+        : revision(rev), text(std::move(t)), dialect(d), progress(std::move(callback)) {}
 };
 
 struct ParseOutput {
@@ -363,6 +370,9 @@ public:
     void advance_n(std::size_t n) {
         pos = (pos + n > cps.size()) ? cps.size() : pos + n;
     }
+    void report_progress() const {
+        if (input->progress) input->progress((std::min)(pos, cps.size()), cps.size());
+    }
     char32_t ch_at(std::size_t i) const { return (i < cps.size()) ? cps[i] : 0; }
     void skip_ws_inline() { while (peek1() == ' ' || peek1() == '\t') advance(); }
     bool peek_line_start() const { return pos == 0 || cps[pos - 1] == '\n'; }
@@ -493,6 +503,7 @@ public:
         while (!eof()) {
             if (is_blank_line()) {
                 parse_blank_lines(blocks, preceding_source_end);
+                report_progress();
                 continue;
             }
             if (stop) {
@@ -519,6 +530,7 @@ public:
             } else {
                 advance();
             }
+            report_progress();
         }
         return blocks;
     }
@@ -1778,8 +1790,12 @@ inline ParseOutput parse(const ParseInput& input) {
     return out;
 }
 
-inline ParseOutput parse_text(std::uint64_t rev, const std::string& text, MarkdownDialect d = default_dialect()) {
-    return parse(ParseInput(rev, text, d));
+inline ParseOutput parse_text(
+    std::uint64_t rev,
+    const std::string& text,
+    MarkdownDialect d = default_dialect(),
+    ParseProgressCallback progress = {}) {
+    return parse(ParseInput(rev, text, d, std::move(progress)));
 }
 
 inline ParsedBlockFragment parse_block_fragment(
