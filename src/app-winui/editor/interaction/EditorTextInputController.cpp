@@ -209,7 +209,9 @@ namespace winrt::ElMd
             && localChange->utf16Start <= knownText_.size()
             && localChange->utf16OldLength <= knownText_.size() - localChange->utf16Start)
         {
-            auto previous = knownText_;
+            auto removed = knownText_.substr(
+                localChange->utf16Start,
+                localChange->utf16OldLength);
             knownText_.replace(
                 localChange->utf16Start,
                 localChange->utf16OldLength,
@@ -228,7 +230,10 @@ namespace winrt::ElMd
             }
             catch (winrt::hresult_error const&)
             {
-                knownText_ = std::move(previous);
+                knownText_.replace(
+                    localChange->utf16Start,
+                    localChange->replacement.size(),
+                    removed);
             }
             notifying_ = false;
             return;
@@ -374,16 +379,14 @@ namespace winrt::ElMd
 
             const auto storeStart = (std::min)(start, knownText_.size());
             const auto storeEnd = (std::max)(storeStart, (std::min)(end, knownText_.size()));
-            auto expectedText = knownText_;
             auto incomingText = std::wstring_view{incomingHstring.c_str(), incomingHstring.size()};
-            expectedText.replace(storeStart, storeEnd - storeStart, incomingText);
-            auto previousKnownText = knownText_;
+            auto removedText = knownText_.substr(storeStart, storeEnd - storeStart);
             auto previousKnownRevision = knownRevision_;
             // Once this callback succeeds, CoreText will know the requested
             // replacement. Semantic marker conversions can produce a
             // different editor projection; QueueSynchronization reports that
             // extra delta only after this callback has returned.
-            knownText_ = std::move(expectedText);
+            knownText_.replace(storeStart, storeEnd - storeStart, incomingText);
 
             session_->SetSelection(
                 session_->PositionFromAcp((std::min)(start, length)),
@@ -404,7 +407,7 @@ namespace winrt::ElMd
             updating_ = false;
             if (!executed)
             {
-                knownText_ = std::move(previousKnownText);
+                knownText_.replace(storeStart, incomingText.size(), removedText);
                 knownRevision_ = previousKnownRevision;
                 args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Failed);
                 QueueSynchronization();
