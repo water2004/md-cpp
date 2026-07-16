@@ -268,6 +268,9 @@ struct RenderModel {
     Outline outline;
     std::vector<RenderDiagnostic> diagnostics;
     std::vector<NodeId> editable_order;
+    // Stable document-order rank, built with the render projection instead of
+    // reconstructed by every viewport draw.
+    std::unordered_map<std::uint64_t, std::size_t> editable_index;
 };
 
 } // namespace elmd

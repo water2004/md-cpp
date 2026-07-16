@@ -1085,6 +1085,42 @@ suite render_layout_tests = [] {
     expect(fatal(bool(title_source)));
 };
 
+"render_model_presentation_keys_are_stable_and_content_sensitive"_test = [] {
+    auto first = build_model("alpha\n\nbeta\n");
+    auto repeated = build_model("alpha\n\nbeta\n");
+    auto changed = build_model("alpha\n\ngamma\n");
+
+    expect(fatal(bool(first.blocks.size() == 2u)));
+    expect(fatal(bool(repeated.blocks.size() == first.blocks.size())));
+    expect(fatal(bool(changed.blocks.size() == first.blocks.size())));
+    if (first.blocks.size() != 2 || repeated.blocks.size() != 2 || changed.blocks.size() != 2) return;
+
+    expect(fatal(bool(first.blocks[0].presentation_key != 0u)));
+    expect(fatal(bool(first.blocks[0].presentation_key == repeated.blocks[0].presentation_key)));
+    expect(fatal(bool(first.blocks[1].presentation_key == repeated.blocks[1].presentation_key)));
+    expect(fatal(bool(first.blocks[0].presentation_key == changed.blocks[0].presentation_key)));
+    expect(fatal(bool(first.blocks[1].presentation_key != changed.blocks[1].presentation_key)));
+};
+
+"render_model_presentation_keys_cover_nested_content"_test = [] {
+    auto first = build_model("> outer\n> - nested\n");
+    auto changed = build_model("> outer\n> - changed\n");
+    expect(fatal(bool(first.blocks.size() == 1u)));
+    expect(fatal(bool(changed.blocks.size() == 1u)));
+    if (first.blocks.empty() || changed.blocks.empty()) return;
+    expect(fatal(bool(first.blocks.front().presentation_key != changed.blocks.front().presentation_key)));
+};
+
+"render_model_caches_editable_document_order"_test = [] {
+    auto model = build_model("# title\n\nbody\n");
+    expect(fatal(bool(model.editable_index.size() == model.editable_order.size())));
+    for (std::size_t index = 0; index < model.editable_order.size(); ++index) {
+        auto found = model.editable_index.find(model.editable_order[index].v);
+        expect(fatal(bool(found != model.editable_index.end())));
+        if (found != model.editable_index.end()) expect(fatal(bool(found->second == index)));
+    }
+};
+
 "generated_container_prefixes_anchor_carets_to_the_source_boundary"_test = [] {
     StubMeasurer measurer(8.0f);
     for (auto const& markdown : std::vector<std::string>{"> quoted\n", "> - nested\n"}) {

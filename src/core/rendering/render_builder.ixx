@@ -32,6 +32,151 @@ inline RenderDiagnostic convert_diagnostic(const Diagnostic& d) {
     return r;
 }
 
+namespace render_key_detail {
+
+struct Hasher {
+    std::uint64_t value = 1469598103934665603ull;
+
+    void byte(std::uint8_t input) {
+        value ^= input;
+        value *= 1099511628211ull;
+    }
+
+    template <typename T>
+        requires std::is_integral_v<T> || std::is_enum_v<T>
+    void scalar(T input) {
+        if constexpr (std::is_enum_v<T>) {
+            scalar(static_cast<std::underlying_type_t<T>>(input));
+        } else if constexpr (std::is_same_v<std::remove_cv_t<T>, bool>) {
+            byte(input ? 1u : 0u);
+        } else {
+            using Unsigned = std::make_unsigned_t<T>;
+            auto bits = static_cast<Unsigned>(input);
+            for (std::size_t index = 0; index < sizeof(bits); ++index) {
+                byte(static_cast<std::uint8_t>(bits & 0xffu));
+                bits >>= 8;
+            }
+        }
+    }
+
+    void scalar(float input) { scalar(std::bit_cast<std::uint32_t>(input)); }
+    void scalar(NodeId input) { scalar(input.v); }
+    void scalar(SourceRange input) { scalar(input.start); scalar(input.end); }
+    void scalar(TextSpan input) { scalar(input.container_id); scalar(input.source_range); }
+
+    template <typename Character>
+    void text(std::basic_string_view<Character> input) {
+        scalar(input.size());
+        for (auto character : input) scalar(character);
+    }
+
+    template <typename Character>
+    void text(std::basic_string<Character> const& input) { text(std::basic_string_view<Character>{input}); }
+
+    template <typename T, typename Append>
+    void optional(std::optional<T> const& input, Append append) {
+        scalar(input.has_value());
+        if (input) append(*input);
+    }
+};
+
+inline void append(Hasher& hash, InlineStyle const& style) {
+    hash.scalar(style.bold); hash.scalar(style.italic); hash.scalar(style.underline);
+    hash.scalar(style.strikethrough); hash.scalar(style.code); hash.scalar(style.link);
+    hash.optional(style.heading_level, [&](auto value) { hash.scalar(value); });
+}
+
+inline void append(Hasher& hash, MarkerStyle const& style) {
+    hash.scalar(style.dimmed);
+    hash.optional(style.color, [&](auto value) {
+        hash.scalar(value.r); hash.scalar(value.g); hash.scalar(value.b); hash.scalar(value.a);
+    });
+}
+
+inline void append(Hasher& hash, BorderSide const& side) {
+    hash.scalar(side.width);
+    hash.optional(side.color, [&](auto value) {
+        hash.scalar(value.r); hash.scalar(value.g); hash.scalar(value.b); hash.scalar(value.a);
+    });
+}
+
+inline void append(Hasher& hash, BlockStyle const& style) {
+    hash.scalar(style.margin_top); hash.scalar(style.margin_bottom);
+    hash.scalar(style.margin_left); hash.scalar(style.margin_right);
+    hash.scalar(style.padding_top); hash.scalar(style.padding_bottom);
+    hash.scalar(style.padding_left); hash.scalar(style.padding_right);
+    hash.optional(style.background, [&](auto value) {
+        hash.scalar(value.r); hash.scalar(value.g); hash.scalar(value.b); hash.scalar(value.a);
+    });
+    hash.optional(style.border_left, [&](auto const& value) { append(hash, value); });
+    hash.optional(style.border_right, [&](auto const& value) { append(hash, value); });
+    hash.optional(style.border_top, [&](auto const& value) { append(hash, value); });
+    hash.optional(style.border_bottom, [&](auto const& value) { append(hash, value); });
+}
+
+inline void append(Hasher& hash, InlineRenderItem const& item) {
+    hash.scalar(item.kind); hash.scalar(item.source_span);
+    hash.text(item.source_text); hash.text(item.text); hash.text(item.display_text);
+    hash.optional(item.id, [&](auto value) { hash.scalar(value); });
+    hash.optional(item.marker_owner, [&](auto value) { hash.scalar(value); });
+    append(hash, item.style);
+    hash.scalar(item.display); hash.scalar(item.math_delim);
+    hash.text(item.href); hash.text(item.src); hash.text(item.alt); hash.text(item.footnote_label);
+    hash.optional(item.title, [&](auto const& value) { hash.text(value); });
+    hash.optional(item.image_width, [&](auto value) { hash.scalar(value); });
+    hash.optional(item.image_height, [&](auto value) { hash.scalar(value); });
+    hash.scalar(item.block_image); append(hash, item.marker_style);
+    hash.scalar(item.source_syntax); hash.scalar(item.visibility); hash.scalar(item.marker_role);
+    hash.scalar(item.task_checked);
+    hash.optional(item.generated_boundary_affinity, [&](auto value) { hash.scalar(value); });
+    hash.scalar(item.children.size());
+    for (auto const& child : item.children) append(hash, child);
+}
+
+inline void append(Hasher& hash, RenderBlock const& block) {
+    hash.scalar(block.kind); hash.scalar(block.id); hash.scalar(block.source_span);
+    hash.scalar(block.content_span); append(hash, block.block_style);
+    hash.scalar(block.source_mode); hash.scalar(block.source_code);
+    hash.text(block.raw_source);
+    hash.scalar(block.content_to_source.size());
+    for (auto offset : block.content_to_source) hash.scalar(offset);
+    hash.optional(block.language, [&](auto const& value) { hash.text(value); });
+    hash.text(block.code_text); hash.scalar(block.line_count); hash.scalar(block.code_indented);
+    hash.text(block.tex); hash.scalar(block.math_delim);
+    hash.scalar(block.inline_items.size());
+    for (auto const& item : block.inline_items) append(hash, item);
+    hash.scalar(block.table_cells.size());
+    for (auto const& cell : block.table_cells) {
+        hash.scalar(cell.size());
+        for (auto const& item : cell) append(hash, item);
+    }
+    hash.scalar(block.table_cell_spans.size());
+    for (auto const& span : block.table_cell_spans) hash.scalar(span);
+    hash.scalar(block.table_aligns.size());
+    for (auto alignment : block.table_aligns) hash.scalar(alignment);
+    hash.scalar(block.column_count); hash.scalar(block.row_count); hash.scalar(block.table_header_row);
+    hash.scalar(block.flow_local_indent_columns); hash.scalar(block.flow_anchor_owner_id);
+    hash.text(block.callout_kind); hash.text(block.footnote_label);
+    hash.text(block.raw); hash.text(block.reason_text); hash.text(block.extension_name);
+    hash.text(block.src); hash.text(block.alt);
+    hash.optional(block.title, [&](auto const& value) { hash.text(value); });
+    hash.optional(block.link, [&](auto const& value) { hash.text(value); });
+    hash.optional(block.image_width, [&](auto value) { hash.scalar(value); });
+    hash.optional(block.image_height, [&](auto value) { hash.scalar(value); });
+    hash.scalar(block.child_blocks.size());
+    for (auto const& child : block.child_blocks) append(hash, child);
+}
+
+inline std::uint64_t assign(RenderBlock& block) {
+    for (auto& child : block.child_blocks) assign(child);
+    Hasher hash;
+    append(hash, block);
+    block.presentation_key = hash.value;
+    return hash.value;
+}
+
+} // namespace render_key_detail
+
 inline std::size_t block_local_length(const BlockNode& block) {
     if (const auto* document = editable_inline_document(block)) return document->source.size();
     switch (block.kind) {
@@ -841,13 +986,17 @@ inline RenderModel build_render_model(
     blocks.reserve(doc.root.children.size());
     for (const auto& block : doc.root.children) {
         blocks.push_back(bd.build_block(block));
+        render_key_detail::assign(blocks.back());
     }
     std::vector<RenderDiagnostic> diags;
     for (const auto& d : doc.diagnostics) diags.push_back(convert_diagnostic(d));
     RenderModel m; m.revision = doc.revision; m.blocks = std::move(blocks);
     m.outline = outline; m.diagnostics = std::move(diags);
     auto collect_editable = [&](auto& self, BlockNode const& block) -> void {
-        if (Builder::owns_text_position(block)) m.editable_order.push_back(block.id);
+        if (Builder::owns_text_position(block)) {
+            m.editable_index.emplace(block.id.v, m.editable_order.size());
+            m.editable_order.push_back(block.id);
+        }
         for (auto const& child : block.children) self(self, child);
     };
     for (auto const& block : doc.root.children) collect_editable(collect_editable, block);

@@ -120,6 +120,7 @@ inline RenderModel build_source_render_model(SourceEditor const& editor) {
                 + (block.presentation_key >> 2);
         }
         block.language = line.code_language;
+        model.editable_index.emplace(line.id.v, model.editable_order.size());
         model.editable_order.push_back(line.id);
         model.blocks.push_back(std::move(block));
     }
