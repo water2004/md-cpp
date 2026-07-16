@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "elmd.moss-linen",
+  "name": "Moss & Linen",
+  "variant": "light",
+  "typography": {
+    "body": { "family": "Segoe UI Variable Text", "size": 17, "lineHeight": 28, "weight": 400, "italic": false },
+    "heading1": { "family": "Segoe UI Variable Display", "size": 36, "lineHeight": 44, "weight": 650, "italic": false },
+    "heading2": { "family": "Segoe UI Variable Display", "size": 29, "lineHeight": 36, "weight": 650, "italic": false },
+    "heading3": { "family": "Segoe UI Variable Display", "size": 23, "lineHeight": 29, "weight": 600, "italic": false },
+    "code": { "family": "Cascadia Code", "size": 14, "lineHeight": 23, "weight": 400, "italic": false },
+    "ui": { "family": "Segoe UI Variable Text", "size": 14, "lineHeight": 20, "weight": 400, "italic": false },
+    "uiMonospace": { "family": "Cascadia Mono", "size": 14, "lineHeight": 20, "weight": 400, "italic": false }
+  },
+  "colors": {
+    "background": "#F3F6EE", "foreground": "#263128", "mutedForeground": "#667367", "accent": "#2F6B4F",
+    "heading": "#1D3928", "strong": "#1D3928", "emphasis": "#875A2C",
+    "inlineCodeBackground": "#E4EAE0", "inlineCodeForeground": "#6F4730",
+    "codeBlockBackground": "#E7ECE3", "codeBlockForeground": "#29362D",
+    "blockquoteBorder": "#688B70", "blockquoteBackground": "#EAF0E6", "nestedQuoteBackground": "#E2E9DE",
+    "link": "#276348", "imageBorder": "#A9B7A7", "selectionBackground": "#6FA78155", "selectionForeground": "#17231A",
+    "caret": "#1B2B20", "marker": "#6F7B70", "mathBackground": "#E7ECE3", "mathForeground": "#263128",
+    "calloutNoteBackground": "#E2EBEF", "calloutNoteBorder": "#4D7482",
+    "calloutWarningBackground": "#F4EBCF", "calloutWarningBorder": "#A67927",
+    "calloutTipBackground": "#DDEDE0", "calloutTipBorder": "#3F7D55",
+    "calloutImportantBackground": "#EAE3EE", "calloutImportantBorder": "#765B86",
+    "calloutCautionBackground": "#F1E1DA", "calloutCautionBorder": "#A5523E",
+    "frontmatterBackground": "#E4EAE0", "frontmatterForeground": "#667367",
+    "tableBorder": "#A9B7A7", "tableHeaderBackground": "#DEE6DA", "lineNumber": "#728073",
+    "strikethrough": "#728073", "unsupportedBackground": "#F2E8C9", "unsupportedForeground": "#76551D",
+    "shellBackground": "#F0F4EA", "shellLayerBackground": "#E7ECE2", "shellBorder": "#C7D1C3",
+    "shellForeground": "#243027", "shellMutedForeground": "#617063", "shellAccent": "#2F6B4F",
+    "syntax": ["#29362D", "#7A466E", "#2C6D70", "#756128", "#94513A", "#35784D", "#5C7B45", "#4D5A50", "#6E4F7B", "#315E73", "#2C7280"]
+  },
+  "layout": {
+    "documentHorizontalPadding": 52, "documentVerticalPadding": 42, "blockGap": 5,
+    "paragraphMarginBottom": 8, "listMarginBottom": 8, "listPaddingLeft": 20, "thematicBreakMargin": 9,
+    "headingMarginTop": [22, 18, 14, 11, 8, 4], "headingMarginBottom": 4,
+    "codeMargin": 8, "codePaddingVertical": 9, "codePaddingHorizontal": 13,
+    "quoteMargin": 8, "quotePaddingVertical": 7, "quotePaddingLeft": 17, "quotePaddingRight": 9, "quoteBorderWidth": 3,
+    "mathMargin": 11, "mathPaddingVertical": 8, "mathPaddingHorizontal": 13,
+    "tableMargin": 8, "imageMargin": 12, "tocMargin": 10, "tocPaddingLeft": 8, "tocBorderWidth": 2,
+    "calloutMargin": 8, "calloutPaddingVertical": 8, "calloutPaddingLeft": 15, "calloutBorderWidth": 4,
+    "frontmatterMarginBottom": 10, "frontmatterPaddingVertical": 8, "frontmatterPaddingHorizontal": 13,
+    "footnoteMargin": 8, "footnotePaddingVertical": 8, "footnotePaddingHorizontal": 13,
+    "unsupportedMargin": 8, "unsupportedPaddingVertical": 4, "unsupportedPaddingLeft": 12, "extensionMargin": 4,
+    "titleBarHeight": 40, "navigationOpenWidth": 272, "scrollbarWidth": 15,
+    "statusBarMinHeight": 31, "footnotePreviewWidth": 350, "footnotePreviewSpacing": 8
+  }
+}
