@@ -98,7 +98,7 @@ inline void append(Hasher& hash, InlineDocument const& document) {
 
 inline void append(Hasher& hash, BlockNode const& block) {
     hash.scalar(block.id); hash.scalar(block.kind); append(hash, block.inline_content);
-    hash.text(block.block_source.source);
+    hash.text(block.block_source.source());
     hash.scalar(block.level); hash.text(block.slug); hash.text(block.marker); hash.scalar(block.checked);
     hash.scalar(block.list_ordered); hash.scalar(block.list_start); hash.scalar(block.list_delimiter);
     hash.scalar(block.code_indented); hash.scalar(block.math_delim);
@@ -132,7 +132,7 @@ inline std::size_t block_local_length(const BlockNode& block) {
     switch (block.kind) {
         case BlockKind::CodeBlock:
         case BlockKind::MathBlock:
-            return block.block_source.source.size();
+            return block.block_source.source().size();
         case BlockKind::Frontmatter:
         case BlockKind::UnsupportedMarkup:
         case BlockKind::LinkDefinition:
@@ -847,9 +847,9 @@ struct Builder {
             }
             case BK::CodeBlock: {
                 auto rb = base(BlockStyle::code(theme.layout));
-                rb.raw_source = b.block_source.source;
-                rb.content_to_source = b.block_source.tree.content_to_source;
-                rb.language = b.block_source.tree.language;
+                rb.raw_source = b.block_source.source();
+                rb.content_to_source = b.block_source.tree().content_to_source;
+                rb.language = b.block_source.tree().language;
                 rb.code_text = block_source_content(b.block_source);
                 rb.code_indented = b.code_indented;
                 std::size_t n = 1; for (char32_t c : rb.code_text) if (c == '\n') ++n;
@@ -861,8 +861,8 @@ struct Builder {
             }
             case BK::MathBlock: {
                 auto rb = base(BlockStyle::math(theme.layout));
-                rb.raw_source = b.block_source.source;
-                rb.content_to_source = b.block_source.tree.content_to_source;
+                rb.raw_source = b.block_source.source();
+                rb.content_to_source = b.block_source.tree().content_to_source;
                 rb.tex = block_source_content(b.block_source);
                 rb.math_delim = b.math_delim;
                 if (!rb.content_to_source.empty()) {

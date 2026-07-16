@@ -42,10 +42,10 @@ inline bool contains_raw_block(const BlockVec& blocks) {
 inline bool same_raw_projection(const BlockNode& current, const BlockVec& parsed) {
     if (parsed.size() != 1) return false;
     const auto& candidate = parsed.front();
-    if (candidate.kind != current.kind || candidate.block_source.source != current.block_source.source) {
+    if (candidate.kind != current.kind || candidate.block_source.source() != current.block_source.source()) {
         return false;
     }
-    if (candidate.block_source.tree.kind != current.block_source.tree.kind) return false;
+    if (candidate.block_source.tree().kind != current.block_source.tree().kind) return false;
     if (candidate.kind == BlockKind::MathBlock && candidate.math_delim != current.math_delim) return false;
     return true;
 }
@@ -59,11 +59,11 @@ inline bool edit_touches_raw_structure(
     const BlockNode& current,
     const AppliedSourceEdit& edit) {
     if (edit.forward.container_id != current.id) return false;
-    auto previous_source = current.block_source.source;
+    auto previous_source = current.block_source.source();
     apply_text_edit(previous_source, edit.inverse);
     const auto previous = parse_block_source(
         previous_source,
-        current.block_source.tree.kind);
+        current.block_source.tree().kind);
     return std::ranges::any_of(previous.tokens, [&](const auto& token) {
         const auto structural = token.kind == BlockSourceTokenKind::OpeningMarker
             || token.kind == BlockSourceTokenKind::Indentation;
@@ -168,7 +168,7 @@ inline std::optional<RecordedBlockEdit> reparse_edited_direct_block(
     if (!path || path->empty()) return std::nullopt;
 
     const auto source = is_raw
-        ? current->block_source.source
+        ? current->block_source.source()
         : current->inline_content.source;
     auto parsed = parse_block_fragment(source, document.dialect);
     if (is_raw && block_reparse_detail::same_raw_projection(*current, parsed.blocks)) {

@@ -72,7 +72,7 @@ inline bool atomic_block(BlockKind kind) {
 inline std::optional<std::size_t> local_position_length(const BlockNode& block) {
     if (const auto* document = editable_inline_document(block)) return document->source.size();
     if (block.kind == BlockKind::CodeBlock || block.kind == BlockKind::MathBlock) {
-        return block.block_source.source.size();
+        return block.block_source.source().size();
     }
     if (block.kind == BlockKind::Frontmatter || block.kind == BlockKind::LinkDefinition
         || block.kind == BlockKind::UnsupportedMarkup) return utf8_to_cps(block.raw).size();
@@ -260,7 +260,7 @@ inline std::optional<std::size_t> editable_length(const EditorDocument& document
     if (const auto* inline_document = find_inline_owner(document, id)) return inline_document->source.size();
     if (const auto* block = find_document_block(document, id)) {
         if (block->kind == BlockKind::CodeBlock || block->kind == BlockKind::MathBlock) {
-            return block->block_source.source.size();
+            return block->block_source.source().size();
         }
         if (atomic_block(block->kind)) return 1;
     }

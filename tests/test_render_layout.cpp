@@ -431,7 +431,7 @@ suite render_layout_tests = [] {
 
     auto exited = document_enter(parsed.document, TextSelection::caret({
         code_id,
-        code->block_source.source.size(),
+        code->block_source.source().size(),
         TextAffinity::Downstream}));
     expect(fatal(bool(exited.has_value())));
     if (!exited) return;

@@ -50,7 +50,7 @@ inline std::u32string* editable_raw_block_source(BlockNode& block) {
     switch (block.kind) {
         case BlockKind::CodeBlock:
         case BlockKind::MathBlock:
-            return &block.block_source.source;
+            return &block.block_source.source();
         default:
             return nullptr;
     }
@@ -60,7 +60,7 @@ inline const std::u32string* editable_raw_block_source(const BlockNode& block) {
     switch (block.kind) {
         case BlockKind::CodeBlock:
         case BlockKind::MathBlock:
-            return &block.block_source.source;
+            return &block.block_source.source();
         default:
             return nullptr;
     }

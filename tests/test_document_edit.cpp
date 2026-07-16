@@ -603,19 +603,19 @@ suite document_edit_tests = [] {
     if (!entered) return;
     expect(fatal(bool(entered->after.root.children.front().kind == BlockKind::CodeBlock)));
     auto const& code = entered->after.root.children.front();
-    expect(fatal(bool(code.block_source.source == U"```cpp\n```")));
-    expect(fatal(bool(code.block_source.tree.language == std::optional<std::string>{"cpp"})));
-    expect(fatal(bool(code.block_source.tree.complete_opening)));
-    expect(fatal(bool(code.block_source.tree.complete_closing)));
+    expect(fatal(bool(code.block_source.source() == U"```cpp\n```")));
+    expect(fatal(bool(code.block_source.tree().language == std::optional<std::string>{"cpp"})));
+    expect(fatal(bool(code.block_source.tree().complete_opening)));
+    expect(fatal(bool(code.block_source.tree().complete_closing)));
     expect(fatal(bool(block_source_tokens_partition(code.block_source))));
-    expect(fatal(bool(flatten_block_source_tokens(code.block_source) == code.block_source.source)));
+    expect(fatal(bool(flatten_block_source_tokens(code.block_source) == code.block_source.source())));
     expect(fatal(bool(entered->selection_after.active.container_id == entered->after.root.children.front().id)));
     expect(fatal(bool(entered->selection_after.active.source_offset == 7u)));
 
     auto second_enter = test_edit::document_enter(entered->after, entered->selection_after);
     expect(fatal(bool(second_enter.has_value())));
     if (!second_enter) return;
-    expect(fatal(bool(second_enter->after.root.children.front().block_source.source == U"```cpp\n\n```")));
+    expect(fatal(bool(second_enter->after.root.children.front().block_source.source() == U"```cpp\n\n```")));
     expect(fatal(bool(second_enter->selection_after.active.source_offset == 8u)));
     expect(fatal(bool(serialize_markdown(second_enter->after) == "```cpp\n\n```")));
     expect_document_valid(second_enter->after);
@@ -639,20 +639,20 @@ suite document_edit_tests = [] {
     for (const auto& test_case : cases) {
         auto original = make_block_source(test_case.source, test_case.kind);
         expect(fatal(bool(block_source_tokens_partition(original))));
-        expect(fatal(bool(flatten_block_source_tokens(original) == original.source)));
+        expect(fatal(bool(flatten_block_source_tokens(original) == original.source())));
         for (std::size_t offset = 0; offset <= test_case.source.size(); ++offset) {
             auto inserted = original;
-            inserted.source.insert(offset, 1, U'X');
+            inserted.source().insert(offset, 1, U'X');
             reparse_block_source(inserted);
             expect(fatal(bool(block_source_tokens_partition(inserted))));
-            expect(fatal(bool(flatten_block_source_tokens(inserted) == inserted.source)));
+            expect(fatal(bool(flatten_block_source_tokens(inserted) == inserted.source())));
         }
         for (std::size_t offset = 0; offset < test_case.source.size(); ++offset) {
             auto deleted = original;
-            deleted.source.erase(offset, 1);
+            deleted.source().erase(offset, 1);
             reparse_block_source(deleted);
             expect(fatal(bool(block_source_tokens_partition(deleted))));
-            expect(fatal(bool(flatten_block_source_tokens(deleted) == deleted.source)));
+            expect(fatal(bool(flatten_block_source_tokens(deleted) == deleted.source())));
         }
     }
 };
@@ -920,10 +920,10 @@ suite document_edit_tests = [] {
     if (!transaction) return;
     expect(fatal(bool(transaction->after.root.children.size() == 3u)));
     expect(fatal(bool(transaction->after.root.children[0].kind == BlockKind::CodeBlock)));
-    expect(fatal(bool(transaction->after.root.children[0].block_source.source == U"    one")));
+    expect(fatal(bool(transaction->after.root.children[0].block_source.source() == U"    one")));
     expect(fatal(bool(transaction->after.root.children[1].kind == BlockKind::Paragraph)));
     expect(fatal(bool(transaction->after.root.children[2].kind == BlockKind::CodeBlock)));
-    expect(fatal(bool(transaction->after.root.children[2].block_source.source == U"    two")));
+    expect(fatal(bool(transaction->after.root.children[2].block_source.source() == U"    two")));
     expect(fatal(bool(transaction->selection_after.active.container_id == transaction->after.root.children[1].id)));
     expect(fatal(bool(serialize_markdown(transaction->after).find("    one\n    \n") == std::string::npos)));
 };
@@ -1362,7 +1362,7 @@ suite document_edit_tests = [] {
     if (code_document.root.children.size() == 3u) {
         auto const blank_id = code_document.root.children[1].id;
         auto const code_id = code_document.root.children[0].id;
-        auto const code_length = code_document.root.children[0].block_source.source.size();
+        auto const code_length = code_document.root.children[0].block_source.source().size();
         auto transaction = test_edit::document_delete_backward(code_document, caret(code_document.root.children[1], 0));
         expect(fatal(bool(transaction.has_value())));
         if (transaction) {
@@ -1489,7 +1489,7 @@ suite document_edit_tests = [] {
     if (code_paste) {
         expect(fatal(bool(code_paste->after.root.children.size() == 1u)));
         expect(fatal(bool(code_paste->after.root.children.front().kind == BlockKind::CodeBlock)));
-        expect(fatal(bool(code_paste->after.root.children.front().block_source.source
+        expect(fatal(bool(code_paste->after.root.children.front().block_source.source()
             == U"```cpp\n# h\n- itemabc\n```")));
         expect_document_valid(code_paste->after);
     }

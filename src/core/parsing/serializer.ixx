@@ -232,7 +232,7 @@ inline ProjectedText serialize_block(const BlockNode& block) {
             return serialize_list(block);
         case BlockKind::CodeBlock:
         case BlockKind::MathBlock:
-            return source_text(block.id, block.block_source.source);
+            return source_text(block.id, block.block_source.source());
         case BlockKind::Table: {
             if (block.children.empty()) return {};
             auto result = serialize_table_row(block.children.front());

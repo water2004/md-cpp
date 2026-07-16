@@ -1102,7 +1102,7 @@ suite editor_tests = [] {
     });
     expect(fatal(bool(code_block != nullptr)));
     if (code_block) {
-        const auto separator = code_block->block_source.source.find(U"\n\n");
+        const auto separator = code_block->block_source.source().find(U"\n\n");
         expect(fatal(bool(separator != std::u32string::npos)));
         if (separator != std::u32string::npos) {
             exercise(
@@ -1524,8 +1524,8 @@ suite editor_tests = [] {
     expect(fatal(bool(counters.full_document_serializations == 0u)));
     expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
     expect(fatal(bool(editor.document().root.children.front().kind == BlockKind::CodeBlock)));
-    expect(fatal(bool(editor.document().root.children.front().block_source.source == U"```cpp\n```")));
-    expect(fatal(bool(editor.document().root.children.front().block_source.tree.language
+    expect(fatal(bool(editor.document().root.children.front().block_source.source() == U"```cpp\n```")));
+    expect(fatal(bool(editor.document().root.children.front().block_source.tree().language
         == std::optional<std::string>{"cpp"})));
     expect(fatal(bool(editor.selection().active.source_offset == 7u)));
     const auto opened_markdown = editor.markdown_utf8();
@@ -1547,7 +1547,7 @@ suite editor_tests = [] {
     expect(fatal(bool(counters.full_document_serializations == 0u)));
     expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
     expect(fatal(bool(editor.document().root.children.size() == 1u)));
-    expect(fatal(bool(editor.document().root.children.front().block_source.source == U"```cpp\n\n```")));
+    expect(fatal(bool(editor.document().root.children.front().block_source.source() == U"```cpp\n\n```")));
     expect(fatal(bool(editor.selection().active.source_offset == 8u)));
     const auto newline_markdown = editor.markdown_utf8();
     const auto newline_selection = editor.selection();
@@ -1570,11 +1570,11 @@ suite editor_tests = [] {
         expect(fatal(bool(code.document().root.children.size() == 1u)));
         auto const* block = find_block(code.document().root, code.selection().active.container_id);
         expect(fatal(bool(block && block->kind == BlockKind::CodeBlock)));
-        expect(fatal(bool(block && block->block_source.source == U"```cpp\n```")));
+        expect(fatal(bool(block && block->block_source.source() == U"```cpp\n```")));
         expect(fatal(bool(code.selection().active.source_offset == 7u)));
         expect(fatal(bool(code.execute_document_enter(code.selection()).has_value())));
         block = find_block(code.document().root, code.selection().active.container_id);
-        expect(fatal(bool(block && block->block_source.source == U"```cpp\n\n```")));
+        expect(fatal(bool(block && block->block_source.source() == U"```cpp\n\n```")));
     }
 
     Editor math;
@@ -1586,11 +1586,11 @@ suite editor_tests = [] {
         expect(fatal(bool(math.document().root.children.size() == 1u)));
         auto const* block = find_block(math.document().root, math.selection().active.container_id);
         expect(fatal(bool(block && block->kind == BlockKind::MathBlock)));
-        expect(fatal(bool(block && block->block_source.source == U"$$\n$$")));
+        expect(fatal(bool(block && block->block_source.source() == U"$$\n$$")));
         expect(fatal(bool(math.selection().active.source_offset == 3u)));
         expect(fatal(bool(math.execute_document_enter(math.selection()).has_value())));
         block = find_block(math.document().root, math.selection().active.container_id);
-        expect(fatal(bool(block && block->block_source.source == U"$$\n\n$$")));
+        expect(fatal(bool(block && block->block_source.source() == U"$$\n\n$$")));
         expect(fatal(bool(math.selection().active.source_offset == 4u)));
     }
 
@@ -1614,17 +1614,17 @@ suite editor_tests = [] {
     editor.set_selection(language);
     expect(fatal(bool(editor.execute_document_insert_text(editor.selection(), U"js").has_value())));
     auto const* block = find_block(editor.document().root, code_id);
-    expect(fatal(bool(block && block->block_source.source == U"```js\n```")));
-    expect(fatal(bool(block && block->block_source.tree.language
+    expect(fatal(bool(block && block->block_source.source() == U"```js\n```")));
+    expect(fatal(bool(block && block->block_source.tree().language
         == std::optional<std::string>{"js"})));
     const auto after = editor.selection();
     expect(fatal(bool(editor.undo())));
     block = find_block(editor.document().root, code_id);
-    expect(fatal(bool(block && block->block_source.source == U"```cpp\n```")));
+    expect(fatal(bool(block && block->block_source.source() == U"```cpp\n```")));
     expect(fatal(bool(editor.selection() == language)));
     expect(fatal(bool(editor.redo())));
     block = find_block(editor.document().root, code_id);
-    expect(fatal(bool(block && block->block_source.source == U"```js\n```")));
+    expect(fatal(bool(block && block->block_source.source() == U"```js\n```")));
     expect(fatal(bool(editor.selection() == after)));
 };
 
@@ -1632,15 +1632,15 @@ suite editor_tests = [] {
     Editor editor("```cpp\n");
     auto const& code = editor.document().root.children.front();
     expect(fatal(bool(code.kind == BlockKind::CodeBlock)));
-    expect(fatal(bool(!code.block_source.tree.complete_closing)));
-    editor.set_selection(caret(code, code.block_source.source.size()));
+    expect(fatal(bool(!code.block_source.tree().complete_closing)));
+    editor.set_selection(caret(code, code.block_source.source().size()));
     const auto before = editor.selection();
     expect(fatal(bool(editor.execute_document_enter(editor.selection()).has_value())));
     auto const* changed = find_block(editor.document().root, code.id);
-    expect(fatal(bool(changed && changed->block_source.source == U"```cpp\n\n")));
+    expect(fatal(bool(changed && changed->block_source.source() == U"```cpp\n\n")));
     expect(fatal(bool(changed && block_source_tokens_partition(changed->block_source))));
     expect(fatal(bool(changed && flatten_block_source_tokens(changed->block_source)
-        == changed->block_source.source)));
+        == changed->block_source.source())));
     expect(fatal(bool(editor.selection().active.source_offset == 8u)));
     expect(fatal(bool(editor.undo())));
     expect(fatal(bool(editor.selection() == before)));
@@ -1653,11 +1653,11 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.execute_document_enter(editor.selection()).has_value())));
     auto const* block = find_block(editor.document().root, editor.selection().active.container_id);
     expect(fatal(bool(block && block->kind == BlockKind::MathBlock)));
-    expect(fatal(bool(block && block->block_source.source == U"$$\n$$")));
+    expect(fatal(bool(block && block->block_source.source() == U"$$\n$$")));
     expect(fatal(bool(editor.selection().active.source_offset == 3u)));
     expect(fatal(bool(editor.execute_document_enter(editor.selection()).has_value())));
     block = find_block(editor.document().root, editor.selection().active.container_id);
-    expect(fatal(bool(block && block->block_source.source == U"$$\n\n$$")));
+    expect(fatal(bool(block && block->block_source.source() == U"$$\n\n$$")));
     expect(fatal(bool(editor.selection().active.source_offset == 4u)));
 };
 
@@ -1668,8 +1668,8 @@ suite editor_tests = [] {
         }) {
         Editor editor(markdown);
         const auto raw_id = editor.document().root.children.front().id;
-        const auto raw_size = editor.document().root.children.front().block_source.source.size();
-        const auto raw_source = editor.document().root.children.front().block_source.source;
+        const auto raw_size = editor.document().root.children.front().block_source.source().size();
+        const auto raw_source = editor.document().root.children.front().block_source.source();
         editor.set_selection(TextSelection::caret({
             raw_id,
             raw_size,
@@ -1678,7 +1678,7 @@ suite editor_tests = [] {
         expect(fatal(bool(editor.execute_document_enter(editor.selection()).has_value()))) << markdown;
         expect(fatal(bool(editor.document().root.children.size() == 2u))) << markdown;
         expect(fatal(bool(editor.document().root.children.front().id == raw_id))) << markdown;
-        expect(fatal(bool(editor.document().root.children.front().block_source.source == raw_source))) << markdown;
+        expect(fatal(bool(editor.document().root.children.front().block_source.source() == raw_source))) << markdown;
         expect(fatal(bool(editor.document().root.children.back().kind == BlockKind::Paragraph))) << markdown;
         expect(fatal(bool(editor.selection().active.container_id
             == editor.document().root.children.back().id))) << markdown;
@@ -1696,7 +1696,7 @@ suite editor_tests = [] {
     if (!code) return;
     editor.set_selection(TextSelection::caret({
         code->id,
-        code->block_source.source.size(),
+        code->block_source.source().size(),
         TextAffinity::Downstream,
     }));
     expect(fatal(bool(editor.execute_document_enter(editor.selection()).has_value())));
@@ -1768,7 +1768,7 @@ suite editor_tests = [] {
         Editor editor(markdown);
         const auto owner_id = editor.document().root.children.front().id;
         const auto content_offset = editor.document().root.children.front()
-            .block_source.tree.content_to_source.front();
+            .block_source.tree().content_to_source.front();
         const auto original_source = *document_editable_text(editor.document(), owner_id);
         const auto before_markdown = editor.markdown_utf8();
         const auto before_selection = TextSelection::caret(
@@ -1879,7 +1879,7 @@ suite editor_tests = [] {
         expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << test_case.markdown;
         changed = find_block(editor.document().root, owner_id);
         expect(fatal(bool(changed && changed->kind == test_case.kind))) << test_case.markdown;
-        expect(fatal(bool(changed && changed->block_source.source
+        expect(fatal(bool(changed && changed->block_source.source()
             == utf8_to_cps(test_case.markdown)))) << test_case.markdown;
         expect(fatal(bool(validate_document(editor.document()).empty()))) << test_case.markdown;
         const auto restored_selection = editor.selection();
@@ -1904,7 +1904,7 @@ suite editor_tests = [] {
     expect(fatal(bool(code != nullptr)));
     if (!code) return;
     const auto code_id = code->id;
-    const auto opening_end = code->block_source.source.find(U'\n');
+    const auto opening_end = code->block_source.source().find(U'\n');
     expect(fatal(bool(opening_end != std::u32string::npos)));
     if (opening_end == std::u32string::npos) return;
     editor.set_selection({
@@ -1943,7 +1943,7 @@ suite editor_tests = [] {
     expect(fatal(bool(second.kind == BlockKind::MathBlock)));
     auto first_id = first.id;
     auto second_id = second.id;
-    auto closing = first.block_source.source.rfind(U"$$");
+    auto closing = first.block_source.source().rfind(U"$$");
     expect(fatal(bool(closing != std::u32string::npos)));
     if (closing == std::u32string::npos) return;
     auto before = editor.markdown_utf8();
@@ -2007,19 +2007,19 @@ suite editor_tests = [] {
         if (raw_blocks.size() < 2u) continue;
 
         const auto closing = std::ranges::find(
-            raw_blocks[0]->block_source.tree.tokens,
+            raw_blocks[0]->block_source.tree().tokens,
             BlockSourceTokenKind::ClosingMarker,
             &BlockSourceToken::kind);
         const auto opening = std::ranges::find(
-            raw_blocks[1]->block_source.tree.tokens,
+            raw_blocks[1]->block_source.tree().tokens,
             BlockSourceTokenKind::OpeningMarker,
             &BlockSourceToken::kind);
-        expect(bool(closing != raw_blocks[0]->block_source.tree.tokens.end()))
+        expect(bool(closing != raw_blocks[0]->block_source.tree().tokens.end()))
             << test_case.markdown;
-        expect(bool(opening != raw_blocks[1]->block_source.tree.tokens.end()))
+        expect(bool(opening != raw_blocks[1]->block_source.tree().tokens.end()))
             << test_case.markdown;
-        if (closing == raw_blocks[0]->block_source.tree.tokens.end()
-            || opening == raw_blocks[1]->block_source.tree.tokens.end()) {
+        if (closing == raw_blocks[0]->block_source.tree().tokens.end()
+            || opening == raw_blocks[1]->block_source.tree().tokens.end()) {
             continue;
         }
 
@@ -2078,11 +2078,11 @@ suite editor_tests = [] {
             << markdown;
         if (raw.kind != BlockKind::CodeBlock && raw.kind != BlockKind::MathBlock) continue;
         const auto opening = std::ranges::find(
-            raw.block_source.tree.tokens,
+            raw.block_source.tree().tokens,
             BlockSourceTokenKind::OpeningMarker,
             &BlockSourceToken::kind);
-        expect(fatal(bool(opening != raw.block_source.tree.tokens.end()))) << markdown;
-        if (opening == raw.block_source.tree.tokens.end()) continue;
+        expect(fatal(bool(opening != raw.block_source.tree().tokens.end()))) << markdown;
+        if (opening == raw.block_source.tree().tokens.end()) continue;
 
         auto selection = TextSelection{
             {raw.id, opening->source_range.end, TextAffinity::Upstream},

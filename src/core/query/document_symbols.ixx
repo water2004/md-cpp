@@ -109,7 +109,7 @@ inline DocumentSymbolIndex collect_block_symbols(const BlockNode& block) {
         const auto lines = code.empty()
             ? std::size_t{0}
             : std::size_t{1} + static_cast<std::size_t>(std::count(code.begin(), code.end(), U'\n'));
-        symbols.code_blocks.push_back(CodeBlockSymbol{block.id, block.block_source.tree.language, lines});
+        symbols.code_blocks.push_back(CodeBlockSymbol{block.id, block.block_source.tree().language, lines});
     }
     if (const auto* inline_document = editable_inline_document(block)) {
         collect_inline_symbols(*inline_document, inline_document->tree.nodes, block.id, symbols);

@@ -49,7 +49,7 @@ inline void validate_blocks(
             if (!block_source_tokens_partition(block.block_source)) {
                 errors.push_back({block.id, "block-source tokens do not partition source"});
             }
-            if (flatten_block_source_tokens(block.block_source) != block.block_source.source) {
+            if (flatten_block_source_tokens(block.block_source) != block.block_source.source()) {
                 errors.push_back({block.id, "block-source CST is not lossless"});
             }
         }

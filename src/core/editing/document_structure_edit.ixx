@@ -478,10 +478,10 @@ inline std::optional<DocumentTransaction> document_insert_atomic_block(EditorDoc
     auto inserted_target = document_edit_detail::first_editable_position(block)
         .value_or(TextPosition{block.id, 0, TextAffinity::Downstream});
     if ((block.kind == BlockKind::CodeBlock || block.kind == BlockKind::MathBlock)
-        && !block.block_source.tree.content_to_source.empty()) {
+        && !block.block_source.tree().content_to_source.empty()) {
         inserted_target = {
             block.id,
-            block.block_source.tree.content_to_source.front(),
+            block.block_source.tree().content_to_source.front(),
             TextAffinity::Downstream,
         };
     }

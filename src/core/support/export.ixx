@@ -207,7 +207,7 @@ inline std::string block_to_html(const BlockNode& b, ExportRawHtmlPolicy pol) {
         }
         case BK::CodeBlock: {
             std::string lang_attr;
-            if (b.block_source.tree.language) lang_attr = " class=\"language-" + escape_text(*b.block_source.tree.language) + "\"";
+            if (b.block_source.tree().language) lang_attr = " class=\"language-" + escape_text(*b.block_source.tree().language) + "\"";
             return "<pre><code" + lang_attr + ">" + escape_raw_html(cps_to_utf8(block_source_content(b.block_source))) + "</code></pre>\n";
         }
         case BK::BlockQuote:

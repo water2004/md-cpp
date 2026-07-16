@@ -46,9 +46,47 @@ struct BlockSourceTree {
     bool complete_closing = false;
 };
 
-struct BlockSourceDocument {
+struct BlockSourceStorage {
     std::u32string source;
     BlockSourceTree tree;
+};
+
+struct BlockSourceDocument {
+    std::unique_ptr<BlockSourceStorage> storage;
+
+    BlockSourceDocument() = default;
+    BlockSourceDocument(std::u32string source, BlockSourceTree tree)
+        : storage(std::make_unique<BlockSourceStorage>(std::move(source), std::move(tree))) {}
+    BlockSourceDocument(BlockSourceDocument const& other)
+        : storage(other.storage ? std::make_unique<BlockSourceStorage>(*other.storage) : nullptr) {}
+    BlockSourceDocument& operator=(BlockSourceDocument const& other) {
+        if (this != &other) storage = other.storage ? std::make_unique<BlockSourceStorage>(*other.storage) : nullptr;
+        return *this;
+    }
+    BlockSourceDocument(BlockSourceDocument&&) noexcept = default;
+    BlockSourceDocument& operator=(BlockSourceDocument&&) noexcept = default;
+
+    std::u32string const& source() const {
+        static const std::u32string empty;
+        return storage ? storage->source : empty;
+    }
+    std::u32string& source() {
+        return ensure_storage().source;
+    }
+    BlockSourceTree const& tree() const {
+        static const BlockSourceTree empty;
+        return storage ? storage->tree : empty;
+    }
+    BlockSourceTree& tree() {
+        return ensure_storage().tree;
+    }
+    bool empty() const { return !storage; }
+
+private:
+    BlockSourceStorage& ensure_storage() {
+        if (!storage) storage = std::make_unique<BlockSourceStorage>();
+        return *storage;
+    }
 };
 
 namespace block_source_detail {
@@ -352,30 +390,30 @@ inline BlockSourceTree parse_block_source(std::u32string_view source, BlockSourc
 
 inline BlockSourceDocument make_block_source(std::u32string source, BlockSourceKind kind) {
     BlockSourceDocument document;
-    document.source = std::move(source);
-    document.tree = parse_block_source(document.source, kind);
+    document.source() = std::move(source);
+    document.tree() = parse_block_source(document.source(), kind);
     return document;
 }
 
 inline void reparse_block_source(BlockSourceDocument& document) {
-    document.tree = parse_block_source(document.source, document.tree.kind);
+    document.tree() = parse_block_source(document.source(), document.tree().kind);
 }
 
 inline bool block_source_tokens_partition(const BlockSourceDocument& document) {
     std::size_t cursor = 0;
-    for (const auto& token : document.tree.tokens) {
+    for (const auto& token : document.tree().tokens) {
         if (token.source_range.start != cursor
-            || !token.source_range.valid_for(document.source.size())) return false;
+            || !token.source_range.valid_for(document.source().size())) return false;
         cursor = token.source_range.end;
     }
-    return cursor == document.source.size();
+    return cursor == document.source().size();
 }
 
 inline std::u32string flatten_block_source_tokens(const BlockSourceDocument& document) {
     std::u32string result;
-    for (const auto& token : document.tree.tokens) {
+    for (const auto& token : document.tree().tokens) {
         result.append(
-            document.source,
+            document.source(),
             token.source_range.start,
             token.source_range.length());
     }
@@ -383,15 +421,15 @@ inline std::u32string flatten_block_source_tokens(const BlockSourceDocument& doc
 }
 
 inline std::u32string block_source_content(const BlockSourceDocument& document) {
-    return document.tree.content;
+    return document.tree().content;
 }
 
 inline std::size_t block_source_offset_for_content(
     const BlockSourceDocument& document,
     std::size_t content_offset) {
-    if (document.tree.content_to_source.empty()) return 0;
-    const auto index = (std::min)(content_offset, document.tree.content_to_source.size() - 1);
-    return document.tree.content_to_source[index];
+    if (document.tree().content_to_source.empty()) return 0;
+    const auto index = (std::min)(content_offset, document.tree().content_to_source.size() - 1);
+    return document.tree().content_to_source[index];
 }
 
 } // namespace elmd

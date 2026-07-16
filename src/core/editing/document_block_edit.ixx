@@ -195,7 +195,7 @@ inline std::optional<RecordedBlockEdit> exit_empty_indented_code(
     auto* block = block_at_path(document.root, *path);
     if (!block || block->kind != BlockKind::CodeBlock || !block->code_indented) return std::nullopt;
 
-    const auto& source = block->block_source.source;
+    const auto& source = block->block_source.source();
     const auto offset = (std::min)(position.source_offset, source.size());
     auto line_start = offset == 0 ? std::u32string::npos : source.rfind(U'\n', offset - 1);
     line_start = line_start == std::u32string::npos ? 0 : line_start + 1;
@@ -297,8 +297,8 @@ inline std::optional<RecordedBlockEdit> exit_complete_raw_block_at_end(
     auto* block = block_at_path(document.root, *path);
     if (!block || (block->kind != BlockKind::CodeBlock
             && block->kind != BlockKind::MathBlock)
-        || !block->block_source.tree.complete_closing
-        || position.source_offset != block->block_source.source.size()) {
+        || !block->block_source.tree().complete_closing
+        || position.source_offset != block->block_source.source().size()) {
         return std::nullopt;
     }
 
