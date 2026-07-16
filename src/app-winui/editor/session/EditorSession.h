@@ -17,15 +17,26 @@ namespace winrt::ElMd
             elmd::NodeId containerId{};
             std::size_t codepointStart = 0;
             std::size_t codepointLength = 0;
+            std::size_t utf16Start = 0;
+            std::size_t utf16Length = 0;
+            std::vector<std::size_t> codepointToUtf16;
         };
 
         struct BoundaryProjection
         {
             std::u32string text;
             std::wstring utf16;
-            std::vector<std::size_t> codepointToUtf16;
             std::vector<BoundaryFragment> fragments;
             std::unordered_map<std::uint64_t, std::size_t> fragmentIndex;
+        };
+
+        struct BoundaryTextChange
+        {
+            std::uint64_t revisionBefore = 0;
+            std::uint64_t revisionAfter = 0;
+            std::size_t utf16Start = 0;
+            std::size_t utf16OldLength = 0;
+            std::wstring replacement;
         };
 
         struct EditorSessionCore
@@ -69,6 +80,7 @@ namespace winrt::ElMd
         uint64_t Revision() const;
         std::size_t AcpLength() const;
         std::wstring const& BoundaryTextUtf16() const;
+        std::optional<detail::BoundaryTextChange> const& LastBoundaryTextChange() const;
         std::u32string const& TextView() const;
         std::optional<std::u32string> EditableSource(elmd::NodeId id) const;
         elmd::TextSelection Selection() const;
@@ -85,11 +97,13 @@ namespace winrt::ElMd
         void RebuildCore();
         void RebuildRenderModel(bool incremental = false);
         void InvalidateBoundaryProjection();
+        bool ApplyBoundaryProjectionChange(elmd::EditorDocumentChange const& change);
         detail::BoundaryProjection const& BoundaryProjection() const;
 
         winrt::Windows::Storage::StorageFile file_{ nullptr };
         winrt::hstring text_;
         uint64_t revision_ = 0;
         std::unique_ptr<detail::EditorSessionCore> core_;
+        std::optional<detail::BoundaryTextChange> lastBoundaryTextChange_;
     };
 }

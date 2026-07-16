@@ -78,6 +78,38 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.selection() == after_selection)));
 };
 
+"editor_reports_local_text_changes_and_structural_fallbacks"_test = [] {
+    Editor editor("abc");
+    editor.set_selection(caret(first_text(editor), 1));
+    expect(fatal(editor.execute_command(Command::InsertText(U"X"))));
+    auto inserted = editor.take_last_document_change();
+    expect(fatal(bool(inserted.has_value())));
+    if (!inserted) return;
+    expect(fatal(!inserted->structural));
+    expect(fatal(inserted->forward));
+    expect(fatal(bool(inserted->text_operations.size() == 1u)));
+    expect(fatal(bool(inserted->text_operations.front().forward.replacement == U"X")));
+
+    expect(fatal(editor.undo()));
+    auto undone = editor.take_last_document_change();
+    expect(fatal(bool(undone.has_value())));
+    if (!undone) return;
+    expect(fatal(!undone->structural));
+    expect(fatal(!undone->forward));
+    expect(fatal(bool(undone->revision_before > undone->revision_after)));
+
+    expect(fatal(editor.redo()));
+    auto redone = editor.take_last_document_change();
+    expect(fatal(bool(redone.has_value())));
+    if (!redone) return;
+    expect(fatal(redone->forward));
+    editor.set_selection(caret(first_text(editor), 2));
+    expect(fatal(editor.execute_command(Command{.kind = CommandKind::InsertNewline})));
+    auto split = editor.take_last_document_change();
+    expect(fatal(bool(split.has_value())));
+    expect(fatal(bool(split && split->structural)));
+};
+
 "footnote_insert_is_one_exact_source_and_tree_history_transaction"_test = [] {
     Editor editor("body");
     const auto before = range(first_text(editor), 0, 4);

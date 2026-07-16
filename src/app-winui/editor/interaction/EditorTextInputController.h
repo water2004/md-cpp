@@ -49,6 +49,7 @@ namespace winrt::ElMd
         winrt::event_token selectionUpdatingToken_{};
         winrt::event_token textUpdatingToken_{};
         std::wstring knownText_;
+        std::uint64_t knownRevision_ = 0;
         std::shared_ptr<int> lifetime_;
         bool focused_ = false;
         bool updating_ = false;

@@ -83,6 +83,8 @@ public:
     void clear() { undo_.clear(); redo_.clear(); }
     bool has_undo() const { return !undo_.empty(); }
     bool has_redo() const { return !redo_.empty(); }
+    const DocumentHistoryEntry* next_undo() const { return undo_.empty() ? nullptr : &undo_.back(); }
+    const DocumentHistoryEntry* next_redo() const { return redo_.empty() ? nullptr : &redo_.back(); }
 
 private:
     std::size_t capacity_;

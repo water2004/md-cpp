@@ -14,6 +14,7 @@ import elmd.core.document_text;
 import elmd.core.ast;
 import elmd.core.document_edit;
 import elmd.core.document_history;
+import elmd.core.document_transaction;
 import elmd.core.document_symbols;
 import elmd.core.text_edit;
 import elmd.core.symbols;
@@ -22,6 +23,33 @@ import elmd.core.parser;
 import elmd.core.serializer;
 
 export namespace elmd {
+
+struct EditorDocumentChange {
+    std::vector<DocumentTextOperation> text_operations;
+    bool structural = false;
+    bool forward = true;
+    std::uint64_t revision_before = 0;
+    std::uint64_t revision_after = 0;
+};
+
+inline EditorDocumentChange summarize_document_change(
+    const std::vector<DocumentOperation>& operations,
+    bool forward,
+    std::uint64_t revision_before,
+    std::uint64_t revision_after) {
+    EditorDocumentChange change;
+    change.forward = forward;
+    change.revision_before = revision_before;
+    change.revision_after = revision_after;
+    for (const auto& operation : operations) {
+        if (const auto* text = std::get_if<DocumentTextOperation>(&operation)) {
+            change.text_operations.push_back(*text);
+        } else {
+            change.structural = true;
+        }
+    }
+    return change;
+}
 
 class Editor {
 public:
@@ -63,6 +91,9 @@ public:
     }
     bool has_undo() const { return document_history_.has_undo(); }
     bool has_redo() const { return document_history_.has_redo(); }
+    std::optional<EditorDocumentChange> take_last_document_change() {
+        return std::exchange(last_document_change_, std::nullopt);
+    }
 
     std::optional<DocumentTransaction> execute_document_enter(TextSelection selection) {
         auto transaction = document_enter(document_, selection);
@@ -253,18 +284,31 @@ public:
     }
 
     bool undo() {
+        last_document_change_.reset();
+        const auto* entry = document_history_.next_undo();
+        if (!entry) return false;
+        auto change = summarize_document_change(
+            entry->operations, false, entry->revision_after, entry->revision_before);
         if (!document_history_.undo(document_, selection_)) return false;
+        last_document_change_ = std::move(change);
         refresh_derived_from_document_();
         return true;
     }
 
     bool redo() {
+        last_document_change_.reset();
+        const auto* entry = document_history_.next_redo();
+        if (!entry) return false;
+        auto change = summarize_document_change(
+            entry->operations, true, entry->revision_before, entry->revision_after);
         if (!document_history_.redo(document_, selection_)) return false;
+        last_document_change_ = std::move(change);
         refresh_derived_from_document_();
         return true;
     }
 
     bool execute_command(const Command& cmd) {
+        last_document_change_.reset();
         if (cmd.kind == CommandKind::Undo) return undo();
         if (cmd.kind == CommandKind::Redo) return redo();
         if (cmd.kind == CommandKind::MoveLeft || cmd.kind == CommandKind::MoveRight
@@ -456,6 +500,7 @@ private:
     DocumentSymbolIndex symbols_;
     Outline outline_;
     DocumentHistory document_history_{1000};
+    std::optional<EditorDocumentChange> last_document_change_;
     TextSelection selection_{};
     MarkdownDialect dialect_ = default_dialect();
 
@@ -468,6 +513,7 @@ private:
         symbols_ = std::move(parsed.symbols);
         outline_ = std::move(parsed.outline);
         document_history_.clear();
+        last_document_change_.reset();
         if (document_.root.children.empty()) {
             normalize_document(document_);
         }
@@ -489,6 +535,11 @@ private:
     void apply_document_transaction_(const DocumentTransaction& transaction) {
         document_history_.push(transaction);
         selection_ = transaction.selection_after;
+        last_document_change_ = summarize_document_change(
+            transaction.operations,
+            true,
+            transaction.revision_before,
+            transaction.revision_after);
         refresh_derived_from_document_();
     }
 

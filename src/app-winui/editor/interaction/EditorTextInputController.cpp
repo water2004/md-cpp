@@ -103,6 +103,7 @@ namespace winrt::ElMd
         context_.InputScope(winrt::Windows::UI::Text::Core::CoreTextInputScope::Text);
         context_.InputPaneDisplayPolicy(winrt::Windows::UI::Text::Core::CoreTextInputPaneDisplayPolicy::Automatic);
         knownText_ = session_->BoundaryTextUtf16();
+        knownRevision_ = session_->Revision();
         lifetime_ = std::make_shared<int>(0);
         RegisterHandlers();
     }
@@ -126,6 +127,7 @@ namespace winrt::ElMd
         notifying_ = false;
         synchronizationQueued_ = false;
         knownText_.clear();
+        knownRevision_ = 0;
         lifetime_.reset();
     }
 
@@ -200,9 +202,41 @@ namespace winrt::ElMd
         }
 
         auto const& current = session_->BoundaryTextUtf16();
+        auto const& localChange = session_->LastBoundaryTextChange();
+        if (localChange
+            && localChange->revisionBefore == knownRevision_
+            && localChange->revisionAfter == session_->Revision()
+            && localChange->utf16Start <= knownText_.size()
+            && localChange->utf16OldLength <= knownText_.size() - localChange->utf16Start)
+        {
+            auto previous = knownText_;
+            knownText_.replace(
+                localChange->utf16Start,
+                localChange->utf16OldLength,
+                localChange->replacement);
+            notifying_ = true;
+            try
+            {
+                context_.NotifyTextChanged(
+                    {
+                        SafeAcp(localChange->utf16Start),
+                        SafeAcp(localChange->utf16Start + localChange->utf16OldLength),
+                    },
+                    SafeAcp(localChange->replacement.size()),
+                    CurrentSelection());
+                knownRevision_ = localChange->revisionAfter;
+            }
+            catch (winrt::hresult_error const&)
+            {
+                knownText_ = std::move(previous);
+            }
+            notifying_ = false;
+            return;
+        }
         auto change = Difference(knownText_, current);
         if (!change)
         {
+            knownRevision_ = session_->Revision();
             NotifySelectionChanged();
             return;
         }
@@ -220,6 +254,7 @@ namespace winrt::ElMd
                 change->modifiedRange,
                 change->replacementLength,
                 CurrentSelection());
+            knownRevision_ = session_->Revision();
         }
         catch (winrt::hresult_error const&)
         {
@@ -343,6 +378,7 @@ namespace winrt::ElMd
             auto incomingText = std::wstring_view{incomingHstring.c_str(), incomingHstring.size()};
             expectedText.replace(storeStart, storeEnd - storeStart, incomingText);
             auto previousKnownText = knownText_;
+            auto previousKnownRevision = knownRevision_;
             // Once this callback succeeds, CoreText will know the requested
             // replacement. Semantic marker conversions can produce a
             // different editor projection; QueueSynchronization reports that
@@ -369,9 +405,20 @@ namespace winrt::ElMd
             if (!executed)
             {
                 knownText_ = std::move(previousKnownText);
+                knownRevision_ = previousKnownRevision;
                 args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Failed);
                 QueueSynchronization();
                 return;
+            }
+            auto const& localChange = session_->LastBoundaryTextChange();
+            if (localChange
+                && localChange->revisionBefore == previousKnownRevision
+                && localChange->revisionAfter == session_->Revision()
+                && localChange->utf16Start == storeStart
+                && localChange->utf16OldLength == storeEnd - storeStart
+                && localChange->replacement == incomingText)
+            {
+                knownRevision_ = localChange->revisionAfter;
             }
             args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Succeeded);
             QueueSynchronization();
