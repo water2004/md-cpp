@@ -27,9 +27,10 @@ namespace winrt::ElMd
         EditorSurfaceRenderer* renderer_ = nullptr;
         EditorTextInputController* textInput_ = nullptr;
         winrt::Microsoft::UI::Xaml::Controls::ListView outline_{ nullptr };
+        winrt::Windows::Foundation::Collections::IObservableVector<
+            winrt::Windows::Foundation::IInspectable> outlineItems_{ nullptr };
         Render render_;
         std::vector<elmd::TextPosition> outlinePositions_;
-        std::vector<std::wstring> outlineLabels_;
         std::optional<std::uint64_t> outlineContentKey_;
     };
 }

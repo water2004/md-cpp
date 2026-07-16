@@ -21,13 +21,14 @@ namespace winrt::ElMd
 
     void EditorSidebarController::Detach()
     {
+        if (outline_) outline_.ItemsSource(nullptr);
         session_ = nullptr;
         renderer_ = nullptr;
         textInput_ = nullptr;
         outline_ = nullptr;
+        outlineItems_ = nullptr;
         render_ = {};
         outlinePositions_.clear();
-        outlineLabels_.clear();
         outlineContentKey_.reset();
     }
 
@@ -39,16 +40,13 @@ namespace winrt::ElMd
     void EditorSidebarController::SelectOutline(winrt::Windows::Foundation::IInspectable const& selectedItem)
     {
         if (!session_ || !renderer_ || !outline_ || !selectedItem) return;
-        auto selectedText = winrt::unbox_value<winrt::hstring>(selectedItem);
-        for (uint32_t index = 0; index < outline_.Items().Size() && index < outlinePositions_.size(); ++index)
-        {
-            if (winrt::unbox_value<winrt::hstring>(outline_.Items().GetAt(index)) != selectedText) continue;
-            session_->SetSelection(outlinePositions_[index], outlinePositions_[index]);
-            if (textInput_) textInput_->NotifySelectionChanged();
-            renderer_->ScrollToPosition(outlinePositions_[index]);
-            if (render_) render_();
-            return;
-        }
+        auto const selectedIndex = outline_.SelectedIndex();
+        if (selectedIndex < 0 || static_cast<std::size_t>(selectedIndex) >= outlinePositions_.size()) return;
+        auto const& position = outlinePositions_[static_cast<std::size_t>(selectedIndex)];
+        session_->SetSelection(position, position);
+        if (textInput_) textInput_->NotifySelectionChanged();
+        renderer_->ScrollToPosition(position);
+        if (render_) render_();
     }
 
     void EditorSidebarController::RefreshOutline()
@@ -56,21 +54,22 @@ namespace winrt::ElMd
         if (!session_ || !outline_) return;
         auto const contentKey = session_->RenderModel().outline.content_key;
         if (outlineContentKey_ == contentKey) return;
-        std::vector<std::wstring> labels;
+        auto const flatItems = session_->RenderModel().outline.flat_items();
+        std::vector<winrt::Windows::Foundation::IInspectable> labels;
         std::vector<elmd::TextPosition> positions;
-        for (auto const* item : session_->RenderModel().outline.flat_items())
+        labels.reserve(flatItems.size());
+        positions.reserve(flatItems.size());
+        for (auto const* item : flatItems)
         {
             std::wstring indent((std::max)(0, static_cast<int>(item->level) - 1) * 2, L' ');
             auto title = winrt::to_hstring(item->title_plain_text);
-            labels.push_back(indent + std::wstring(title.c_str()));
+            labels.push_back(winrt::box_value(winrt::hstring(indent + std::wstring(title.c_str()))));
             positions.push_back(item->position);
         }
-        if (labels == outlineLabels_ && positions == outlinePositions_) return;
-        outlineLabels_ = std::move(labels);
         outlinePositions_ = std::move(positions);
         outlineContentKey_ = contentKey;
-        outline_.Items().Clear();
-        for (auto const& label : outlineLabels_) outline_.Items().Append(winrt::box_value(winrt::hstring(label)));
+        outlineItems_ = winrt::single_threaded_observable_vector(std::move(labels));
+        outline_.ItemsSource(outlineItems_);
     }
 
 }

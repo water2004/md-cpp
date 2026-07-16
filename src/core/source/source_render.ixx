@@ -48,8 +48,7 @@ inline std::vector<InlineRenderItem> line_items(SourceLine const& line) {
         InlineRenderItem item;
         item.kind = InlineRenderItem::Kind::Text;
         item.source_span = {line.id, {start, end}};
-        item.source_text = line.text.substr(start, end - start);
-        item.text = item.source_text;
+        item.text = line.text.substr(start, end - start);
         item.style = combined.inline_style;
         item.source_syntax = combined.syntax;
         item.visibility = MarkerVisibility::Always;

@@ -1,10 +1,12 @@
 #include <string>
+#include <string_view>
 
 #include "elmd_test.hpp"
 import elmd.core.ast;
 import elmd.core.block_tree;
 import elmd.core.document_interaction;
 import elmd.core.editor;
+import elmd.core.instrumentation;
 import elmd.core.text_edit;
 
 using namespace elmd;
@@ -16,6 +18,14 @@ const BlockNode* first_block(const Editor& editor, BlockKind kind) {
     const BlockNode* result = nullptr;
     walk_blocks(editor.document().root, [&](const BlockNode& block) {
         if (!result && block.kind == kind) result = &block;
+    });
+    return result;
+}
+
+const BlockNode* last_block(const Editor& editor, BlockKind kind) {
+    const BlockNode* result = nullptr;
+    walk_blocks(editor.document().root, [&](const BlockNode& block) {
+        if (block.kind == kind) result = &block;
     });
     return result;
 }
@@ -58,6 +68,31 @@ suite document_interaction_tests = [] {
     expect(fatal(interaction.has_value()));
     expect(interaction->link == std::optional<std::string>{"https://example.com"});
     expect(interaction->tooltip == std::optional<std::string>{"Image title"});
+};
+
+"interaction lookup stays block-local in a large document"_test = [] {
+    std::string source;
+    source.reserve(160'000);
+    for (std::size_t index = 0; index < 2'000; ++index) {
+        source += "paragraph ";
+        source += std::to_string(index);
+        source += " with [link](https://example.com/";
+        source += std::to_string(index);
+        source += ")\n\n";
+    }
+    source.resize(source.size() - 2);
+    Editor editor(std::move(source));
+    const auto* paragraph = last_block(editor, BlockKind::Paragraph);
+    expect(fatal(paragraph != nullptr));
+    auto const linkOffset = paragraph->inline_content.source.find(U"[link]");
+    expect(fatal(linkOffset != std::u32string::npos));
+    reset_core_operation_counters();
+    auto interaction = document_interaction_at(
+        editor.document(),
+        {paragraph->id, linkOffset + 2, TextAffinity::Downstream});
+    expect(fatal(interaction.has_value()));
+    expect(interaction->link.has_value());
+    expect(read_core_operation_counters().full_document_block_index_scans == 0_u);
 };
 
 };

@@ -744,7 +744,10 @@ struct Builder {
         append_nodes(document.tree.nodes, base, output);
         auto attach_source = [&](auto& self, std::vector<InlineRenderItem>& items) -> void {
             for (auto& item : items) {
-                item.source_text = inline_source_slice(document, item.source_span.source_range);
+                if (item.kind != InlineRenderItem::Kind::Text
+                    && item.kind != InlineRenderItem::Kind::Marker) {
+                    item.source_text = inline_source_slice(document, item.source_span.source_range);
+                }
                 self(self, item.children);
             }
         };
