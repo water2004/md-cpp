@@ -55,6 +55,9 @@
     <Filter Include="Resources\Branding">
       <UniqueIdentifier>{b2e8855a-84b0-4f44-8b4b-1b9b50a592db}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Resources\Licenses">
+      <UniqueIdentifier>{63e058da-3e30-49e1-b7d7-dba259edfd54}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Theme">
       <UniqueIdentifier>{ac059afc-bc91-44a7-97ec-42f0bca22c02}</UniqueIdentifier>
     </Filter>
@@ -525,6 +528,12 @@
     </PRIResource>
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\..\LICENSE">
+      <Filter>Resources\Licenses</Filter>
+    </None>
+    <None Include="Assets\licenses\THIRD-PARTY-NOTICES.txt">
+      <Filter>Resources\Licenses</Filter>
+    </None>
     <None Include="Assets\branding\Folia.svg">
       <Filter>Resources\Branding</Filter>
     </None>
