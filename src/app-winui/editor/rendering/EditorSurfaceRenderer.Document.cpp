@@ -16,19 +16,6 @@ namespace winrt::ElMd
 {
     namespace
     {
-        bool SamePosition(elmd::TextPosition left, elmd::TextPosition right)
-        {
-            return left.container_id == right.container_id
-                && left.source_offset == right.source_offset
-                && left.affinity == right.affinity;
-        }
-
-        bool SameSelection(elmd::TextSelection left, elmd::TextSelection right)
-        {
-            return SamePosition(left.anchor, right.anchor)
-                && SamePosition(left.active, right.active);
-        }
-
         bool InlineItemsContain(
             std::vector<elmd::InlineRenderItem> const& items,
             elmd::InlineRenderItem::Kind kind)
@@ -75,8 +62,7 @@ namespace winrt::ElMd
         auto selection = printMode ? elmd::TextSelection{} : frame.selection;
         auto caret = selection.active;
 
-        std::unordered_map<std::uint64_t, std::size_t> order;
-        for (std::size_t index = 0; index < frame.renderModel.editable_order.size(); ++index) order.emplace(frame.renderModel.editable_order[index].v, index);
+        auto const& order = frame.renderModel.editable_index;
         auto positionLess = [&](elmd::TextPosition left, elmd::TextPosition right)
         {
             if (left.container_id == right.container_id) return left.source_offset < right.source_offset;
@@ -497,11 +483,11 @@ namespace winrt::ElMd
 
         auto remoteImageGeneration = renderCache.RemoteImageGeneration();
         std::unordered_map<void const*, std::vector<SyntaxHighlightRange>> sourceCodeHighlights;
+        auto activePositionChanged = preparedDocument
+            && preparedDocument->selection.active != selection.active;
         auto rebuildAll = !preparedDocument
             || preparedDocument->modelRevision != frame.renderModel.revision
-            || (!frame.renderModel.blocks.empty()
-                && !frame.renderModel.blocks.front().source_mode
-                && !SameSelection(preparedDocument->selection, selection))
+            || activePositionChanged
             || preparedDocument->documentWidth != documentWidth
             || preparedDocument->themeRevision != themeRevision
             || preparedDocument->blocks.size() != frame.renderModel.blocks.size();
@@ -524,16 +510,29 @@ namespace winrt::ElMd
                 for (std::size_t index = 0; index < previous->blocks.size(); ++index)
                 {
                     auto const& block = previous->blocks[index];
-                    if (block.sourceMode && block.valid) previousById.emplace(block.sourceId.v, index);
+                    if (block.valid) previousById.emplace(block.sourceId.v, index);
                 }
+                auto owns = [](PreparedDocument::Block const& block, elmd::NodeId owner)
+                {
+                    return owner.v != 0 && std::ranges::any_of(
+                        block.owners,
+                        [&](auto candidate) { return candidate == owner; });
+                };
                 for (std::size_t index = 0; index < frame.renderModel.blocks.size(); ++index)
                 {
                     auto const& source = frame.renderModel.blocks[index];
-                    if (!source.source_mode) continue;
                     auto found = previousById.find(source.id.v);
                     if (found == previousById.end()) continue;
                     auto& candidate = previous->blocks[found->second];
-                    if (candidate.presentationKey != source.presentation_key) continue;
+                    if (candidate.sourceMode != source.source_mode
+                        || candidate.presentationKey != source.presentation_key) continue;
+                    // The active source position controls which markers and
+                    // editable previews are exposed. Rebuild only the old and
+                    // new caret-owning blocks; selection painting itself is a
+                    // draw-time operation and does not invalidate text layout.
+                    if (!source.source_mode && activePositionChanged
+                        && (owns(candidate, previous->selection.active.container_id)
+                            || owns(candidate, selection.active.container_id))) continue;
                     preparedDocument->blocks[index] = std::move(candidate);
                 }
             }
