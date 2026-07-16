@@ -48,12 +48,13 @@ namespace winrt::ElMd
         winrt::event_token layoutRequestedToken_{};
         winrt::event_token selectionUpdatingToken_{};
         winrt::event_token textUpdatingToken_{};
-        std::wstring knownText_;
+        std::size_t knownLength_ = 0;
         std::uint64_t knownRevision_ = 0;
         std::shared_ptr<int> lifetime_;
         bool focused_ = false;
         bool updating_ = false;
         bool notifying_ = false;
         bool synchronizationQueued_ = false;
+        bool forceFullSynchronization_ = false;
     };
 }

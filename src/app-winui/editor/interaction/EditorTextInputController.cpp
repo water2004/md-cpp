@@ -9,12 +9,6 @@ namespace
 {
     using CoreTextRange = winrt::Windows::UI::Text::Core::CoreTextRange;
 
-    struct TextStoreChange
-    {
-        CoreTextRange modifiedRange{};
-        std::int32_t replacementLength = 0;
-    };
-
     std::int32_t SafeAcp(std::size_t value)
     {
         return static_cast<std::int32_t>((std::min)(
@@ -22,58 +16,6 @@ namespace
             static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)())));
     }
 
-    bool IsHighSurrogate(wchar_t value)
-    {
-        return value >= 0xd800 && value <= 0xdbff;
-    }
-
-    bool IsLowSurrogate(wchar_t value)
-    {
-        return value >= 0xdc00 && value <= 0xdfff;
-    }
-
-    std::optional<TextStoreChange> Difference(
-        std::wstring_view previous,
-        std::wstring_view current)
-    {
-        if (previous == current) return std::nullopt;
-
-        std::size_t prefix = 0;
-        const auto common = (std::min)(previous.size(), current.size());
-        while (prefix < common && previous[prefix] == current[prefix]) ++prefix;
-        if (prefix > 0 && prefix < previous.size() && prefix < current.size()
-            && (IsHighSurrogate(previous[prefix - 1]) || IsHighSurrogate(current[prefix - 1])))
-        {
-            --prefix;
-        }
-
-        std::size_t suffix = 0;
-        while (suffix < previous.size() - prefix
-            && suffix < current.size() - prefix
-            && previous[previous.size() - suffix - 1] == current[current.size() - suffix - 1])
-        {
-            ++suffix;
-        }
-        if (suffix > 0)
-        {
-            const auto previousStart = previous.size() - suffix;
-            const auto currentStart = current.size() - suffix;
-            if ((previousStart > 0 && previousStart < previous.size()
-                    && IsHighSurrogate(previous[previousStart - 1])
-                    && IsLowSurrogate(previous[previousStart]))
-                || (currentStart > 0 && currentStart < current.size()
-                    && IsHighSurrogate(current[currentStart - 1])
-                    && IsLowSurrogate(current[currentStart])))
-            {
-                --suffix;
-            }
-        }
-
-        return TextStoreChange{
-            {SafeAcp(prefix), SafeAcp(previous.size() - suffix)},
-            SafeAcp(current.size() - prefix - suffix),
-        };
-    }
 }
 
 namespace winrt::ElMd
@@ -102,8 +44,9 @@ namespace winrt::ElMd
         context_ = manager.CreateEditContext();
         context_.InputScope(winrt::Windows::UI::Text::Core::CoreTextInputScope::Text);
         context_.InputPaneDisplayPolicy(winrt::Windows::UI::Text::Core::CoreTextInputPaneDisplayPolicy::Automatic);
-        knownText_ = session_->BoundaryTextUtf16();
+        knownLength_ = session_->BoundaryTextUtf16().size();
         knownRevision_ = session_->Revision();
+        forceFullSynchronization_ = false;
         lifetime_ = std::make_shared<int>(0);
         RegisterHandlers();
     }
@@ -126,8 +69,9 @@ namespace winrt::ElMd
         updating_ = false;
         notifying_ = false;
         synchronizationQueued_ = false;
-        knownText_.clear();
+        knownLength_ = 0;
         knownRevision_ = 0;
+        forceFullSynchronization_ = false;
         lifetime_.reset();
     }
 
@@ -203,19 +147,13 @@ namespace winrt::ElMd
 
         auto const& current = session_->BoundaryTextUtf16();
         auto const& localChange = session_->LastBoundaryTextChange();
-        if (localChange
+        if (!forceFullSynchronization_
+            && localChange
             && localChange->revisionBefore == knownRevision_
             && localChange->revisionAfter == session_->Revision()
-            && localChange->utf16Start <= knownText_.size()
-            && localChange->utf16OldLength <= knownText_.size() - localChange->utf16Start)
+            && localChange->utf16Start <= knownLength_
+            && localChange->utf16OldLength <= knownLength_ - localChange->utf16Start)
         {
-            auto removed = knownText_.substr(
-                localChange->utf16Start,
-                localChange->utf16OldLength);
-            knownText_.replace(
-                localChange->utf16Start,
-                localChange->utf16OldLength,
-                localChange->replacement);
             notifying_ = true;
             try
             {
@@ -226,46 +164,37 @@ namespace winrt::ElMd
                     },
                     SafeAcp(localChange->replacement.size()),
                     CurrentSelection());
+                knownLength_ = knownLength_ - localChange->utf16OldLength
+                    + localChange->replacement.size();
                 knownRevision_ = localChange->revisionAfter;
             }
             catch (winrt::hresult_error const&)
             {
-                knownText_.replace(
-                    localChange->utf16Start,
-                    localChange->replacement.size(),
-                    removed);
             }
             notifying_ = false;
             return;
         }
-        auto change = Difference(knownText_, current);
-        if (!change)
+        if (!forceFullSynchronization_
+            && knownRevision_ == session_->Revision()
+            && knownLength_ == current.size())
         {
-            knownRevision_ = session_->Revision();
             NotifySelectionChanged();
             return;
         }
 
-        auto previous = knownText_;
-        knownText_ = current;
         notifying_ = true;
         try
         {
-            // newLength is the UTF-16 length of the replacement for the old
-            // modified range, not the length of the complete document. The
-            // selection is carried by this notification; sending a second
-            // selection notification here would re-enter TextInputFramework.
             context_.NotifyTextChanged(
-                change->modifiedRange,
-                change->replacementLength,
+                {0, SafeAcp(knownLength_)},
+                SafeAcp(current.size()),
                 CurrentSelection());
+            knownLength_ = current.size();
             knownRevision_ = session_->Revision();
+            forceFullSynchronization_ = false;
         }
         catch (winrt::hresult_error const&)
         {
-            // Keep the local mirror at the state CoreText last accepted. A
-            // later document operation can retry synchronization safely.
-            knownText_ = std::move(previous);
         }
         notifying_ = false;
     }
@@ -288,11 +217,12 @@ namespace winrt::ElMd
             auto request = args.Request();
             auto range = request.Range();
             auto const& boundary = session_->BoundaryTextUtf16();
-            auto text = winrt::hstring(boundary);
-            auto textLength = static_cast<int32_t>(text.size());
+            auto textLength = SafeAcp(boundary.size());
             auto start = (std::max)(0, (std::min)(range.StartCaretPosition, textLength));
             auto end = (std::max)(start, (std::min)(range.EndCaretPosition, textLength));
-            request.Text(winrt::hstring(text.c_str() + start, static_cast<uint32_t>(end - start)));
+            request.Text(winrt::hstring(
+                boundary.data() + start,
+                static_cast<uint32_t>(end - start)));
         });
 
         selectionRequestedToken_ = context_.SelectionRequested([this](auto const&, winrt::Windows::UI::Text::Core::CoreTextSelectionRequestedEventArgs const& args)
@@ -377,16 +307,17 @@ namespace winrt::ElMd
                 return;
             }
 
-            const auto storeStart = (std::min)(start, knownText_.size());
-            const auto storeEnd = (std::max)(storeStart, (std::min)(end, knownText_.size()));
+            const auto storeStart = (std::min)(start, knownLength_);
+            const auto storeEnd = (std::max)(storeStart, (std::min)(end, knownLength_));
             auto incomingText = std::wstring_view{incomingHstring.c_str(), incomingHstring.size()};
-            auto removedText = knownText_.substr(storeStart, storeEnd - storeStart);
+            auto previousKnownLength = knownLength_;
             auto previousKnownRevision = knownRevision_;
+            auto previousForceFullSynchronization = forceFullSynchronization_;
             // Once this callback succeeds, CoreText will know the requested
             // replacement. Semantic marker conversions can produce a
             // different editor projection; QueueSynchronization reports that
             // extra delta only after this callback has returned.
-            knownText_.replace(storeStart, storeEnd - storeStart, incomingText);
+            knownLength_ = knownLength_ - (storeEnd - storeStart) + incomingText.size();
 
             session_->SetSelection(
                 session_->PositionFromAcp((std::min)(start, length)),
@@ -407,8 +338,9 @@ namespace winrt::ElMd
             updating_ = false;
             if (!executed)
             {
-                knownText_.replace(storeStart, incomingText.size(), removedText);
+                knownLength_ = previousKnownLength;
                 knownRevision_ = previousKnownRevision;
+                forceFullSynchronization_ = previousForceFullSynchronization;
                 args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Failed);
                 QueueSynchronization();
                 return;
@@ -422,6 +354,11 @@ namespace winrt::ElMd
                 && localChange->replacement == incomingText)
             {
                 knownRevision_ = localChange->revisionAfter;
+                forceFullSynchronization_ = false;
+            }
+            else
+            {
+                forceFullSynchronization_ = true;
             }
             args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Succeeded);
             QueueSynchronization();

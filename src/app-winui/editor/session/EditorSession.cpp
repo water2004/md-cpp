@@ -94,16 +94,57 @@ namespace winrt::ElMd
             return result;
         }
 
-        std::vector<std::size_t> Utf16Offsets(std::u32string_view text)
+        bool IsHighSurrogate(wchar_t value)
         {
-            std::vector<std::size_t> offsets;
-            offsets.reserve(text.size() + 1);
-            offsets.push_back(0);
-            for (auto codepoint : text)
+            return value >= 0xd800 && value <= 0xdbff;
+        }
+
+        bool IsLowSurrogate(wchar_t value)
+        {
+            return value >= 0xdc00 && value <= 0xdfff;
+        }
+
+        std::size_t Utf16OffsetForCodepoint(std::wstring_view text, std::size_t codepointOffset)
+        {
+            std::size_t utf16Offset = 0;
+            std::size_t codepoints = 0;
+            while (utf16Offset < text.size() && codepoints < codepointOffset)
             {
-                offsets.push_back(offsets.back() + elmd::utf16_len_of_cp(codepoint));
+                if (IsHighSurrogate(text[utf16Offset])
+                    && utf16Offset + 1 < text.size()
+                    && IsLowSurrogate(text[utf16Offset + 1]))
+                {
+                    utf16Offset += 2;
+                }
+                else
+                {
+                    ++utf16Offset;
+                }
+                ++codepoints;
             }
-            return offsets;
+            return utf16Offset;
+        }
+
+        std::size_t CodepointOffsetForUtf16(std::wstring_view text, std::size_t utf16Offset)
+        {
+            utf16Offset = (std::min)(utf16Offset, text.size());
+            std::size_t cursor = 0;
+            std::size_t codepoints = 0;
+            while (cursor < utf16Offset)
+            {
+                if (IsHighSurrogate(text[cursor])
+                    && cursor + 1 < text.size()
+                    && IsLowSurrogate(text[cursor + 1]))
+                {
+                    cursor += 2;
+                }
+                else
+                {
+                    ++cursor;
+                }
+                ++codepoints;
+            }
+            return codepoints;
         }
 
         bool AddDelta(std::size_t& value, std::ptrdiff_t delta)
@@ -204,6 +245,7 @@ namespace winrt::ElMd
         core_->baseDirectory = file_ ? std::filesystem::path(file_.Path().c_str()).parent_path().wstring() : std::wstring{};
         core_->sourceEditor.reset();
         core_->editor = elmd::Editor(winrt::to_string(text_));
+        text_ = {};
         InvalidateBoundaryProjection();
         RebuildRenderModel();
     }
@@ -453,20 +495,19 @@ namespace winrt::ElMd
             auto const index = found->second;
             if (index >= projection.fragments.size()) return false;
             auto& fragment = projection.fragments[index];
-            auto const fragmentCodepointStart = projection.codepointOffsets.Prefix(index);
             auto const fragmentUtf16Start = projection.utf16Offsets.Prefix(index);
             if (!edit.range.valid_for(fragment.codepointLength)
-                || fragmentCodepointStart + fragment.codepointLength > projection.text.size()
-                || edit.range.end >= fragment.codepointToUtf16.size())
+                || fragmentUtf16Start + fragment.utf16Length > projection.utf16.size())
             {
                 return false;
             }
 
-            auto const globalCodepointStart = fragmentCodepointStart + edit.range.start;
+            auto const fragmentUtf16 = std::wstring_view{projection.utf16}.substr(
+                fragmentUtf16Start, fragment.utf16Length);
             auto const globalUtf16Start = fragmentUtf16Start
-                + fragment.codepointToUtf16[edit.range.start];
+                + Utf16OffsetForCodepoint(fragmentUtf16, edit.range.start);
             auto const globalUtf16End = fragmentUtf16Start
-                + fragment.codepointToUtf16[edit.range.end];
+                + Utf16OffsetForCodepoint(fragmentUtf16, edit.range.end);
             auto replacementUtf16 = BoundaryWide(edit.replacement);
             if (change.text_operations.size() == 1u)
             {
@@ -491,19 +532,12 @@ namespace winrt::ElMd
             {
                 return false;
             }
-            projection.text.replace(
-                globalCodepointStart,
-                edit.range.length(),
-                edit.replacement);
             projection.utf16.replace(
                 globalUtf16Start,
                 globalUtf16End - globalUtf16Start,
                 replacementUtf16);
             fragment.codepointLength = nextCodepointLength;
             fragment.utf16Length = nextUtf16Length;
-            fragment.codepointToUtf16 = Utf16Offsets(std::u32string_view{
-                projection.text}.substr(fragmentCodepointStart, fragment.codepointLength));
-            fragment.utf16Length = fragment.codepointToUtf16.back();
             if (!projection.codepointOffsets.Add(index, codepointDelta)
                 || !projection.utf16Offsets.Add(index, utf16Delta)) return false;
             return true;
@@ -532,11 +566,13 @@ namespace winrt::ElMd
             if (found == projection.fragmentIndex.end()) return false;
             auto const index = found->second;
             auto const& fragment = projection.fragments[index];
-            auto const fragmentStart = projection.codepointOffsets.Prefix(index);
+            auto const fragmentStart = projection.utf16Offsets.Prefix(index);
             auto source = core_->editor.editable_source(edit.container_id);
+            auto sourceUtf16 = source ? BoundaryWide(*source) : std::wstring{};
             if (!source || source->size() != fragment.codepointLength
-                || std::u32string_view{projection.text}.substr(
-                    fragmentStart, fragment.codepointLength) != *source)
+                || sourceUtf16.size() != fragment.utf16Length
+                || std::wstring_view{projection.utf16}.substr(
+                    fragmentStart, fragment.utf16Length) != sourceUtf16)
             {
                 return false;
             }
@@ -550,59 +586,55 @@ namespace winrt::ElMd
         if (core_->boundaryProjection) return *core_->boundaryProjection;
 
         detail::BoundaryProjection projection;
-        std::vector<std::size_t> codepointStarts;
+        std::vector<std::size_t> codepointSpans;
+        std::vector<std::size_t> utf16Spans;
         if (core_->sourceEditor)
         {
-            projection.text = core_->sourceEditor->source();
-            projection.fragments.reserve(core_->sourceEditor->lines().size());
-            codepointStarts.reserve(core_->sourceEditor->lines().size());
-            for (auto const& line : core_->sourceEditor->lines())
+            auto const& source = core_->sourceEditor->source();
+            auto const& lines = core_->sourceEditor->lines();
+            projection.utf16 = BoundaryWide(source);
+            projection.fragments.reserve(lines.size());
+            codepointSpans.reserve(lines.size());
+            utf16Spans.reserve(lines.size());
+            for (std::size_t index = 0; index < lines.size(); ++index)
             {
-                codepointStarts.push_back(line.source_start);
+                auto const& line = lines[index];
+                auto const nextStart = index + 1 < lines.size()
+                    ? lines[index + 1].source_start
+                    : source.size();
+                auto const codepointSpan = nextStart - line.source_start;
+                auto const lineUtf16Length = BoundaryWide(line.text).size();
+                auto const utf16Span = BoundaryWide(std::u32string_view{source}.substr(
+                    line.source_start, codepointSpan)).size();
                 projection.fragmentIndex.emplace(line.id.v, projection.fragments.size());
-                projection.fragments.push_back({line.id, line.text.size()});
+                projection.fragments.push_back({line.id, line.text.size(), lineUtf16Length});
+                codepointSpans.push_back(codepointSpan);
+                utf16Spans.push_back(utf16Span);
             }
         }
         else
         {
             auto fragments = elmd::document_text_fragments(core_->editor.document());
             projection.fragments.reserve(fragments.size());
+            codepointSpans.reserve(fragments.size());
+            utf16Spans.reserve(fragments.size());
             for (std::size_t index = 0; index < fragments.size(); ++index)
             {
-                if (index) projection.text.push_back(U'\n');
-                codepointStarts.push_back(projection.text.size());
+                if (index) projection.utf16.push_back(L'\n');
+                auto fragmentUtf16 = BoundaryWide(fragments[index].text);
                 projection.fragmentIndex.emplace(fragments[index].container_id.v, projection.fragments.size());
                 projection.fragments.push_back({
                     fragments[index].container_id,
                     fragments[index].text.size(),
+                    fragmentUtf16.size(),
                 });
-                projection.text += fragments[index].text;
+                projection.utf16 += fragmentUtf16;
+                auto const separator = index + 1 < fragments.size() ? 1u : 0u;
+                codepointSpans.push_back(fragments[index].text.size() + separator);
+                utf16Spans.push_back(fragmentUtf16.size() + separator);
             }
         }
 
-        projection.utf16 = BoundaryWide(projection.text);
-        auto globalOffsets = Utf16Offsets(projection.text);
-        std::vector<std::size_t> codepointSpans(projection.fragments.size());
-        std::vector<std::size_t> utf16Spans(projection.fragments.size());
-        for (std::size_t index = 0; index < projection.fragments.size(); ++index)
-        {
-            auto& fragment = projection.fragments[index];
-            auto const start = codepointStarts[index];
-            auto const end = start + fragment.codepointLength;
-            if (end > projection.text.size()) continue;
-            auto const utf16Start = globalOffsets[start];
-            fragment.utf16Length = globalOffsets[end] - utf16Start;
-            fragment.codepointToUtf16.reserve(fragment.codepointLength + 1);
-            for (auto offset = start; offset <= end; ++offset)
-            {
-                fragment.codepointToUtf16.push_back(globalOffsets[offset] - utf16Start);
-            }
-            auto const nextStart = index + 1 < projection.fragments.size()
-                ? codepointStarts[index + 1]
-                : projection.text.size();
-            codepointSpans[index] = nextStart - start;
-            utf16Spans[index] = globalOffsets[nextStart] - utf16Start;
-        }
         projection.codepointOffsets.Reset(codepointSpans);
         projection.utf16Offsets.Reset(utf16Spans);
         core_->boundaryProjection.emplace(std::move(projection));
@@ -624,9 +656,10 @@ namespace winrt::ElMd
         return BoundaryProjection().utf16.size();
     }
 
-    std::u32string const& EditorSession::TextView() const
+    std::size_t EditorSession::CharacterCount() const
     {
-        return BoundaryProjection().text;
+        auto const& projection = BoundaryProjection();
+        return projection.codepointOffsets.Prefix(projection.fragments.size());
     }
 
     std::optional<std::u32string> EditorSession::EditableSource(elmd::NodeId id) const
@@ -665,8 +698,10 @@ namespace winrt::ElMd
         auto const& fragment = projection.fragments[index];
         auto const codepointOffset = (std::min)(position.source_offset, fragment.codepointLength);
         auto const utf16Start = projection.utf16Offsets.Prefix(index);
-        if (codepointOffset >= fragment.codepointToUtf16.size()) return utf16Start;
-        return utf16Start + fragment.codepointToUtf16[codepointOffset];
+        if (utf16Start + fragment.utf16Length > projection.utf16.size()) return utf16Start;
+        auto const fragmentUtf16 = std::wstring_view{projection.utf16}.substr(
+            utf16Start, fragment.utf16Length);
+        return utf16Start + Utf16OffsetForCodepoint(fragmentUtf16, codepointOffset);
     }
 
     elmd::TextPosition EditorSession::PositionFromAcp(std::size_t offset, elmd::TextAffinity affinity) const
@@ -680,10 +715,9 @@ namespace winrt::ElMd
         auto const localUtf16 = offset >= utf16Start
             ? (std::min)(offset - utf16Start, fragment.utf16Length)
             : 0u;
-        auto const localOffset = static_cast<std::size_t>(std::lower_bound(
-            fragment.codepointToUtf16.begin(),
-            fragment.codepointToUtf16.end(),
-            localUtf16) - fragment.codepointToUtf16.begin());
+        auto const fragmentUtf16 = std::wstring_view{projection.utf16}.substr(
+            utf16Start, fragment.utf16Length);
+        auto const localOffset = CodepointOffsetForUtf16(fragmentUtf16, localUtf16);
         return {fragment.containerId, (std::min)(localOffset, fragment.codepointLength), affinity};
     }
 

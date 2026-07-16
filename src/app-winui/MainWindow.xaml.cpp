@@ -78,7 +78,7 @@ namespace winrt::ElMd::implementation
         DocumentNameText().Text(displayName);
         Microsoft::UI::Xaml::Controls::ToolTipService::SetToolTip(TitleDocumentText(), winrt::box_value(detail));
         Microsoft::UI::Xaml::Controls::ToolTipService::SetToolTip(DocumentNameText(), winrt::box_value(detail));
-        CharacterCountText().Text(winrt::to_hstring(editorSession.TextView().size()) + L" characters");
+        CharacterCountText().Text(winrt::to_hstring(editorSession.CharacterCount()) + L" characters");
         RevisionText().Text(L"Revision " + winrt::to_hstring(editorSession.Revision()));
     }
 

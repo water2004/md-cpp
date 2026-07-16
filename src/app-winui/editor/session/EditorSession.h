@@ -34,12 +34,10 @@ namespace winrt::ElMd
             elmd::NodeId containerId{};
             std::size_t codepointLength = 0;
             std::size_t utf16Length = 0;
-            std::vector<std::size_t> codepointToUtf16;
         };
 
         struct BoundaryProjection
         {
-            std::u32string text;
             std::wstring utf16;
             std::vector<BoundaryFragment> fragments;
             std::unordered_map<std::uint64_t, std::size_t> fragmentIndex;
@@ -96,9 +94,9 @@ namespace winrt::ElMd
         winrt::hstring Path() const;
         uint64_t Revision() const;
         std::size_t AcpLength() const;
+        std::size_t CharacterCount() const;
         std::wstring const& BoundaryTextUtf16() const;
         std::optional<detail::BoundaryTextChange> const& LastBoundaryTextChange() const;
-        std::u32string const& TextView() const;
         std::optional<std::u32string> EditableSource(elmd::NodeId id) const;
         std::optional<EditorDocumentInteraction> InteractionAt(elmd::TextPosition position) const;
         elmd::TextSelection Selection() const;
