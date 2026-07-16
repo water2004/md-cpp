@@ -30,5 +30,6 @@ namespace winrt::ElMd
         Render render_;
         std::vector<elmd::TextPosition> outlinePositions_;
         std::vector<std::wstring> outlineLabels_;
+        std::optional<std::uint64_t> outlineContentKey_;
     };
 }

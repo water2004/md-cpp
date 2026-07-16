@@ -184,6 +184,7 @@ suite editor_tests = [] {
 "local_symbol_contributions_refresh_only_the_edited_owner"_test = [] {
     Editor prose("# title\n\nalpha\n\nbeta\n\ngamma");
     const auto& paragraph = prose.document().root.children.back();
+    auto const initial_outline_content_revision = prose.outline().content_revision;
     prose.set_selection(caret(paragraph, paragraph.inline_content.source.size()));
     reset_core_operation_counters();
     expect(fatal(prose.execute_command(Command::InsertText(U"!"))));
@@ -192,6 +193,7 @@ suite editor_tests = [] {
     expect(fatal(bool(counters.full_document_symbol_derivations == 0u)));
     expect(fatal(bool(counters.full_document_outline_derivations == 0u)));
     expect(fatal(bool(prose.outline().flat_items().front()->title_plain_text == "title")));
+    expect(fatal(bool(prose.outline().content_revision == initial_outline_content_revision)));
 
     const auto& heading = prose.document().root.children.front();
     prose.set_selection(caret(heading, heading.inline_content.source.size()));
@@ -202,6 +204,7 @@ suite editor_tests = [] {
     expect(fatal(bool(counters.full_document_symbol_derivations == 0u)));
     expect(fatal(bool(counters.full_document_outline_derivations == 1u)));
     expect(fatal(bool(prose.outline().flat_items().front()->title_plain_text == "title!")));
+    expect(fatal(bool(prose.outline().content_revision == prose.revision())));
 
     Editor link("[x](a)\n\nplain");
     const auto& link_owner = link.document().root.children.front();

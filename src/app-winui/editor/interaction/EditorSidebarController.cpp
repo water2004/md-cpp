@@ -28,6 +28,7 @@ namespace winrt::ElMd
         render_ = {};
         outlinePositions_.clear();
         outlineLabels_.clear();
+        outlineContentKey_.reset();
     }
 
     void EditorSidebarController::Refresh()
@@ -53,6 +54,8 @@ namespace winrt::ElMd
     void EditorSidebarController::RefreshOutline()
     {
         if (!session_ || !outline_) return;
+        auto const contentKey = session_->RenderModel().outline.content_key;
+        if (outlineContentKey_ == contentKey) return;
         std::vector<std::wstring> labels;
         std::vector<elmd::TextPosition> positions;
         for (auto const* item : session_->RenderModel().outline.flat_items())
@@ -65,6 +68,7 @@ namespace winrt::ElMd
         if (labels == outlineLabels_ && positions == outlinePositions_) return;
         outlineLabels_ = std::move(labels);
         outlinePositions_ = std::move(positions);
+        outlineContentKey_ = contentKey;
         outline_.Items().Clear();
         for (auto const& label : outlineLabels_) outline_.Items().Append(winrt::box_value(winrt::hstring(label)));
     }

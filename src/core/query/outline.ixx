@@ -25,9 +25,19 @@ struct OutlineItem {
 
 struct Outline {
     std::uint64_t revision = 0;
+    // Changes only when the outline's headings/hierarchy are re-derived.
+    // `revision` still tracks the owning document revision for consumers that
+    // need freshness even when the visible outline is unchanged.
+    std::uint64_t content_revision = 0;
+    std::uint64_t content_key = 0;
     std::vector<OutlineItem> items;
 
-    static Outline empty(std::uint64_t rev) { Outline o; o.revision = rev; return o; }
+    static Outline empty(std::uint64_t rev) {
+        Outline o;
+        o.revision = rev;
+        o.content_revision = rev;
+        return o;
+    }
 
     const OutlineItem* find_active_item(TextPosition position) const {
         const OutlineItem* found = nullptr;
@@ -135,7 +145,28 @@ inline Outline build_outline_from_blocks(std::uint64_t revision, const std::vect
     }
     Outline o;
     o.revision = revision;
+    o.content_revision = revision;
     o.items = std::move(root);
+    std::uint64_t content_key = 1469598103934665603ull;
+    auto append_byte = [&](std::uint8_t value) {
+        content_key ^= value;
+        content_key *= 1099511628211ull;
+    };
+    auto append_scalar = [&](std::uint64_t value) {
+        for (std::size_t index = 0; index < sizeof(value); ++index) {
+            append_byte(static_cast<std::uint8_t>(value & 0xffu));
+            value >>= 8;
+        }
+    };
+    for (auto const& item : linear) {
+        append_scalar(item.id.v);
+        append_scalar(item.level);
+        for (auto byte : item.title_plain_text) append_byte(static_cast<std::uint8_t>(byte));
+        append_byte(0xffu);
+        for (auto byte : item.slug) append_byte(static_cast<std::uint8_t>(byte));
+        append_byte(0xfeu);
+    }
+    o.content_key = content_key;
     return o;
 }
 
