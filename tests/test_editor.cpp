@@ -300,6 +300,61 @@ suite editor_tests = [] {
     expect(fatal(bool(counters.full_document_serializations == 0u)));
 };
 
+"large_document_navigation_uses_the_editable_tree_order_index"_test = [] {
+    std::string markdown;
+    constexpr std::size_t block_count = 2048;
+    for (std::size_t index = 0; index < block_count; ++index) {
+        if (index != 0) markdown += "\n\n";
+        markdown += "paragraph " + std::to_string(index);
+    }
+
+    Editor editor(markdown);
+    const auto previous_id = editor.document().root.children[block_count - 2].id;
+    const auto last_id = editor.document().root.children.back().id;
+    const auto previous_size = editor.document().root.children[block_count - 2]
+        .inline_content.source.size();
+    editor.set_selection(caret(editor.document().root.children.back(), 0));
+
+    reset_core_operation_counters();
+    expect(fatal(editor.execute_command(Command{.kind = CommandKind::MoveLeft})));
+    auto counters = read_core_operation_counters();
+    expect(fatal(bool(editor.selection().active.container_id == previous_id)));
+    expect(fatal(bool(editor.selection().active.source_offset == previous_size)));
+    expect(fatal(bool(counters.full_document_text_projections == 0u)));
+    expect(fatal(bool(counters.full_document_block_index_scans == 0u)));
+
+    reset_core_operation_counters();
+    expect(fatal(editor.execute_command(Command{.kind = CommandKind::MoveRight})));
+    counters = read_core_operation_counters();
+    expect(fatal(bool(editor.selection().active.container_id == last_id)));
+    expect(fatal(bool(editor.selection().active.source_offset == 0u)));
+    expect(fatal(bool(counters.full_document_text_projections == 0u)));
+    expect(fatal(bool(counters.full_document_block_index_scans == 0u)));
+
+    editor.set_selection(caret(
+        editor.document().root.children.back(),
+        editor.document().root.children.back().inline_content.source.size()));
+    expect(fatal(editor.execute_command(Command{.kind = CommandKind::InsertNewline})));
+    const auto inserted_id = editor.selection().active.container_id;
+    expect(fatal(bool(inserted_id != last_id)));
+
+    reset_core_operation_counters();
+    expect(fatal(editor.execute_command(Command{.kind = CommandKind::MoveLeft})));
+    counters = read_core_operation_counters();
+    expect(fatal(bool(editor.selection().active.container_id == last_id)));
+    expect(fatal(bool(counters.full_document_text_projections == 0u)));
+    expect(fatal(bool(counters.full_document_block_index_scans == 0u)));
+
+    reset_core_operation_counters();
+    expect(fatal(editor.execute_command(Command{.kind = CommandKind::SelectAll})));
+    counters = read_core_operation_counters();
+    expect(fatal(bool(editor.selection().anchor.container_id
+        == editor.document().root.children.front().id)));
+    expect(fatal(bool(editor.selection().active.container_id == inserted_id)));
+    expect(fatal(bool(counters.full_document_text_projections == 0u)));
+    expect(fatal(bool(counters.full_document_block_index_scans == 0u)));
+};
+
 "externally_assembled_documents_calibrate_node_ids_once"_test = [] {
     EditorDocument document;
     document.root.id = NodeId{41};
@@ -949,6 +1004,8 @@ suite editor_tests = [] {
         expect(fatal(bool(counters.full_document_parses == 0u))) << label;
         expect(fatal(bool(counters.full_document_serializations == 0u))) << label;
         expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << label;
+        expect(fatal(bool(counters.full_document_text_projections == 0u))) << label;
+        expect(fatal(bool(counters.full_document_block_index_scans == 1u))) << label;
         expect(fatal(bool(!transaction->operations.empty()))) << label;
         const auto after_markdown = editor.markdown_utf8();
         const auto after = editor.selection();
@@ -1878,7 +1935,9 @@ suite editor_tests = [] {
     marked.set_selection({
         {marked_id, 1, TextAffinity::Downstream},
         {marked_id, 6, TextAffinity::Upstream}});
+    reset_core_operation_counters();
     expect(fatal(bool(marked.selected_text_cps() == U"*one*")));
+    expect(fatal(bool(read_core_operation_counters().full_document_text_projections == 0u)));
 };
 
 "clipboard_copy_preserves_exact_inline_source_and_recursive_block_structure"_test = [] {

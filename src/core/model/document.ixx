@@ -31,6 +31,10 @@ struct EditorDocument {
     // Derived lookup acceleration only. Paths are validated against the
     // authoritative tree before use and lazily repaired after structure edits.
     mutable std::unordered_map<std::uint64_t, BlockPath> cached_block_paths;
+    // Tree-order navigation index. It contains node identities only; text
+    // offsets remain block-local and are always resolved against the tree.
+    std::vector<NodeId> cached_editable_order;
+    std::unordered_map<std::uint64_t, std::size_t> cached_editable_index;
 
     static EditorDocument empty(std::uint64_t rev) {
         EditorDocument d;
@@ -40,6 +44,10 @@ struct EditorDocument {
         paragraph.kind = BlockKind::Paragraph;
         d.root.children.push_back(paragraph);
         d.next_node_id = 3;
+        d.cached_block_paths.emplace(d.root.id.v, BlockPath{});
+        d.cached_block_paths.emplace(paragraph.id.v, BlockPath{0});
+        d.cached_editable_order.push_back(paragraph.id);
+        d.cached_editable_index.emplace(paragraph.id.v, 0);
         return d;
     }
 };
@@ -47,9 +55,17 @@ struct EditorDocument {
 inline void rebuild_document_block_index(EditorDocument& document) {
     record_full_document_block_index_scan();
     document.cached_block_paths.clear();
+    document.cached_editable_order.clear();
+    document.cached_editable_index.clear();
     BlockPath path;
     auto visit = [&](auto& self, const BlockNode& block) -> void {
         document.cached_block_paths[block.id.v] = path;
+        if (block.kind != BlockKind::Document && is_editable_block_owner(block.kind)) {
+            document.cached_editable_index.emplace(
+                block.id.v,
+                document.cached_editable_order.size());
+            document.cached_editable_order.push_back(block.id);
+        }
         for (std::size_t index = 0; index < block.children.size(); ++index) {
             path.push_back(index);
             self(self, block.children[index]);
@@ -57,6 +73,18 @@ inline void rebuild_document_block_index(EditorDocument& document) {
         }
     };
     visit(visit, document.root);
+}
+
+inline std::optional<std::size_t> document_editable_order_position(
+    const EditorDocument& document,
+    NodeId id) {
+    const auto found = document.cached_editable_index.find(id.v);
+    if (found == document.cached_editable_index.end()
+        || found->second >= document.cached_editable_order.size()
+        || document.cached_editable_order[found->second] != id) {
+        return std::nullopt;
+    }
+    return found->second;
 }
 
 inline std::optional<BlockPath> document_block_path(

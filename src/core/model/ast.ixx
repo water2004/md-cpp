@@ -22,6 +22,27 @@ enum class BlockKind {
     ThematicBreak, LinkDefinition, UnsupportedMarkup, Extension,
 };
 
+inline bool is_editable_block_owner(BlockKind kind) {
+    switch (kind) {
+        case BlockKind::Paragraph:
+        case BlockKind::Heading:
+        case BlockKind::CalloutTitle:
+        case BlockKind::TableCell:
+        case BlockKind::CodeBlock:
+        case BlockKind::MathBlock:
+        case BlockKind::ImageBlock:
+        case BlockKind::Toc:
+        case BlockKind::Frontmatter:
+        case BlockKind::ThematicBreak:
+        case BlockKind::LinkDefinition:
+        case BlockKind::UnsupportedMarkup:
+        case BlockKind::Extension:
+            return true;
+        default:
+            return false;
+    }
+}
+
 struct BlockNode {
     NodeId id{};
     BlockKind kind = BlockKind::Paragraph;

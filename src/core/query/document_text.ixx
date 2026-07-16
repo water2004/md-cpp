@@ -10,6 +10,7 @@ import elmd.core.block_tree;
 import elmd.core.document;
 import elmd.core.ids;
 import elmd.core.inline_document;
+import elmd.core.instrumentation;
 import elmd.core.text_edit;
 
 export namespace elmd {
@@ -102,6 +103,7 @@ inline std::optional<TextPosition> first_document_text_position(
 }
 
 inline std::vector<DocumentTextFragment> document_text_fragments(const EditorDocument& document) {
+    record_full_document_text_projection();
     std::vector<DocumentTextFragment> result;
     walk_blocks(document.root, [&](const BlockNode& block) {
         if (block.kind == BlockKind::Document) return;
@@ -124,15 +126,16 @@ inline std::optional<std::u32string> document_editable_text(
 inline std::optional<std::u32string> document_selected_text(
     const EditorDocument& document,
     const TextSelection& selection) {
-    const auto fragments = document_text_fragments(document);
-    auto index_of = [&](NodeId id) -> std::optional<std::size_t> {
-        for (std::size_t index = 0; index < fragments.size(); ++index) {
-            if (fragments[index].container_id == id) return index;
-        }
-        return std::nullopt;
+    const auto& order = document.cached_editable_order;
+    auto text_at = [&](std::size_t index) -> std::optional<std::u32string_view> {
+        if (index >= order.size()) return std::nullopt;
+        const auto* block = find_document_block(document, order[index]);
+        return block ? editable_block_text_view(*block) : std::nullopt;
     };
-    auto anchor_index = index_of(selection.anchor.container_id);
-    auto active_index = index_of(selection.active.container_id);
+    auto anchor_index = document_editable_order_position(
+        document, selection.anchor.container_id);
+    auto active_index = document_editable_order_position(
+        document, selection.active.container_id);
     if (!anchor_index || !active_index) return std::nullopt;
 
     auto start = selection.anchor;
@@ -145,18 +148,23 @@ inline std::optional<std::u32string> document_selected_text(
         std::swap(start_index, end_index);
     }
 
-    const auto start_offset = (std::min)(start.source_offset, fragments[start_index].text.size());
-    const auto end_offset = (std::min)(end.source_offset, fragments[end_index].text.size());
+    auto start_text = text_at(start_index);
+    auto end_text = text_at(end_index);
+    if (!start_text || !end_text) return std::nullopt;
+    const auto start_offset = (std::min)(start.source_offset, start_text->size());
+    const auto end_offset = (std::min)(end.source_offset, end_text->size());
     if (start_index == end_index) {
         return std::u32string{
-            fragments[start_index].text.substr(start_offset, end_offset - start_offset)};
+            start_text->substr(start_offset, end_offset - start_offset)};
     }
 
-    std::u32string result{fragments[start_index].text.substr(start_offset)};
+    std::u32string result{start_text->substr(start_offset)};
     for (std::size_t index = start_index + 1; index <= end_index; ++index) {
+        auto text = index == end_index ? end_text : text_at(index);
+        if (!text) return std::nullopt;
         result.push_back(U'\n');
-        const auto length = index == end_index ? end_offset : fragments[index].text.size();
-        result.append(fragments[index].text, 0, length);
+        const auto length = index == end_index ? end_offset : text->size();
+        result.append(*text, 0, length);
     }
     return result;
 }

@@ -401,15 +401,11 @@ inline std::optional<DocumentTransaction> document_delete_selection(EditorDocume
             revision_before, DocumentTransactionReason::Delete);
     }
 
-    const auto nodes = document_text_fragments(after);
-    auto index_of = [&](NodeId id) -> std::optional<std::size_t> {
-        for (std::size_t index = 0; index < nodes.size(); ++index) {
-            if (nodes[index].container_id == id) return index;
-        }
-        return std::nullopt;
-    };
-    auto anchor_index = index_of(selection.anchor.container_id);
-    auto active_index = index_of(selection.active.container_id);
+    const auto& order = after.cached_editable_order;
+    auto anchor_index = document_editable_order_position(
+        after, selection.anchor.container_id);
+    auto active_index = document_editable_order_position(
+        after, selection.active.container_id);
     if (!anchor_index || !active_index) return std::nullopt;
     auto first = selection.anchor;
     auto last = selection.active;
@@ -434,10 +430,17 @@ inline std::optional<DocumentTransaction> document_delete_selection(EditorDocume
     std::vector<DocumentOperation> operations;
     document_edit_detail::append_source_operation(operations, std::move(*source_edit));
     document_edit_detail::MutationRollback rollback(after, operations, revision_before);
+    std::vector<NodeId> removed_ids;
+    removed_ids.reserve(*active_index - *anchor_index);
     for (std::size_t index = *anchor_index + 1; index <= *active_index; ++index) {
+        removed_ids.push_back(order[index]);
+    }
+    // Remove in reverse tree order so cached sibling paths ahead of the
+    // mutation remain valid throughout this transaction.
+    for (auto id = removed_ids.rbegin(); id != removed_ids.rend(); ++id) {
         auto remove = document_edit_detail::remove_node_recorded(
             after,
-            nodes[index].container_id);
+            *id);
         if (!remove) return std::nullopt;
         operations.emplace_back(std::move(*remove));
     }
@@ -473,50 +476,58 @@ inline std::optional<DocumentTransaction> document_delete_selection(EditorDocume
 }
 
 inline std::optional<TextSelection> document_move_selection(const EditorDocument& document, const TextSelection& selection, DocumentMove movement, bool extend) {
-    const auto nodes = document_text_fragments(document);
-    if (nodes.empty()) return std::nullopt;
-    auto index_of = [&](NodeId id) -> std::optional<std::size_t> {
-        for (std::size_t index = 0; index < nodes.size(); ++index) {
-            if (nodes[index].container_id == id) return index;
-        }
-        return std::nullopt;
+    const auto& order = document.cached_editable_order;
+    if (order.empty()) return std::nullopt;
+    auto text_at = [&](std::size_t index) -> std::optional<std::u32string_view> {
+        if (index >= order.size()) return std::nullopt;
+        const auto* block = find_document_block(document, order[index]);
+        return block ? editable_block_text_view(*block) : std::nullopt;
     };
-    auto index = index_of(selection.active.container_id); if (!index) return std::nullopt;
-    auto target = selection.active; target.source_offset = (std::min)(target.source_offset, nodes[*index].text.size());
+    auto index = document_editable_order_position(
+        document, selection.active.container_id);
+    if (!index) return std::nullopt;
+    auto text = text_at(*index); if (!text) return std::nullopt;
+    auto target = selection.active; target.source_offset = (std::min)(target.source_offset, text->size());
     if (!extend && !selection.is_caret()) {
-        const auto anchor_index = index_of(selection.anchor.container_id).value_or(*index);
+        const auto anchor_index = document_editable_order_position(
+            document, selection.anchor.container_id).value_or(*index);
         const bool anchor_first = anchor_index < *index || (anchor_index == *index && selection.anchor.source_offset < selection.active.source_offset);
         target = (movement == DocumentMove::Left || movement == DocumentMove::Up || movement == DocumentMove::LineStart || movement == DocumentMove::DocumentStart)
             ? (anchor_first ? selection.anchor : selection.active) : (anchor_first ? selection.active : selection.anchor);
         return TextSelection::caret(target);
     }
-    if (movement == DocumentMove::DocumentStart) target = {nodes.front().container_id, 0, TextAffinity::Downstream};
-    else if (movement == DocumentMove::DocumentEnd) target = {nodes.back().container_id, nodes.back().text.size(), TextAffinity::Downstream};
+    if (movement == DocumentMove::DocumentStart) target = {order.front(), 0, TextAffinity::Downstream};
+    else if (movement == DocumentMove::DocumentEnd) {
+        auto last = text_at(order.size() - 1); if (!last) return std::nullopt;
+        target = {order.back(), last->size(), TextAffinity::Downstream};
+    }
     else if (movement == DocumentMove::Left) {
         if (target.source_offset > 0) --target.source_offset;
-        else if (*index > 0) target = {nodes[*index - 1].container_id, nodes[*index - 1].text.size(), TextAffinity::Upstream};
+        else if (*index > 0) {
+            auto previous = text_at(*index - 1); if (!previous) return std::nullopt;
+            target = {order[*index - 1], previous->size(), TextAffinity::Upstream};
+        }
     } else if (movement == DocumentMove::Right) {
-        if (target.source_offset < nodes[*index].text.size()) ++target.source_offset;
-        else if (*index + 1 < nodes.size()) target = {nodes[*index + 1].container_id, 0, TextAffinity::Downstream};
+        if (target.source_offset < text->size()) ++target.source_offset;
+        else if (*index + 1 < order.size()) target = {order[*index + 1], 0, TextAffinity::Downstream};
     } else {
-        const auto& text = nodes[*index].text;
-        const auto before = target.source_offset == 0 ? std::u32string::npos : text.rfind(U'\n', target.source_offset - 1);
+        const auto before = target.source_offset == 0 ? std::u32string::npos : text->rfind(U'\n', target.source_offset - 1);
         const auto line_start = before == std::u32string::npos ? 0 : before + 1;
-        const auto after = text.find(U'\n', target.source_offset);
-        const auto line_end = after == std::u32string::npos ? text.size() : after;
+        const auto after = text->find(U'\n', target.source_offset);
+        const auto line_end = after == std::u32string::npos ? text->size() : after;
         if (movement == DocumentMove::LineStart) target.source_offset = line_start;
         else if (movement == DocumentMove::LineEnd) target.source_offset = line_end;
         else {
             const auto column = target.source_offset - line_start;
             if (movement == DocumentMove::Up && line_start > 0) {
                 const auto previous_end = line_start - 1;
-                const auto previous_break = previous_end == 0 ? std::u32string::npos : text.rfind(U'\n', previous_end - 1);
+                const auto previous_break = previous_end == 0 ? std::u32string::npos : text->rfind(U'\n', previous_end - 1);
                 const auto previous_start = previous_break == std::u32string::npos ? 0 : previous_break + 1;
                 target.source_offset = previous_start + (std::min)(column, previous_end - previous_start);
-            } else if (movement == DocumentMove::Down && line_end < text.size()) {
+            } else if (movement == DocumentMove::Down && line_end < text->size()) {
                 const auto next_start = line_end + 1;
-                const auto next_break = text.find(U'\n', next_start);
-                const auto next_end = next_break == std::u32string::npos ? text.size() : next_break;
+                const auto next_break = text->find(U'\n', next_start);
+                const auto next_end = next_break == std::u32string::npos ? text->size() : next_break;
                 target.source_offset = next_start + (std::min)(column, next_end - next_start);
             }
         }
@@ -526,11 +537,14 @@ inline std::optional<TextSelection> document_move_selection(const EditorDocument
 }
 
 inline std::optional<TextSelection> document_select_all(const EditorDocument& document) {
-    const auto nodes = document_text_fragments(document);
-    if (nodes.empty()) return std::nullopt;
+    const auto& order = document.cached_editable_order;
+    if (order.empty()) return std::nullopt;
+    const auto* last = find_document_block(document, order.back());
+    auto last_text = last ? editable_block_text_view(*last) : std::nullopt;
+    if (!last_text) return std::nullopt;
     return TextSelection{
-        {nodes.front().container_id, 0, TextAffinity::Downstream},
-        {nodes.back().container_id, nodes.back().text.size(), TextAffinity::Downstream}};
+        {order.front(), 0, TextAffinity::Downstream},
+        {order.back(), last_text->size(), TextAffinity::Downstream}};
 }
 
 } // namespace elmd
