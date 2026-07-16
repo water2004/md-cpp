@@ -53,6 +53,7 @@ namespace winrt::ElMd
         std::vector<Block> blocks;
         std::vector<Placement> placements;
         std::unordered_set<std::size_t> embeddedBlocks;
+        std::unordered_set<std::size_t> layoutBlocks;
         bool geometryValid = false;
     };
 
