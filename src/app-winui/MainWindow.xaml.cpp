@@ -11,10 +11,38 @@ namespace winrt::ElMd::implementation
 {
     namespace
     {
+        Windows::UI::Color UiColor(elmd::Color color)
+        {
+            return Windows::UI::Color{ color.a, color.r, color.g, color.b };
+        }
+
         Microsoft::UI::Xaml::Media::SolidColorBrush Brush(elmd::Color color)
         {
-            return Microsoft::UI::Xaml::Media::SolidColorBrush(
-                Windows::UI::Color{ color.a, color.r, color.g, color.b });
+            return Microsoft::UI::Xaml::Media::SolidColorBrush(UiColor(color));
+        }
+
+        void UpdateBrushResource(
+            Microsoft::UI::Xaml::ResourceDictionary const& resources,
+            wchar_t const* name,
+            elmd::Color color)
+        {
+            auto key = winrt::box_value(name);
+            if (resources.HasKey(key))
+            {
+                if (auto brush = resources.Lookup(key)
+                    .try_as<Microsoft::UI::Xaml::Media::SolidColorBrush>())
+                {
+                    brush.Color(UiColor(color));
+                    return;
+                }
+            }
+            resources.Insert(key, Brush(color));
+        }
+
+        Windows::Foundation::IReference<Windows::UI::Color> ColorReference(elmd::Color color)
+        {
+            return winrt::box_value(UiColor(color))
+                .as<Windows::Foundation::IReference<Windows::UI::Color>>();
         }
 
         Microsoft::UI::Xaml::Media::FontFamily Font(std::string const& family)
@@ -267,12 +295,15 @@ namespace winrt::ElMd::implementation
     {
         auto const& colors = themeProfile.colors;
         auto resources = Root().Resources();
-        resources.Insert(winrt::box_value(L"ElMdShellBackgroundBrush"), Brush(colors.shell_bg));
-        resources.Insert(winrt::box_value(L"ElMdShellLayerBrush"), Brush(colors.shell_layer_bg));
-        resources.Insert(winrt::box_value(L"ElMdShellBorderBrush"), Brush(colors.shell_border));
-        resources.Insert(winrt::box_value(L"ElMdShellForegroundBrush"), Brush(colors.shell_fg));
-        resources.Insert(winrt::box_value(L"ElMdShellMutedForegroundBrush"), Brush(colors.shell_muted_fg));
-        resources.Insert(winrt::box_value(L"ElMdShellAccentBrush"), Brush(colors.shell_accent));
+        // ThemeResource bindings retain the object returned by the dictionary. Mutating
+        // stable brushes updates every existing binding; replacing them leaves controls
+        // holding colors from the previous theme until another resource pass occurs.
+        UpdateBrushResource(resources, L"ElMdShellBackgroundBrush", colors.shell_bg);
+        UpdateBrushResource(resources, L"ElMdShellLayerBrush", colors.shell_layer_bg);
+        UpdateBrushResource(resources, L"ElMdShellBorderBrush", colors.shell_border);
+        UpdateBrushResource(resources, L"ElMdShellForegroundBrush", colors.shell_fg);
+        UpdateBrushResource(resources, L"ElMdShellMutedForegroundBrush", colors.shell_muted_fg);
+        UpdateBrushResource(resources, L"ElMdShellAccentBrush", colors.shell_accent);
         resources.Insert(winrt::box_value(L"ElMdUiFontFamily"), Font(themeProfile.typography.ui.family));
         resources.Insert(winrt::box_value(L"ElMdUiFontSize"), winrt::box_value(static_cast<double>(themeProfile.typography.ui.size)));
         resources.Insert(winrt::box_value(L"ElMdMonoFontFamily"), Font(themeProfile.typography.ui_monospace.family));
@@ -284,6 +315,19 @@ namespace winrt::ElMd::implementation
         StatusBar().Background(Brush(colors.shell_layer_bg));
         StatusBar().BorderBrush(Brush(colors.shell_border));
         EditorScrollBar().Background(Brush(colors.shell_layer_bg));
+
+        auto titleBar = AppWindow().TitleBar();
+        titleBar.BackgroundColor(ColorReference(colors.shell_bg));
+        titleBar.ForegroundColor(ColorReference(colors.shell_fg));
+        titleBar.ButtonBackgroundColor(ColorReference(colors.shell_bg));
+        titleBar.ButtonForegroundColor(ColorReference(colors.shell_fg));
+        titleBar.ButtonHoverBackgroundColor(ColorReference(colors.shell_layer_bg));
+        titleBar.ButtonHoverForegroundColor(ColorReference(colors.shell_fg));
+        titleBar.ButtonPressedBackgroundColor(ColorReference(colors.shell_border));
+        titleBar.ButtonPressedForegroundColor(ColorReference(colors.shell_fg));
+        titleBar.ButtonInactiveBackgroundColor(ColorReference(colors.shell_bg));
+        titleBar.ButtonInactiveForegroundColor(ColorReference(colors.shell_muted_fg));
+
         Root().RowDefinitions().GetAt(0).Height(Microsoft::UI::Xaml::GridLengthHelper::FromPixels(themeProfile.layout.title_bar_height));
         DocumentNavigation().OpenPaneLength(themeProfile.layout.navigation_open_width);
         EditorScrollBar().Width(themeProfile.layout.scrollbar_width);
@@ -307,6 +351,7 @@ namespace winrt::ElMd::implementation
         auto systemVariant = CurrentThemeVariant();
         auto loaded = themeCatalog->Resolve(appSettings.themeId, systemVariant);
         themeProfile = std::move(loaded.profile);
+        ApplyShellTheme();
         using Microsoft::UI::Xaml::ElementTheme;
         if (appSettings.themeId == "system" || themeProfile.variant == elmd::Theme::HighContrast)
             Root().RequestedTheme(ElementTheme::Default);
@@ -314,7 +359,6 @@ namespace winrt::ElMd::implementation
             Root().RequestedTheme(themeProfile.variant == elmd::Theme::Dark
                 ? ElementTheme::Dark
                 : ElementTheme::Light);
-        ApplyShellTheme();
         editorSession.SetTheme(themeProfile);
         editorRenderer.SetTheme(themeProfile);
         if (settingsView)
