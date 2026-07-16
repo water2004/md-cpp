@@ -1060,12 +1060,24 @@ inline RenderModel build_render_model_incremental(
         }
     }
 
+    const bool trusted_structural_locality = update.structural
+        && update.structural_locality_known
+        && (!update.changed_owners.empty() || !update.structural_anchors.empty())
+        && dependency_key == previous.document_dependency_key;
+    if (trusted_structural_locality) {
+        auto note_top_level = [&](NodeId id) {
+            auto path = document_block_path(doc, id);
+            if (!path || path->empty() || path->front() >= doc.root.children.size()) return;
+            changed_top_levels.insert(doc.root.children[path->front()].id.v);
+        };
+        for (auto owner : update.changed_owners) note_top_level(owner);
+        for (auto anchor : update.structural_anchors) note_top_level(anchor);
+    }
+
     std::unordered_map<std::uint64_t, std::size_t> previous_by_id;
-    if (!local_invalidation) {
-        previous_by_id.reserve(previous.blocks.size());
-        for (std::size_t index = 0; index < previous.blocks.size(); ++index) {
-            previous_by_id.emplace(previous.blocks[index].id.v, index);
-        }
+    previous_by_id.reserve(previous.blocks.size());
+    for (std::size_t index = 0; index < previous.blocks.size(); ++index) {
+        previous_by_id.emplace(previous.blocks[index].id.v, index);
     }
     std::vector<RenderBlock> blocks;
     blocks.reserve(doc.root.children.size());
@@ -1073,13 +1085,16 @@ inline RenderModel build_render_model_incremental(
     std::size_t rebuilt = 0;
     for (std::size_t index = 0; index < doc.root.children.size(); ++index) {
         auto const& block = doc.root.children[index];
-        if (local_invalidation && !changed_top_levels.contains(block.id.v)) {
-            blocks.push_back(std::move(previous.blocks[index]));
+        auto found = previous_by_id.find(block.id.v);
+        if (trusted_structural_locality
+            && !changed_top_levels.contains(block.id.v)
+            && found != previous_by_id.end()
+            && !previous.blocks[found->second].source_mode) {
+            blocks.push_back(std::move(previous.blocks[found->second]));
             ++reused;
             continue;
         }
         auto source_key = render_key_detail::source_key(block, dependency_key);
-        auto found = previous_by_id.find(block.id.v);
         if (found != previous_by_id.end()
             && previous.blocks[found->second].source_key == source_key
             && !previous.blocks[found->second].source_mode) {

@@ -28,7 +28,9 @@ export namespace elmd {
 
 struct EditorDocumentChange {
     std::vector<DocumentTextOperation> text_operations;
+    std::vector<NodeId> structural_anchors;
     bool structural = false;
+    bool structural_locality_known = true;
     bool structural_symbols_may_change = false;
     bool structural_outline_may_change = false;
     bool forward = true;
@@ -62,9 +64,19 @@ inline EditorDocumentChange summarize_document_change(
                 // coordinates. Conservatively re-derive order-sensitive
                 // symbols and headings until the tree index carries the moved
                 // subtree identity directly.
+                change.structural_locality_known = false;
                 change.structural_symbols_may_change = true;
                 change.structural_outline_may_change = true;
             } else {
+                if (tree.parent_id.v != 0) {
+                    change.structural_anchors.push_back(tree.parent_id);
+                }
+                if (tree.before.id.v != 0) {
+                    change.structural_anchors.push_back(tree.before.id);
+                }
+                if (tree.after.id.v != 0) {
+                    change.structural_anchors.push_back(tree.after.id);
+                }
                 change.structural_symbols_may_change =
                     change.structural_symbols_may_change
                     || document_subtree_has_symbols(tree.before)
@@ -76,6 +88,10 @@ inline EditorDocumentChange summarize_document_change(
             }
         }
     }
+    std::ranges::sort(change.structural_anchors, {}, &NodeId::v);
+    change.structural_anchors.erase(
+        std::unique(change.structural_anchors.begin(), change.structural_anchors.end()),
+        change.structural_anchors.end());
     return change;
 }
 

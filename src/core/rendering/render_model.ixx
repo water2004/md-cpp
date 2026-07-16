@@ -267,7 +267,9 @@ struct RenderDiagnostic {
 
 struct RenderModelUpdate {
     bool structural = false;
+    bool structural_locality_known = true;
     std::vector<NodeId> changed_owners;
+    std::vector<NodeId> structural_anchors;
 };
 
 struct RenderModel {

@@ -431,6 +431,30 @@ suite editor_tests = [] {
         markdown += "paragraph " + std::to_string(index);
     }
     Editor editor(markdown);
+    auto render_model = build_render_model(
+        editor.document(),
+        editor.outline(),
+        editor.symbols(),
+        default_theme_profile());
+    auto update_render_model = [&](const EditorDocumentChange& change) {
+        RenderModelUpdate update;
+        update.structural = change.structural;
+        update.structural_locality_known = change.structural_locality_known;
+        update.structural_anchors = change.structural_anchors;
+        for (const auto& operation : change.text_operations) {
+            update.changed_owners.push_back(
+                (change.forward ? operation.forward : operation.inverse).container_id);
+        }
+        reset_core_operation_counters();
+        render_model = build_render_model_incremental(
+            editor.document(),
+            editor.outline(),
+            editor.symbols(),
+            default_theme_profile(),
+            std::move(render_model),
+            update);
+        return read_core_operation_counters();
+    };
     const auto& last = editor.document().root.children.back();
     editor.set_selection(caret(last, last.inline_content.source.size() / 2));
 
@@ -447,6 +471,14 @@ suite editor_tests = [] {
     expect(fatal(bool(validate_document(editor.document()).empty())));
     expect(fatal(document_indexes_are_exact(editor.document())));
 
+    auto change = editor.take_last_document_change();
+    expect(fatal(bool(change.has_value())));
+    if (!change) return;
+    const auto render_counters = update_render_model(*change);
+    expect(fatal(bool(render_counters.render_source_key_derivations == 2u)));
+    expect(fatal(bool(render_model.rebuilt_block_count == 2u)));
+    expect(fatal(bool(render_model.reused_block_count == block_count - 1u)));
+
     reset_core_operation_counters();
     expect(fatal(editor.undo()));
     auto history_counters = read_core_operation_counters();
@@ -456,6 +488,13 @@ suite editor_tests = [] {
     expect(fatal(bool(history_counters.full_document_outline_derivations == 0u)));
     expect(fatal(bool(history_counters.local_symbol_derivations == 1u)));
     expect(fatal(document_indexes_are_exact(editor.document())));
+    change = editor.take_last_document_change();
+    expect(fatal(bool(change.has_value())));
+    if (!change) return;
+    auto history_render_counters = update_render_model(*change);
+    expect(fatal(bool(history_render_counters.render_source_key_derivations == 1u)));
+    expect(fatal(bool(render_model.rebuilt_block_count == 1u)));
+    expect(fatal(bool(render_model.reused_block_count == block_count - 1u)));
 
     reset_core_operation_counters();
     expect(fatal(editor.redo()));
@@ -466,6 +505,13 @@ suite editor_tests = [] {
     expect(fatal(bool(history_counters.full_document_outline_derivations == 0u)));
     expect(fatal(bool(history_counters.local_symbol_derivations == 1u)));
     expect(fatal(document_indexes_are_exact(editor.document())));
+    change = editor.take_last_document_change();
+    expect(fatal(bool(change.has_value())));
+    if (!change) return;
+    history_render_counters = update_render_model(*change);
+    expect(fatal(bool(history_render_counters.render_source_key_derivations == 2u)));
+    expect(fatal(bool(render_model.rebuilt_block_count == 2u)));
+    expect(fatal(bool(render_model.reused_block_count == block_count - 1u)));
 };
 
 "externally_assembled_documents_calibrate_node_ids_once"_test = [] {
