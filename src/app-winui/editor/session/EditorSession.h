@@ -12,12 +12,21 @@ namespace winrt::ElMd
 {
     namespace detail
     {
+        struct BoundaryOffsetIndex
+        {
+            void Reset(std::vector<std::size_t> const& spans);
+            bool CanAdd(std::size_t index, std::ptrdiff_t delta) const;
+            bool Add(std::size_t index, std::ptrdiff_t delta);
+            std::size_t Prefix(std::size_t count) const;
+            std::size_t Find(std::size_t offset) const;
+
+            std::vector<std::size_t> tree;
+        };
+
         struct BoundaryFragment
         {
             elmd::NodeId containerId{};
-            std::size_t codepointStart = 0;
             std::size_t codepointLength = 0;
-            std::size_t utf16Start = 0;
             std::size_t utf16Length = 0;
             std::vector<std::size_t> codepointToUtf16;
         };
@@ -28,6 +37,8 @@ namespace winrt::ElMd
             std::wstring utf16;
             std::vector<BoundaryFragment> fragments;
             std::unordered_map<std::uint64_t, std::size_t> fragmentIndex;
+            BoundaryOffsetIndex codepointOffsets;
+            BoundaryOffsetIndex utf16Offsets;
         };
 
         struct BoundaryTextChange
