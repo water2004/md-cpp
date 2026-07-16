@@ -31,7 +31,11 @@ using namespace boost::ut;
 
 static RenderModel build_model(const std::string& src) {
     auto out = parse_text(1, src);
-    return build_render_model(out.document, out.outline);
+    return build_render_model(
+        out.document,
+        out.outline,
+        out.symbols,
+        default_theme_profile());
 }
 
 static const RenderBlock* find_render_block(const RenderBlock& root, RenderBlockKind kind) {
@@ -93,7 +97,12 @@ static RenderModel build_model(BlockNode block, std::uint64_t next_id) {
     document.root.children.push_back(std::move(block));
     document.revision = 1;
     rebuild_document_block_index(document);
-    return build_render_model(document, Outline::empty(1));
+    const auto symbols = build_document_symbol_index(document);
+    return build_render_model(
+        document,
+        Outline::empty(1),
+        symbols,
+        default_theme_profile());
 }
 
 
@@ -149,7 +158,7 @@ suite render_layout_tests = [] {
 "test_empty_document_yields_editable_blank_model"_test = [] {
     EditorDocument doc = EditorDocument::empty(1);
     Outline o = Outline::empty(1);
-    auto m = build_render_model(doc, o);
+    auto m = build_render_model(doc, o, DocumentSymbolIndex{}, default_theme_profile());
     expect(fatal(bool((m.blocks.size()) == (1u))));
     expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Blank)));
     expect(fatal(bool((m.revision) == (1ull))));
@@ -388,7 +397,11 @@ suite render_layout_tests = [] {
     if (!inserted) return;
     rebuild_document_block_index(parsed.document);
     expect(fatal(bool(inserted->selection_after.active.container_id == code_id)));
-    auto model = build_render_model(parsed.document, Outline::empty(parsed.document.revision));
+    auto model = build_render_model(
+        parsed.document,
+        Outline::empty(parsed.document.revision),
+        build_document_symbol_index(parsed.document),
+        default_theme_profile());
     expect(fatal(bool(model.blocks.size() == 1u)));
     if (model.blocks.empty()) return;
     auto caretIndent = std::find_if(model.blocks.front().inline_items.begin(), model.blocks.front().inline_items.end(), [&](auto const& item) {
@@ -424,7 +437,11 @@ suite render_layout_tests = [] {
     if (!exited) return;
     rebuild_document_block_index(parsed.document);
     expect(fatal(bool(exited->selection_after.active.container_id != code_id)));
-    auto model = build_render_model(parsed.document, Outline::empty(parsed.document.revision));
+    auto model = build_render_model(
+        parsed.document,
+        Outline::empty(parsed.document.revision),
+        build_document_symbol_index(parsed.document),
+        default_theme_profile());
     expect(fatal(bool(model.blocks.size() == 1u)));
     if (model.blocks.empty()) return;
     auto caretIndent = std::find_if(model.blocks.front().inline_items.begin(), model.blocks.front().inline_items.end(), [&](auto const& item) {
@@ -1072,7 +1089,11 @@ suite render_layout_tests = [] {
     auto const title_id = title->id;
     auto const body_id = callout.children[1].id;
 
-    auto model = build_render_model(parsed.document, parsed.outline);
+    auto model = build_render_model(
+        parsed.document,
+        parsed.outline,
+        parsed.symbols,
+        default_theme_profile());
     expect(fatal(bool(model.editable_order.size() >= 2u)));
     if (model.editable_order.size() < 2) return;
     expect(fatal(bool(model.editable_order[0] == title_id)));
@@ -1129,7 +1150,11 @@ suite render_layout_tests = [] {
 
 "incremental_render_model_matches_a_full_rebuild"_test = [] {
     auto before = parse_text(1, "alpha\n\nbeta with **bold**\n\n> nested\n");
-    auto previous = build_render_model(before.document, before.outline);
+    auto previous = build_render_model(
+        before.document,
+        before.outline,
+        before.symbols,
+        default_theme_profile());
     auto after = parse_text(1, "alpha\n\nbeta with **bold**\n\n> changed\n");
     auto symbols = build_document_symbol_index(after.document);
     NodeId changed_owner{};
@@ -1408,7 +1433,11 @@ suite render_layout_tests = [] {
     }
     auto started = std::chrono::steady_clock::now();
     auto parsed = parse_text(1, source);
-    auto model = build_render_model(parsed.document, parsed.outline);
+    auto model = build_render_model(
+        parsed.document,
+        parsed.outline,
+        parsed.symbols,
+        default_theme_profile());
     auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
     expect(fatal(bool(parsed.document.root.children.size() >= 3600u)));
     expect(fatal(bool(model.blocks.size() >= parsed.document.root.children.size())));

@@ -16,7 +16,6 @@ import elmd.core.selection;
 import elmd.core.text_edit;
 import elmd.core.document;
 import elmd.core.document_text;
-import elmd.core.document_symbols;
 import elmd.core.symbols;
 import elmd.core.outline;
 import elmd.core.diagnostics;
@@ -1140,18 +1139,6 @@ inline RenderModel build_render_model_incremental(
         model.changed_block_indices.clear();
     }
     return model;
-}
-
-inline RenderModel build_render_model(
-    const EditorDocument& doc,
-    const Outline& outline,
-    ThemeProfile const& theme) {
-    const auto symbols = build_document_symbol_index(doc);
-    return build_render_model(doc, outline, symbols, theme);
-}
-
-inline RenderModel build_render_model(const EditorDocument& doc, const Outline& outline) {
-    return build_render_model(doc, outline, default_theme_profile());
 }
 
 } // namespace elmd

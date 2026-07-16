@@ -28,7 +28,7 @@ suite theme_tests = [] {
     custom.layout.paragraph_margin_bottom = 19.0f;
     custom.layout.code_padding_horizontal = 23.0f;
 
-    auto model = build_render_model(parsed.document, parsed.outline, custom);
+    auto model = build_render_model(parsed.document, parsed.outline, parsed.symbols, custom);
     expect(model.blocks.size() == 3_u);
     expect(model.blocks[0].block_style.margin_top == 71.0_f);
     expect(model.blocks[1].block_style.margin_bottom == 19.0_f);

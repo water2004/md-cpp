@@ -1729,7 +1729,8 @@ suite editor_tests = [] {
         enter.kind = CommandKind::InsertNewline;
         expect(fatal(bool(editor.execute_command(enter))));
         expect(fatal(bool(editor.document().root.children.front().kind == test_case.block_kind)));
-        auto model = build_render_model(editor.document(), editor.outline());
+        auto model = build_render_model(
+            editor.document(), editor.outline(), editor.symbols(), default_theme_profile());
         expect(fatal(bool(model.revision == editor.revision())));
         expect(fatal(bool(model.blocks.size() == 1u)));
         expect(fatal(bool(model.blocks.front().kind == test_case.render_kind)));
@@ -1743,7 +1744,8 @@ suite editor_tests = [] {
         Command command;
         command.kind = command_kind;
         expect(fatal(bool(editor.execute_command(command))));
-        auto model = build_render_model(editor.document(), editor.outline());
+        auto model = build_render_model(
+            editor.document(), editor.outline(), editor.symbols(), default_theme_profile());
         expect(fatal(bool(model.blocks.size() == 1u)));
         expect(fatal(bool(model.blocks.front().kind
             == (command_kind == CommandKind::InsertCodeBlock
@@ -1949,7 +1951,8 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.execute_document_delete_selection(editor.selection()).has_value())));
     expect(fatal(bool(editor.document().root.children.size() == 1u)));
     expect(fatal(bool(validate_document(editor.document()).empty())));
-    auto merged = build_render_model(editor.document(), editor.outline());
+    auto merged = build_render_model(
+        editor.document(), editor.outline(), editor.symbols(), default_theme_profile());
     expect(fatal(bool(merged.blocks.size() == 1u)));
 
     expect(fatal(bool(editor.undo())));
@@ -1959,7 +1962,8 @@ suite editor_tests = [] {
     expect(fatal(bool(find_block(editor.document().root, first_id) != nullptr)));
     expect(fatal(bool(find_block(editor.document().root, second_id) != nullptr)));
     expect(fatal(bool(validate_document(editor.document()).empty())));
-    auto restored = build_render_model(editor.document(), editor.outline());
+    auto restored = build_render_model(
+        editor.document(), editor.outline(), editor.symbols(), default_theme_profile());
     expect(fatal(bool(restored.blocks.size() == 2u)));
 
     expect(fatal(bool(editor.redo())));
@@ -2033,7 +2037,8 @@ suite editor_tests = [] {
         expect(fatal(bool(validate_document(editor.document()).empty()))) << test_case.markdown;
         const auto after_markdown = editor.markdown_utf8();
         const auto after_selection = editor.selection();
-        auto changed_model = build_render_model(editor.document(), editor.outline());
+        auto changed_model = build_render_model(
+            editor.document(), editor.outline(), editor.symbols(), default_theme_profile());
         expect(fatal(bool(!changed_model.blocks.empty()))) << test_case.markdown;
         Editor reloaded(after_markdown);
         expect(fatal(bool(reloaded.markdown_utf8() == after_markdown))) << test_case.markdown;
@@ -2044,7 +2049,8 @@ suite editor_tests = [] {
             expect(fatal(bool(editor.markdown_utf8() == before_markdown))) << test_case.markdown;
             expect(fatal(bool(editor.selection() == boundary))) << test_case.markdown;
             expect(fatal(bool(validate_document(editor.document()).empty()))) << test_case.markdown;
-            auto restored_model = build_render_model(editor.document(), editor.outline());
+            auto restored_model = build_render_model(
+                editor.document(), editor.outline(), editor.symbols(), default_theme_profile());
             expect(fatal(bool(!restored_model.blocks.empty()))) << test_case.markdown;
 
             expect(fatal(bool(editor.redo()))) << test_case.markdown;
@@ -2084,7 +2090,8 @@ suite editor_tests = [] {
             << markdown;
         expect(fatal(bool(validate_document(editor.document()).empty()))) << markdown;
         const auto after = editor.markdown_utf8();
-        auto model = build_render_model(editor.document(), editor.outline());
+        auto model = build_render_model(
+            editor.document(), editor.outline(), editor.symbols(), default_theme_profile());
         expect(fatal(bool(!model.blocks.empty()))) << markdown;
         expect(fatal(bool(editor.undo()))) << markdown;
         expect(fatal(bool(editor.markdown_utf8() == before))) << markdown;
