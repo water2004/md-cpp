@@ -211,7 +211,9 @@ namespace winrt::ElMd
     {
         if (core_->sourceEditor)
         {
-            core_->renderModel = elmd::build_source_render_model(*core_->sourceEditor);
+            core_->renderModel = elmd::build_source_render_model_incremental(
+                *core_->sourceEditor,
+                std::move(core_->renderModel));
         }
         else if (change)
         {

@@ -121,13 +121,34 @@ suite source_editor_tests = [] {
     auto firstCodeKey = before.blocks[2].presentation_key;
     auto secondCodeKey = before.blocks[3].presentation_key;
     auto afterKey = before.blocks.back().presentation_key;
-    editor.set_selection(SourceSelection::caret(22));
+    editor.set_selection(SourceSelection::caret(editor.lines()[2].source_start + 2));
     expect(fatal(editor.insert_text(U"X")));
-    auto after = build_source_render_model(editor);
+    auto after = build_source_render_model_incremental(editor, std::move(before));
     expect(fatal(bool(after.blocks[2].presentation_key != firstCodeKey)));
     expect(fatal(bool(after.blocks[3].presentation_key != secondCodeKey)));
     expect(fatal(bool(after.blocks.back().presentation_key == afterKey)));
     expect(fatal(bool(after.blocks[2].source_code_context == after.blocks[3].source_code_context)));
+    expect(fatal(after.incremental_update));
+    expect(fatal(bool(after.changed_block_indices == std::vector<std::size_t>{2u, 3u})));
+};
+
+"source render projection updates one ordinary line in place"_test = [] {
+    std::u32string source;
+    for (std::size_t index = 0; index < 4096; ++index) {
+        source += U"line";
+        if (index + 1 != 4096) source.push_back(U'\n');
+    }
+    SourceEditor editor(std::move(source));
+    auto model = build_source_render_model(editor);
+    auto untouchedKey = model.blocks[2049].presentation_key;
+    editor.set_selection(SourceSelection::caret(editor.lines()[2048].source_start + 2));
+    expect(fatal(editor.insert_text(U"X")));
+    model = build_source_render_model_incremental(editor, std::move(model));
+    expect(fatal(model.incremental_update));
+    expect(fatal(bool(model.rebuilt_block_count == 1u)));
+    expect(fatal(bool(model.reused_block_count == 4095u)));
+    expect(fatal(bool(model.changed_block_indices == std::vector<std::size_t>{2048u})));
+    expect(fatal(bool(model.blocks[2049].presentation_key == untouchedKey)));
 };
 
 "source positions translate only at the render boundary"_test = [] {
@@ -183,9 +204,11 @@ suite source_editor_tests = [] {
 "random source edits preserve the flat source and render projection"_test = [] {
     SourceEditor editor(U"# start\n\ntext");
     auto initial = editor.source();
+    auto model = build_source_render_model(editor);
     std::mt19937 random(0x5eedu);
     std::u32string alphabet = U"ab*_`$\\&\U0001f642";
     for (std::size_t step = 0; step < 300; ++step) {
+        auto previous_revision = editor.revision();
         switch (random() % 7) {
             case 0: editor.insert_text(std::u32string(1, alphabet[random() % alphabet.size()])); break;
             case 1: editor.insert_newline(); break;
@@ -200,6 +223,8 @@ suite source_editor_tests = [] {
                 break;
             }
         }
+        if (editor.revision() != previous_revision)
+            model = build_source_render_model_incremental(editor, std::move(model));
         auto selection = editor.selection();
         expect(fatal(selection.anchor <= editor.source().size()));
         expect(fatal(selection.active <= editor.source().size()));
@@ -209,7 +234,6 @@ suite source_editor_tests = [] {
             if (line.has_newline) fromLines.push_back(U'\n');
         }
         expect(fatal(bool(fromLines == editor.source())));
-        auto model = build_source_render_model(editor);
         std::u32string visible;
         for (std::size_t index = 0; index < model.blocks.size(); ++index) {
             if (index) visible.push_back(U'\n');

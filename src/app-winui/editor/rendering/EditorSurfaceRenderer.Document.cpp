@@ -688,7 +688,9 @@ namespace winrt::ElMd
                 for (auto index : frame.renderModel.changed_block_indices)
                     if (index < preparedDocument->blocks.size()) invalidated.insert(index);
             }
-            if (activePositionChanged)
+            if (activePositionChanged
+                && !frame.renderModel.blocks.empty()
+                && !frame.renderModel.blocks.front().source_mode)
             {
                 auto addOwner = [&](elmd::NodeId owner)
                 {
