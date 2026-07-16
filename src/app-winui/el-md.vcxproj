@@ -244,6 +244,9 @@
     <ClCompile Include="..\core\editing\document_history.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\core\editing\document_index_update.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\core\query\document_symbols.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>

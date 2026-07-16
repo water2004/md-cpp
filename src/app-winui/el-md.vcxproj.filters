@@ -147,6 +147,9 @@
     <ClCompile Include="..\core\editing\document_history.ixx">
       <Filter>Core Modules\Editing</Filter>
     </ClCompile>
+    <ClCompile Include="..\core\editing\document_index_update.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
     <ClCompile Include="..\core\query\document_symbols.ixx">
       <Filter>Core Modules\Query</Filter>
     </ClCompile>

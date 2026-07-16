@@ -15,6 +15,7 @@ import elmd.core.ast;
 import elmd.core.block_tree;
 import elmd.core.document_edit;
 import elmd.core.document_history;
+import elmd.core.document_index_update;
 import elmd.core.document_transaction;
 import elmd.core.document_symbols;
 import elmd.core.text_edit;
@@ -317,8 +318,10 @@ public:
         auto change = summarize_document_change(
             entry->operations, false, entry->revision_after, entry->revision_before);
         if (!document_history_.undo(document_, selection_)) return false;
+        const auto* applied = document_history_.next_redo();
+        if (!applied) std::terminate();
         last_document_change_ = std::move(change);
-        refresh_derived_from_document_(*last_document_change_);
+        refresh_derived_from_document_(*last_document_change_, applied->operations);
         return true;
     }
 
@@ -329,8 +332,10 @@ public:
         auto change = summarize_document_change(
             entry->operations, true, entry->revision_before, entry->revision_after);
         if (!document_history_.redo(document_, selection_)) return false;
+        const auto* applied = document_history_.next_undo();
+        if (!applied) std::terminate();
         last_document_change_ = std::move(change);
-        refresh_derived_from_document_(*last_document_change_);
+        refresh_derived_from_document_(*last_document_change_, applied->operations);
         return true;
     }
 
@@ -552,9 +557,13 @@ private:
         }
     }
 
-    void refresh_derived_from_document_(const EditorDocumentChange& change) {
+    void refresh_derived_from_document_(
+        const EditorDocumentChange& change,
+        const std::vector<DocumentOperation>& operations) {
         if (change.structural) {
-            rebuild_document_block_index(document_);
+            if (!update_document_block_index(document_, operations, change.forward)) {
+                rebuild_document_block_index(document_);
+            }
             bool heading_changed = change.structural_outline_may_change;
             if (change.structural_symbols_may_change) {
                 symbols_ = build_document_symbol_index(document_, &symbol_contributions_);
@@ -603,7 +612,7 @@ private:
             true,
             transaction.revision_before,
             transaction.revision_after);
-        refresh_derived_from_document_(*last_document_change_);
+        refresh_derived_from_document_(*last_document_change_, transaction.operations);
     }
 
 };

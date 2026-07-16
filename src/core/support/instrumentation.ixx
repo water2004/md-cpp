@@ -14,6 +14,7 @@ struct CoreOperationCounters {
     std::uint64_t local_symbol_derivations = 0;
     std::uint64_t render_source_key_derivations = 0;
     std::uint64_t full_document_block_index_scans = 0;
+    std::uint64_t incremental_document_block_index_repairs = 0;
     std::uint64_t full_document_text_projections = 0;
     std::uint64_t inline_reparses = 0;
 };
@@ -38,6 +39,9 @@ inline void record_render_source_key_derivation() {
 }
 inline void record_full_document_block_index_scan() {
     ++core_operation_counters.full_document_block_index_scans;
+}
+inline void record_incremental_document_block_index_repair() {
+    ++core_operation_counters.incremental_document_block_index_repairs;
 }
 inline void record_full_document_text_projection() {
     ++core_operation_counters.full_document_text_projections;

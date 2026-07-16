@@ -47,6 +47,38 @@ const BlockNode& first_text(const Editor& editor) {
     return *found;
 }
 
+bool document_indexes_are_exact(const EditorDocument& document) {
+    bool valid = true;
+    std::size_t block_count = 0;
+    std::vector<NodeId> editable_order;
+    BlockPath path;
+    auto visit = [&](auto& self, const BlockNode& block) -> void {
+        ++block_count;
+        const auto cached = document.cached_block_paths.find(block.id.v);
+        valid = valid
+            && cached != document.cached_block_paths.end()
+            && cached->second == path;
+        if (is_editable_block_owner(block.kind)) editable_order.push_back(block.id);
+        for (std::size_t index = 0; index < block.children.size(); ++index) {
+            path.push_back(index);
+            self(self, block.children[index]);
+            path.pop_back();
+        }
+    };
+    visit(visit, document.root);
+    valid = valid
+        && document.cached_block_paths.size() == block_count
+        && document.cached_editable_order == editable_order
+        && document.cached_editable_index.size() == editable_order.size();
+    for (std::size_t index = 0; index < editable_order.size(); ++index) {
+        const auto cached = document.cached_editable_index.find(editable_order[index].v);
+        valid = valid
+            && cached != document.cached_editable_index.end()
+            && cached->second == index;
+    }
+    return valid;
+}
+
 } // namespace
 
 suite editor_tests = [] {
@@ -124,10 +156,15 @@ suite editor_tests = [] {
     expect(fatal(bool(counters.full_document_parses == 0u))) << "full parse";
     expect(fatal(bool(counters.full_document_serializations == 0u))) << "full serialize";
     expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << "tree diff";
+    expect(fatal(bool(counters.full_document_block_index_scans == 0u)))
+        << "footnote insert full block index";
+    expect(fatal(bool(counters.incremental_document_block_index_repairs == 1u)))
+        << "footnote insert incremental block index";
     expect(fatal(bool(counters.full_document_symbol_derivations == 1u)))
         << "one structural refresh, no command pre-scan";
     expect(fatal(bool(counters.inline_reparses == 2u))) << "edited owner plus new definition body";
     expect(fatal(bool(transaction->operations.size() == 2u))) << "operations";
+    expect(fatal(document_indexes_are_exact(editor.document()))) << "insert indexes";
     expect(fatal(bool(editor.markdown_utf8() == "body[^1]\n\n[^1]: "))) << "insert markdown";
     expect(fatal(bool(editor.symbols().footnotes.size() == 1u))) << "definition symbols";
     expect(fatal(bool(editor.symbols().footnote_references.size() == 1u))) << "reference symbols";
@@ -136,9 +173,11 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.undo()))) << "undo";
     expect(fatal(bool(editor.markdown_utf8() == "body"))) << "undo markdown";
     expect(fatal(bool(editor.selection() == before))) << "undo selection";
+    expect(fatal(document_indexes_are_exact(editor.document()))) << "undo indexes";
     expect(fatal(bool(editor.redo()))) << "redo";
     expect(fatal(bool(editor.markdown_utf8() == "body[^1]\n\n[^1]: "))) << "redo markdown";
     expect(fatal(bool(editor.selection() == after))) << "redo selection";
+    expect(fatal(document_indexes_are_exact(editor.document()))) << "redo indexes";
     expect(fatal(bool(validate_document(editor.document()).empty()))) << "redo document invariants";
 };
 
@@ -216,6 +255,7 @@ suite editor_tests = [] {
     Editor editor("alpha\n\nbeta\n\ngamma");
     const auto counters = read_core_operation_counters();
     expect(fatal(bool(counters.full_document_block_index_scans == 1u)));
+    expect(fatal(bool(counters.incremental_document_block_index_repairs == 0u)));
     expect(fatal(bool(find_document_block(
         editor.document(), editor.document().root.children.back().id) != nullptr)));
 };
@@ -399,27 +439,33 @@ suite editor_tests = [] {
     const auto counters = read_core_operation_counters();
     expect(fatal(bool(counters.full_document_parses == 0u)));
     expect(fatal(bool(counters.full_document_serializations == 0u)));
-    expect(fatal(bool(counters.full_document_block_index_scans == 1u)));
+    expect(fatal(bool(counters.full_document_block_index_scans == 0u)));
+    expect(fatal(bool(counters.incremental_document_block_index_repairs == 1u)));
     expect(fatal(bool(counters.full_document_symbol_derivations == 0u)));
     expect(fatal(bool(counters.full_document_outline_derivations == 0u)));
     expect(fatal(bool(counters.local_symbol_derivations == 1u)));
     expect(fatal(bool(validate_document(editor.document()).empty())));
+    expect(fatal(document_indexes_are_exact(editor.document())));
 
     reset_core_operation_counters();
     expect(fatal(editor.undo()));
     auto history_counters = read_core_operation_counters();
-    expect(fatal(bool(history_counters.full_document_block_index_scans == 1u)));
+    expect(fatal(bool(history_counters.full_document_block_index_scans == 0u)));
+    expect(fatal(bool(history_counters.incremental_document_block_index_repairs == 1u)));
     expect(fatal(bool(history_counters.full_document_symbol_derivations == 0u)));
     expect(fatal(bool(history_counters.full_document_outline_derivations == 0u)));
     expect(fatal(bool(history_counters.local_symbol_derivations == 1u)));
+    expect(fatal(document_indexes_are_exact(editor.document())));
 
     reset_core_operation_counters();
     expect(fatal(editor.redo()));
     history_counters = read_core_operation_counters();
-    expect(fatal(bool(history_counters.full_document_block_index_scans == 1u)));
+    expect(fatal(bool(history_counters.full_document_block_index_scans == 0u)));
+    expect(fatal(bool(history_counters.incremental_document_block_index_repairs == 1u)));
     expect(fatal(bool(history_counters.full_document_symbol_derivations == 0u)));
     expect(fatal(bool(history_counters.full_document_outline_derivations == 0u)));
     expect(fatal(bool(history_counters.local_symbol_derivations == 1u)));
+    expect(fatal(document_indexes_are_exact(editor.document())));
 };
 
 "externally_assembled_documents_calibrate_node_ids_once"_test = [] {
@@ -1072,16 +1118,20 @@ suite editor_tests = [] {
         expect(fatal(bool(counters.full_document_serializations == 0u))) << label;
         expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << label;
         expect(fatal(bool(counters.full_document_text_projections == 0u))) << label;
-        expect(fatal(bool(counters.full_document_block_index_scans == 1u))) << label;
+        expect(fatal(bool(counters.full_document_block_index_scans == 0u))) << label;
+        expect(fatal(bool(counters.incremental_document_block_index_repairs == 1u))) << label;
         expect(fatal(bool(!transaction->operations.empty()))) << label;
+        expect(fatal(document_indexes_are_exact(editor.document()))) << label;
         const auto after_markdown = editor.markdown_utf8();
         const auto after = editor.selection();
         expect(fatal(bool(editor.undo()))) << label;
         expect(fatal(bool(editor.markdown_utf8() == before_markdown))) << label;
         expect(fatal(bool(editor.selection() == selection))) << label;
+        expect(fatal(document_indexes_are_exact(editor.document()))) << label;
         expect(fatal(bool(editor.redo()))) << label;
         expect(fatal(bool(editor.markdown_utf8() == after_markdown))) << label;
         expect(fatal(bool(editor.selection() == after))) << label;
+        expect(fatal(document_indexes_are_exact(editor.document()))) << label;
     };
 
     Editor paragraphs("alpha\n\nbeta\n\ngamma");
@@ -2605,15 +2655,20 @@ suite editor_tests = [] {
         expect(fatal(bool(counters.full_document_parses == 0u))) << label;
         expect(fatal(bool(counters.full_document_serializations == 0u))) << label;
         expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << label;
+        expect(fatal(bool(counters.full_document_block_index_scans == 1u))) << label;
+        expect(fatal(bool(counters.incremental_document_block_index_repairs == 0u))) << label;
         expect(fatal(bool(!transaction->operations.empty()))) << label;
+        expect(fatal(document_indexes_are_exact(editor.document()))) << label;
         const auto after_markdown = editor.markdown_utf8();
         const auto after = editor.selection();
         expect(fatal(bool(editor.undo()))) << label;
         expect(fatal(bool(editor.markdown_utf8() == before_markdown))) << label;
         expect(fatal(bool(editor.selection() == before))) << label;
+        expect(fatal(document_indexes_are_exact(editor.document()))) << label;
         expect(fatal(bool(editor.redo()))) << label;
         expect(fatal(bool(editor.markdown_utf8() == after_markdown))) << label;
         expect(fatal(bool(editor.selection() == after))) << label;
+        expect(fatal(document_indexes_are_exact(editor.document()))) << label;
     };
 
     for (auto markdown : {
@@ -2719,8 +2774,11 @@ suite editor_tests = [] {
     reset_core_operation_counters();
     expect(fatal(bool(editor.execute_document_set_heading(editor.selection(), 2).has_value())));
     const auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_block_index_scans == 0u)));
+    expect(fatal(bool(counters.incremental_document_block_index_repairs == 1u)));
     expect(fatal(bool(counters.full_document_symbol_derivations == 1u)));
     expect(fatal(bool(counters.full_document_outline_derivations == 1u)));
+    expect(fatal(document_indexes_are_exact(editor.document())));
     expect(fatal(bool(editor.document().root.children.front().kind == BlockKind::Heading)));
     expect(fatal(bool(editor.symbols().headings.size() == 1u)));
     expect(fatal(bool(editor.outline().items.size() == 1u)));
