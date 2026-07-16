@@ -161,11 +161,23 @@ struct BlockStyle {
     }
 };
 
+struct InlineRenderItem;
+
+struct InlineRenderPayload {
+    std::u32string source_text;          // exact source spelling for this span
+    std::string href, src, alt;          // Image/Link
+    std::string footnote_label;          // FootnoteReference / generated footnote controls
+    std::optional<std::string> title;
+    std::optional<float> image_width;
+    std::optional<float> image_height;
+    bool block_image = false;            // Image occupying its own block flow line
+    std::vector<InlineRenderItem> children; // Link children
+};
+
 struct InlineRenderItem {
     enum class Kind { Text, Math, Image, Link, FootnoteReference, Marker };
     Kind kind = Kind::Text;
     TextSpan source_span;
-    std::u32string source_text;          // exact source spelling for this span
     std::u32string text;
     std::u32string display_text;
     std::optional<NodeId> id;             // Math/Image/Link
@@ -173,12 +185,6 @@ struct InlineRenderItem {
     InlineStyle style;
     MathDisplayMode display = MathDisplayMode::Inline; // Math
     MathDelimiter math_delim = MathDelimiter::InlineDollar;
-    std::string href, src, alt;            // Image/Link
-    std::string footnote_label;            // FootnoteReference / generated footnote controls
-    std::optional<std::string> title;
-    std::optional<float> image_width;
-    std::optional<float> image_height;
-    bool block_image = false;            // Image occupying its own block flow line
     MarkerStyle marker_style;
     SourceSyntaxKind source_syntax = SourceSyntaxKind::None;
     MarkerVisibility visibility = MarkerVisibility::WhenCaretInsideNode;
@@ -188,7 +194,17 @@ struct InlineRenderItem {
     // visual edge of that marker is the actual source boundary: after a
     // prefix (Downstream), before a suffix (Upstream).
     std::optional<TextAffinity> generated_boundary_affinity;
-    std::vector<InlineRenderItem> children; // Link children
+    std::shared_ptr<InlineRenderPayload> payload;
+
+    InlineRenderPayload const& special() const {
+        static const InlineRenderPayload empty{};
+        return payload ? *payload : empty;
+    }
+
+    InlineRenderPayload& ensure_special() {
+        if (!payload) payload = std::make_shared<InlineRenderPayload>();
+        return *payload;
+    }
 
     static InlineRenderItem plain_text(std::u32string t, TextSpan span) {
         InlineRenderItem i; i.kind = Kind::Text; i.text = std::move(t); i.source_span = span; i.style = InlineStyle::plain();

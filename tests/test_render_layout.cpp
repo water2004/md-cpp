@@ -204,7 +204,7 @@ suite render_layout_tests = [] {
     auto m = build_model("### [#](https://example.com)可做转义的字符\n");
     expect(fatal(bool((m.blocks.size()) == (1u))));
     if (!m.blocks.empty()) expect(fatal(bool(std::any_of(m.blocks[0].inline_items.begin(), m.blocks[0].inline_items.end(), [](auto const& item) {
-            return item.kind == InlineRenderItem::Kind::Link && item.href == "https://example.com";
+            return item.kind == InlineRenderItem::Kind::Link && item.special().href == "https://example.com";
         }))));
 };
 
@@ -681,9 +681,9 @@ suite render_layout_tests = [] {
     for (auto const& item : m.blocks[0].inline_items) {
         if (item.kind == InlineRenderItem::Kind::Image) {
             image = true;
-            block_image = item.block_image;
+            block_image = item.special().block_image;
         }
-        else if (item.kind == InlineRenderItem::Kind::Link) for (auto const& child : item.children) text += child.text;
+        else if (item.kind == InlineRenderItem::Kind::Link) for (auto const& child : item.special().children) text += child.text;
         else text += item.text;
     }
     quote = find_render_block(m.blocks[0], RenderBlockKind::Quote) != nullptr;
@@ -705,7 +705,7 @@ suite render_layout_tests = [] {
         &InlineRenderItem::kind);
     expect(fatal(bool(inline_image != inline_model.blocks.front().inline_items.end())));
     if (inline_image != inline_model.blocks.front().inline_items.end())
-        expect(fatal(bool(!inline_image->block_image)));
+        expect(fatal(bool(!inline_image->special().block_image)));
 
     auto nested_model = build_model("> - ![block](block.gif)");
     expect(fatal(bool(nested_model.blocks.size() == 1u)));
@@ -715,7 +715,7 @@ suite render_layout_tests = [] {
         &InlineRenderItem::kind);
     expect(fatal(bool(nested_image != nested_model.blocks.front().inline_items.end())));
     if (nested_image != nested_model.blocks.front().inline_items.end())
-        expect(fatal(bool(nested_image->block_image)));
+        expect(fatal(bool(nested_image->special().block_image)));
 };
 
 "math_inside_emphasis_renders_without_inheriting_text_style"_test = [] {
@@ -1676,11 +1676,11 @@ suite render_layout_tests = [] {
     bool footnote = false;
     for (auto const& item : model.blocks.front().inline_items) {
         if (item.kind == InlineRenderItem::Kind::Link) {
-            link = !item.children.empty() && item.href == "https://example.com";
+            link = !item.special().children.empty() && item.special().href == "https://example.com";
         }
         if (item.kind == InlineRenderItem::Kind::FootnoteReference
-            && item.footnote_label == "note"
-            && item.source_text == U"[^note]") footnote = true;
+            && item.special().footnote_label == "note"
+            && item.special().source_text == U"[^note]") footnote = true;
     }
     expect(fatal(bool(link)));
     expect(fatal(bool(footnote)));
@@ -1696,7 +1696,7 @@ suite render_layout_tests = [] {
     for (auto const& item : definition.inline_items) {
         if (item.kind != InlineRenderItem::Kind::Marker) continue;
         if (item.marker_role == MarkerRole::FootnoteLabel) {
-            label = item.footnote_label == "note"
+            label = item.special().footnote_label == "note"
                 && item.source_span.source_range.empty()
                 && item.display_text == U"1. ";
         }

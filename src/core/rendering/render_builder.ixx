@@ -459,7 +459,7 @@ struct Builder {
                     label.kind = InlineRenderItem::Kind::Marker;
                     label.source_span = {owner, {0, 0}};
                     label.display_text = footnote_marker;
-                    label.footnote_label = block.footnote_label;
+                    label.ensure_special().footnote_label = block.footnote_label;
                     label.marker_role = MarkerRole::FootnoteLabel;
                     label.generated_boundary_affinity = TextAffinity::Downstream;
                     label.visibility = MarkerVisibility::Always;
@@ -524,7 +524,7 @@ struct Builder {
                 item.source_span = {block.id, {
                     block_source_offset_for_content(block.block_source, 0),
                     block_source_offset_for_content(block.block_source, math.size())}};
-                item.source_text = math;
+                item.ensure_special().source_text = math;
                 item.text = math;
                 item.display = MathDisplayMode::Block;
                 item.math_delim = block.math_delim;
@@ -537,12 +537,13 @@ struct Builder {
                 item.kind = InlineRenderItem::Kind::Image;
                 item.id = block.id;
                 item.source_span = {block.id, {0, block_local_length(block)}};
-                item.src = block.src;
-                item.alt = block.image_alt;
-                item.title = block.image_title;
-                item.image_width = block.image_width;
-                item.image_height = block.image_height;
-                item.block_image = true;
+                auto& special = item.ensure_special();
+                special.src = block.src;
+                special.alt = block.image_alt;
+                special.title = block.image_title;
+                special.image_width = block.image_width;
+                special.image_height = block.image_height;
+                special.block_image = true;
                 out.push_back(std::move(item));
                 break;
             }
@@ -667,20 +668,21 @@ struct Builder {
                         item.kind = InlineRenderItem::Kind::Link;
                         item.id = node.id;
                         item.source_span = source_span(node.range);
-                        item.href = semantic.href;
-                        item.title = semantic.title;
+                        auto& special = item.ensure_special();
+                        special.href = semantic.href;
+                        special.title = semantic.title;
                         auto child_style = style; child_style.link = true;
                         if (node.kind == K::Link) {
-                            append_marker(item.children, node, delim.opening);
-                            append_nodes(node.children, child_style, item.children);
-                            if (delim.closing) append_marker(item.children, node, *delim.closing);
+                            append_marker(special.children, node, delim.opening);
+                            append_nodes(node.children, child_style, special.children);
+                            if (delim.closing) append_marker(special.children, node, *delim.closing);
                         } else {
-                            append_marker(item.children, node, delim.opening);
+                            append_marker(special.children, node, delim.opening);
                             InlineRenderItem text_item = InlineRenderItem::plain_text(
                                 inline_source_slice(document, delim.content), source_span(delim.content));
                             text_item.style = child_style;
-                            item.children.push_back(std::move(text_item));
-                            if (delim.closing) append_marker(item.children, node, *delim.closing);
+                            special.children.push_back(std::move(text_item));
+                            if (delim.closing) append_marker(special.children, node, *delim.closing);
                         }
                         target.push_back(std::move(item));
                         break;
@@ -690,11 +692,12 @@ struct Builder {
                         item.kind = InlineRenderItem::Kind::Image;
                         item.id = node.id;
                         item.source_span = source_span(node.range);
-                        item.src = semantic.href;
-                        item.alt = semantic.alt;
-                        item.title = semantic.title;
-                        item.image_width = semantic.image_width;
-                        item.image_height = semantic.image_height;
+                        auto& special = item.ensure_special();
+                        special.src = semantic.href;
+                        special.alt = semantic.alt;
+                        special.title = semantic.title;
+                        special.image_width = semantic.image_width;
+                        special.image_height = semantic.image_height;
                         target.push_back(std::move(item));
                         break;
                     }
@@ -727,7 +730,7 @@ struct Builder {
                         item.source_span = source_span(node.range);
                         item.text = utf8_to_cps(semantic.label);
                         item.display_text = footnote_display_label(semantic.label);
-                        item.footnote_label = semantic.label;
+                        item.ensure_special().footnote_label = semantic.label;
                         target.push_back(std::move(item));
                         break;
                     }
@@ -749,9 +752,9 @@ struct Builder {
             for (auto& item : items) {
                 if (item.kind != InlineRenderItem::Kind::Text
                     && item.kind != InlineRenderItem::Kind::Marker) {
-                    item.source_text = inline_source_slice(document, item.source_span.source_range);
+                    item.ensure_special().source_text = inline_source_slice(document, item.source_span.source_range);
                 }
-                self(self, item.children);
+                if (item.payload) self(self, item.payload->children);
             }
         };
         attach_source(attach_source, output);

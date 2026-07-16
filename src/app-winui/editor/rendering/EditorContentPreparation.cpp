@@ -42,10 +42,10 @@ namespace winrt::ElMd
             case elmd::InlineRenderItem::Kind::Math:
                 return U"$" + item.text + U"$";
             case elmd::InlineRenderItem::Kind::Image:
-                return item.alt.empty() ? U"image" : elmd::utf8_to_cps(item.alt);
+                return item.special().alt.empty() ? U"image" : elmd::utf8_to_cps(item.special().alt);
             case elmd::InlineRenderItem::Kind::Link: {
                 std::u32string text;
-                for (auto const& child : item.children)
+                for (auto const& child : item.special().children)
                 {
                     text += InlineText(child);
                 }
@@ -53,7 +53,7 @@ namespace winrt::ElMd
             }
             case elmd::InlineRenderItem::Kind::FootnoteReference:
                 return item.display_text.empty()
-                    ? elmd::utf8_to_cps(item.footnote_label)
+                    ? elmd::utf8_to_cps(item.special().footnote_label)
                     : item.display_text;
         }
         return {};
@@ -447,17 +447,17 @@ namespace winrt::ElMd
             {
                 if (CaretTouchesSpan(caret, item.source_span))
                 {
-                    AppendSourceText(display, item.source_text, item.source_span, item.style, false);
+                    AppendSourceText(display, item.special().source_text, item.source_span, item.style, false);
                 }
                 else
                 {
-                    MergeDisplayText(display, BuildDisplayInlineText(item.children, caret, {item.source_span.container_id, item.source_span.source_range.end, elmd::TextAffinity::Downstream}, mathJax, svgNormalizer, svgColor, fontSize, containerWidth, svgSupported, requestMath));
+                    MergeDisplayText(display, BuildDisplayInlineText(item.special().children, caret, {item.source_span.container_id, item.source_span.source_range.end, elmd::TextAffinity::Downstream}, mathJax, svgNormalizer, svgColor, fontSize, containerWidth, svgSupported, requestMath));
                 }
                 continue;
             }
             if (item.kind == elmd::InlineRenderItem::Kind::Image)
             {
-                if (CaretTouchesSpan(caret, item.source_span)) AppendSourceText(display, item.source_text, item.source_span, item.style, false);
+                if (CaretTouchesSpan(caret, item.source_span)) AppendSourceText(display, item.special().source_text, item.source_span, item.style, false);
                 else
                 {
                     auto displayStart = static_cast<std::uint32_t>(elmd::utf16_len(display.text));
@@ -465,11 +465,11 @@ namespace winrt::ElMd
                     display.imageOverlays.push_back(DisplayInlineText::ImageOverlay{
                         displayStart,
                         item.source_span,
-                        item.src,
-                        item.alt,
-                        item.image_width,
-                        item.image_height,
-                        item.block_image,
+                        item.special().src,
+                        item.special().alt,
+                        item.special().image_width,
+                        item.special().image_height,
+                        item.special().block_image,
                     });
                 }
                 continue;
@@ -478,7 +478,7 @@ namespace winrt::ElMd
             {
                 if (!svgSupported)
                 {
-                    AppendSourceText(display, item.source_text, item.source_span, item.style, false);
+                    AppendSourceText(display, item.special().source_text, item.source_span, item.style, false);
                     continue;
                 }
                 auto displayMath = item.display == elmd::MathDisplayMode::Block;
@@ -500,13 +500,13 @@ namespace winrt::ElMd
                     : contentStart;
                 if (!math || !static_cast<bool>(*math))
                 {
-                    AppendSourceText(display, item.source_text, item.source_span, item.style, false);
+                    AppendSourceText(display, item.special().source_text, item.source_span, item.style, false);
                     continue;
                 }
 
                 if (editing)
                 {
-                    AppendSourceText(display, item.source_text, item.source_span, item.style, false);
+                    AppendSourceText(display, item.special().source_text, item.source_span, item.style, false);
                     display.mathPreviews.push_back(DisplayInlineText::MathPreview{
                         *math,
                         elmd::TextSpan{item.source_span.container_id, {contentStart, contentEnd}},
@@ -521,7 +521,7 @@ namespace winrt::ElMd
             {
                 auto displayStart = static_cast<std::uint32_t>(elmd::utf16_len(display.text));
                 auto ordinal = item.display_text.empty()
-                    ? elmd::utf8_to_cps(item.footnote_label)
+                    ? elmd::utf8_to_cps(item.special().footnote_label)
                     : item.display_text;
                 auto label = FootnoteSuperscript(ordinal);
                 AppendGeneratedText(
@@ -538,7 +538,7 @@ namespace winrt::ElMd
                     displayStart,
                     displayLength,
                     item.source_span,
-                    item.footnote_label,
+                    item.special().footnote_label,
                     EditorFootnoteControlKind::Reference});
                 continue;
             }
@@ -603,7 +603,7 @@ namespace winrt::ElMd
                         displayStart,
                         displayLength,
                         item.source_span,
-                        item.footnote_label,
+                        item.special().footnote_label,
                         EditorFootnoteControlKind::DefinitionLabel});
                 }
             }

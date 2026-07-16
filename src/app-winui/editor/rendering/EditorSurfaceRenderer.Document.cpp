@@ -22,7 +22,7 @@ namespace winrt::ElMd
         {
             for (auto const& item : items)
             {
-                if (item.kind == kind || InlineItemsContain(item.children, kind)) return true;
+                if (item.kind == kind || InlineItemsContain(item.special().children, kind)) return true;
             }
             return false;
         }
@@ -58,7 +58,7 @@ namespace winrt::ElMd
             {
                 auto owner = item.source_span.container_id;
                 if (owner.v != 0 && seen.insert(owner.v).second) owners.push_back(owner);
-                CollectInlineOwners(item.children, seen, owners);
+                CollectInlineOwners(item.special().children, seen, owners);
             }
         }
 
@@ -597,7 +597,7 @@ namespace winrt::ElMd
                 {
                     if (item.kind == elmd::InlineRenderItem::Kind::Image)
                     {
-                        if (!item.src.empty()) renderCache.ProbeGifDimensions(frame.baseDirectory, item.src);
+                        if (!item.special().src.empty()) renderCache.ProbeGifDimensions(frame.baseDirectory, item.special().src);
                         lineWidth += font.size * 8.0f;
                     }
                     auto const& visible = item.display_text.empty() ? item.text : item.display_text;
@@ -616,7 +616,7 @@ namespace winrt::ElMd
                             lineWidth += advance;
                         }
                     }
-                    self(self, item.children);
+                    self(self, item.special().children);
                 }
             };
             appendText(appendText, block.inline_items);
