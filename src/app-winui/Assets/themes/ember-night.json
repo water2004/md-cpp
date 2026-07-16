@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "elmd.ember-night",
+  "name": "Ember Night",
+  "variant": "dark",
+  "typography": {
+    "body": { "family": "Microsoft YaHei UI", "size": 18, "lineHeight": 30, "weight": 400, "italic": false },
+    "heading1": { "family": "Segoe UI Variable Display", "size": 39, "lineHeight": 47, "weight": 700, "italic": false },
+    "heading2": { "family": "Segoe UI Variable Display", "size": 30, "lineHeight": 38, "weight": 700, "italic": false },
+    "heading3": { "family": "Segoe UI Variable Display", "size": 24, "lineHeight": 31, "weight": 650, "italic": false },
+    "code": { "family": "Cascadia Mono", "size": 15, "lineHeight": 24, "weight": 400, "italic": false },
+    "ui": { "family": "Segoe UI Variable Text", "size": 14, "lineHeight": 20, "weight": 400, "italic": false },
+    "uiMonospace": { "family": "Cascadia Mono", "size": 14, "lineHeight": 20, "weight": 400, "italic": false }
+  },
+  "colors": {
+    "background": "#181210", "foreground": "#F2E7DC", "mutedForeground": "#B19B8B", "accent": "#F18F5B",
+    "heading": "#FFD2B5", "strong": "#FFF0E3", "emphasis": "#F2B66D",
+    "inlineCodeBackground": "#2B1F1A", "inlineCodeForeground": "#F4AA74",
+    "codeBlockBackground": "#241A17", "codeBlockForeground": "#EBDDD1",
+    "blockquoteBorder": "#D96F4D", "blockquoteBackground": "#251A16", "nestedQuoteBackground": "#1F1512",
+    "link": "#F09A6D", "imageBorder": "#68473C", "selectionBackground": "#F18F5B55", "selectionForeground": "#FFF7F0",
+    "caret": "#FFF4EA", "marker": "#AA9282", "mathBackground": "#241A17", "mathForeground": "#F5E9DE",
+    "calloutNoteBackground": "#222839", "calloutNoteBorder": "#839AC5",
+    "calloutWarningBackground": "#382816", "calloutWarningBorder": "#E4A84E",
+    "calloutTipBackground": "#1E3025", "calloutTipBorder": "#76B889",
+    "calloutImportantBackground": "#35213A", "calloutImportantBorder": "#C38ACB",
+    "calloutCautionBackground": "#3C1D1A", "calloutCautionBorder": "#E66E5D",
+    "frontmatterBackground": "#241A17", "frontmatterForeground": "#B19B8B",
+    "tableBorder": "#68473C", "tableHeaderBackground": "#2B1F1A", "lineNumber": "#A68D7D",
+    "strikethrough": "#A68D7D", "unsupportedBackground": "#382816", "unsupportedForeground": "#E0A953",
+    "shellBackground": "#17110F", "shellLayerBackground": "#211815", "shellBorder": "#51382F",
+    "shellForeground": "#F1E5DA", "shellMutedForeground": "#AD9788", "shellAccent": "#F18F5B",
+    "syntax": ["#EBDDD1", "#D79BC8", "#77C3AD", "#E0BF74", "#E69878", "#A8C98A", "#7FA16F", "#D5C4B8", "#C58EBD", "#9AB5E0", "#E58B61"]
+  },
+  "layout": {
+    "documentHorizontalPadding": 48, "documentVerticalPadding": 38, "blockGap": 7,
+    "paragraphMarginBottom": 10, "listMarginBottom": 10, "listPaddingLeft": 21, "thematicBreakMargin": 11,
+    "headingMarginTop": [27, 22, 18, 13, 9, 5], "headingMarginBottom": 5,
+    "codeMargin": 10, "codePaddingVertical": 10, "codePaddingHorizontal": 15,
+    "quoteMargin": 10, "quotePaddingVertical": 8, "quotePaddingLeft": 19, "quotePaddingRight": 10, "quoteBorderWidth": 4,
+    "mathMargin": 13, "mathPaddingVertical": 9, "mathPaddingHorizontal": 15,
+    "tableMargin": 10, "imageMargin": 13, "tocMargin": 12, "tocPaddingLeft": 9, "tocBorderWidth": 2,
+    "calloutMargin": 10, "calloutPaddingVertical": 9, "calloutPaddingLeft": 17, "calloutBorderWidth": 4,
+    "frontmatterMarginBottom": 12, "frontmatterPaddingVertical": 9, "frontmatterPaddingHorizontal": 15,
+    "footnoteMargin": 9, "footnotePaddingVertical": 9, "footnotePaddingHorizontal": 15,
+    "unsupportedMargin": 9, "unsupportedPaddingVertical": 5, "unsupportedPaddingLeft": 13, "extensionMargin": 4,
+    "titleBarHeight": 40, "navigationOpenWidth": 284, "scrollbarWidth": 16,
+    "statusBarMinHeight": 32, "footnotePreviewWidth": 370, "footnotePreviewSpacing": 9
+  }
+}

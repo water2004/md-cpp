@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "elmd.arctic-night",
+  "name": "Arctic Night",
+  "variant": "dark",
+  "typography": {
+    "body": { "family": "Segoe UI Variable Text", "size": 17, "lineHeight": 29, "weight": 400, "italic": false },
+    "heading1": { "family": "Segoe UI Variable Display", "size": 37, "lineHeight": 46, "weight": 650, "italic": false },
+    "heading2": { "family": "Segoe UI Variable Display", "size": 29, "lineHeight": 37, "weight": 650, "italic": false },
+    "heading3": { "family": "Segoe UI Variable Display", "size": 23, "lineHeight": 30, "weight": 600, "italic": false },
+    "code": { "family": "Cascadia Code", "size": 14, "lineHeight": 23, "weight": 400, "italic": false },
+    "ui": { "family": "Segoe UI Variable Text", "size": 14, "lineHeight": 20, "weight": 400, "italic": false },
+    "uiMonospace": { "family": "Cascadia Mono", "size": 14, "lineHeight": 20, "weight": 400, "italic": false }
+  },
+  "colors": {
+    "background": "#0D171F", "foreground": "#DDEAF2", "mutedForeground": "#91A6B3", "accent": "#59C3E6",
+    "heading": "#F1F8FC", "strong": "#F1F8FC", "emphasis": "#9ED7C5",
+    "inlineCodeBackground": "#172630", "inlineCodeForeground": "#8FD8C4",
+    "codeBlockBackground": "#111E27", "codeBlockForeground": "#D7E6EE",
+    "blockquoteBorder": "#4DAAC8", "blockquoteBackground": "#13232D", "nestedQuoteBackground": "#0F1C24",
+    "link": "#66C7E8", "imageBorder": "#3B5362", "selectionBackground": "#3A91B766", "selectionForeground": "#F4FBFF",
+    "caret": "#F4FBFF", "marker": "#8CA1AE", "mathBackground": "#111E27", "mathForeground": "#E7F2F7",
+    "calloutNoteBackground": "#102B3A", "calloutNoteBorder": "#55B9DD",
+    "calloutWarningBackground": "#322A16", "calloutWarningBorder": "#D9AF52",
+    "calloutTipBackground": "#123128", "calloutTipBorder": "#65C6A3",
+    "calloutImportantBackground": "#28203A", "calloutImportantBorder": "#A791D4",
+    "calloutCautionBackground": "#351D23", "calloutCautionBorder": "#E17C8D",
+    "frontmatterBackground": "#111E27", "frontmatterForeground": "#91A6B3",
+    "tableBorder": "#3B5362", "tableHeaderBackground": "#172630", "lineNumber": "#8297A4",
+    "strikethrough": "#8297A4", "unsupportedBackground": "#302A18", "unsupportedForeground": "#D7B65F",
+    "shellBackground": "#0C151C", "shellLayerBackground": "#121F28", "shellBorder": "#2C4250",
+    "shellForeground": "#DFEAF0", "shellMutedForeground": "#8EA2AE", "shellAccent": "#59C3E6",
+    "syntax": ["#D7E6EE", "#C79AD6", "#7DD3C0", "#D8C27C", "#E39A86", "#9CCF8F", "#6EA97D", "#C5D5DD", "#B39BD1", "#82B7E5", "#59C3E6"]
+  },
+  "layout": {
+    "documentHorizontalPadding": 56, "documentVerticalPadding": 44, "blockGap": 6,
+    "paragraphMarginBottom": 9, "listMarginBottom": 9, "listPaddingLeft": 20, "thematicBreakMargin": 10,
+    "headingMarginTop": [25, 21, 17, 13, 9, 5], "headingMarginBottom": 5,
+    "codeMargin": 9, "codePaddingVertical": 10, "codePaddingHorizontal": 14,
+    "quoteMargin": 9, "quotePaddingVertical": 8, "quotePaddingLeft": 18, "quotePaddingRight": 10, "quoteBorderWidth": 3,
+    "mathMargin": 12, "mathPaddingVertical": 9, "mathPaddingHorizontal": 14,
+    "tableMargin": 9, "imageMargin": 13, "tocMargin": 11, "tocPaddingLeft": 9, "tocBorderWidth": 2,
+    "calloutMargin": 9, "calloutPaddingVertical": 9, "calloutPaddingLeft": 16, "calloutBorderWidth": 4,
+    "frontmatterMarginBottom": 11, "frontmatterPaddingVertical": 9, "frontmatterPaddingHorizontal": 14,
+    "footnoteMargin": 9, "footnotePaddingVertical": 9, "footnotePaddingHorizontal": 14,
+    "unsupportedMargin": 8, "unsupportedPaddingVertical": 5, "unsupportedPaddingLeft": 12, "extensionMargin": 4,
+    "titleBarHeight": 40, "navigationOpenWidth": 280, "scrollbarWidth": 15,
+    "statusBarMinHeight": 32, "footnotePreviewWidth": 360, "footnotePreviewSpacing": 9
+  }
+}
