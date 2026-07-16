@@ -1,11 +1,10 @@
-// elmd.core.outline — Outline + build_outline_from_blocks (stack hierarchy).
+// elmd.core.outline — Outline + hierarchy projection from cached heading symbols.
 export module elmd.core.outline;
 import std;
 import elmd.core.ids;
 import elmd.core.instrumentation;
-import elmd.core.ast;
 import elmd.core.slug;
-import elmd.core.utf;
+import elmd.core.symbols;
 import elmd.core.text_edit;
 
 export namespace elmd {
@@ -97,22 +96,22 @@ private:
     }
 };
 
-// Build the outline from a list of blocks: extract a linear list of heading
-// items (recursing into containers) and then build a hierarchy via a stack.
-inline Outline build_outline_from_blocks(std::uint64_t revision, const std::vector<BlockNode>& blocks) {
+// Heading symbols are already maintained in document order by the editor.
+// Projecting the outline from that cache avoids another full block-tree walk
+// after a heading edit and during initial document construction.
+inline Outline build_outline_from_headings(
+    std::uint64_t revision,
+    std::span<const HeadingSymbol> headings) {
     record_full_document_outline_derivation();
     std::vector<OutlineItem> linear;
-    auto extract = [&](auto& self, const std::vector<BlockNode>& bs) -> void {
-        for (const auto& b : bs) {
-            if (b.kind == BlockKind::Heading) {
-                std::string title = cps_to_utf8(inline_visible_text(b.inline_content));
-                linear.emplace_back(b.id, b.level, title, std::string{});
-            } else if (!b.children.empty()) {
-                self(self, b.children);
-            }
-        }
-    };
-    extract(extract, blocks);
+    linear.reserve(headings.size());
+    for (const auto& heading : headings) {
+        linear.emplace_back(
+            heading.node_id,
+            heading.level,
+            heading.title,
+            std::string{});
+    }
 
     // assign unique slugs
     {
@@ -125,10 +124,6 @@ inline Outline build_outline_from_blocks(std::uint64_t revision, const std::vect
     // stack-based hierarchy
     std::vector<OutlineItem> root;
     std::vector<OutlineItem*> stack;
-    auto append_to_parent = [&](OutlineItem item) {
-        if (stack.empty()) root.push_back(item);
-        else stack.back()->children.push_back(item);
-    };
     auto push_to_stack = [&](OutlineItem& item) {
         // get a stable pointer in `root` or the parent's children vector
         if (stack.empty()) {

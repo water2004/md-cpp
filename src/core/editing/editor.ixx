@@ -612,8 +612,8 @@ private:
                 }
             }
             if (heading_changed) {
-                outline_ = build_outline_from_blocks(
-                    document_.revision, document_.root.children);
+                outline_ = build_outline_from_headings(
+                    document_.revision, symbols_.headings);
             }
             outline_.revision = document_.revision;
             return;
@@ -631,7 +631,7 @@ private:
             }
         }
         if (heading_changed) {
-            outline_ = build_outline_from_blocks(document_.revision, document_.root.children);
+            outline_ = build_outline_from_headings(document_.revision, symbols_.headings);
         }
         outline_.revision = document_.revision;
     }
