@@ -45,9 +45,19 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
 }
 
 Write-Host 'Building the native SVG normalizer...'
-& cargo build --locked --release --manifest-path $SvgNormalizerManifest --target-dir $SvgNormalizerTarget
-if ($LASTEXITCODE -ne 0) {
-    throw "SVG normalizer build failed with exit code $LASTEXITCODE"
+$PreviousRustFlags = $env:RUSTFLAGS
+try {
+    $StaticCrtFlag = '-C target-feature=+crt-static'
+    if (-not $env:RUSTFLAGS -or -not $env:RUSTFLAGS.Contains($StaticCrtFlag)) {
+        $env:RUSTFLAGS = (($env:RUSTFLAGS, $StaticCrtFlag) -join ' ').Trim()
+    }
+    & cargo build --locked --release --manifest-path $SvgNormalizerManifest --target-dir $SvgNormalizerTarget
+    if ($LASTEXITCODE -ne 0) {
+        throw "SVG normalizer build failed with exit code $LASTEXITCODE"
+    }
+}
+finally {
+    $env:RUSTFLAGS = $PreviousRustFlags
 }
 
 if (-not (Test-Path -LiteralPath $SvgNormalizerOutput)) {

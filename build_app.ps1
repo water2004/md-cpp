@@ -8,6 +8,10 @@ param(
 
     [string]$AssetsDirectory,
 
+    [switch]$SelfContained,
+
+    [switch]$SkipAssetsDeployment,
+
     [switch]$Clean
 )
 
@@ -39,7 +43,16 @@ $Properties = @(
     "/p:Platform=$Platform"
 )
 if ($AssetsDirectory) {
-    $Properties += "/p:FoliaAssetsDirectory=$AssetsDirectory"
+    # The value is emitted into a C++ wide string literal. Forward slashes are
+    # accepted by Windows paths and avoid accidental C++ escape sequences.
+    $CompilerAssetsDirectory = $AssetsDirectory.Replace('\', '/')
+    $Properties += "/p:FoliaAssetsDirectory=$CompilerAssetsDirectory"
+}
+if ($SelfContained) {
+    $Properties += '/p:FoliaSelfContained=true'
+}
+if ($SkipAssetsDeployment) {
+    $Properties += '/p:FoliaDeployAssets=false'
 }
 
 if ($Clean) {

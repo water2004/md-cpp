@@ -4,6 +4,7 @@
     <FoliaBuildRoot>$(MSBuildThisFileDirectory)..\..\build\app-winui\</FoliaBuildRoot>
     <BaseIntermediateOutputPath>$(FoliaBuildRoot)obj\</BaseIntermediateOutputPath>
     <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)$(Platform)\$(Configuration)\</MSBuildProjectExtensionsPath>
+    <WindowsAppSDKSelfContained Condition="'$(FoliaSelfContained)'=='true'">true</WindowsAppSDKSelfContained>
   </PropertyGroup>
   <Import Project="packages\Microsoft.Windows.SDK.BuildTools.10.0.28000.2270\build\Microsoft.Windows.SDK.BuildTools.props" Condition="Exists('packages\Microsoft.Windows.SDK.BuildTools.10.0.28000.2270\build\Microsoft.Windows.SDK.BuildTools.props')" />
   <Import Project="packages\Microsoft.Windows.CppWinRT.3.0.260520.1\build\native\Microsoft.Windows.CppWinRT.props" Condition="Exists('packages\Microsoft.Windows.CppWinRT.3.0.260520.1\build\native\Microsoft.Windows.CppWinRT.props')" />
@@ -74,6 +75,7 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros">
     <FoliaAssetsDirectory />
+    <FoliaDeployAssets Condition="'$(FoliaDeployAssets)'==''">true</FoliaDeployAssets>
   </PropertyGroup>
   <PropertyGroup>
     <OutDir>$(FoliaBuildRoot)bin\$(Platform)\$(Configuration)\</OutDir>
@@ -91,7 +93,6 @@
       <LanguageStandard Condition="'$(VisualStudioVersion)' &gt;= '18.0'">stdcpplatest</LanguageStandard>
       <LanguageStandard Condition="'$(VisualStudioVersion)' &lt; '18.0'">stdcpp17</LanguageStandard>
       <AdditionalOptions>%(AdditionalOptions) /bigobj</AdditionalOptions>
-      <PreprocessorDefinitions>FOLIA_ASSETS_DIRECTORY=L&quot;$(FoliaAssetsDirectory)&quot;;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <AdditionalDependencies>$(IntDir)quickjs\quickjs.lib;d2d1.lib;d3d11.lib;dwrite.lib;dxgi.lib;windowscodecs.lib;shlwapi.lib;winspool.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -110,6 +111,24 @@
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(FoliaSelfContained)'=='true' and '$(Configuration)'=='Debug'">
+    <ClCompile>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries);libucrtd.lib</IgnoreSpecificDefaultLibraries>
+      <AdditionalOptions>%(AdditionalOptions) /defaultlib:ucrtd.lib</AdditionalOptions>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(FoliaSelfContained)'=='true' and '$(Configuration)'=='Release'">
+    <ClCompile>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries);libucrt.lib</IgnoreSpecificDefaultLibraries>
+      <AdditionalOptions>%(AdditionalOptions) /defaultlib:ucrt.lib</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -353,7 +372,9 @@
     <ClCompile Include="settings\AppSettings.cpp" />
     <ClCompile Include="localization\Localization.cpp" />
     <ClCompile Include="settings\SettingsView.cpp" />
-    <ClCompile Include="storage\AssetPaths.cpp" />
+    <ClCompile Include="storage\AssetPaths.cpp">
+      <PreprocessorDefinitions>FOLIA_ASSETS_DIRECTORY=LR&quot;FOLIA($(FoliaAssetsDirectory))FOLIA&quot;;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
     <ClCompile Include="theme\ThemeConfig.cpp" />
     <ClCompile Include="theme\ThemeCatalog.cpp" />
     <ClCompile Include="editor\session\EditorSession.cpp" />
@@ -481,7 +502,7 @@
     <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <Target Name="CopyConfiguredFoliaAssets" AfterTargets="Build" Condition="'$(FoliaAssetsDirectory)'!=''">
+  <Target Name="CopyConfiguredFoliaAssets" AfterTargets="Build" Condition="'$(FoliaAssetsDirectory)'!='' and '$(FoliaDeployAssets)'=='true'">
     <ItemGroup>
       <FoliaDeployableAsset Include="$(ProjectDir)Assets\**\*"
         Exclude="$(ProjectDir)Assets\settings.json;$(ProjectDir)Assets\themes\custom\**\*" />
@@ -511,8 +532,10 @@
   </ImportGroup>
   <Target Name="BuildQuickJs" BeforeTargets="PrepareForBuild">
     <PropertyGroup>
-      <QuickJsRuntimeOptions Condition="'$(UseDebugLibraries)'=='true'">/MDd /D_DEBUG</QuickJsRuntimeOptions>
-      <QuickJsRuntimeOptions Condition="'$(UseDebugLibraries)'!='true'">/MD /DNDEBUG</QuickJsRuntimeOptions>
+      <QuickJsRuntimeOptions Condition="'$(FoliaSelfContained)'=='true' and '$(UseDebugLibraries)'=='true'">/MTd /D_DEBUG</QuickJsRuntimeOptions>
+      <QuickJsRuntimeOptions Condition="'$(FoliaSelfContained)'=='true' and '$(UseDebugLibraries)'!='true'">/MT /DNDEBUG</QuickJsRuntimeOptions>
+      <QuickJsRuntimeOptions Condition="'$(FoliaSelfContained)'!='true' and '$(UseDebugLibraries)'=='true'">/MDd /D_DEBUG</QuickJsRuntimeOptions>
+      <QuickJsRuntimeOptions Condition="'$(FoliaSelfContained)'!='true' and '$(UseDebugLibraries)'!='true'">/MD /DNDEBUG</QuickJsRuntimeOptions>
       <QuickJsCompileOptions>/nologo $(QuickJsRuntimeOptions) /TC /std:c17 /D_CRT_SECURE_NO_WARNINGS /U__SIZEOF_INT128__ -Wno-microsoft-enum-forward-reference /clang:-mno-ms-bitfields</QuickJsCompileOptions>
     </PropertyGroup>
     <MakeDir Directories="$(IntDir)quickjs" />

@@ -7,12 +7,26 @@
 
 namespace
 {
+    std::wstring ExpandKnownFolderTokens(std::wstring configured)
+    {
+        constexpr std::wstring_view token = L"{LocalAppData}";
+        constexpr std::wstring_view environment_reference = L"%LOCALAPPDATA%";
+        for (auto position = configured.find(token);
+             position != std::wstring::npos;
+             position = configured.find(token, position + environment_reference.size()))
+        {
+            configured.replace(position, token.size(), environment_reference);
+        }
+        return configured;
+    }
+
     std::filesystem::path ExpandEnvironment(std::wstring const& configured)
     {
-        auto required = ExpandEnvironmentStringsW(configured.c_str(), nullptr, 0);
+        auto const token_expanded = ExpandKnownFolderTokens(configured);
+        auto required = ExpandEnvironmentStringsW(token_expanded.c_str(), nullptr, 0);
         if (required == 0) winrt::throw_last_error();
         std::wstring expanded(required, L'\0');
-        auto written = ExpandEnvironmentStringsW(configured.c_str(), expanded.data(), required);
+        auto written = ExpandEnvironmentStringsW(token_expanded.c_str(), expanded.data(), required);
         if (written == 0 || written > required) winrt::throw_last_error();
         expanded.resize(written - 1);
         return expanded;
