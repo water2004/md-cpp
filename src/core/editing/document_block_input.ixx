@@ -75,6 +75,7 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> replace_paragraph_
         move.index = index + 1;
         move.other_parent_id = quote_id;
         move.other_index = 0;
+        move.moved_id = parent->children[index + 1].id;
         auto content = remove_block(*parent, index + 1);
         auto* inserted_quote = find_block(document.root, quote_id);
         if (!content || !inserted_quote || !insert_block(*inserted_quote, 0, std::move(*content))) {
@@ -114,6 +115,7 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> replace_paragraph_
     move_content.index = index + 1;
     move_content.other_parent_id = item_id;
     move_content.other_index = 0;
+    move_content.moved_id = parent->children[index + 1].id;
     auto content = remove_block(*parent, index + 1);
     auto* inserted_item = find_block(document.root, item_id);
     if (!content || !inserted_item || !insert_block(*inserted_item, 0, std::move(*content))) {
@@ -134,6 +136,7 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> replace_paragraph_
         move_item.index = 0;
         move_item.other_parent_id = previous->id;
         move_item.other_index = target_index;
+        move_item.moved_id = inserted_list->children.front().id;
         auto moved_item = remove_block(*inserted_list, 0);
         if (!moved_item || !insert_block(*previous, target_index, std::move(*moved_item))) {
             return std::nullopt;
@@ -162,6 +165,7 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> replace_paragraph_
             move_item.index = 0;
             move_item.other_parent_id = inserted_list->id;
             move_item.other_index = inserted_list->children.size();
+            move_item.moved_id = next->children.front().id;
             auto moved_item = remove_block(*next, 0);
             if (!moved_item || !insert_block(
                     *inserted_list, move_item.other_index, std::move(*moved_item))) {
@@ -357,6 +361,8 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> remove_quote_prefi
     move.other_parent_id = parent_id;
     move.other_index = quote_index;
     auto* current_quote = find_block(document.root, quote_id);
+    if (!current_quote || current_quote->children.empty()) return std::nullopt;
+    move.moved_id = current_quote->children.front().id;
     auto selected = current_quote ? remove_block(*current_quote, 0) : std::nullopt;
     if (!selected || !insert_block(*parent, quote_index, std::move(*selected))) return std::nullopt;
     result.operations.emplace_back(std::move(move));

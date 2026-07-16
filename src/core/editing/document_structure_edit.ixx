@@ -89,6 +89,7 @@ inline bool insert_container_and_move_range(
         move.index = range.first + 1;
         move.other_parent_id = container_id;
         move.other_index = target_index;
+        move.moved_id = parent->children[range.first + 1].id;
         auto child = remove_block(*parent, range.first + 1);
         if (!child || !insert_block(*inserted, target_index, std::move(*child))) return false;
         operations.emplace_back(std::move(move));
@@ -117,6 +118,7 @@ inline bool unwrap_container(
         move.index = 0;
         move.other_parent_id = parent_id;
         move.other_index = range.first + target_index;
+        move.moved_id = container->children.front().id;
         auto child = remove_block(*container, 0);
         if (!child || !insert_block(*parent, move.other_index, std::move(*child))) return false;
         operations.emplace_back(std::move(move));
@@ -298,6 +300,7 @@ inline std::optional<DocumentTransaction> document_toggle_list(EditorDocument& d
                 move.index = 0;
                 move.other_parent_id = parent_id;
                 move.other_index = parent_index++;
+                move.moved_id = item->children.front().id;
                 auto child = remove_block(*item, 0);
                 if (!child || !insert_block(*parent, move.other_index, std::move(*child))) return std::nullopt;
                 operations.emplace_back(std::move(move));
@@ -364,6 +367,7 @@ inline std::optional<DocumentTransaction> document_toggle_list(EditorDocument& d
             move.index = range->first + 1;
             move.other_parent_id = item_id;
             move.other_index = 0;
+            move.moved_id = parent->children[range->first + 1].id;
             auto child = remove_block(*parent, range->first + 1);
             auto* inserted_item = find_block(after.root, item_id);
             if (!child || !inserted_item || !insert_block(*inserted_item, 0, std::move(*child))) {
@@ -582,6 +586,8 @@ inline std::optional<DocumentTransaction> document_indent_list_item(EditorDocume
     move.other_index = target_index;
     list = find_block(after.root, list_id);
     nested = find_block(after.root, nested_id);
+    if (!list || item_index >= list->children.size()) return std::nullopt;
+    move.moved_id = list->children[item_index].id;
     auto item = list ? remove_block(*list, item_index) : std::nullopt;
     if (!item || !nested || !insert_block(*nested, target_index, std::move(*item))) return std::nullopt;
     operations.emplace_back(std::move(move));
@@ -695,6 +701,7 @@ inline std::optional<DocumentTransaction> document_edit_table(
         move.index = from;
         move.other_parent_id = parent_id;
         move.other_index = to;
+        move.moved_id = node->id;
         operations.emplace_back(std::move(move));
         return insert_block(*owner, to, std::move(*node));
     };

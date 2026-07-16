@@ -2768,8 +2768,8 @@ suite editor_tests = [] {
         expect(fatal(bool(counters.full_document_parses == 0u))) << label;
         expect(fatal(bool(counters.full_document_serializations == 0u))) << label;
         expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << label;
-        expect(fatal(bool(counters.full_document_block_index_scans == 1u))) << label;
-        expect(fatal(bool(counters.incremental_document_block_index_repairs == 0u))) << label;
+        expect(fatal(bool(counters.full_document_block_index_scans == 0u))) << label;
+        expect(fatal(bool(counters.incremental_document_block_index_repairs == 1u))) << label;
         expect(fatal(bool(!transaction->operations.empty()))) << label;
         expect(fatal(document_indexes_are_exact(editor.document()))) << label;
         const auto after_markdown = editor.markdown_utf8();

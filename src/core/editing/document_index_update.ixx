@@ -104,6 +104,9 @@ inline bool update_document_block_index(
     std::unordered_map<std::uint64_t, std::size_t> affected_parents;
     std::unordered_set<std::uint64_t> removed_blocks;
     std::unordered_set<std::uint64_t> removed_editable;
+    std::unordered_set<std::uint64_t> added_blocks;
+    std::unordered_set<std::uint64_t> added_editable;
+    std::unordered_set<std::uint64_t> relocated_roots;
     std::vector<NodeId> added_roots;
 
     auto note_parent = [&](NodeId id, std::size_t index) {
@@ -114,7 +117,13 @@ inline bool update_document_block_index(
     for (const auto& operation : operations) {
         const auto* tree = std::get_if<DocumentTreeEdit>(&operation);
         if (!tree) continue;
-        if (tree->kind == DocumentTreeEditKind::Move) return false;
+        if (tree->kind == DocumentTreeEditKind::Move) {
+            if (tree->moved_id.v == 0) return false;
+            note_parent(tree->parent_id, tree->index);
+            note_parent(tree->other_parent_id, tree->other_index);
+            relocated_roots.insert(tree->moved_id.v);
+            continue;
+        }
         if (tree->kind == DocumentTreeEditKind::UpdatePayload) {
             if (tree->before.id.v == 0
                 || tree->before.id != tree->after.id
@@ -135,6 +144,7 @@ inline bool update_document_block_index(
         if (adds) {
             if (payload.id.v != 0) {
                 added_roots.push_back(payload.id);
+                collect_ids(payload, added_blocks, added_editable);
             }
         } else {
             collect_ids(payload, removed_blocks, removed_editable);
@@ -159,7 +169,9 @@ inline bool update_document_block_index(
         bool progressed = false;
         for (auto& item : pending) {
             if (item.done) continue;
-            if (removed_blocks.contains(item.id.v)) {
+            if (removed_blocks.contains(item.id.v)
+                && !added_blocks.contains(item.id.v)
+                && !relocated_roots.contains(item.id.v)) {
                 item.done = true;
                 --remaining;
                 progressed = true;
@@ -181,6 +193,17 @@ inline bool update_document_block_index(
             progressed = true;
         }
         if (!progressed) return false;
+    }
+
+    std::unordered_set<std::uint64_t> relocated_blocks;
+    for (const auto id : relocated_roots) {
+        if (removed_blocks.contains(id)) continue;
+        const auto path = validated_cached_path(document, NodeId{id});
+        if (!path) return false;
+        const auto* block = block_at_path(document.root, *path);
+        if (!block || block->id.v != id) return false;
+        collect_ids(*block, relocated_blocks, removed_editable);
+        added_roots.push_back(block->id);
     }
 
     if (!removed_editable.empty()) {

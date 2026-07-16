@@ -306,7 +306,16 @@ suite document_edit_tests = [] {
     move.index = 0;
     move.other_parent_id = NodeId{999999};
     move.other_index = 0;
+    move.moved_id = document.root.children.front().id;
 
+    expect(!apply_document_operation(document, DocumentOperation{move}, true));
+    expect(serialize_markdown(document) == before);
+    expect(document.root.children.size() == 2u);
+    expect_document_valid(document);
+
+    move.other_parent_id = document.root.id;
+    move.other_index = 1;
+    move.moved_id = NodeId{999999};
     expect(!apply_document_operation(document, DocumentOperation{move}, true));
     expect(serialize_markdown(document) == before);
     expect(document.root.children.size() == 2u);

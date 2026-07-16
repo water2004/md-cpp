@@ -51,9 +51,13 @@ inline bool move_child(
     NodeId from_parent_id,
     std::size_t from_index,
     NodeId to_parent_id,
-    std::size_t to_index) {
+    std::size_t to_index,
+    NodeId moved_id) {
     auto* from_parent = find_block(root, from_parent_id);
-    if (!from_parent || from_index >= from_parent->children.size()) return false;
+    if (!from_parent
+        || from_index >= from_parent->children.size()
+        || moved_id.v == 0
+        || from_parent->children[from_index].id != moved_id) return false;
 
     if (from_parent_id == to_parent_id) {
         if (to_index >= from_parent->children.size()) return false;
@@ -99,8 +103,20 @@ inline bool apply_tree_edit(BlockNode& root, const DocumentTreeEdit& edit, bool 
         }
         case DocumentTreeEditKind::Move:
             return forward
-                ? move_child(root, edit.parent_id, edit.index, edit.other_parent_id, edit.other_index)
-                : move_child(root, edit.other_parent_id, edit.other_index, edit.parent_id, edit.index);
+                ? move_child(
+                    root,
+                    edit.parent_id,
+                    edit.index,
+                    edit.other_parent_id,
+                    edit.other_index,
+                    edit.moved_id)
+                : move_child(
+                    root,
+                    edit.other_parent_id,
+                    edit.other_index,
+                    edit.parent_id,
+                    edit.index,
+                    edit.moved_id);
         case DocumentTreeEditKind::UpdatePayload: {
             auto* target = find_block(root, edit.before.id);
             if (!target) return false;

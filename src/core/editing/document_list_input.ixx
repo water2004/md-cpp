@@ -129,6 +129,7 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> upgrade_task_item(
         move_item.index = context->item_index;
         move_item.other_parent_id = tasks_id;
         move_item.other_index = 0;
+        move_item.moved_id = list->children[context->item_index].id;
         auto moved = remove_block(*list, context->item_index);
         if (!moved || !insert_block(*tasks_list, 0, std::move(*moved))) return std::nullopt;
         result.operations.emplace_back(std::move(move_item));
@@ -163,6 +164,7 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> upgrade_task_item(
             move_after.index = first_after;
             move_after.other_parent_id = after_id;
             move_after.other_index = target_index;
+            move_after.moved_id = list->children[first_after].id;
             auto moved = remove_block(*list, first_after);
             if (!moved || !insert_block(*after, target_index, std::move(*moved))) {
                 return std::nullopt;
@@ -312,6 +314,7 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> exit_empty_list_it
             move.index = context->item_index;
             move.other_parent_id = trailing_id;
             move.other_index = target_index;
+            move.moved_id = current_list->children[context->item_index].id;
             auto moved = remove_block(*current_list, context->item_index);
             if (!moved || !insert_block(*trailing_list, target_index, std::move(*moved))) return std::nullopt;
             result.operations.emplace_back(std::move(move));
@@ -417,6 +420,7 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> split_list_item(
         move.index = first_moved_child;
         move.other_parent_id = next_item->id;
         move.other_index = target_index;
+        move.moved_id = current_item->children[first_moved_child].id;
         auto child = remove_block(*current_item, first_moved_child);
         if (!child || !insert_block(*next_item, target_index, std::move(*child))) return std::nullopt;
         result.operations.emplace_back(std::move(move));
@@ -456,6 +460,7 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> outdent_nested_lis
     move.index = context.item_index;
     move.other_parent_id = grand_list_id;
     move.other_index = parent_item_index + 1;
+    move.moved_id = nested_list->children[context.item_index].id;
     auto item = remove_block(*nested_list, context.item_index);
     auto* target_list = find_block(document.root, grand_list_id);
     if (!item || !target_list
@@ -528,6 +533,7 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> remove_top_level_l
             move_after.index = context.item_index + 1;
             move_after.other_parent_id = *trailing_id;
             move_after.other_index = target_index;
+            move_after.moved_id = list->children[context.item_index + 1].id;
             auto item = remove_block(*list, context.item_index + 1);
             if (!item || !insert_block(*trailing_list, target_index, std::move(*item))) return std::nullopt;
             result.operations.emplace_back(std::move(move_after));
@@ -547,6 +553,7 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> remove_top_level_l
         move_child.index = 0;
         move_child.other_parent_id = parent_id;
         move_child.other_index = list_index + (context.item_index > 0 ? 1 : 0) + target_index;
+        move_child.moved_id = selected->children.front().id;
         auto child = remove_block(*selected, 0);
         if (!child || !insert_block(*parent, move_child.other_index, std::move(*child))) return std::nullopt;
         result.operations.emplace_back(std::move(move_child));

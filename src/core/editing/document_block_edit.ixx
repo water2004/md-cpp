@@ -405,6 +405,7 @@ inline std::optional<RecordedBlockEdit> exit_empty_flow_container(
             move.index = child_index + 1;
             move.other_parent_id = *trailing_id;
             move.other_index = target_index;
+            move.moved_id = source_container->children[child_index + 1].id;
             auto child = remove_block(*source_container, child_index + 1);
             if (!child || !insert_block(*trailing_container, target_index, std::move(*child))) return std::nullopt;
             result.operations.emplace_back(std::move(move));

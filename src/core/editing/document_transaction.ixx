@@ -23,6 +23,7 @@ struct DocumentTreeEdit {
     DocumentTreeEditKind kind = DocumentTreeEditKind::Insert;
     NodeId parent_id{};
     NodeId other_parent_id{};
+    NodeId moved_id{};
     std::size_t index = 0;
     std::size_t other_index = 0;
     BlockNode before;

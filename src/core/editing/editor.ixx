@@ -60,11 +60,12 @@ inline EditorDocumentChange summarize_document_change(
             change.structural = true;
             const auto& tree = std::get<DocumentTreeEdit>(operation);
             if (tree.kind == DocumentTreeEditKind::Move) {
-                // A move payload intentionally stores only structural
-                // coordinates. Conservatively re-derive order-sensitive
-                // symbols and headings until the tree index carries the moved
-                // subtree identity directly.
-                change.structural_locality_known = false;
+                change.structural_anchors.push_back(tree.parent_id);
+                change.structural_anchors.push_back(tree.other_parent_id);
+                change.structural_anchors.push_back(tree.moved_id);
+                // Symbol ordinals and outline hierarchy are order-sensitive.
+                // Re-derive them conservatively until the move transaction
+                // also carries subtree contribution summaries.
                 change.structural_symbols_may_change = true;
                 change.structural_outline_may_change = true;
             } else {
