@@ -947,37 +947,30 @@ namespace winrt::ElMd
             return preparedDocument->geometry.FirstIntersecting(documentTop);
         };
 
-        // Measure only the viewport neighborhood. Offscreen blocks retain a
-        // cheap height estimate and owner map, so opening a large document no
-        // longer creates a DirectWrite layout for every block. Preserve the
-        // first visible block while estimates above it are refined.
-        for (std::size_t pass = 0; pass < 4; ++pass)
+        // Refine estimated blocks incrementally. DirectWrite layout and render
+        // model materialization both run on the UI thread, so a fixed amount of
+        // first-visit work is admitted per frame. The viewport is prepared
+        // before a short directional look-ahead band; another frame continues
+        // the work when the budget is exhausted or corrected heights expose a
+        // different set of blocks.
+        if (!frame.renderModel.blocks.empty())
         {
-            if (frame.renderModel.blocks.empty()) break;
             auto anchorIndex = (std::min)(
                 firstIntersecting(scrollOffset),
                 frame.renderModel.blocks.size() - 1);
             auto anchorTop = preparedDocument->geometry.At(anchorIndex).top;
-            auto measureTop = printMode
-                ? (std::numeric_limits<float>::lowest)()
-                : scrollOffset - resources.surfaceHeightDip * 0.75f - viewportOverscan;
-            auto measureBottom = printMode
-                ? (std::numeric_limits<float>::max)()
-                : scrollOffset + resources.surfaceHeightDip * 2.25f + viewportOverscan;
-            auto measureBegin = printMode ? std::size_t{0} : firstIntersecting(measureTop);
-            auto measureEnd = measureBegin;
-            while (measureEnd < frame.renderModel.blocks.size()
-                && (printMode || preparedDocument->geometry.At(measureEnd).top <= measureBottom))
-                ++measureEnd;
-            if (frame.materializeBlocks) frame.materializeBlocks(measureBegin, measureEnd);
-            auto measured = false;
             auto geometryChanged = false;
-            for (auto index = measureBegin; index < measureEnd; ++index)
+            auto needsAnotherFrame = false;
+            auto preparedThisFrame = std::size_t{0};
+            auto deadline = std::chrono::steady_clock::now()
+                + (printMode ? std::chrono::hours{24} : std::chrono::milliseconds{2});
+
+            auto prepareIndex = [&](std::size_t index)
             {
                 auto placement = preparedDocument->geometry.At(index);
                 auto const& block = frame.renderModel.blocks[index];
                 auto& prepared = preparedDocument->blocks[index];
-                if (block.kind == elmd::RenderBlockKind::ThematicBreak || prepared.valid) continue;
+                if (block.kind == elmd::RenderBlockKind::ThematicBreak || prepared.valid) return;
                 auto previousHeight = prepared.height;
                 prepared = prepareBlock(block, requestEmbeddedAt(placement.top));
                 preparedDocument->layoutBlocks.insert(index);
@@ -992,20 +985,110 @@ namespace winrt::ElMd
                     preparedDocument->geometry.UpdateHeight(index, prepared.height);
                     geometryChanged = true;
                 }
-                measured = true;
-            }
-            if (!measured) break;
-            if (!geometryChanged) break;
-            preparedDocument->totalHeight = preparedDocument->geometry.TotalHeight();
-            if (!printMode && anchorIndex < preparedDocument->geometry.Size())
+                ++preparedThisFrame;
+            };
+            auto withinBudget = [&]
             {
-                auto shift = preparedDocument->geometry.At(anchorIndex).top - anchorTop;
-                if (shift != 0.0f)
+                return printMode || preparedThisFrame == 0
+                    || std::chrono::steady_clock::now() < deadline;
+            };
+            auto prepareForward = [&](std::size_t begin, std::size_t end)
+            {
+                constexpr std::size_t materializationBatch = 16;
+                for (auto cursor = begin; cursor < end;)
                 {
-                    scrollOffset = (std::max)(0.0f, scrollOffset + shift);
-                    scrollTarget = (std::max)(0.0f, scrollTarget + shift);
+                    if (!withinBudget()) { needsAnotherFrame = true; break; }
+                    auto batchEnd = (std::min)(end, cursor + materializationBatch);
+                    if (frame.materializeBlocks) frame.materializeBlocks(cursor, batchEnd);
+                    for (; cursor < batchEnd; ++cursor)
+                    {
+                        prepareIndex(cursor);
+                        if (!withinBudget() && cursor + 1 < end)
+                        {
+                            ++cursor;
+                            needsAnotherFrame = true;
+                            break;
+                        }
+                    }
+                    if (needsAnotherFrame) break;
                 }
+            };
+            auto prepareBackward = [&](std::size_t begin, std::size_t end)
+            {
+                constexpr std::size_t materializationBatch = 16;
+                auto cursor = end;
+                while (cursor > begin)
+                {
+                    if (!withinBudget()) { needsAnotherFrame = true; break; }
+                    auto batchBegin = cursor > begin + materializationBatch
+                        ? cursor - materializationBatch
+                        : begin;
+                    if (frame.materializeBlocks) frame.materializeBlocks(batchBegin, cursor);
+                    while (cursor > batchBegin)
+                    {
+                        --cursor;
+                        prepareIndex(cursor);
+                        if (!withinBudget() && cursor > begin)
+                        {
+                            needsAnotherFrame = true;
+                            break;
+                        }
+                    }
+                    if (needsAnotherFrame) break;
+                }
+            };
+
+            if (printMode)
+            {
+                prepareForward(0, frame.renderModel.blocks.size());
             }
+            else
+            {
+                auto viewportTop = scrollOffset - viewportOverscan;
+                auto viewportBottom = scrollOffset + resources.surfaceHeightDip + viewportOverscan;
+                auto visibleBegin = firstIntersecting(viewportTop);
+                auto visibleEnd = visibleBegin;
+                while (visibleEnd < frame.renderModel.blocks.size()
+                    && preparedDocument->geometry.At(visibleEnd).top <= viewportBottom)
+                    ++visibleEnd;
+                prepareForward(visibleBegin, visibleEnd);
+
+                auto scrollingForward = !preparedDocument->hasLastViewportOffset
+                    || scrollOffset >= preparedDocument->lastViewportOffset;
+                auto prefetchDistance = (std::max)(480.0f, resources.surfaceHeightDip * 0.75f);
+                if (!needsAnotherFrame && scrollingForward)
+                {
+                    auto prefetchEnd = visibleEnd;
+                    auto prefetchBottom = viewportBottom + prefetchDistance;
+                    while (prefetchEnd < frame.renderModel.blocks.size()
+                        && preparedDocument->geometry.At(prefetchEnd).top <= prefetchBottom)
+                        ++prefetchEnd;
+                    prepareForward(visibleEnd, prefetchEnd);
+                }
+                else if (!needsAnotherFrame && visibleBegin > 0)
+                {
+                    auto prefetchBegin = firstIntersecting(viewportTop - prefetchDistance);
+                    prepareBackward(prefetchBegin, visibleBegin);
+                }
+                preparedDocument->lastViewportOffset = scrollOffset;
+                preparedDocument->hasLastViewportOffset = true;
+            }
+
+            if (geometryChanged)
+            {
+                preparedDocument->totalHeight = preparedDocument->geometry.TotalHeight();
+                if (!printMode && anchorIndex < preparedDocument->geometry.Size())
+                {
+                    auto shift = preparedDocument->geometry.At(anchorIndex).top - anchorTop;
+                    if (shift != 0.0f)
+                    {
+                        scrollOffset = (std::max)(0.0f, scrollOffset + shift);
+                        scrollTarget = (std::max)(0.0f, scrollTarget + shift);
+                    }
+                }
+                needsAnotherFrame = !printMode;
+            }
+            if (needsAnotherFrame) Invalidate();
         }
 
         auto embeddedTop = scrollOffset - embeddedOverscanBefore;
@@ -1015,7 +1098,6 @@ namespace winrt::ElMd
         while (embeddedEnd < frame.renderModel.blocks.size()
             && preparedDocument->geometry.At(embeddedEnd).top <= embeddedBottom)
             ++embeddedEnd;
-        if (frame.materializeBlocks) frame.materializeBlocks(embeddedBegin, embeddedEnd);
         auto geometryChanged = false;
         for (auto index = embeddedBegin; index < embeddedEnd; ++index)
         {
@@ -1129,7 +1211,6 @@ namespace winrt::ElMd
         while (viewportEnd < frame.renderModel.blocks.size()
             && preparedDocument->geometry.At(viewportEnd).top <= viewportBottom)
             ++viewportEnd;
-        if (frame.materializeBlocks) frame.materializeBlocks(viewportBegin, viewportEnd);
         for (auto blockIndex = viewportBegin; blockIndex < viewportEnd; ++blockIndex)
         {
             auto placement = preparedDocument->geometry.At(blockIndex);

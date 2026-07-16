@@ -147,6 +147,8 @@ namespace winrt::ElMd
         std::unordered_map<std::uint64_t, std::size_t> ownerBlockIndex;
         std::unordered_set<std::size_t> embeddedBlocks;
         std::unordered_set<std::size_t> layoutBlocks;
+        float lastViewportOffset = 0.0f;
+        bool hasLastViewportOffset = false;
     };
 
 }
