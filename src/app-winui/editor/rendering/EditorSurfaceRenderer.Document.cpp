@@ -117,7 +117,12 @@ namespace winrt::ElMd
         auto mathSvgSupported = svgSupported && mathJax.Enabled();
         EditorSvgPainter svgPainter(resources, renderCache);
         EditorTextLayoutEngine textLayoutEngine(resources, styleSheet);
-        EditorInlineImageRenderer inlineImages(resources, renderCache, styleSheet, frame.baseDirectory);
+        EditorInlineImageRenderer inlineImages(
+            resources,
+            renderCache,
+            styleSheet,
+            frame.baseDirectory,
+            !printMode);
         auto drawMath = [&](MathJaxSvgFragment const& fragment, D2D1_POINT_2F origin, D2D1_COLOR_F) {
             return fragment.svg && svgPainter.Draw(fragment.renderId, *fragment.svg, fragment.width, fragment.height, origin);
         };

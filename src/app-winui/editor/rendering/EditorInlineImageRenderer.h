@@ -26,7 +26,12 @@ namespace winrt::ElMd
             bool block = false;
         };
 
-        EditorInlineImageRenderer(EditorRenderResources& resources, EditorRenderCache& cache, EditorStyleSheet const& styleSheet, std::wstring const& baseDirectory);
+        EditorInlineImageRenderer(
+            EditorRenderResources& resources,
+            EditorRenderCache& cache,
+            EditorStyleSheet const& styleSheet,
+            std::wstring const& baseDirectory,
+            bool animate = true);
         std::vector<ImageDraw> Resolve(IDWriteTextLayout* layout, std::vector<DisplayInlineText::ImageOverlay> const& overlays, float availableWidth, bool loadContent = true) const;
         void ReleaseGif(std::string_view source) const;
         void Draw(IDWriteTextLayout* layout, D2D1_POINT_2F origin, std::vector<ImageDraw> const& images) const;
@@ -36,5 +41,6 @@ namespace winrt::ElMd
         EditorRenderCache& cache;
         EditorStyleSheet const& styleSheet;
         std::wstring const& baseDirectory;
+        bool animate = true;
     };
 }

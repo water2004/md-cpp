@@ -6,6 +6,16 @@ import elmd.core.utf;
 
 namespace winrt::ElMd
 {
+    struct PdfExportWork
+    {
+        std::stop_source stop;
+        std::atomic_bool done = false;
+        std::atomic_bool cancelled = false;
+        std::atomic_size_t completedPages = 0;
+        std::atomic_size_t totalPages = 0;
+        std::exception_ptr failure;
+    };
+
     struct EditorDocumentController::State
     {
         std::atomic_uint64_t generation = 1;
@@ -21,6 +31,7 @@ namespace winrt::ElMd
         std::atomic_bool cancelRequested = false;
         std::atomic_bool pdfExporting = false;
         std::filesystem::path pdfOutputPath;
+        std::shared_ptr<PdfExportWork> pdfWork;
     };
 
     EditorDocumentController::EditorDocumentController() : state_(std::make_shared<State>())
@@ -59,8 +70,8 @@ namespace winrt::ElMd
     {
         state_->cancelRequested = true;
         state_->pdfExporting = false;
-        if (state_->renderer) state_->renderer->CancelPdfExport();
-        if (!state_->pdfOutputPath.empty())
+        if (state_->pdfWork) state_->pdfWork->stop.request_stop();
+        if (!state_->pdfWork && !state_->pdfOutputPath.empty())
         {
             std::error_code ignored;
             std::filesystem::remove(state_->pdfOutputPath, ignored);
@@ -100,9 +111,21 @@ namespace winrt::ElMd
 
     void EditorDocumentController::CancelOperation()
     {
-        if (!state_->pdfExporting.exchange(false)) return;
+        if (!state_->pdfExporting) return;
         state_->cancelRequested = true;
-        if (state_->renderer) state_->renderer->CancelPdfExport();
+        if (state_->pdfWork)
+        {
+            state_->pdfWork->stop.request_stop();
+            auto total = state_->pdfWork->totalPages.load();
+            auto value = total == 0
+                ? std::optional<double>{}
+                : std::optional<double>{
+                    static_cast<double>(state_->pdfWork->completedPages.load()) / total};
+            if (state_->setProgress) state_->setProgress(true, value, false);
+            if (state_->setStatus) state_->setStatus(L"Cancelling PDF export…");
+            return;
+        }
+        state_->pdfExporting = false;
         if (!state_->pdfOutputPath.empty())
         {
             std::error_code ignored;
@@ -348,69 +371,164 @@ namespace winrt::ElMd
             if (state->cancelRequested)
             {
                 state->pdfExporting = false;
+                if (!state->pdfOutputPath.empty())
+                {
+                    std::error_code ignored;
+                    std::filesystem::remove(state->pdfOutputPath, ignored);
+                    state->pdfOutputPath.clear();
+                }
                 if (state->setProgress) state->setProgress(false, std::nullopt, false);
                 if (state->setStatus) state->setStatus(L"PDF export cancelled");
                 co_return;
             }
 
-            // Export the exact document snapshot that existed when the picker
-            // closed. Asset preparation may yield to the UI thread, but later
-            // edits must not leak into this print job.
+            // Freeze the render model that existed when the picker closed.
+            // The independent worker owns this snapshot and all of its D2D,
+            // DirectWrite, WIC, MathJax, and print resources.
             auto renderModel = state->session->BuildPrintRenderModel();
             auto baseDirectory = state->session->BaseDirectory();
             auto title = std::filesystem::path(displayName.c_str()).stem().wstring();
-            detail::EditorRenderFrame frame{renderModel, {}, baseDirectory, {}, {}};
             auto outputPath = state->pdfOutputPath;
-            for (;;)
-            {
-                if (!Active(state, generation)) co_return;
-                if (state->cancelRequested)
-                {
-                    state->renderer->CancelPdfExport();
-                    state->pdfExporting = false;
-                    if (state->setProgress) state->setProgress(false, std::nullopt, false);
-                    if (state->setStatus) state->setStatus(L"PDF export cancelled");
-                    co_return;
-                }
-                auto progress = state->renderer->ExportPdfStep(outputPath, title, frame);
-                if (progress.totalPages > 0)
-                {
-                    if (state->setProgress) state->setProgress(
-                        true,
-                        static_cast<double>(progress.completedPages) / progress.totalPages,
-                        true);
-                    if (state->setStatus) state->setStatus(
-                        L"Exporting PDF page "
-                        + winrt::to_hstring(progress.completedPages)
-                        + L" of "
-                        + winrt::to_hstring(progress.totalPages)
-                        + L"…");
-                }
-                else if (state->setStatus)
-                {
-                    state->setStatus(L"Preparing PDF assets…");
-                }
-                if (progress.result == EditorSurfaceRenderer::PdfExportResult::Completed) break;
-                co_await winrt::resume_after(std::chrono::milliseconds(
-                    progress.result == EditorSurfaceRenderer::PdfExportResult::WaitingForAssets
-                        ? 80
-                        : 1));
-                co_await uiContext;
-            }
-            if (Active(state, generation))
+            auto theme = state->renderer->Theme();
+            auto mathEnabled = state->renderer->MathRenderingEnabled();
+            if (state->cancelRequested)
             {
                 state->pdfExporting = false;
+                std::error_code ignored;
+                std::filesystem::remove(outputPath, ignored);
                 state->pdfOutputPath.clear();
                 if (state->setProgress) state->setProgress(false, std::nullopt, false);
-                if (state->setStatus) state->setStatus(L"Exported PDF: " + file.Path());
+                if (state->setStatus) state->setStatus(L"PDF export cancelled");
+                co_return;
             }
+
+            auto work = std::make_shared<PdfExportWork>();
+            state->pdfWork = work;
+            std::jthread worker([
+                work,
+                outputPath,
+                title = std::move(title),
+                baseDirectory = std::move(baseDirectory),
+                renderModel = std::move(renderModel),
+                theme = std::move(theme),
+                mathEnabled](std::stop_token threadStop) mutable
+            {
+                struct ApartmentScope
+                {
+                    ApartmentScope()
+                    {
+                        winrt::init_apartment(winrt::apartment_type::multi_threaded);
+                        initialized = true;
+                    }
+                    ~ApartmentScope()
+                    {
+                        if (initialized) winrt::uninit_apartment();
+                    }
+                    bool initialized = false;
+                };
+
+                try
+                {
+                    ApartmentScope apartment;
+                    {
+                        EditorSurfaceRenderer renderer;
+                        renderer.SetTheme(theme);
+                        renderer.SetMathRenderingEnabled(mathEnabled);
+                        renderer.InitializeForPdf();
+                        detail::EditorRenderFrame frame{
+                            renderModel,
+                            {},
+                            baseDirectory,
+                            {},
+                            {},
+                        };
+                        for (;;)
+                        {
+                            if (threadStop.stop_requested() || work->stop.stop_requested())
+                            {
+                                renderer.SetMathRenderingEnabled(false);
+                                renderer.CancelPdfExport();
+                                work->cancelled = true;
+                                std::error_code ignored;
+                                std::filesystem::remove(outputPath, ignored);
+                                break;
+                            }
+                            auto progress = renderer.ExportPdfStep(outputPath, title, frame);
+                            work->completedPages = progress.completedPages;
+                            work->totalPages = progress.totalPages;
+                            if (progress.result == EditorSurfaceRenderer::PdfExportResult::Completed) break;
+                            auto delay = progress.result == EditorSurfaceRenderer::PdfExportResult::WaitingForAssets
+                                ? std::chrono::milliseconds(40)
+                                : std::chrono::milliseconds(1);
+                            auto deadline = std::chrono::steady_clock::now() + delay;
+                            while (std::chrono::steady_clock::now() < deadline
+                                && !threadStop.stop_requested()
+                                && !work->stop.stop_requested())
+                                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                        }
+                    }
+                }
+                catch (...)
+                {
+                    work->failure = std::current_exception();
+                    std::error_code ignored;
+                    std::filesystem::remove(outputPath, ignored);
+                }
+                work->done.store(true, std::memory_order_release);
+            });
+
+            while (!work->done.load(std::memory_order_acquire))
+            {
+                if (!Active(state, generation)) work->stop.request_stop();
+                if (Active(state, generation))
+                {
+                    auto stopping = work->stop.stop_requested();
+                    auto completed = work->completedPages.load();
+                    auto total = work->totalPages.load();
+                    auto value = total == 0
+                        ? std::optional<double>{}
+                        : std::optional<double>{static_cast<double>(completed) / total};
+                    if (state->setProgress) state->setProgress(true, value, !stopping);
+                    if (state->setStatus)
+                    {
+                        if (stopping)
+                            state->setStatus(L"Cancelling PDF export…");
+                        else if (total > 0)
+                            state->setStatus(
+                                L"Exporting PDF page "
+                                + winrt::to_hstring(completed)
+                                + L" of "
+                                + winrt::to_hstring(total)
+                                + L"…");
+                        else
+                            state->setStatus(L"Preparing PDF assets…");
+                    }
+                }
+                co_await winrt::resume_after(std::chrono::milliseconds(16));
+                co_await uiContext;
+            }
+            if (worker.joinable()) worker.join();
+            if (state->pdfWork == work) state->pdfWork.reset();
+            if (!Active(state, generation)) co_return;
+
+            state->pdfExporting = false;
+            state->pdfOutputPath.clear();
+            if (state->setProgress) state->setProgress(false, std::nullopt, false);
+            if (work->failure) std::rethrow_exception(work->failure);
+            if (work->cancelled)
+            {
+                if (state->setStatus) state->setStatus(L"PDF export cancelled");
+                co_return;
+            }
+            if (state->setStatus) state->setStatus(L"Exported PDF: " + file.Path());
         }
         catch (winrt::hresult_error const& error)
         {
             if (Active(state, generation))
             {
+                if (state->pdfWork) state->pdfWork->stop.request_stop();
+                state->pdfWork.reset();
                 state->pdfExporting = false;
-                if (state->renderer) state->renderer->CancelPdfExport();
                 if (!state->pdfOutputPath.empty())
                 {
                     std::error_code ignored;
@@ -425,8 +543,9 @@ namespace winrt::ElMd
         {
             if (Active(state, generation))
             {
+                if (state->pdfWork) state->pdfWork->stop.request_stop();
+                state->pdfWork.reset();
                 state->pdfExporting = false;
-                if (state->renderer) state->renderer->CancelPdfExport();
                 if (!state->pdfOutputPath.empty())
                 {
                     std::error_code ignored;

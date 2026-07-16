@@ -7,8 +7,17 @@ import elmd.core.types;
 
 namespace winrt::ElMd
 {
-    EditorInlineImageRenderer::EditorInlineImageRenderer(EditorRenderResources& resources, EditorRenderCache& cache, EditorStyleSheet const& styleSheet, std::wstring const& baseDirectory)
-        : resources(resources), cache(cache), styleSheet(styleSheet), baseDirectory(baseDirectory)
+    EditorInlineImageRenderer::EditorInlineImageRenderer(
+        EditorRenderResources& resources,
+        EditorRenderCache& cache,
+        EditorStyleSheet const& styleSheet,
+        std::wstring const& baseDirectory,
+        bool animate)
+        : resources(resources),
+          cache(cache),
+          styleSheet(styleSheet),
+          baseDirectory(baseDirectory),
+          animate(animate)
     {
     }
 
@@ -130,7 +139,8 @@ namespace winrt::ElMd
                 auto bitmap = cache.CurrentBitmap(*image.image, untilNextFrame);
                 if (bitmap)
                     resources.d2dContext->DrawBitmap(bitmap, rect, 1.0f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
-                if (untilNextFrame.count() > 0) cache.RequestAnimationFrame(untilNextFrame);
+                if (animate && untilNextFrame.count() > 0)
+                    cache.RequestAnimationFrame(untilNextFrame);
             }
             else
             {

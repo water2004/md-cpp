@@ -33,6 +33,7 @@ namespace winrt::ElMd
         };
 
         void Initialize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel);
+        void InitializeForPdf();
         void Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height);
         void Render(detail::EditorRenderFrame const& frame);
         PdfExportProgress ExportPdfStep(
@@ -41,6 +42,7 @@ namespace winrt::ElMd
             detail::EditorRenderFrame const& frame);
         void CancelPdfExport();
         void SetTheme(elmd::ThemeProfile const& value);
+        elmd::ThemeProfile Theme() const;
         void SetMathRenderingEnabled(bool enabled);
         bool MathRenderingEnabled() const;
         void ResetDocumentCaches();

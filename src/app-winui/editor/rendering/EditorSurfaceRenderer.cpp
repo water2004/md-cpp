@@ -29,6 +29,11 @@ namespace winrt::ElMd
         ClearPreparedDocument();
     }
 
+    elmd::ThemeProfile EditorSurfaceRenderer::Theme() const
+    {
+        return themeProfile;
+    }
+
     void EditorSurfaceRenderer::SetMathRenderingEnabled(bool enabled)
     {
         if (mathJax.Enabled() == enabled) return;
@@ -94,6 +99,20 @@ namespace winrt::ElMd
         mathJax.SetCompletionCallback(completion);
         svgNormalizer.SetCompletionCallback(completion);
         mermaid.SetCompletionCallback(std::move(completion));
+    }
+
+    void EditorSurfaceRenderer::InitializeForPdf()
+    {
+        if (resources.Ready()) return;
+        constexpr float pageWidth = 210.0f / 25.4f * 96.0f;
+        constexpr float pageHeight = 297.0f / 25.4f * 96.0f;
+        constexpr float pageMargin = 48.0f;
+        resources.InitializeOffscreen(
+            styleSheet,
+            pageWidth - pageMargin * 2.0f,
+            pageHeight - pageMargin * 2.0f);
+        winrt::Microsoft::UI::Dispatching::DispatcherQueue noDispatcher{nullptr};
+        renderCache.Attach(noDispatcher, {});
     }
 
     void EditorSurfaceRenderer::Resize(

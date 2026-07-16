@@ -15,6 +15,7 @@ namespace winrt::ElMd
         ~EditorRenderResources();
 
         void Initialize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, EditorStyleSheet const& styleSheet);
+        void InitializeOffscreen(EditorStyleSheet const& styleSheet, float widthDip, float heightDip);
         EditorResizeResult Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height);
         void RebuildTextFormats(EditorStyleSheet const& styleSheet);
         void ResetBrushes();
@@ -62,6 +63,7 @@ namespace winrt::ElMd
         HANDLE frameLatencyWaitableObject = nullptr;
 
     private:
+        void InitializeDeviceResources(EditorStyleSheet const& styleSheet);
         float CompositionScaleX(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const;
         float CompositionScaleY(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel) const;
         void ApplySwapChainTransform();

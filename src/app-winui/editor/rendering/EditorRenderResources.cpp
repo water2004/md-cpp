@@ -24,7 +24,8 @@ namespace winrt::ElMd
 
     bool EditorRenderResources::Ready() const
     {
-        return swapChain && d3dDevice && d3dContext;
+        return d3dDevice && d3dContext && d2dDevice && d2dContext
+            && dwriteFactory && wicFactory;
     }
 
     void EditorRenderResources::ApplySwapChainTransform()
@@ -96,9 +97,9 @@ namespace winrt::ElMd
         createFormat(styleSheet.code, codeFormat);
     }
 
-    void EditorRenderResources::Initialize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, EditorStyleSheet const& styleSheet)
+    void EditorRenderResources::InitializeDeviceResources(EditorStyleSheet const& styleSheet)
     {
-        if (swapChain) return;
+        if (d3dDevice) return;
         D3D_FEATURE_LEVEL featureLevels[] = {
             D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0,
         };
@@ -124,7 +125,17 @@ namespace winrt::ElMd
         if (FAILED(CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(wicFactory.GetAddressOf()))))
             CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(wicFactory.GetAddressOf()));
         RebuildTextFormats(styleSheet);
+    }
 
+    void EditorRenderResources::Initialize(
+        winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel,
+        EditorStyleSheet const& styleSheet)
+    {
+        if (swapChain) return;
+        InitializeDeviceResources(styleSheet);
+
+        ::Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
+        winrt::check_hresult(d3dDevice.As(&dxgiDevice));
         ::Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
         winrt::check_hresult(dxgiDevice->GetAdapter(adapter.GetAddressOf()));
         ::Microsoft::WRL::ComPtr<IDXGIFactory2> factory;
@@ -159,6 +170,20 @@ namespace winrt::ElMd
         winrt::check_hresult(panelNative->SetSwapChain(swapChain.Get()));
     }
 
+    void EditorRenderResources::InitializeOffscreen(
+        EditorStyleSheet const& styleSheet,
+        float widthDip,
+        float heightDip)
+    {
+        InitializeDeviceResources(styleSheet);
+        surfaceScaleX = 1.0f;
+        surfaceScaleY = 1.0f;
+        surfaceWidthDip = (std::max)(1.0f, widthDip);
+        surfaceHeightDip = (std::max)(1.0f, heightDip);
+        surfaceWidth = static_cast<std::uint32_t>(std::ceil(surfaceWidthDip));
+        surfaceHeight = static_cast<std::uint32_t>(std::ceil(surfaceHeightDip));
+    }
+
     EditorResizeResult EditorRenderResources::Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height)
     {
         if (!swapChain || !std::isfinite(width) || !std::isfinite(height) || width <= 0.0 || height <= 0.0) return {};
@@ -190,13 +215,13 @@ namespace winrt::ElMd
 
     void EditorRenderResources::EnsureFrameResources(EditorStyleSheet const& styleSheet)
     {
-        if (!renderTargetView)
+        if (swapChain && !renderTargetView)
         {
             ::Microsoft::WRL::ComPtr<ID3D11Texture2D> backBuffer;
             winrt::check_hresult(swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(backBuffer.GetAddressOf())));
             winrt::check_hresult(d3dDevice->CreateRenderTargetView(backBuffer.Get(), nullptr, renderTargetView.GetAddressOf()));
         }
-        if (!d2dTarget)
+        if (swapChain && !d2dTarget)
         {
             ::Microsoft::WRL::ComPtr<IDXGISurface> surface;
             winrt::check_hresult(swapChain->GetBuffer(0, __uuidof(IDXGISurface), reinterpret_cast<void**>(surface.GetAddressOf())));
