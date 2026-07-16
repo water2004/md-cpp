@@ -40,6 +40,7 @@ namespace winrt::ElMd
         HANDLE framePacingTimer = nullptr;
         HWND windowHandle = nullptr;
         std::uint64_t animationGeneration = 0;
+        std::chrono::steady_clock::time_point lastAnimationFrame{};
         bool attached = false;
         bool rendering = false;
         bool synchronizing = false;

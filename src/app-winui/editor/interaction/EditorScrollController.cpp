@@ -186,6 +186,7 @@ namespace winrt::ElMd
             return;
         }
         rendering = true;
+        lastAnimationFrame = std::chrono::steady_clock::now();
         animationGeneration = frameDispatch
             ? frameDispatch->generation.fetch_add(1, std::memory_order_acq_rel) + 1
             : animationGeneration + 1;
@@ -196,6 +197,7 @@ namespace winrt::ElMd
     {
         if (!rendering) return;
         rendering = false;
+        lastAnimationFrame = {};
         if (frameDispatch)
         {
             frameDispatch->outstandingFrameId.store(0, std::memory_order_release);
@@ -356,11 +358,16 @@ namespace winrt::ElMd
         {
             return;
         }
-        auto frameInterval = frameDispatch
+        auto nominalFrameInterval = frameDispatch
             ? frameDispatch->targetFrameIntervalSeconds.load(std::memory_order_acquire)
             : 1.0f / 60.0f;
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = lastAnimationFrame.time_since_epoch().count() == 0
+            ? nominalFrameInterval
+            : std::chrono::duration<float>(now - lastAnimationFrame).count();
+        lastAnimationFrame = now;
         auto active = renderer->AdvanceScrollAnimation(
-            (std::clamp)(frameInterval, 1.0f / 240.0f, 1.0f / 30.0f));
+            (std::clamp)(elapsed, 0.0f, 0.5f));
         if (render) render();
         if (active) RequestFrame();
         else Stop();
