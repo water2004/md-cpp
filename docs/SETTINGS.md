@@ -24,7 +24,7 @@ An invalid or unavailable file falls back to safe defaults and reports a diagnos
 
 Built-in themes are complete profiles rather than accent-color overlays. Each profile supplies editor and shell colors, typography, syntax colors, and block layout metrics.
 
-- `el-md Light`, `el-md Dark`, and `el-md High Contrast` are the neutral defaults.
+- `Folia Light`, `Folia Dark`, and `Folia High Contrast` are the neutral defaults.
 - `Inkstone Paper` is a spacious warm-paper reading theme with ink and cinnabar accents.
 - `Moss & Linen` is a compact, low-glare light theme with subdued green structure.
 - `Arctic Night` is a cool dark theme with cyan navigation and restrained syntax colors.

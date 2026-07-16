@@ -1,6 +1,6 @@
 # app-winui
 
-WinUI 3/C++/WinRT application shell for el-md.
+WinUI 3/C++/WinRT application shell for Folia.
 
 This layer owns the native window, command bar, side panels, status bar, file dialogs, and the `SwapChainPanel` host for the self-drawn editor surface. It must not implement Markdown mutations directly; UI commands are translated to core `Command` values and applied through `editor-core` transactions.
 
@@ -17,8 +17,8 @@ Large rendering files are acceptable when they form one pipeline or state machin
 
 Build notes:
 
-- Build `el-md.vcxproj` with Visual Studio/MSBuild so Windows App SDK XAML/IDL/C++WinRT generation runs through the NuGet targets.
+- Build `Folia.vcxproj` through the root `build_app.ps1` script so Windows App SDK XAML/IDL/C++WinRT generation runs through the NuGet targets and all output stays below `build/app-winui`.
 - NuGet packages are restored into `packages/` by running `powershell -ExecutionPolicy Bypass -File setup.ps1` from the repository root.
-- Keep CMake for `elmd_core`, `elmd_platform`, and tests; do not configure `-DELMD_BUILD_WINUI=ON`.
+- Keep CMake for `elmd_core`, `elmd_platform`, and tests; do not configure `-DFOLIA_BUILD_WINUI=ON`.
 - The editor area is a `SwapChainPanel`; the WinUI rendering layer consumes the core `RenderModel` and maps DirectWrite positions to block-local `TextPosition` values.
 - Do not replace this with WebView2, RichEditBox, TextBox, RichTextBlock, or an HTML renderer.

@@ -39,10 +39,10 @@ All application data and resource paths are relative to one Assets root:
 - `themes/custom/*.json` contains user-managed profiles;
 - `mathjax/` contains the QuickJS MathJax bundle and its font modules.
 
-Without an explicit build value, the root is `./Assets` relative to the process working directory. Set the MSBuild property `ElMdAssetsDirectory` to name the Assets directory itself:
+Without an explicit build value, the root is `./Assets` relative to the process working directory. Set the MSBuild property `FoliaAssetsDirectory` to name the Assets directory itself:
 
 ```powershell
-msbuild src\app-winui\el-md.vcxproj /p:Configuration=Release /p:Platform=x64 /p:ElMdAssetsDirectory="C:\path with spaces\Assets"
+powershell -ExecutionPolicy Bypass -File .\build_app.ps1 -Configuration Release -AssetsDirectory "C:\path with spaces\Assets"
 ```
 
 The configured value is compiled into the application and static Assets are copied there after the build. Environment references such as `%LOCALAPPDATA%` are expanded by the application at runtime; packaging should pass or materialize an appropriate per-user Assets path rather than writing settings into the installed program directory.

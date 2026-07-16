@@ -115,6 +115,7 @@
   <data name="Remove" xml:space="preserve"><value>移除</value></data>
   <data name="AboutApp" xml:space="preserve"><value>关于折笺</value></data>
   <data name="Version" xml:space="preserve"><value>版本 {0}</value></data>
+  <data name="LicenseSummary" xml:space="preserve"><value>MIT 许可证 · 每份构建均附带完整第三方许可清单</value></data>
   <data name="BuiltForWindows" xml:space="preserve"><value>为 Windows 而生</value></data>
   <data name="TechnologyDescription" xml:space="preserve"><value>WinUI 3 外壳 · C++23 文档引擎 · DirectWrite/Direct2D 渲染 · QuickJS MathJax 集成</value></data>
   <data name="FollowWindowsTheme" xml:space="preserve"><value>跟随 Windows</value></data>

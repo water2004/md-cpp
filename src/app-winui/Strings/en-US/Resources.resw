@@ -115,6 +115,7 @@
   <data name="Remove" xml:space="preserve"><value>Remove</value></data>
   <data name="AboutApp" xml:space="preserve"><value>About Folia</value></data>
   <data name="Version" xml:space="preserve"><value>Version {0}</value></data>
+  <data name="LicenseSummary" xml:space="preserve"><value>MIT License · Third-party notices are included with every build</value></data>
   <data name="BuiltForWindows" xml:space="preserve"><value>Built for Windows</value></data>
   <data name="TechnologyDescription" xml:space="preserve"><value>WinUI 3 shell · C++23 document engine · DirectWrite/Direct2D rendering · QuickJS MathJax integration</value></data>
   <data name="FollowWindowsTheme" xml:space="preserve"><value>Follow Windows</value></data>

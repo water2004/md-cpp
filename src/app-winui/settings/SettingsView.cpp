@@ -296,6 +296,7 @@ namespace winrt::ElMd
         copy.Children().Append(name);
         copy.Children().Append(Text(LocalizeFormat(L"Version", { L"0.1.0" })));
         copy.Children().Append(Text(Localize(L"AppDescription")));
+        copy.Children().Append(Text(Localize(L"LicenseSummary")));
         Grid::SetColumn(copy, 1);
         identity.Children().Append(copy);
         panel.Children().Append(Card(identity));

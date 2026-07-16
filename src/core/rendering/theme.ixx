@@ -142,7 +142,7 @@ inline ThemeTypography default_typography() {
 inline ThemeProfile dark_profile() {
     ThemeProfile profile;
     profile.id = "elmd.dark";
-    profile.name = "el-md Dark";
+    profile.name = "Folia Dark";
     profile.variant = Theme::Dark;
     profile.typography = default_typography();
     auto& t = profile.colors;
@@ -174,7 +174,7 @@ inline ThemeProfile dark_profile() {
 inline ThemeProfile light_profile() {
     ThemeProfile profile;
     profile.id = "elmd.light";
-    profile.name = "el-md Light";
+    profile.name = "Folia Light";
     profile.variant = Theme::Light;
     profile.typography = default_typography();
     auto& t = profile.colors;
@@ -206,7 +206,7 @@ inline ThemeProfile light_profile() {
 inline ThemeProfile high_contrast_profile() {
     auto profile = dark_profile();
     profile.id = "elmd.high-contrast";
-    profile.name = "el-md High Contrast";
+    profile.name = "Folia High Contrast";
     profile.variant = Theme::HighContrast;
     auto& t = profile.colors;
     t.bg = Color(0, 0, 0); t.fg = Color(255, 255, 255); t.muted_fg = Color(220, 220, 220);
