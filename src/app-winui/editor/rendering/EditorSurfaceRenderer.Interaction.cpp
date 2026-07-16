@@ -32,7 +32,7 @@ namespace winrt::ElMd
         }
         // A bounded target and an analytic exponential response give each wheel
         // gesture one monotonically decelerating phase without scroll debt.
-        constexpr float responseHalfLifeSeconds = 0.120f;
+        constexpr float responseHalfLifeSeconds = 0.075f;
         auto response = 1.0f - std::exp2(-elapsed / responseHalfLifeSeconds);
         scrollOffset += distance * response;
         return true;
