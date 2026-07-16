@@ -6,7 +6,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    Title="el-md">
+    Title="Folia">
     <Window.SystemBackdrop>
         <MicaBackdrop Kind="Base"/>
     </Window.SystemBackdrop>
@@ -35,10 +35,11 @@
             Background="{ThemeResource ElMdShellBackgroundBrush}"
             ColumnDefinitions="Auto,Auto,*">
             <TextBlock
+                x:Name="ApplicationNameText"
                 VerticalAlignment="Center"
                 FontSize="14"
                 FontWeight="SemiBold"
-                Text="el-md"/>
+                Text="Folia"/>
             <Border
                 Grid.Column="1"
                 Width="1"

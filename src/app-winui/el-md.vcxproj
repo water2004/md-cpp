@@ -19,9 +19,9 @@
     <CppWinRTRootNamespaceAutoMerge>true</CppWinRTRootNamespaceAutoMerge>
     <MinimalCoreWin>true</MinimalCoreWin>
     <ProjectGuid>{fc7ef033-3b98-4ce2-8f3b-4f66dfc3d2e3}</ProjectGuid>
-    <ProjectName>el-md</ProjectName>
+    <ProjectName>Folia</ProjectName>
     <RootNamespace>ElMd</RootNamespace>
-    <TargetName>$(RootNamespace)</TargetName>
+    <TargetName>Folia</TargetName>
     <DefaultLanguage>en-US</DefaultLanguage>
     <MinimumVisualStudioVersion>18.0</MinimumVisualStudioVersion>
     <AppContainerApplication>false</AppContainerApplication>
@@ -72,6 +72,7 @@
   </PropertyGroup>
   <PropertyGroup>
     <OutDir>$(ProjectDir)$(Platform)\$(Configuration)\el-md\</OutDir>
+    <IntDir>$(ProjectDir)$(Platform)\$(Configuration)\obj\</IntDir>
     <ElMdResolvedAssetsDirectory Condition="'$(ElMdAssetsDirectory)'!=''">$([System.Environment]::ExpandEnvironmentVariables('$(ElMdAssetsDirectory)'))</ElMdResolvedAssetsDirectory>
   </PropertyGroup>
   <ItemDefinitionGroup>
@@ -112,6 +113,7 @@
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="app.manifest" />
+    <ResourceCompile Include="Folia.rc" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
@@ -415,6 +417,15 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="Assets\branding\Folia.svg">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Assets\branding\Folia.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Assets\branding\Folia.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="Assets\themes\*.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

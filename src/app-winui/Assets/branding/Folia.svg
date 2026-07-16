@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="512" height="512" viewBox="0 0 512 512" fill="none">
+
+  <defs>
+    <linearGradient id="paper" x1="96" y1="56" x2="424" y2="456"
+                    gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.78" stop-color="#FCFCFD"/>
+      <stop offset="1" stop-color="#F4F5F8"/>
+    </linearGradient>
+
+    <linearGradient id="fold" x1="304" y1="56" x2="430" y2="182"
+                    gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F0F2F6"/>
+    </linearGradient>
+
+    <filter id="paperShadow"
+            x="68" y="34" width="392" height="452"
+            filterUnits="userSpaceOnUse"
+            color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="10"
+                    flood-color="#000000" flood-opacity="0.10"/>
+    </filter>
+
+    <filter id="foldShadow"
+            x="286" y="46" width="176" height="180"
+            filterUnits="userSpaceOnUse"
+            color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="7" stdDeviation="7"
+                    flood-color="#000000" flood-opacity="0.11"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#paperShadow)">
+    <path
+      d="M128 56
+         H316
+         L420 160
+         V416
+         C420 438.1 402.1 456 380 456
+         H132
+         C109.9 456 92 438.1 92 416
+         V92
+         C92 72.1 108.1 56 128 56Z"
+      fill="url(#paper)"
+      stroke="#ECEEF3"
+      stroke-width="1.4"/>
+  </g>
+
+  <g filter="url(#foldShadow)">
+    <path
+      d="M316 56
+         L420 160
+         H368
+         C339.3 160 316 136.7 316 108
+         V56Z"
+      fill="url(#fold)"/>
+  </g>
+
+  <g stroke="#238AF5" stroke-width="10" stroke-linecap="round">
+    <path d="M178 170 L170 234"/>
+    <path d="M208 170 L200 234"/>
+    <path d="M156 190 H220"/>
+    <path d="M152 216 H216"/>
+  </g>
+
+  <path d="M258 202 H346"
+        stroke="#D3D8E4"
+        stroke-width="11"
+        stroke-linecap="round"/>
+
+  <path d="M160 276 H346"
+        stroke="#D3D8E4"
+        stroke-width="12"
+        stroke-linecap="round"/>
+  <path d="M160 332 H322"
+        stroke="#D3D8E4"
+        stroke-width="12"
+        stroke-linecap="round"/>
+</svg>

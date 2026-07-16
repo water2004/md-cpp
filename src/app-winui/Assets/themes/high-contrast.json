@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "elmd.high-contrast",
-  "name": "el-md High Contrast",
+  "name": "Folia High Contrast",
   "variant": "high-contrast",
   "typography": {
     "body": { "family": "Microsoft YaHei UI", "size": 18, "lineHeight": 29, "weight": 400, "italic": false },

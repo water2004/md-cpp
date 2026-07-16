@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "elmd.light",
-  "name": "el-md Light",
+  "name": "Folia Light",
   "variant": "light",
   "typography": {
     "body": { "family": "Microsoft YaHei UI", "size": 18, "lineHeight": 29, "weight": 400, "italic": false },

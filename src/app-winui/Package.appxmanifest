@@ -11,8 +11,8 @@
     Version="1.0.0.0" />
   <mp:PhoneIdentity PhoneProductId="fc7ef033-3b98-4ce2-8f3b-4f66dfc3d2e3" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
   <Properties>
-    <DisplayName>el-md</DisplayName>
-    <PublisherDisplayName>el-md</PublisherDisplayName>
+    <DisplayName>Folia</DisplayName>
+    <PublisherDisplayName>Folia</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
   <Dependencies>
@@ -25,7 +25,7 @@
   <Applications>
     <Application Id="App" Executable="$targetnametoken$.exe" EntryPoint="$targetentrypoint$">
       <uap:VisualElements
-        DisplayName="el-md"
+        DisplayName="Folia"
         Description="Native self-rendered WYSIWYG Markdown editor"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"

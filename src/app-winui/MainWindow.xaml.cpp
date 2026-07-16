@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "MainWindow.xaml.h"
+#include "storage/AssetPaths.h"
 #if __has_include("MainWindow.g.cpp")
 #include "MainWindow.g.cpp"
 #endif
@@ -54,6 +55,8 @@ namespace winrt::ElMd::implementation
     MainWindow::MainWindow()
     {
         InitializeComponent();
+        auto iconPath = winrt::ElMd::AssetPath(std::filesystem::path(L"branding") / L"Folia.ico");
+        if (std::filesystem::exists(iconPath)) AppWindow().SetIcon(winrt::hstring(iconPath.c_str()));
         auto loadedSettings = winrt::ElMd::LoadAppSettings();
         appSettings = std::move(loadedSettings.settings);
         themeCatalog->Refresh();

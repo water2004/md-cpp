@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "settings/SettingsView.h"
+#include "storage/AssetPaths.h"
 
 namespace
 {
@@ -41,6 +42,13 @@ namespace
         border.BorderBrush(Brush({ 128, 128, 128, 72 }));
         border.Child(child);
         return border;
+    }
+
+    winrt::Windows::Foundation::Uri FileUri(std::filesystem::path path)
+    {
+        path = std::filesystem::absolute(path);
+        auto value = path.generic_wstring();
+        return winrt::Windows::Foundation::Uri(L"file:///" + winrt::hstring(value));
     }
 
     Controls::NavigationViewItem NavigationItem(winrt::hstring const& label, winrt::hstring const& tag, wchar_t const* glyph)
@@ -230,15 +238,34 @@ namespace winrt::ElMd
     UIElement SettingsView::BuildAboutPage()
     {
         auto panel = PagePanel();
-        panel.Children().Append(PageHeading(L"About el-md"));
+        panel.Children().Append(PageHeading(L"About Folia"));
 
-        StackPanel identity;
-        identity.Spacing(8);
-        auto name = Text(L"el-md", 30);
+        Grid identity;
+        identity.ColumnSpacing(16);
+        ColumnDefinition iconColumn;
+        iconColumn.Width(GridLengthHelper::FromPixels(88));
+        ColumnDefinition copyColumn;
+        copyColumn.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star));
+        identity.ColumnDefinitions().Append(iconColumn);
+        identity.ColumnDefinitions().Append(copyColumn);
+
+        Image logo;
+        logo.Width(88);
+        logo.Height(88);
+        logo.Stretch(Microsoft::UI::Xaml::Media::Stretch::Uniform);
+        logo.Source(Microsoft::UI::Xaml::Media::Imaging::BitmapImage(
+            FileUri(AssetPath(std::filesystem::path(L"branding") / L"Folia.png"))));
+        identity.Children().Append(logo);
+
+        StackPanel copy;
+        copy.Spacing(8);
+        auto name = Text(L"Folia", 30);
         name.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
-        identity.Children().Append(name);
-        identity.Children().Append(Text(L"Version 0.1.0"));
-        identity.Children().Append(Text(L"A native, self-rendered Markdown editor for Windows."));
+        copy.Children().Append(name);
+        copy.Children().Append(Text(L"Version 0.1.0"));
+        copy.Children().Append(Text(L"A native, self-rendered Markdown editor for Windows."));
+        Grid::SetColumn(copy, 1);
+        identity.Children().Append(copy);
         panel.Children().Append(Card(identity));
 
         StackPanel technology;
@@ -250,9 +277,6 @@ namespace winrt::ElMd
             L"WinUI 3 shell · C++23 document engine · DirectWrite/Direct2D rendering · QuickJS MathJax integration"));
         panel.Children().Append(Card(technology));
 
-        auto note = Text(L"Application artwork will be updated when the final icon is provided.");
-        note.Opacity(0.7);
-        panel.Children().Append(note);
         ScrollViewer scroller;
         scroller.Content(panel);
         return scroller;

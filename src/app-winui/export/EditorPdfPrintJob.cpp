@@ -65,7 +65,7 @@ namespace winrt::ElMd
             CLSCTX_INPROC_SERVER,
             IID_PPV_ARGS(factory.GetAddressOf())));
 
-        auto jobName = title.empty() ? std::wstring(L"el-md PDF export") : title;
+        auto jobName = title.empty() ? std::wstring(L"Folia PDF export") : title;
         winrt::check_hresult(factory->CreateDocumentPackageTargetForPrintJob(
             PdfPrinterName,
             jobName.c_str(),

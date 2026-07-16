@@ -52,6 +52,9 @@
     <Filter Include="Resources">
       <UniqueIdentifier>{b56c9b65-797f-48cc-8449-ef437aeab428}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Resources\Branding">
+      <UniqueIdentifier>{b2e8855a-84b0-4f44-8b4b-1b9b50a592db}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Theme">
       <UniqueIdentifier>{ac059afc-bc91-44a7-97ec-42f0bca22c02}</UniqueIdentifier>
     </Filter>
@@ -505,6 +508,15 @@
     </Midl>
   </ItemGroup>
   <ItemGroup>
+    <None Include="Assets\branding\Folia.svg">
+      <Filter>Resources\Branding</Filter>
+    </None>
+    <None Include="Assets\branding\Folia.png">
+      <Filter>Resources\Branding</Filter>
+    </None>
+    <None Include="Assets\branding\Folia.ico">
+      <Filter>Resources\Branding</Filter>
+    </None>
     <None Include="Assets\themes\dark.json">
       <Filter>Theme</Filter>
     </None>
@@ -531,6 +543,9 @@
     <Manifest Include="app.manifest">
       <Filter>Resources</Filter>
     </Manifest>
+    <ResourceCompile Include="Folia.rc">
+      <Filter>Resources\Branding</Filter>
+    </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
     <AppxManifest Include="Package.appxmanifest">
