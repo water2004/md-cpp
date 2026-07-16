@@ -77,16 +77,16 @@ inline void collect_inline_symbols(
         if (node.kind == InlineCstKind::Link || node.kind == InlineCstKind::Autolink) {
             std::u32string label;
             append_inline_visible_text(document, node.children, label);
-            if (label.empty()) label = inline_source_slice(document, node.delim.content);
-            symbols.links.push_back(LinkSymbol{node.id, node.href, cps_to_utf8(label)});
+            if (label.empty()) label = inline_source_slice(document, node.delimiter_ranges().content);
+            symbols.links.push_back(LinkSymbol{node.id, node.semantics().href, cps_to_utf8(label)});
         } else if (node.kind == InlineCstKind::Image) {
-            symbols.images.push_back(ImageSymbol{node.id, node.href, node.alt});
+            symbols.images.push_back(ImageSymbol{node.id, node.semantics().href, node.semantics().alt});
         } else if (node.kind == InlineCstKind::FootnoteRef) {
             symbols.footnote_references.push_back(FootnoteReferenceSymbol{
                 node.id,
                 container_id,
                 node.range,
-                node.label,
+                node.semantics().label,
             });
         }
         collect_inline_symbols(document, node.children, container_id, symbols);

@@ -63,15 +63,17 @@ inline const InlineCstNode* node_at_offset(const InlineCstTree& tree, std::size_
 
 // Is the offset inside a marker (opening or closing) of a delimited node?
 inline bool offset_in_marker(const InlineCstNode& node, std::size_t offset) {
-    if (node.delim.opening.contains(offset)) return true;
-    if (node.delim.closing && node.delim.closing->contains(offset)) return true;
+    const auto& delim = node.delimiter_ranges();
+    if (delim.opening.contains(offset)) return true;
+    if (delim.closing && delim.closing->contains(offset)) return true;
     return false;
 }
 
 // Does the node's content range cover the offset (half-open; the boundary at
 // content.start counts as "in content", content.end counts as just past)?
 inline bool offset_in_content(const InlineCstNode& node, std::size_t offset) {
-    return offset >= node.delim.content.start && offset <= node.delim.content.end;
+    const auto& content = node.delimiter_ranges().content;
+    return offset >= content.start && offset <= content.end;
 }
 
 inline std::u32string inline_source_slice(const InlineDocument& document, SourceRange range) {
@@ -127,18 +129,18 @@ inline void append_inline_visible_text(
                 append_inline_visible_text(document, node.children, output);
                 break;
             case K::Image:
-                output += utf8_to_cps(node.alt);
+                output += utf8_to_cps(node.semantics().alt);
                 break;
             case K::WikiLink:
-                output += utf8_to_cps(node.alias.value_or(node.target));
+                output += utf8_to_cps(node.semantics().alias.value_or(node.semantics().target));
                 break;
             case K::FootnoteRef:
-                output += U"[^" + utf8_to_cps(node.label) + U"]";
+                output += U"[^" + utf8_to_cps(node.semantics().label) + U"]";
                 break;
             case K::CodeSpan:
             case K::InlineMath:
             case K::Autolink:
-                output += inline_source_slice(document, node.delim.content);
+                output += inline_source_slice(document, node.delimiter_ranges().content);
                 break;
             case K::Escape: {
                 const auto raw = inline_source_slice(document, node.range);

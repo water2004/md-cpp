@@ -49,13 +49,13 @@ inline std::optional<DocumentInteraction> document_interaction_at(
             switch (node.kind) {
                 case InlineCstKind::Link:
                 case InlineCstKind::Autolink:
-                    if (!node.href.empty()) interaction.link = node.href;
-                    if (node.title && !node.title->empty()) interaction.tooltip = node.title;
-                    else if (!node.href.empty()) interaction.tooltip = node.href;
+                    if (!node.semantics().href.empty()) interaction.link = node.semantics().href;
+                    if (node.semantics().title && !node.semantics().title->empty()) interaction.tooltip = node.semantics().title;
+                    else if (!node.semantics().href.empty()) interaction.tooltip = node.semantics().href;
                     break;
                 case InlineCstKind::Image:
-                    if (node.title && !node.title->empty()) interaction.tooltip = node.title;
-                    else if (!node.alt.empty()) interaction.tooltip = node.alt;
+                    if (node.semantics().title && !node.semantics().title->empty()) interaction.tooltip = node.semantics().title;
+                    else if (!node.semantics().alt.empty()) interaction.tooltip = node.semantics().alt;
                     break;
                 default:
                     break;

@@ -114,11 +114,12 @@ suite parser_tests = [] {
         if (!node) continue;
         expect(fatal(bool(node->status == ParseStatus::Complete)));
         expect(fatal(bool(node->range == SourceRange{0, document.source.size()})));
-        expect(fatal(bool(node->delim.opening == SourceRange{0, test.marker})));
-        expect(fatal(bool(node->delim.closing.has_value())));
-        if (node->delim.closing) {
-            expect(fatal(bool(node->delim.closing->length() == test.marker)));
-            expect(fatal(bool(node->delim.closing->end == document.source.size())));
+        const auto& delim = node->delimiter_ranges();
+        expect(fatal(bool(delim.opening == SourceRange{0, test.marker})));
+        expect(fatal(bool(delim.closing.has_value())));
+        if (delim.closing) {
+            expect(fatal(bool(delim.closing->length() == test.marker)));
+            expect(fatal(bool(delim.closing->end == document.source.size())));
         }
     }
 };
@@ -144,11 +145,11 @@ suite parser_tests = [] {
     expect(fatal(bool(strong != nullptr)));
     if (emphasis) {
         expect(fatal(bool(emphasis->range == SourceRange{0, 22})));
-        expect(fatal(bool(emphasis->delim.content == SourceRange{1, 21})));
+        expect(fatal(bool(emphasis->delimiter_ranges().content == SourceRange{1, 21})));
     }
     if (strong) {
         expect(fatal(bool(strong->range == SourceRange{7, 16})));
-        expect(fatal(bool(strong->delim.content == SourceRange{9, 14})));
+        expect(fatal(bool(strong->delimiter_ranges().content == SourceRange{9, 14})));
     }
 };
 

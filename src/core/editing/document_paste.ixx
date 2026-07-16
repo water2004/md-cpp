@@ -155,8 +155,8 @@ inline bool offset_in_link_destination(
     std::size_t offset) {
     for (const auto& node : nodes) {
         if (node.kind == InlineCstKind::Link && node.status == ParseStatus::Complete
-            && node.delim.closing && node.delim.closing->valid_for(source.size())) {
-            auto cursor = node.delim.content.end;
+            && node.delimiter_ranges().closing && node.delimiter_ranges().closing->valid_for(source.size())) {
+            auto cursor = node.delimiter_ranges().content.end;
             if (cursor < source.size() && source[cursor] == U']') ++cursor;
             if (cursor < source.size() && source[cursor] == U'(') {
                 ++cursor;
@@ -207,7 +207,7 @@ inline std::optional<std::u32string> whole_pasted_link_destination(const BlockVe
         || node.range.start != 0 || node.range.end != document.source.size()) {
         return std::nullopt;
     }
-    return utf8_to_cps(node.href);
+    return utf8_to_cps(node.semantics().href);
 }
 
 inline void split_soft_lines_for_atx_heading(

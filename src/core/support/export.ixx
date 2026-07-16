@@ -124,37 +124,39 @@ inline std::string inline_nodes_to_html(
                 html += "<del>" + inline_nodes_to_html(document, node.children, policy) + "</del>";
                 break;
             case K::CodeSpan:
-                html += "<code>" + escape_raw_html(cps_to_utf8(inline_source_slice(document, node.delim.content))) + "</code>";
+                html += "<code>" + escape_raw_html(cps_to_utf8(inline_source_slice(document, node.delimiter_ranges().content))) + "</code>";
                 break;
             case K::InlineMath:
-                html += "<span class=\"math-inline\">" + escape_raw_html(cps_to_utf8(inline_source_slice(document, node.delim.content))) + "</span>";
+                html += "<span class=\"math-inline\">" + escape_raw_html(cps_to_utf8(inline_source_slice(document, node.delimiter_ranges().content))) + "</span>";
                 break;
             case K::Link: {
-                const auto title = node.title ? " title=\"" + escape_text(*node.title) + "\"" : std::string{};
-                html += "<a href=\"" + escape_text(sanitized_target(node.href, false)) + "\"" + title + ">"
+                const auto& semantic = node.semantics();
+                const auto title = semantic.title ? " title=\"" + escape_text(*semantic.title) + "\"" : std::string{};
+                html += "<a href=\"" + escape_text(sanitized_target(semantic.href, false)) + "\"" + title + ">"
                     + inline_nodes_to_html(document, node.children, policy) + "</a>";
                 break;
             }
             case K::Image: {
-                const auto title = node.title ? " title=\"" + escape_text(*node.title) + "\"" : std::string{};
-                html += "<img src=\"" + escape_text(sanitized_target(node.href, true)) + "\" alt=\""
-                    + escape_text(node.alt) + "\"" + title
-                    + image_dimension_attributes(node.image_width, node.image_height) + " />";
+                const auto& semantic = node.semantics();
+                const auto title = semantic.title ? " title=\"" + escape_text(*semantic.title) + "\"" : std::string{};
+                html += "<img src=\"" + escape_text(sanitized_target(semantic.href, true)) + "\" alt=\""
+                    + escape_text(semantic.alt) + "\"" + title
+                    + image_dimension_attributes(semantic.image_width, semantic.image_height) + " />";
                 break;
             }
             case K::HtmlElement:
                 html += inline_nodes_to_html(document, node.children, policy);
                 break;
             case K::Autolink:
-                html += "<a href=\"" + escape_text(sanitized_target(node.href, false)) + "\">"
-                    + escape_text(cps_to_utf8(inline_source_slice(document, node.delim.content))) + "</a>";
+                html += "<a href=\"" + escape_text(sanitized_target(node.semantics().href, false)) + "\">"
+                    + escape_text(cps_to_utf8(inline_source_slice(document, node.delimiter_ranges().content))) + "</a>";
                 break;
             case K::WikiLink:
-                html += "<a href=\"" + escape_text(node.target) + "\">"
-                    + escape_text(node.alias.value_or(node.target)) + "</a>";
+                html += "<a href=\"" + escape_text(node.semantics().target) + "\">"
+                    + escape_text(node.semantics().alias.value_or(node.semantics().target)) + "</a>";
                 break;
             case K::FootnoteRef:
-                html += "<sup>" + escape_text("[^" + node.label + "]") + "</sup>";
+                html += "<sup>" + escape_text("[^" + node.semantics().label + "]") + "</sup>";
                 break;
             case K::SoftBreak:
             case K::HardBreak:

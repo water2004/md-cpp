@@ -751,7 +751,7 @@ public:
         } else if (root.kind == InlineCstKind::Link && root.children.size() == 1
             && root.children.front().kind == InlineCstKind::Image) {
             image = &root.children.front();
-            link = root.href;
+            link = root.semantics().href;
         }
         if (!image || image->status != ParseStatus::Complete) return std::nullopt;
 
@@ -760,9 +760,9 @@ public:
         BlockNode block;
         block.id = next_node_id();
         block.kind = BlockKind::ImageBlock;
-        block.src = image->href;
-        block.image_alt = image->alt;
-        block.image_title = image->title;
+        block.src = image->semantics().href;
+        block.image_alt = image->semantics().alt;
+        block.image_title = image->semantics().title;
         block.image_link = std::move(link);
         push_range(block.id, PhysicalRange(std::size_t(start), std::size_t(pos)), PhysicalRange(std::size_t(start), std::size_t(line_end)));
         return block;

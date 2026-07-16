@@ -83,8 +83,9 @@ struct Hasher {
 
 inline void append(Hasher& hash, InlineCstNode const& node) {
     hash.scalar(node.id); hash.scalar(node.kind); hash.scalar(node.range); hash.scalar(node.status);
-    hash.scalar(node.delim.full); hash.scalar(node.delim.opening); hash.scalar(node.delim.content);
-    hash.optional(node.delim.closing, [&](auto value) { hash.scalar(value); });
+    const auto& delim = node.delimiter_ranges();
+    hash.scalar(delim.full); hash.scalar(delim.opening); hash.scalar(delim.content);
+    hash.optional(delim.closing, [&](auto value) { hash.scalar(value); });
     hash.scalar(node.children.size());
     for (auto const& child : node.children) append(hash, child);
 }
@@ -607,6 +608,8 @@ struct Builder {
         append_nodes = [&](const InlineCstNodes& nodes, const InlineStyle& style, std::vector<InlineRenderItem>& target) {
             for (const auto& node : nodes) {
                 using K = InlineCstKind;
+                const auto& delim = node.delimiter_ranges();
+                const auto& semantic = node.semantics();
                 auto append_text = [&](std::u32string text, SourceRange range, InlineStyle text_style = InlineStyle::plain()) {
                     InlineRenderItem item = InlineRenderItem::plain_text(std::move(text), source_span(range));
                     item.id = node.id;
@@ -616,30 +619,30 @@ struct Builder {
                 switch (node.kind) {
                     case K::Strong: {
                         auto child_style = style; child_style.bold = true;
-                        append_marker(target, node, node.delim.opening);
+                        append_marker(target, node, delim.opening);
                         append_nodes(node.children, child_style, target);
-                        if (node.delim.closing) append_marker(target, node, *node.delim.closing);
+                        if (delim.closing) append_marker(target, node, *delim.closing);
                         break;
                     }
                     case K::Emphasis: {
                         auto child_style = style; child_style.italic = true;
-                        append_marker(target, node, node.delim.opening);
+                        append_marker(target, node, delim.opening);
                         append_nodes(node.children, child_style, target);
-                        if (node.delim.closing) append_marker(target, node, *node.delim.closing);
+                        if (delim.closing) append_marker(target, node, *delim.closing);
                         break;
                     }
                     case K::Strikethrough: {
                         auto child_style = style; child_style.strikethrough = true;
-                        append_marker(target, node, node.delim.opening);
+                        append_marker(target, node, delim.opening);
                         append_nodes(node.children, child_style, target);
-                        if (node.delim.closing) append_marker(target, node, *node.delim.closing);
+                        if (delim.closing) append_marker(target, node, *delim.closing);
                         break;
                     }
                     case K::CodeSpan: {
                         auto child_style = style; child_style.code = true;
-                        append_marker(target, node, node.delim.opening);
-                        append_text(inline_source_slice(document, node.delim.content), node.delim.content, child_style);
-                        if (node.delim.closing) append_marker(target, node, *node.delim.closing);
+                        append_marker(target, node, delim.opening);
+                        append_text(inline_source_slice(document, delim.content), delim.content, child_style);
+                        if (delim.closing) append_marker(target, node, *delim.closing);
                         break;
                     }
                     case K::InlineMath: {
@@ -647,9 +650,9 @@ struct Builder {
                         item.kind = InlineRenderItem::Kind::Math;
                         item.id = node.id;
                         item.source_span = source_span(node.range);
-                        item.text = inline_source_slice(document, node.delim.content);
+                        item.text = inline_source_slice(document, delim.content);
                         item.display = MathDisplayMode::Inline;
-                        item.math_delim = node.math_delim;
+                        item.math_delim = semantic.math_delim;
                         item.style = style;
                         item.style.bold = false;
                         item.style.italic = false;
@@ -664,20 +667,20 @@ struct Builder {
                         item.kind = InlineRenderItem::Kind::Link;
                         item.id = node.id;
                         item.source_span = source_span(node.range);
-                        item.href = node.href;
-                        item.title = node.title;
+                        item.href = semantic.href;
+                        item.title = semantic.title;
                         auto child_style = style; child_style.link = true;
                         if (node.kind == K::Link) {
-                            append_marker(item.children, node, node.delim.opening);
+                            append_marker(item.children, node, delim.opening);
                             append_nodes(node.children, child_style, item.children);
-                            if (node.delim.closing) append_marker(item.children, node, *node.delim.closing);
+                            if (delim.closing) append_marker(item.children, node, *delim.closing);
                         } else {
-                            append_marker(item.children, node, node.delim.opening);
+                            append_marker(item.children, node, delim.opening);
                             InlineRenderItem text_item = InlineRenderItem::plain_text(
-                                inline_source_slice(document, node.delim.content), source_span(node.delim.content));
+                                inline_source_slice(document, delim.content), source_span(delim.content));
                             text_item.style = child_style;
                             item.children.push_back(std::move(text_item));
-                            if (node.delim.closing) append_marker(item.children, node, *node.delim.closing);
+                            if (delim.closing) append_marker(item.children, node, *delim.closing);
                         }
                         target.push_back(std::move(item));
                         break;
@@ -687,18 +690,18 @@ struct Builder {
                         item.kind = InlineRenderItem::Kind::Image;
                         item.id = node.id;
                         item.source_span = source_span(node.range);
-                        item.src = node.href;
-                        item.alt = node.alt;
-                        item.title = node.title;
-                        item.image_width = node.image_width;
-                        item.image_height = node.image_height;
+                        item.src = semantic.href;
+                        item.alt = semantic.alt;
+                        item.title = semantic.title;
+                        item.image_width = semantic.image_width;
+                        item.image_height = semantic.image_height;
                         target.push_back(std::move(item));
                         break;
                     }
                     case K::HtmlElement:
-                        append_marker(target, node, node.delim.opening);
+                        append_marker(target, node, delim.opening);
                         append_nodes(node.children, style, target);
-                        if (node.delim.closing) append_marker(target, node, *node.delim.closing);
+                        if (delim.closing) append_marker(target, node, *delim.closing);
                         break;
                     case K::Escape: {
                         const auto raw = inline_source_slice(document, node.range);
@@ -722,18 +725,18 @@ struct Builder {
                         item.kind = InlineRenderItem::Kind::FootnoteReference;
                         item.id = node.id;
                         item.source_span = source_span(node.range);
-                        item.text = utf8_to_cps(node.label);
-                        item.display_text = footnote_display_label(node.label);
-                        item.footnote_label = node.label;
+                        item.text = utf8_to_cps(semantic.label);
+                        item.display_text = footnote_display_label(semantic.label);
+                        item.footnote_label = semantic.label;
                         target.push_back(std::move(item));
                         break;
                     }
                     case K::WikiLink:
-                        append_text(utf8_to_cps(node.alias.value_or(node.target)), node.range, InlineStyle{.link = true});
+                        append_text(utf8_to_cps(semantic.alias.value_or(semantic.target)), node.range, InlineStyle{.link = true});
                         break;
                     case K::Incomplete:
-                        append_marker(target, node, node.delim.opening);
-                        if (!node.delim.content.empty()) append_text(inline_source_slice(document, node.delim.content), node.delim.content, style);
+                        append_marker(target, node, delim.opening);
+                        if (!delim.content.empty()) append_text(inline_source_slice(document, delim.content), delim.content, style);
                         break;
                     default:
                         append_text(inline_source_slice(document, node.range), node.range, style);

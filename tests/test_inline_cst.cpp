@@ -107,8 +107,8 @@ suite inline_cst_tests = [] {
     expect(star_strong != nullptr);
     expect(underscore_strong != nullptr);
     if (star_strong && underscore_strong) {
-        expect(stars_source.substr(star_strong->delim.opening.start, star_strong->delim.opening.length()) == U"**");
-        expect(underscores_source.substr(underscore_strong->delim.opening.start, underscore_strong->delim.opening.length()) == U"__");
+        expect(stars_source.substr(star_strong->delimiter_ranges().opening.start, star_strong->delimiter_ranges().opening.length()) == U"**");
+        expect(underscores_source.substr(underscore_strong->delimiter_ranges().opening.start, underscore_strong->delimiter_ranges().opening.length()) == U"__");
     }
 
     const std::vector<std::u32string> links{U"[title](url)", U"[title](<url>)", U"[title](url 'name')"};

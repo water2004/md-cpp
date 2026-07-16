@@ -50,10 +50,11 @@ inline bool contains_selection(
     std::size_t start,
     std::size_t end,
     bool caret) {
-    if (node.status != ParseStatus::Complete || !node.delim.closing) return false;
+    const auto& delim = node.delimiter_ranges();
+    if (node.status != ParseStatus::Complete || !delim.closing) return false;
     if (!caret && start == node.range.start && end == node.range.end) return true;
-    if (caret) return start >= node.delim.content.start && start <= node.delim.content.end;
-    return start >= node.delim.content.start && end <= node.delim.content.end;
+    if (caret) return start >= delim.content.start && start <= delim.content.end;
+    return start >= delim.content.start && end <= delim.content.end;
 }
 
 inline std::optional<FormatNodeRanges> find_innermost_format(
@@ -69,9 +70,9 @@ inline std::optional<FormatNodeRanges> find_innermost_format(
         if (node.kind == kind && contains_selection(node, start, end, caret)) {
             return FormatNodeRanges{
                 node.range,
-                node.delim.opening,
-                node.delim.content,
-                *node.delim.closing,
+                node.delimiter_ranges().opening,
+                node.delimiter_ranges().content,
+                *node.delimiter_ranges().closing,
             };
         }
     }

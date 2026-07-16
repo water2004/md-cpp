@@ -82,9 +82,10 @@ inline void style_delimited(
     std::vector<SourceStyleSpan>& styles,
     InlineCstNode const& node,
     SourceSyntaxKind content_kind) {
-    add_style(styles, node.delim.opening, SourceSyntaxKind::Marker);
-    add_style(styles, node.delim.content, content_kind);
-    if (node.delim.closing) add_style(styles, *node.delim.closing, SourceSyntaxKind::Marker);
+    const auto& delim = node.delimiter_ranges();
+    add_style(styles, delim.opening, SourceSyntaxKind::Marker);
+    add_style(styles, delim.content, content_kind);
+    if (delim.closing) add_style(styles, *delim.closing, SourceSyntaxKind::Marker);
 }
 
 inline void collect_inline_styles(std::vector<SourceStyleSpan>& styles, InlineCstNodes const& nodes) {

@@ -48,16 +48,7 @@ struct DelimitedRanges {
     std::optional<SourceRange> closing;
 };
 
-struct InlineCstNode {
-    NodeId id{};
-    InlineCstKind kind = InlineCstKind::Text;
-    SourceRange range;
-    ParseStatus status = ParseStatus::Complete;
-    DelimitedRanges delim;
-    std::vector<InlineCstNode> children;
-
-    // Derived semantic data for rendering/querying. It is never authoritative
-    // for editing or serialization.
+struct InlineCstSemantic {
     std::string href;
     std::optional<std::string> title;
     std::string alt;
@@ -68,6 +59,39 @@ struct InlineCstNode {
     std::string ext_name;
     std::optional<float> image_width;
     std::optional<float> image_height;
+};
+
+struct InlineCstNode {
+    NodeId id{};
+    InlineCstKind kind = InlineCstKind::Text;
+    SourceRange range;
+    ParseStatus status = ParseStatus::Complete;
+    std::vector<InlineCstNode> children;
+    // Plain text is by far the most frequent CST node. Delimiter ranges and
+    // semantic projection data are therefore allocated only for node kinds
+    // that use them instead of widening every text node.
+    std::shared_ptr<DelimitedRanges> delimited;
+    std::shared_ptr<InlineCstSemantic> semantic;
+
+    DelimitedRanges const& delimiter_ranges() const {
+        static const DelimitedRanges empty{};
+        return delimited ? *delimited : empty;
+    }
+
+    DelimitedRanges& ensure_delimiter_ranges() {
+        if (!delimited) delimited = std::make_shared<DelimitedRanges>();
+        return *delimited;
+    }
+
+    InlineCstSemantic const& semantics() const {
+        static const InlineCstSemantic empty{};
+        return semantic ? *semantic : empty;
+    }
+
+    InlineCstSemantic& ensure_semantics() {
+        if (!semantic) semantic = std::make_shared<InlineCstSemantic>();
+        return *semantic;
+    }
 };
 
 using InlineCstNodes = std::vector<InlineCstNode>;
