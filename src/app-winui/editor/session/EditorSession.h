@@ -83,7 +83,7 @@ namespace winrt::ElMd
 
     private:
         void RebuildCore();
-        void RebuildRenderModel();
+        void RebuildRenderModel(bool incremental = false);
         void InvalidateBoundaryProjection();
         detail::BoundaryProjection const& BoundaryProjection() const;
 

@@ -16,6 +16,7 @@ import elmd.core.text_edit;
 import elmd.core.document;
 import elmd.core.document_text;
 import elmd.core.document_symbols;
+import elmd.core.symbols;
 import elmd.core.outline;
 import elmd.core.diagnostics;
 import elmd.core.utf;
@@ -165,6 +166,54 @@ inline void append(Hasher& hash, RenderBlock const& block) {
     hash.optional(block.image_height, [&](auto value) { hash.scalar(value); });
     hash.scalar(block.child_blocks.size());
     for (auto const& child : block.child_blocks) append(hash, child);
+}
+
+inline void append(Hasher& hash, InlineCstNode const& node) {
+    hash.scalar(node.id); hash.scalar(node.kind); hash.scalar(node.range); hash.scalar(node.status);
+    hash.scalar(node.delim.full); hash.scalar(node.delim.opening); hash.scalar(node.delim.content);
+    hash.optional(node.delim.closing, [&](auto value) { hash.scalar(value); });
+    hash.text(node.href); hash.text(node.alt); hash.text(node.label); hash.text(node.target);
+    hash.optional(node.title, [&](auto const& value) { hash.text(value); });
+    hash.optional(node.alias, [&](auto const& value) { hash.text(value); });
+    hash.scalar(node.math_delim); hash.text(node.ext_name);
+    hash.optional(node.image_width, [&](auto value) { hash.scalar(value); });
+    hash.optional(node.image_height, [&](auto value) { hash.scalar(value); });
+    hash.scalar(node.children.size());
+    for (auto const& child : node.children) append(hash, child);
+}
+
+inline void append(Hasher& hash, InlineDocument const& document) {
+    hash.text(document.source);
+    hash.scalar(document.tree.nodes.size());
+    for (auto const& node : document.tree.nodes) append(hash, node);
+}
+
+inline void append(Hasher& hash, BlockNode const& block) {
+    hash.scalar(block.id); hash.scalar(block.kind); append(hash, block.inline_content);
+    hash.text(block.block_source.source);
+    hash.scalar(block.level); hash.text(block.slug); hash.text(block.marker); hash.scalar(block.checked);
+    hash.scalar(block.list_ordered); hash.scalar(block.list_start); hash.scalar(block.list_delimiter);
+    hash.scalar(block.code_indented); hash.scalar(block.math_delim);
+    hash.scalar(block.table_aligns.size());
+    for (auto alignment : block.table_aligns) hash.scalar(alignment);
+    hash.scalar(block.table_header_row); hash.text(block.src); hash.text(block.image_alt);
+    hash.optional(block.image_title, [&](auto const& value) { hash.text(value); });
+    hash.optional(block.image_link, [&](auto const& value) { hash.text(value); });
+    hash.optional(block.image_width, [&](auto value) { hash.scalar(value); });
+    hash.optional(block.image_height, [&](auto value) { hash.scalar(value); });
+    hash.text(block.opening_marker); hash.text(block.closing_marker);
+    hash.text(block.callout_kind); hash.text(block.footnote_label);
+    hash.scalar(block.toc_marker); hash.scalar(block.fmt); hash.text(block.raw);
+    hash.scalar(block.unsup_reason); hash.text(block.ext_name);
+    hash.scalar(block.children.size());
+    for (auto const& child : block.children) append(hash, child);
+}
+
+inline std::uint64_t source_key(BlockNode const& block, std::uint64_t document_dependency_key) {
+    Hasher hash;
+    hash.scalar(document_dependency_key);
+    append(hash, block);
+    return hash.value;
 }
 
 inline std::uint64_t assign(RenderBlock& block) {
@@ -961,16 +1010,17 @@ struct Builder {
     }
 };
 
-inline RenderModel build_render_model(
-    const EditorDocument& doc,
-    const Outline& outline,
-    ThemeProfile const& theme) {
-    Builder bd(theme);
-    const auto symbols = build_document_symbol_index(doc);
+inline std::uint64_t configure_render_dependencies(
+    Builder& builder,
+    DocumentSymbolIndex const& symbols) {
     std::size_t next_footnote_ordinal = 1;
+    render_key_detail::Hasher dependency_hash;
     auto assign_footnote_ordinal = [&](std::string const& label) {
-        if (!bd.footnote_ordinals.contains(label)) {
-            bd.footnote_ordinals.emplace(label, next_footnote_ordinal++);
+        if (!builder.footnote_ordinals.contains(label)) {
+            auto ordinal = next_footnote_ordinal++;
+            builder.footnote_ordinals.emplace(label, ordinal);
+            dependency_hash.text(label);
+            dependency_hash.scalar(ordinal);
         }
     };
     // Number by first reference, as rendered Markdown does. Keep unreferenced
@@ -982,12 +1032,13 @@ inline RenderModel build_render_model(
     for (auto const& definition : symbols.footnotes) {
         assign_footnote_ordinal(definition.label);
     }
-    std::vector<RenderBlock> blocks;
-    blocks.reserve(doc.root.children.size());
-    for (const auto& block : doc.root.children) {
-        blocks.push_back(bd.build_block(block));
-        render_key_detail::assign(blocks.back());
-    }
+    return dependency_hash.value;
+}
+
+inline RenderModel finish_render_model(
+    const EditorDocument& doc,
+    const Outline& outline,
+    std::vector<RenderBlock> blocks) {
     std::vector<RenderDiagnostic> diags;
     for (const auto& d : doc.diagnostics) diags.push_back(convert_diagnostic(d));
     RenderModel m; m.revision = doc.revision; m.blocks = std::move(blocks);
@@ -1001,6 +1052,73 @@ inline RenderModel build_render_model(
     };
     for (auto const& block : doc.root.children) collect_editable(collect_editable, block);
     return m;
+}
+
+inline RenderModel build_render_model(
+    const EditorDocument& doc,
+    const Outline& outline,
+    DocumentSymbolIndex const& symbols,
+    ThemeProfile const& theme) {
+    Builder builder(theme);
+    auto dependency_key = configure_render_dependencies(builder, symbols);
+    std::vector<RenderBlock> blocks;
+    blocks.reserve(doc.root.children.size());
+    for (const auto& block : doc.root.children) {
+        auto rendered = builder.build_block(block);
+        rendered.source_key = render_key_detail::source_key(block, dependency_key);
+        render_key_detail::assign(rendered);
+        blocks.push_back(std::move(rendered));
+    }
+    auto model = finish_render_model(doc, outline, std::move(blocks));
+    model.rebuilt_block_count = model.blocks.size();
+    return model;
+}
+
+inline RenderModel build_render_model_incremental(
+    const EditorDocument& doc,
+    const Outline& outline,
+    DocumentSymbolIndex const& symbols,
+    ThemeProfile const& theme,
+    RenderModel previous) {
+    Builder builder(theme);
+    auto dependency_key = configure_render_dependencies(builder, symbols);
+    std::unordered_map<std::uint64_t, std::size_t> previous_by_id;
+    previous_by_id.reserve(previous.blocks.size());
+    for (std::size_t index = 0; index < previous.blocks.size(); ++index) {
+        previous_by_id.emplace(previous.blocks[index].id.v, index);
+    }
+    std::vector<RenderBlock> blocks;
+    blocks.reserve(doc.root.children.size());
+    std::size_t reused = 0;
+    std::size_t rebuilt = 0;
+    for (const auto& block : doc.root.children) {
+        auto source_key = render_key_detail::source_key(block, dependency_key);
+        auto found = previous_by_id.find(block.id.v);
+        if (found != previous_by_id.end()
+            && previous.blocks[found->second].source_key == source_key
+            && !previous.blocks[found->second].source_mode) {
+            blocks.push_back(std::move(previous.blocks[found->second]));
+            ++reused;
+            continue;
+        }
+        auto rendered = builder.build_block(block);
+        rendered.source_key = source_key;
+        render_key_detail::assign(rendered);
+        blocks.push_back(std::move(rendered));
+        ++rebuilt;
+    }
+    auto model = finish_render_model(doc, outline, std::move(blocks));
+    model.rebuilt_block_count = rebuilt;
+    model.reused_block_count = reused;
+    return model;
+}
+
+inline RenderModel build_render_model(
+    const EditorDocument& doc,
+    const Outline& outline,
+    ThemeProfile const& theme) {
+    const auto symbols = build_document_symbol_index(doc);
+    return build_render_model(doc, outline, symbols, theme);
 }
 
 inline RenderModel build_render_model(const EditorDocument& doc, const Outline& outline) {

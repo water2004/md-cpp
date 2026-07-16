@@ -12,6 +12,7 @@
 import elmd.core.parser;
 import elmd.core.document_edit;
 import elmd.core.document;
+import elmd.core.document_symbols;
 import elmd.core.inline_parser;
 import elmd.core.render_builder;
 import elmd.core.render_model;
@@ -1119,6 +1120,31 @@ suite render_layout_tests = [] {
         expect(fatal(bool(found != model.editable_index.end())));
         if (found != model.editable_index.end()) expect(fatal(bool(found->second == index)));
     }
+};
+
+"incremental_render_model_matches_a_full_rebuild"_test = [] {
+    auto before = parse_text(1, "alpha\n\nbeta with **bold**\n\n> nested\n");
+    auto previous = build_render_model(before.document, before.outline);
+    auto after = parse_text(1, "alpha\n\ngamma with **bold**\n\n> nested\n");
+    auto symbols = build_document_symbol_index(after.document);
+    auto incremental = build_render_model_incremental(
+        after.document,
+        after.outline,
+        symbols,
+        default_theme_profile(),
+        std::move(previous));
+    auto full = build_render_model(after.document, after.outline, symbols, default_theme_profile());
+    expect(fatal(bool(incremental.blocks.size() == full.blocks.size())));
+    if (incremental.blocks.size() != full.blocks.size()) return;
+    for (std::size_t index = 0; index < full.blocks.size(); ++index) {
+        expect(fatal(bool(incremental.blocks[index].source_key == full.blocks[index].source_key)));
+        expect(fatal(bool(incremental.blocks[index].presentation_key == full.blocks[index].presentation_key)));
+    }
+    expect(fatal(bool(incremental.editable_order == full.editable_order)));
+    expect(fatal(bool(incremental.editable_index == full.editable_index)));
+    expect(fatal(bool(incremental.rebuilt_block_count == 1u)));
+    expect(fatal(bool(incremental.reused_block_count + incremental.rebuilt_block_count
+        == incremental.blocks.size())));
 };
 
 "generated_container_prefixes_anchor_carets_to_the_source_boundary"_test = [] {

@@ -124,6 +124,7 @@ inline RenderModel build_source_render_model(SourceEditor const& editor) {
         model.editable_order.push_back(line.id);
         model.blocks.push_back(std::move(block));
     }
+    model.rebuilt_block_count = model.blocks.size();
     return model;
 }
 

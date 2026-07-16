@@ -210,6 +210,9 @@ struct RenderBlock {
     BlockStyle block_style;
     bool source_mode = false;
     bool source_code = false;
+    // Fingerprint of the authoritative block-tree inputs used to build this
+    // projection. It permits block-local render-model rebuilding.
+    std::uint64_t source_key = 0;
     std::uint64_t presentation_key = 0;
     std::shared_ptr<const std::u32string> source_code_context;
     std::size_t source_code_context_offset = 0;
@@ -271,6 +274,8 @@ struct RenderModel {
     // Stable document-order rank, built with the render projection instead of
     // reconstructed by every viewport draw.
     std::unordered_map<std::uint64_t, std::size_t> editable_index;
+    std::size_t rebuilt_block_count = 0;
+    std::size_t reused_block_count = 0;
 };
 
 } // namespace elmd
