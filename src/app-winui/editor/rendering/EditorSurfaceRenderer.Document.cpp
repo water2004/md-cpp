@@ -22,7 +22,8 @@ namespace winrt::ElMd
         {
             for (auto const& item : items)
             {
-                if (item.kind == kind || InlineItemsContain(item.special().children, kind)) return true;
+                if (item.kind == kind
+                    || InlineItemsContain(item.special().semantic().children, kind)) return true;
             }
             return false;
         }
@@ -58,7 +59,7 @@ namespace winrt::ElMd
             {
                 auto owner = item.source_span.container_id;
                 if (owner.v != 0 && seen.insert(owner.v).second) owners.push_back(owner);
-                CollectInlineOwners(item.special().children, seen, owners);
+                CollectInlineOwners(item.special().semantic().children, seen, owners);
             }
         }
 

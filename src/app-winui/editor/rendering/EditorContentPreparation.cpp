@@ -38,23 +38,24 @@ namespace winrt::ElMd
             case elmd::InlineRenderItem::Kind::Text:
                 return item.text;
             case elmd::InlineRenderItem::Kind::Marker:
-                return item.display_text.empty() ? item.text : item.display_text;
+                return item.special().display_text.empty() ? item.text : item.special().display_text;
             case elmd::InlineRenderItem::Kind::Math:
                 return U"$" + item.text + U"$";
             case elmd::InlineRenderItem::Kind::Image:
-                return item.special().alt.empty() ? U"image" : elmd::utf8_to_cps(item.special().alt);
+                return item.special().semantic().alt.empty()
+                    ? U"image" : elmd::utf8_to_cps(item.special().semantic().alt);
             case elmd::InlineRenderItem::Kind::Link: {
                 std::u32string text;
-                for (auto const& child : item.special().children)
+                for (auto const& child : item.special().semantic().children)
                 {
                     text += InlineText(child);
                 }
                 return text;
             }
             case elmd::InlineRenderItem::Kind::FootnoteReference:
-                return item.display_text.empty()
-                    ? elmd::utf8_to_cps(item.special().footnote_label)
-                    : item.display_text;
+                return item.special().display_text.empty()
+                    ? elmd::utf8_to_cps(item.special().semantic().footnote_label)
+                    : item.special().display_text;
         }
         return {};
     }
@@ -96,8 +97,8 @@ namespace winrt::ElMd
     bool IsStyleMarker(elmd::InlineRenderItem const& item)
     {
         if (item.kind != elmd::InlineRenderItem::Kind::Marker) return false;
-        if (item.marker_role == elmd::MarkerRole::Heading) return false;
-        if (item.marker_owner) return true;
+        if (item.special().marker_role == elmd::MarkerRole::Heading) return false;
+        if (item.special().marker_owner) return true;
         bool backticks = !item.text.empty();
         for (char32_t ch : item.text) if (ch != U'`') backticks = false;
         return item.text == U"*" || item.text == U"**" || item.text == U"~~" || backticks;
@@ -105,7 +106,8 @@ namespace winrt::ElMd
 
     bool IsHeadingMarker(elmd::InlineRenderItem const& item)
     {
-        if (item.kind == elmd::InlineRenderItem::Kind::Marker && item.marker_role == elmd::MarkerRole::Heading) return true;
+        if (item.kind == elmd::InlineRenderItem::Kind::Marker
+            && item.special().marker_role == elmd::MarkerRole::Heading) return true;
         if (item.kind != elmd::InlineRenderItem::Kind::Marker || item.text.size() < 2 || item.text.back() != U' ')
         {
             return false;
@@ -165,12 +167,12 @@ namespace winrt::ElMd
                 continue;
             }
 
-            if (item.marker_owner)
+            if (item.special().marker_owner)
             {
-                auto found = owners.find(item.marker_owner->v);
+                auto found = owners.find(item.special().marker_owner->v);
                 if (found == owners.end())
                 {
-                    owners.emplace(item.marker_owner->v, index);
+                    owners.emplace(item.special().marker_owner->v, index);
                     visible[index] = false;
                 }
                 else
@@ -447,17 +449,17 @@ namespace winrt::ElMd
             {
                 if (CaretTouchesSpan(caret, item.source_span))
                 {
-                    AppendSourceText(display, item.special().source_text, item.source_span, item.style, false);
+                    AppendSourceText(display, item.special().semantic().source_text, item.source_span, item.style, false);
                 }
                 else
                 {
-                    MergeDisplayText(display, BuildDisplayInlineText(item.special().children, caret, {item.source_span.container_id, item.source_span.source_range.end, elmd::TextAffinity::Downstream}, mathJax, svgNormalizer, svgColor, fontSize, containerWidth, svgSupported, requestMath));
+                    MergeDisplayText(display, BuildDisplayInlineText(item.special().semantic().children, caret, {item.source_span.container_id, item.source_span.source_range.end, elmd::TextAffinity::Downstream}, mathJax, svgNormalizer, svgColor, fontSize, containerWidth, svgSupported, requestMath));
                 }
                 continue;
             }
             if (item.kind == elmd::InlineRenderItem::Kind::Image)
             {
-                if (CaretTouchesSpan(caret, item.source_span)) AppendSourceText(display, item.special().source_text, item.source_span, item.style, false);
+                if (CaretTouchesSpan(caret, item.source_span)) AppendSourceText(display, item.special().semantic().source_text, item.source_span, item.style, false);
                 else
                 {
                     auto displayStart = static_cast<std::uint32_t>(elmd::utf16_len(display.text));
@@ -465,11 +467,11 @@ namespace winrt::ElMd
                     display.imageOverlays.push_back(DisplayInlineText::ImageOverlay{
                         displayStart,
                         item.source_span,
-                        item.special().src,
-                        item.special().alt,
-                        item.special().image_width,
-                        item.special().image_height,
-                        item.special().block_image,
+                        item.special().semantic().src,
+                        item.special().semantic().alt,
+                        item.special().semantic().image_width,
+                        item.special().semantic().image_height,
+                        item.special().semantic().block_image,
                     });
                 }
                 continue;
@@ -478,10 +480,10 @@ namespace winrt::ElMd
             {
                 if (!svgSupported)
                 {
-                    AppendSourceText(display, item.special().source_text, item.source_span, item.style, false);
+                    AppendSourceText(display, item.special().semantic().source_text, item.source_span, item.style, false);
                     continue;
                 }
-                auto displayMath = item.display == elmd::MathDisplayMode::Block;
+                auto displayMath = item.special().display == elmd::MathDisplayMode::Block;
                 auto rawMath = mathJax.GetOrQueue(
                     elmd::cps_to_utf8(item.text),
                     displayMath,
@@ -491,22 +493,22 @@ namespace winrt::ElMd
                 auto math = rawMath ? NormalizeMathJaxSvg(*rawMath, svgNormalizer, svgColor, fontSize, requestMath) : std::nullopt;
                 display.pendingMath = display.pendingMath || !rawMath || !math;
                 auto editing = CaretTouchesSpan(caret, item.source_span);
-                auto delimiterLength = item.display == elmd::MathDisplayMode::Block
+                auto delimiterLength = item.special().display == elmd::MathDisplayMode::Block
                     ? std::size_t{0}
-                    : item.math_delim == elmd::MathDelimiter::InlineParen ? std::size_t{2} : std::size_t{1};
+                    : item.special().math_delim == elmd::MathDelimiter::InlineParen ? std::size_t{2} : std::size_t{1};
                 auto contentStart = (std::min)(item.source_span.source_range.start + delimiterLength, item.source_span.source_range.end);
                 auto contentEnd = item.source_span.source_range.end >= delimiterLength
                     ? (std::max)(contentStart, item.source_span.source_range.end - delimiterLength)
                     : contentStart;
                 if (!math || !static_cast<bool>(*math))
                 {
-                    AppendSourceText(display, item.special().source_text, item.source_span, item.style, false);
+                    AppendSourceText(display, item.special().semantic().source_text, item.source_span, item.style, false);
                     continue;
                 }
 
                 if (editing)
                 {
-                    AppendSourceText(display, item.special().source_text, item.source_span, item.style, false);
+                    AppendSourceText(display, item.special().semantic().source_text, item.source_span, item.style, false);
                     display.mathPreviews.push_back(DisplayInlineText::MathPreview{
                         *math,
                         elmd::TextSpan{item.source_span.container_id, {contentStart, contentEnd}},
@@ -520,9 +522,9 @@ namespace winrt::ElMd
             if (item.kind == elmd::InlineRenderItem::Kind::FootnoteReference)
             {
                 auto displayStart = static_cast<std::uint32_t>(elmd::utf16_len(display.text));
-                auto ordinal = item.display_text.empty()
-                    ? elmd::utf8_to_cps(item.special().footnote_label)
-                    : item.display_text;
+                auto ordinal = item.special().display_text.empty()
+                    ? elmd::utf8_to_cps(item.special().semantic().footnote_label)
+                    : item.special().display_text;
                 auto label = FootnoteSuperscript(ordinal);
                 AppendGeneratedText(
                     display,
@@ -538,7 +540,7 @@ namespace winrt::ElMd
                     displayStart,
                     displayLength,
                     item.source_span,
-                    item.special().footnote_label,
+                    item.special().semantic().footnote_label,
                     EditorFootnoteControlKind::Reference});
                 continue;
             }
@@ -547,11 +549,12 @@ namespace winrt::ElMd
                 auto markerPosition = elmd::TextPosition{
                     item.source_span.container_id,
                     item.source_span.source_range.start,
-                    item.generated_boundary_affinity.value_or(elmd::TextAffinity::Upstream),
+                    item.special().generated_boundary_affinity.value_or(elmd::TextAffinity::Upstream),
                 };
-                if (item.marker_role == elmd::MarkerRole::TaskCheckbox)
+                if (item.special().marker_role == elmd::MarkerRole::TaskCheckbox)
                 {
-                    auto const& markerText = item.display_text.empty() ? item.text : item.display_text;
+                    auto const& markerText = item.special().display_text.empty()
+                        ? item.text : item.special().display_text;
                     auto prefixLength = markerText.size() >= item.text.size()
                         && std::equal(item.text.rbegin(), item.text.rend(), markerText.rbegin())
                         ? markerText.size() - item.text.size()
@@ -577,7 +580,7 @@ namespace winrt::ElMd
                     display.taskCheckboxOverlays.push_back({
                         displayStart,
                         markerPosition,
-                        item.task_checked,
+                        item.special().task_checked,
                         boxSize + (std::max)(7.0f, fontSize * 0.42f),
                         height,
                         fontSize * 0.95f,
@@ -585,7 +588,8 @@ namespace winrt::ElMd
                     });
                     continue;
                 }
-                auto const& markerText = item.display_text.empty() ? item.text : item.display_text;
+                auto const& markerText = item.special().display_text.empty()
+                    ? item.text : item.special().display_text;
                 auto displayStart = static_cast<std::uint32_t>(elmd::utf16_len(display.text));
                 AppendGeneratedText(
                     display,
@@ -593,7 +597,7 @@ namespace winrt::ElMd
                     markerPosition,
                     item.style,
                     EditorDisplayPositionKind::BoundaryDecoration);
-                if (item.marker_role == elmd::MarkerRole::FootnoteLabel)
+                if (item.special().marker_role == elmd::MarkerRole::FootnoteLabel)
                 {
                     auto displayLength = static_cast<std::uint32_t>(elmd::utf16_len(markerText));
                     if (!display.ranges.empty()) {
@@ -603,7 +607,7 @@ namespace winrt::ElMd
                         displayStart,
                         displayLength,
                         item.source_span,
-                        item.special().footnote_label,
+                        item.special().semantic().footnote_label,
                         EditorFootnoteControlKind::DefinitionLabel});
                 }
             }

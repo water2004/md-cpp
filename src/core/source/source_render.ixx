@@ -51,7 +51,7 @@ inline std::vector<InlineRenderItem> line_items(SourceLine const& line) {
         item.text = line.text.substr(start, end - start);
         item.style = combined.inline_style;
         item.source_syntax = combined.syntax;
-        item.visibility = MarkerVisibility::Always;
+        item.ensure_special().visibility = MarkerVisibility::Always;
         items.push_back(std::move(item));
     }
     return items;

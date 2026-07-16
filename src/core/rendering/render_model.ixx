@@ -163,7 +163,7 @@ struct BlockStyle {
 
 struct InlineRenderItem;
 
-struct InlineRenderPayload {
+struct InlineRenderSemanticPayload {
     std::u32string source_text;          // exact source spelling for this span
     std::string href, src, alt;          // Image/Link
     std::string footnote_label;          // FootnoteReference / generated footnote controls
@@ -174,26 +174,41 @@ struct InlineRenderPayload {
     std::vector<InlineRenderItem> children; // Link children
 };
 
+struct InlineRenderPayload {
+    std::u32string display_text;         // generated/normalized visual spelling
+    std::optional<NodeId> marker_owner;
+    MathDisplayMode display = MathDisplayMode::Inline;
+    MathDelimiter math_delim = MathDelimiter::InlineDollar;
+    MarkerStyle marker_style;
+    MarkerVisibility visibility = MarkerVisibility::WhenCaretInsideNode;
+    MarkerRole marker_role = MarkerRole::Syntax;
+    bool task_checked = false;
+    // Generated block markers have an empty source span. This records which
+    // visual edge of that marker is the actual source boundary.
+    std::optional<TextAffinity> generated_boundary_affinity;
+    // Link/image/math/footnote data is uncommon compared with syntax markers;
+    // keep it behind a second payload so marker allocations stay compact.
+    std::shared_ptr<InlineRenderSemanticPayload> semantic_payload;
+
+    InlineRenderSemanticPayload const& semantic() const {
+        static const InlineRenderSemanticPayload empty{};
+        return semantic_payload ? *semantic_payload : empty;
+    }
+
+    InlineRenderSemanticPayload& ensure_semantic() {
+        if (!semantic_payload) semantic_payload = std::make_shared<InlineRenderSemanticPayload>();
+        return *semantic_payload;
+    }
+};
+
 struct InlineRenderItem {
     enum class Kind { Text, Math, Image, Link, FootnoteReference, Marker };
     Kind kind = Kind::Text;
     TextSpan source_span;
     std::u32string text;
-    std::u32string display_text;
     std::optional<NodeId> id;             // Math/Image/Link
-    std::optional<NodeId> marker_owner;
     InlineStyle style;
-    MathDisplayMode display = MathDisplayMode::Inline; // Math
-    MathDelimiter math_delim = MathDelimiter::InlineDollar;
-    MarkerStyle marker_style;
     SourceSyntaxKind source_syntax = SourceSyntaxKind::None;
-    MarkerVisibility visibility = MarkerVisibility::WhenCaretInsideNode;
-    MarkerRole marker_role = MarkerRole::Syntax;
-    bool task_checked = false;           // TaskCheckbox marker semantic state
-    // Generated block markers have an empty source span. This records which
-    // visual edge of that marker is the actual source boundary: after a
-    // prefix (Downstream), before a suffix (Upstream).
-    std::optional<TextAffinity> generated_boundary_affinity;
     std::shared_ptr<InlineRenderPayload> payload;
 
     InlineRenderPayload const& special() const {

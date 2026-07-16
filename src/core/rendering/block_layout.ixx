@@ -110,8 +110,8 @@ inline std::pair<LayoutBlock, float> layout_text_block(const RenderBlock& rb, fl
         } else if (it.kind == InlineRenderItem::Kind::Math) {
             append_text(U"$" + it.text + U"$", it.source_span, InlineStyle::plain(), MarkerVisibility::Always);
         } else if (it.kind == InlineRenderItem::Kind::Marker) {
-            auto text = it.display_text.empty() ? it.text : it.display_text;
-            auto visibility = it.visibility == MarkerVisibility::Always
+            auto text = it.special().display_text.empty() ? it.text : it.special().display_text;
+            auto visibility = it.special().visibility == MarkerVisibility::Always
                 ? MarkerVisibility::Always
                 : marker_visibility_for(it.source_span, caret);
             append_text(
@@ -119,7 +119,7 @@ inline std::pair<LayoutBlock, float> layout_text_block(const RenderBlock& rb, fl
                 it.source_span,
                 it.style,
                 visibility,
-                it.generated_boundary_affinity);
+                it.special().generated_boundary_affinity);
         }
     }
     if (!line_runs.empty()) runs.push_back(std::move(line_runs));

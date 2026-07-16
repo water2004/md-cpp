@@ -118,13 +118,13 @@ suite render_layout_tests = [] {
         expect(fatal(bool(flow_indent_for(model.blocks.front(), quote->id) == 2u)));
         expect(fatal(bool(!quote->child_blocks.empty())));
         auto marker = std::find_if(model.blocks.front().inline_items.begin(), model.blocks.front().inline_items.end(), [&](auto const& item) {
-            return item.marker_role == MarkerRole::ListBullet && item.source_span.container_id.v != 0;
+            return item.special().marker_role == MarkerRole::ListBullet && item.source_span.container_id.v != 0;
         });
         expect(fatal(bool(marker != model.blocks.front().inline_items.end())));
     }
     auto indent = std::find_if(model.blocks.front().inline_items.begin(), model.blocks.front().inline_items.end(), [](auto const& item) {
-        return item.marker_role == MarkerRole::Structural && !item.display_text.empty()
-            && std::all_of(item.display_text.begin(), item.display_text.end(), [](char32_t value) { return value == U' '; });
+        return item.special().marker_role == MarkerRole::Structural && !item.special().display_text.empty()
+            && std::all_of(item.special().display_text.begin(), item.special().display_text.end(), [](char32_t value) { return value == U' '; });
     });
     expect(fatal(bool(indent != model.blocks.front().inline_items.end())));
 };
@@ -142,15 +142,15 @@ suite render_layout_tests = [] {
     if (!editable) return;
     auto editableOwner = editable->source_span.container_id;
     auto marker = std::find_if(list.inline_items.begin(), list.inline_items.end(), [](auto const& item) {
-        return item.marker_role == MarkerRole::ListBullet;
+        return item.special().marker_role == MarkerRole::ListBullet;
     });
     expect(fatal(bool(marker != list.inline_items.end())));
     if (marker != list.inline_items.end())
         expect(fatal(bool(marker->source_span.container_id == editableOwner)));
     auto indent = std::find_if(list.inline_items.begin(), list.inline_items.end(), [&](auto const& item) {
         return item.source_span.container_id == editableOwner
-            && item.marker_role == MarkerRole::Structural
-            && item.display_text == U"  ";
+            && item.special().marker_role == MarkerRole::Structural
+            && item.special().display_text == U"  ";
     });
     expect(fatal(bool(indent != list.inline_items.end())));
 };
@@ -170,9 +170,9 @@ suite render_layout_tests = [] {
     bool has_opening = false;
     for (const auto& it : m.blocks[0].inline_items) {
         expect(fatal(bool(it.source_span.source_range.end >= it.source_span.source_range.start)));
-        if (it.kind == InlineRenderItem::Kind::Marker && it.marker_role == MarkerRole::Heading) {
+        if (it.kind == InlineRenderItem::Kind::Marker && it.special().marker_role == MarkerRole::Heading) {
             has_opening = true;
-            expect(fatal(bool(it.generated_boundary_affinity == TextAffinity::Downstream)));
+            expect(fatal(bool(it.special().generated_boundary_affinity == TextAffinity::Downstream)));
         }
     }
     bool has_text = false;
@@ -192,9 +192,9 @@ suite render_layout_tests = [] {
         expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Text)));
         for (auto const& item : m.blocks[0].inline_items) {
             if (item.kind == InlineRenderItem::Kind::Text && item.style.heading_level && *item.style.heading_level == 2) headingText = true;
-            if (item.kind == InlineRenderItem::Kind::Marker && item.marker_role == MarkerRole::Heading && item.text == U"\n-------") {
+            if (item.kind == InlineRenderItem::Kind::Marker && item.special().marker_role == MarkerRole::Heading && item.text == U"\n-------") {
                 underline = true;
-                expect(fatal(bool(item.generated_boundary_affinity == TextAffinity::Upstream)));
+                expect(fatal(bool(item.special().generated_boundary_affinity == TextAffinity::Upstream)));
             }
         }
     }
@@ -206,7 +206,8 @@ suite render_layout_tests = [] {
     auto m = build_model("### [#](https://example.com)可做转义的字符\n");
     expect(fatal(bool((m.blocks.size()) == (1u))));
     if (!m.blocks.empty()) expect(fatal(bool(std::any_of(m.blocks[0].inline_items.begin(), m.blocks[0].inline_items.end(), [](auto const& item) {
-            return item.kind == InlineRenderItem::Kind::Link && item.special().href == "https://example.com";
+            return item.kind == InlineRenderItem::Kind::Link
+                && item.special().semantic().href == "https://example.com";
         }))));
 };
 
@@ -247,8 +248,8 @@ suite render_layout_tests = [] {
         expect(fatal(bool((markers[0]->source_span.source_range.end) == (test.marker.size()))));
         expect(fatal(bool((markers[1]->source_span.source_range.start) == (test.source.size() - test.marker.size()))));
         expect(fatal(bool((markers[1]->source_span.source_range.end) == (test.source.size()))));
-        expect(fatal(bool(markers[0]->marker_owner.has_value())));
-        expect(fatal(bool(markers[1]->marker_owner == markers[0]->marker_owner)));
+        expect(fatal(bool(markers[0]->special().marker_owner.has_value())));
+        expect(fatal(bool(markers[1]->special().marker_owner == markers[0]->special().marker_owner)));
     }
 };
 
@@ -351,10 +352,10 @@ suite render_layout_tests = [] {
         std::u32string flattened_code;
         for (auto const& item : list.inline_items) {
             if (item.source_span.container_id != code->id) continue;
-            if (item.marker_role == MarkerRole::Structural && !item.display_text.empty()
-                && std::all_of(item.display_text.begin(), item.display_text.end(), [](char32_t value) { return value == U' '; })) {
+            if (item.special().marker_role == MarkerRole::Structural && !item.special().display_text.empty()
+                && std::all_of(item.special().display_text.begin(), item.special().display_text.end(), [](char32_t value) { return value == U' '; })) {
                 ++line_indents;
-                expect(fatal(bool(item.display_text.size() == code_indent.value_or(0) + 2u)));
+                expect(fatal(bool(item.special().display_text.size() == code_indent.value_or(0) + 2u)));
             } else if (item.kind == InlineRenderItem::Kind::Text && item.style.code) {
                 flattened_code += item.text;
             }
@@ -362,7 +363,7 @@ suite render_layout_tests = [] {
         expect(fatal(bool(line_indents == code->special().line_count)));
         expect(fatal(bool(flattened_code == code->special().code_text)));
         auto trailingBreak = std::find_if(list.inline_items.begin(), list.inline_items.end(), [&](auto const& item) {
-            return item.marker_role == MarkerRole::Structural && item.text == U"\n"
+            return item.special().marker_role == MarkerRole::Structural && item.text == U"\n"
                 && item.source_span.container_id == code->id
                 && item.source_span.source_range.start == code->content_span.source_range.end;
         });
@@ -407,11 +408,11 @@ suite render_layout_tests = [] {
     expect(fatal(bool(model.blocks.size() == 1u)));
     if (model.blocks.empty()) return;
     auto caretIndent = std::find_if(model.blocks.front().inline_items.begin(), model.blocks.front().inline_items.end(), [&](auto const& item) {
-        return item.marker_role == MarkerRole::Structural
+        return item.special().marker_role == MarkerRole::Structural
             && item.source_span.container_id == inserted->selection_after.active.container_id
             && item.source_span.source_range.start == inserted->selection_after.active.source_offset
-            && !item.display_text.empty()
-            && std::all_of(item.display_text.begin(), item.display_text.end(), [](char32_t value) { return value == U' '; });
+            && !item.special().display_text.empty()
+            && std::all_of(item.special().display_text.begin(), item.special().display_text.end(), [](char32_t value) { return value == U' '; });
     });
     expect(fatal(bool(caretIndent != model.blocks.front().inline_items.end())));
 };
@@ -447,11 +448,11 @@ suite render_layout_tests = [] {
     expect(fatal(bool(model.blocks.size() == 1u)));
     if (model.blocks.empty()) return;
     auto caretIndent = std::find_if(model.blocks.front().inline_items.begin(), model.blocks.front().inline_items.end(), [&](auto const& item) {
-        return item.marker_role == MarkerRole::Structural
+        return item.special().marker_role == MarkerRole::Structural
             && item.source_span.container_id == exited->selection_after.active.container_id
             && item.source_span.source_range.start == 0u
-            && !item.display_text.empty()
-            && std::all_of(item.display_text.begin(), item.display_text.end(), [](char32_t value) { return value == U' '; });
+            && !item.special().display_text.empty()
+            && std::all_of(item.special().display_text.begin(), item.special().display_text.end(), [](char32_t value) { return value == U' '; });
     });
     expect(fatal(bool(caretIndent != model.blocks.front().inline_items.end())));
 };
@@ -469,7 +470,7 @@ suite render_layout_tests = [] {
         if (!quote->child_blocks.empty()) {
             auto const quoteContent = quote->child_blocks.front().source_span;
             auto trailingBreak = std::find_if(list.inline_items.begin(), list.inline_items.end(), [&](auto const& item) {
-                return item.marker_role == MarkerRole::Structural && item.text == U"\n"
+                return item.special().marker_role == MarkerRole::Structural && item.text == U"\n"
                     && item.source_span.container_id == quoteContent.container_id
                     && item.source_span.source_range.start == quoteContent.source_range.end;
             });
@@ -484,7 +485,9 @@ suite render_layout_tests = [] {
     if (m.blocks.empty()) return;
     std::vector<std::u32string> bullets;
     for (auto const& item : m.blocks[0].inline_items) {
-        if (item.marker_role == MarkerRole::ListBullet) bullets.push_back(item.display_text);
+        if (item.special().marker_role == MarkerRole::ListBullet) {
+            bullets.push_back(item.special().display_text);
+        }
     }
     expect(fatal(bool((bullets.size()) == (2u))));
     if (bullets.size() == 2) {
@@ -547,7 +550,7 @@ suite render_layout_tests = [] {
         return item.kind == InlineRenderItem::Kind::Math;
     });
     expect(fatal(bool(it != m.blocks[0].inline_items.end())));
-    expect(fatal(bool(it->math_delim == MathDelimiter::InlineParen)));
+    expect(fatal(bool(it->special().math_delim == MathDelimiter::InlineParen)));
     expect(fatal(bool((it->source_span.source_range.start) == (0u))));
     expect(fatal(bool((it->source_span.source_range.end) == (5u))));
 };
@@ -587,9 +590,10 @@ suite render_layout_tests = [] {
     std::vector<std::u32string> source;
     std::vector<std::u32string> display;
     for (auto const& item : m.blocks[0].inline_items) {
-        if (item.kind != InlineRenderItem::Kind::Marker || item.marker_role != MarkerRole::ListNumber) continue;
+        if (item.kind != InlineRenderItem::Kind::Marker
+            || item.special().marker_role != MarkerRole::ListNumber) continue;
         source.push_back(item.text);
-        display.push_back(item.display_text);
+        display.push_back(item.special().display_text);
     }
     expect(fatal(bool((source.size()) == (3u))));
     expect(fatal(bool(source[0] == U"1. ")));
@@ -607,9 +611,10 @@ suite render_layout_tests = [] {
     std::vector<std::u32string> source_markers;
     std::vector<std::u32string> display_markers;
     for (auto const& item : m.blocks[0].inline_items) {
-        if (item.kind != InlineRenderItem::Kind::Marker || item.marker_role != MarkerRole::ListBullet) continue;
+        if (item.kind != InlineRenderItem::Kind::Marker
+            || item.special().marker_role != MarkerRole::ListBullet) continue;
         source_markers.push_back(item.text);
-        display_markers.push_back(item.display_text);
+        display_markers.push_back(item.special().display_text);
         expect(fatal(bool(item.source_span.source_range.empty())));
     }
     expect(fatal(bool((source_markers.size()) == (3u))));
@@ -626,19 +631,19 @@ suite render_layout_tests = [] {
     std::vector<InlineRenderItem const*> markers;
     for (auto const& item : model.blocks.front().inline_items) {
         if (item.kind == InlineRenderItem::Kind::Marker
-            && item.marker_role == MarkerRole::TaskCheckbox) markers.push_back(&item);
+            && item.special().marker_role == MarkerRole::TaskCheckbox) markers.push_back(&item);
     }
     expect(fatal(bool(markers.size() == 3u)));
     if (markers.size() != 3u) return;
     expect(fatal(bool(markers[0]->text == U"- [ ] ")));
     expect(fatal(bool(markers[1]->text == U"- [x] ")));
     expect(fatal(bool(markers[2]->text == U"- [X] ")));
-    expect(fatal(bool(!markers[0]->task_checked)));
-    expect(fatal(bool(markers[1]->task_checked)));
-    expect(fatal(bool(markers[2]->task_checked)));
+    expect(fatal(bool(!markers[0]->special().task_checked)));
+    expect(fatal(bool(markers[1]->special().task_checked)));
+    expect(fatal(bool(markers[2]->special().task_checked)));
     for (auto const* marker : markers) {
         expect(fatal(bool(marker->source_span.source_range.empty())));
-        expect(fatal(bool(marker->generated_boundary_affinity == TextAffinity::Downstream)));
+        expect(fatal(bool(marker->special().generated_boundary_affinity == TextAffinity::Downstream)));
     }
 };
 
@@ -649,7 +654,9 @@ suite render_layout_tests = [] {
     std::vector<bool> states;
     for (auto const& item : model.blocks.front().inline_items) {
         if (item.kind == InlineRenderItem::Kind::Marker
-            && item.marker_role == MarkerRole::TaskCheckbox) states.push_back(item.task_checked);
+            && item.special().marker_role == MarkerRole::TaskCheckbox) {
+            states.push_back(item.special().task_checked);
+        }
     }
     expect(fatal(bool(states.size() == 2u)));
     if (states.size() == 2u) {
@@ -683,9 +690,11 @@ suite render_layout_tests = [] {
     for (auto const& item : m.blocks[0].inline_items) {
         if (item.kind == InlineRenderItem::Kind::Image) {
             image = true;
-            block_image = item.special().block_image;
+            block_image = item.special().semantic().block_image;
         }
-        else if (item.kind == InlineRenderItem::Kind::Link) for (auto const& child : item.special().children) text += child.text;
+        else if (item.kind == InlineRenderItem::Kind::Link) {
+            for (auto const& child : item.special().semantic().children) text += child.text;
+        }
         else text += item.text;
     }
     quote = find_render_block(m.blocks[0], RenderBlockKind::Quote) != nullptr;
@@ -707,7 +716,7 @@ suite render_layout_tests = [] {
         &InlineRenderItem::kind);
     expect(fatal(bool(inline_image != inline_model.blocks.front().inline_items.end())));
     if (inline_image != inline_model.blocks.front().inline_items.end())
-        expect(fatal(bool(!inline_image->special().block_image)));
+        expect(fatal(bool(!inline_image->special().semantic().block_image)));
 
     auto nested_model = build_model("> - ![block](block.gif)");
     expect(fatal(bool(nested_model.blocks.size() == 1u)));
@@ -717,7 +726,7 @@ suite render_layout_tests = [] {
         &InlineRenderItem::kind);
     expect(fatal(bool(nested_image != nested_model.blocks.front().inline_items.end())));
     if (nested_image != nested_model.blocks.front().inline_items.end())
-        expect(fatal(bool(nested_image->special().block_image)));
+        expect(fatal(bool(nested_image->special().semantic().block_image)));
 };
 
 "math_inside_emphasis_renders_without_inheriting_text_style"_test = [] {
@@ -856,9 +865,10 @@ suite render_layout_tests = [] {
     for (auto const& item : model.blocks[0].inline_items) {
         if (item.source_span.container_id != code_id) continue;
         if (item.kind == InlineRenderItem::Kind::Text && item.style.code) flattened_code += item.text;
-        if (item.marker_role == MarkerRole::Structural && !item.display_text.empty()) {
+        if (item.special().marker_role == MarkerRole::Structural
+            && !item.special().display_text.empty()) {
             ++code_indents;
-            expect(fatal(bool((item.display_text.size()) == (9u))));
+            expect(fatal(bool((item.special().display_text.size()) == (9u))));
         }
     }
     expect(fatal(bool(flattened_code == U"int x;\n")));
@@ -911,8 +921,8 @@ suite render_layout_tests = [] {
 
     auto blank_indent = std::find_if(model.blocks[0].inline_items.begin(), model.blocks[0].inline_items.end(), [&](auto const& item) {
         return item.source_span.container_id == blank_id
-            && item.marker_role == MarkerRole::Structural
-            && item.display_text == std::u32string(13, U' ');
+            && item.special().marker_role == MarkerRole::Structural
+            && item.special().display_text == std::u32string(13, U' ');
     });
     expect(fatal(bool(blank_indent != model.blocks[0].inline_items.end())));
 };
@@ -940,7 +950,7 @@ suite render_layout_tests = [] {
         const auto label = std::ranges::find_if(model.blocks.front().inline_items, [&](auto const& item) {
             return item.kind == InlineRenderItem::Kind::Marker
                 && item.source_span.source_range.empty()
-                && item.display_text == test.label;
+                && item.special().display_text == test.label;
         });
         expect(fatal(bool(label != model.blocks.front().inline_items.end()))) << test.marker;
         if (label != model.blocks.front().inline_items.end()) expect(fatal(bool(label->style.bold)));
@@ -979,7 +989,7 @@ suite render_layout_tests = [] {
     expect(fatal(bool((accumulated_indent) == (depth * 2u))));
     auto leaf_indent = std::find_if(model.blocks[0].inline_items.begin(), model.blocks[0].inline_items.end(), [&](auto const& item) {
         return item.source_span.container_id == leaf_id
-            && item.display_text == std::u32string(depth * 2u, U' ');
+            && item.special().display_text == std::u32string(depth * 2u, U' ');
     });
     expect(fatal(bool(leaf_indent != model.blocks[0].inline_items.end())));
 };
@@ -1410,12 +1420,16 @@ suite render_layout_tests = [] {
 "safe_inline_html_markers_share_their_node_owner"_test = [] {
     auto m = build_model("before <em>italic</em> after\n");
     std::vector<InlineRenderItem const*> markers;
-    for (auto const& item : m.blocks[0].inline_items) if (item.kind == InlineRenderItem::Kind::Marker && item.marker_owner) markers.push_back(&item);
+    for (auto const& item : m.blocks[0].inline_items) {
+        if (item.kind == InlineRenderItem::Kind::Marker && item.special().marker_owner) {
+            markers.push_back(&item);
+        }
+    }
     expect(fatal(bool((markers.size()) == (2u))));
     if (markers.size() == 2) {
         expect(fatal(bool(markers[0]->text == U"<em>")));
         expect(fatal(bool(markers[1]->text == U"</em>")));
-        expect(fatal(bool(markers[0]->marker_owner == markers[1]->marker_owner)));
+        expect(fatal(bool(markers[0]->special().marker_owner == markers[1]->special().marker_owner)));
     }
 };
 
@@ -1678,11 +1692,12 @@ suite render_layout_tests = [] {
     bool footnote = false;
     for (auto const& item : model.blocks.front().inline_items) {
         if (item.kind == InlineRenderItem::Kind::Link) {
-            link = !item.special().children.empty() && item.special().href == "https://example.com";
+            link = !item.special().semantic().children.empty()
+                && item.special().semantic().href == "https://example.com";
         }
         if (item.kind == InlineRenderItem::Kind::FootnoteReference
-            && item.special().footnote_label == "note"
-            && item.special().source_text == U"[^note]") footnote = true;
+            && item.special().semantic().footnote_label == "note"
+            && item.special().semantic().source_text == U"[^note]") footnote = true;
     }
     expect(fatal(bool(link)));
     expect(fatal(bool(footnote)));
@@ -1697,10 +1712,10 @@ suite render_layout_tests = [] {
     bool label = false;
     for (auto const& item : definition.inline_items) {
         if (item.kind != InlineRenderItem::Kind::Marker) continue;
-        if (item.marker_role == MarkerRole::FootnoteLabel) {
-            label = item.special().footnote_label == "note"
+        if (item.special().marker_role == MarkerRole::FootnoteLabel) {
+            label = item.special().semantic().footnote_label == "note"
                 && item.source_span.source_range.empty()
-                && item.display_text == U"1. ";
+                && item.special().display_text == U"1. ";
         }
     }
     expect(fatal(label));
@@ -1721,7 +1736,7 @@ suite render_layout_tests = [] {
 
     std::u32string visible;
     for (auto const& item : definition.inline_items) {
-        visible += item.display_text.empty() ? item.text : item.display_text;
+        visible += item.special().display_text.empty() ? item.text : item.special().display_text;
     }
     auto const first = visible.find(U"first");
     auto const second = visible.find(U"second");
@@ -1747,14 +1762,16 @@ suite render_layout_tests = [] {
     std::vector<std::u32string> references;
     for (auto const& item : model.blocks[0].inline_items) {
         if (item.kind == InlineRenderItem::Kind::FootnoteReference) {
-            references.push_back(item.display_text);
+            references.push_back(item.special().display_text);
         }
     }
     expect(fatal(bool(references == std::vector<std::u32string>{U"1", U"2", U"1"})));
 
     auto definition_label = [](RenderBlock const& block) {
         for (auto const& item : block.inline_items) {
-            if (item.marker_role == MarkerRole::FootnoteLabel) return item.display_text;
+            if (item.special().marker_role == MarkerRole::FootnoteLabel) {
+                return item.special().display_text;
+            }
         }
         return std::u32string{};
     };

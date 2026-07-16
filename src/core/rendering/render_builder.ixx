@@ -186,9 +186,12 @@ inline void push_marker(
     std::u32string display_text = {}) {
     InlineRenderItem m; m.kind = InlineRenderItem::Kind::Marker;
     m.source_span = {owner, {cursor, cursor}};
-    m.text = std::move(text); m.display_text = std::move(display_text); m.marker_role = role;
-    m.generated_boundary_affinity = boundary_affinity;
-    m.marker_style = MarkerStyle{true, {}}; m.visibility = MarkerVisibility::Always;
+    m.text = std::move(text);
+    m.ensure_special().display_text = std::move(display_text);
+    m.ensure_special().marker_role = role;
+    m.ensure_special().generated_boundary_affinity = boundary_affinity;
+    m.ensure_special().marker_style = MarkerStyle{true, {}};
+    m.ensure_special().visibility = MarkerVisibility::Always;
     out.push_back(std::move(m));
 }
 
@@ -250,10 +253,10 @@ struct Builder {
         InlineRenderItem marker;
         marker.kind = InlineRenderItem::Kind::Marker;
         marker.source_span = {owner, {source_offset, source_offset}};
-        marker.display_text = std::u32string(columns, U' ');
-        marker.marker_role = MarkerRole::Structural;
-        marker.generated_boundary_affinity = TextAffinity::Downstream;
-        marker.visibility = MarkerVisibility::Always;
+        marker.ensure_special().display_text = std::u32string(columns, U' ');
+        marker.ensure_special().marker_role = MarkerRole::Structural;
+        marker.ensure_special().generated_boundary_affinity = TextAffinity::Downstream;
+        marker.ensure_special().visibility = MarkerVisibility::Always;
         out.push_back(std::move(marker));
     }
 
@@ -419,7 +422,7 @@ struct Builder {
                         tasks ? MarkerRole::TaskCheckbox : block.special().list_ordered ? MarkerRole::ListNumber : MarkerRole::ListBullet,
                         TextAffinity::Downstream,
                         std::u32string(missing_indent, U' ') + display_marker);
-                    if (tasks) out.back().task_checked = item.special().checked;
+                    if (tasks) out.back().ensure_special().task_checked = item.special().checked;
 
                     FlowContext item_context{context.indent_columns + marker_columns};
                     auto item_rendered = make_flow_container(item, item_context, context.indent_columns);
@@ -459,11 +462,11 @@ struct Builder {
                     InlineRenderItem label;
                     label.kind = InlineRenderItem::Kind::Marker;
                     label.source_span = {owner, {0, 0}};
-                    label.display_text = footnote_marker;
-                    label.ensure_special().footnote_label = block.special().footnote_label;
-                    label.marker_role = MarkerRole::FootnoteLabel;
-                    label.generated_boundary_affinity = TextAffinity::Downstream;
-                    label.visibility = MarkerVisibility::Always;
+                    label.ensure_special().display_text = footnote_marker;
+                    label.ensure_special().ensure_semantic().footnote_label = block.special().footnote_label;
+                    label.ensure_special().marker_role = MarkerRole::FootnoteLabel;
+                    label.ensure_special().generated_boundary_affinity = TextAffinity::Downstream;
+                    label.ensure_special().visibility = MarkerVisibility::Always;
                     out.push_back(std::move(label));
                 }
                 if (!callout_label.empty()) {
@@ -471,11 +474,11 @@ struct Builder {
                     InlineRenderItem label;
                     label.kind = InlineRenderItem::Kind::Marker;
                     label.source_span = {owner, {0, 0}};
-                    label.display_text = callout_label;
+                    label.ensure_special().display_text = callout_label;
                     label.style.bold = true;
-                    label.marker_role = MarkerRole::Structural;
-                    label.generated_boundary_affinity = TextAffinity::Downstream;
-                    label.visibility = MarkerVisibility::Always;
+                    label.ensure_special().marker_role = MarkerRole::Structural;
+                    label.ensure_special().generated_boundary_affinity = TextAffinity::Downstream;
+                    label.ensure_special().visibility = MarkerVisibility::Always;
                     out.push_back(std::move(label));
                     if (!block.children.empty()) {
                         append_block_break(out, owner, 0);
@@ -525,10 +528,10 @@ struct Builder {
                 item.source_span = {block.id, {
                     block_source_offset_for_content(block.block_source, 0),
                     block_source_offset_for_content(block.block_source, math.size())}};
-                item.ensure_special().source_text = math;
+                item.ensure_special().ensure_semantic().source_text = math;
                 item.text = math;
-                item.display = MathDisplayMode::Block;
-                item.math_delim = block.special().math_delim;
+                item.ensure_special().display = MathDisplayMode::Block;
+                item.ensure_special().math_delim = block.special().math_delim;
                 out.push_back(std::move(item));
                 break;
             }
@@ -538,13 +541,13 @@ struct Builder {
                 item.kind = InlineRenderItem::Kind::Image;
                 item.id = block.id;
                 item.source_span = {block.id, {0, block_local_length(block)}};
-                auto& special = item.ensure_special();
-                special.src = block.special().src;
-                special.alt = block.special().image_alt;
-                special.title = block.special().image_title;
-                special.image_width = block.special().image_width;
-                special.image_height = block.special().image_height;
-                special.block_image = true;
+                auto& semantic = item.ensure_special().ensure_semantic();
+                semantic.src = block.special().src;
+                semantic.alt = block.special().image_alt;
+                semantic.title = block.special().image_title;
+                semantic.image_width = block.special().image_width;
+                semantic.image_height = block.special().image_height;
+                semantic.block_image = true;
                 out.push_back(std::move(item));
                 break;
             }
@@ -599,11 +602,11 @@ struct Builder {
             InlineRenderItem marker;
             marker.kind = InlineRenderItem::Kind::Marker;
             marker.id = owner.id;
-            marker.marker_owner = owner.id;
+            marker.ensure_special().marker_owner = owner.id;
             marker.source_span = source_span(range);
             marker.text = inline_source_slice(document, range);
-            marker.marker_style = MarkerStyle{true, {}};
-            marker.visibility = MarkerVisibility::Always;
+            marker.ensure_special().marker_style = MarkerStyle{true, {}};
+            marker.ensure_special().visibility = MarkerVisibility::Always;
             target.push_back(std::move(marker));
         };
         std::function<void(const InlineCstNodes&, const InlineStyle&, std::vector<InlineRenderItem>&)> append_nodes;
@@ -653,8 +656,8 @@ struct Builder {
                         item.id = node.id;
                         item.source_span = source_span(node.range);
                         item.text = inline_source_slice(document, delim.content);
-                        item.display = MathDisplayMode::Inline;
-                        item.math_delim = semantic.math_delim;
+                        item.ensure_special().display = MathDisplayMode::Inline;
+                        item.ensure_special().math_delim = semantic.math_delim;
                         item.style = style;
                         item.style.bold = false;
                         item.style.italic = false;
@@ -669,7 +672,7 @@ struct Builder {
                         item.kind = InlineRenderItem::Kind::Link;
                         item.id = node.id;
                         item.source_span = source_span(node.range);
-                        auto& special = item.ensure_special();
+                        auto& special = item.ensure_special().ensure_semantic();
                         special.href = semantic.href;
                         special.title = semantic.title;
                         auto child_style = style; child_style.link = true;
@@ -693,7 +696,7 @@ struct Builder {
                         item.kind = InlineRenderItem::Kind::Image;
                         item.id = node.id;
                         item.source_span = source_span(node.range);
-                        auto& special = item.ensure_special();
+                        auto& special = item.ensure_special().ensure_semantic();
                         special.src = semantic.href;
                         special.alt = semantic.alt;
                         special.title = semantic.title;
@@ -730,8 +733,8 @@ struct Builder {
                         item.id = node.id;
                         item.source_span = source_span(node.range);
                         item.text = utf8_to_cps(semantic.label);
-                        item.display_text = footnote_display_label(semantic.label);
-                        item.ensure_special().footnote_label = semantic.label;
+                        item.ensure_special().display_text = footnote_display_label(semantic.label);
+                        item.ensure_special().ensure_semantic().footnote_label = semantic.label;
                         target.push_back(std::move(item));
                         break;
                     }
@@ -753,9 +756,12 @@ struct Builder {
             for (auto& item : items) {
                 if (item.kind != InlineRenderItem::Kind::Text
                     && item.kind != InlineRenderItem::Kind::Marker) {
-                    item.ensure_special().source_text = inline_source_slice(document, item.source_span.source_range);
+                    item.ensure_special().ensure_semantic().source_text =
+                        inline_source_slice(document, item.source_span.source_range);
                 }
-                if (item.payload) self(self, item.payload->children);
+                if (item.payload && item.payload->semantic_payload) {
+                    self(self, item.payload->semantic_payload->children);
+                }
             }
         };
         attach_source(attach_source, output);
@@ -787,7 +793,7 @@ struct Builder {
                         b.special().opening_marker,
                         MarkerRole::Syntax,
                         TextAffinity::Downstream);
-                    rb.inline_items.back().marker_owner = b.id;
+                    rb.inline_items.back().ensure_special().marker_owner = b.id;
                 }
                 auto items = build_inline_document(b.inline_content, b.id, s);
                 for (auto& item : items) rb.inline_items.push_back(std::move(item));
@@ -800,7 +806,7 @@ struct Builder {
                         b.special().closing_marker,
                         MarkerRole::Syntax,
                         TextAffinity::Upstream);
-                    rb.inline_items.back().marker_owner = b.id;
+                    rb.inline_items.back().ensure_special().marker_owner = b.id;
                 }
                 return rb;
             }
@@ -817,11 +823,11 @@ struct Builder {
                     marker.source_span = {b.id, {offset, offset}};
                     marker.text = text;
                     marker.style = s;
-                    marker.marker_role = MarkerRole::Heading;
-                    marker.generated_boundary_affinity = boundary_affinity;
-                    marker.marker_owner = b.id;
-                    marker.marker_style = MarkerStyle{true, {}};
-                    marker.visibility = MarkerVisibility::WhenBlockFocused;
+                    marker.ensure_special().marker_role = MarkerRole::Heading;
+                    marker.ensure_special().generated_boundary_affinity = boundary_affinity;
+                    marker.ensure_special().marker_owner = b.id;
+                    marker.ensure_special().marker_style = MarkerStyle{true, {}};
+                    marker.ensure_special().visibility = MarkerVisibility::WhenBlockFocused;
                     rb.inline_items.push_back(std::move(marker));
                 };
                 append_heading_marker(b.special().opening_marker, 0, TextAffinity::Downstream);
@@ -958,12 +964,14 @@ inline void update_render_geometry_hints(RenderBlock& block) {
         for (auto const& item : items) {
             if (block.text_heading_level == 0 && item.style.heading_level)
                 block.text_heading_level = *item.style.heading_level;
-            auto const& text = item.display_text.empty() ? item.text : item.display_text;
+            auto const& text = item.special().display_text.empty()
+                ? item.text : item.special().display_text;
             characters += text.size();
             line_breaks += static_cast<std::uint64_t>(std::ranges::count(text, U'\n'));
-            if (item.kind == InlineRenderItem::Kind::Image && !item.special().src.empty())
-                image_sources.push_back(item.special().src);
-            self(self, item.special().children);
+            if (item.kind == InlineRenderItem::Kind::Image && !item.special().semantic().src.empty()) {
+                image_sources.push_back(item.special().semantic().src);
+            }
+            self(self, item.special().semantic().children);
         }
     };
     visit(visit, block.inline_items);
