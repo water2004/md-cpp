@@ -85,12 +85,12 @@
             <AppBarButton x:Name="BlocksButton" Icon="Bullets" Label="Blocks" ToolTipService.ToolTip="Block structure">
                 <AppBarButton.Flyout>
                     <MenuFlyout>
-                        <MenuFlyoutSubItem Text="Heading">
+                        <MenuFlyoutSubItem x:Name="HeadingMenuItem" Text="Heading">
                             <MenuFlyoutItem x:Name="Heading1Button" Text="Heading 1"/>
                             <MenuFlyoutItem x:Name="Heading2Button" Text="Heading 2"/>
                         </MenuFlyoutSubItem>
                         <MenuFlyoutItem x:Name="QuoteButton" Text="Quote"/>
-                        <MenuFlyoutSubItem Text="List">
+                        <MenuFlyoutSubItem x:Name="ListMenuItem" Text="List">
                             <MenuFlyoutItem x:Name="UnorderedListButton" Text="Bulleted list"/>
                             <MenuFlyoutItem x:Name="OrderedListButton" Text="Numbered list"/>
                             <MenuFlyoutItem x:Name="TaskListButton" Text="Task list"/>
@@ -98,7 +98,7 @@
                         <MenuFlyoutSeparator/>
                         <MenuFlyoutItem x:Name="CodeBlockButton" Text="Code block"/>
                         <MenuFlyoutItem x:Name="BlockMathButton" Text="Math block"/>
-                        <MenuFlyoutSubItem Text="Callout">
+                        <MenuFlyoutSubItem x:Name="CalloutMenuItem" Text="Callout">
                             <MenuFlyoutItem x:Name="CalloutNoteMenuItem" Text="Note"/>
                             <MenuFlyoutItem x:Name="CalloutTipMenuItem" Text="Tip"/>
                             <MenuFlyoutItem x:Name="CalloutWarningMenuItem" Text="Warning"/>
@@ -146,6 +146,7 @@
                         Padding="8,8,8,8"
                         RowDefinitions="Auto,*">
                         <TextBlock
+                            x:Name="OutlineHeadingText"
                             Margin="8,4,8,8"
                             FontWeight="SemiBold"
                             Text="Outline"/>

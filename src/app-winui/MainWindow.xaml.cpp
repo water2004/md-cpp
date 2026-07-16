@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "MainWindow.xaml.h"
+#include "localization/Localization.h"
 #include "storage/AssetPaths.h"
 #if __has_include("MainWindow.g.cpp")
 #include "MainWindow.g.cpp"
@@ -55,6 +56,7 @@ namespace winrt::ElMd::implementation
     MainWindow::MainWindow()
     {
         InitializeComponent();
+        LocalizeShell();
         auto iconPath = winrt::ElMd::AssetPath(std::filesystem::path(L"branding") / L"Folia.ico");
         if (std::filesystem::exists(iconPath)) AppWindow().SetIcon(winrt::hstring(iconPath.c_str()));
         auto loadedSettings = winrt::ElMd::LoadAppSettings();
@@ -73,16 +75,85 @@ namespace winrt::ElMd::implementation
         else if (!themeCatalog->Diagnostics().empty()) SetStatus(themeCatalog->Diagnostics().front());
     }
 
+    void MainWindow::LocalizeShell()
+    {
+        using Microsoft::UI::Xaml::Controls::ToolTipService;
+        auto tooltip = [](auto const& element, wchar_t const* resource)
+        {
+            ToolTipService::SetToolTip(element, winrt::box_value(Localize(resource)));
+        };
+
+        ApplicationNameText().Text(Localize(L"AppName"));
+        SidebarToggleButton().Label(Localize(L"Sidebar"));
+        tooltip(SidebarToggleButton(), L"ToggleOutline");
+        OpenButton().Label(Localize(L"Open"));
+        tooltip(OpenButton(), L"OpenTooltip");
+        SaveButton().Label(Localize(L"Save"));
+        tooltip(SaveButton(), L"SaveTooltip");
+        ExportPdfButton().Label(Localize(L"Pdf"));
+        tooltip(ExportPdfButton(), L"PdfTooltip");
+        BoldButton().Label(Localize(L"Bold"));
+        tooltip(BoldButton(), L"Bold");
+        ItalicButton().Label(Localize(L"Italic"));
+        tooltip(ItalicButton(), L"Italic");
+        StrikeButton().Label(Localize(L"Strike"));
+        tooltip(StrikeButton(), L"Strikethrough");
+        InlineCodeButton().Label(Localize(L"InlineCode"));
+        tooltip(InlineCodeButton(), L"InlineCode");
+        BlocksButton().Label(Localize(L"Blocks"));
+        tooltip(BlocksButton(), L"BlockStructure");
+        HeadingMenuItem().Text(Localize(L"Heading"));
+        Heading1Button().Text(Localize(L"Heading1"));
+        Heading2Button().Text(Localize(L"Heading2"));
+        QuoteButton().Text(Localize(L"Quote"));
+        ListMenuItem().Text(Localize(L"List"));
+        UnorderedListButton().Text(Localize(L"BulletedList"));
+        OrderedListButton().Text(Localize(L"NumberedList"));
+        TaskListButton().Text(Localize(L"TaskList"));
+        CodeBlockButton().Text(Localize(L"CodeBlock"));
+        BlockMathButton().Text(Localize(L"MathBlock"));
+        CalloutMenuItem().Text(Localize(L"Callout"));
+        CalloutNoteMenuItem().Text(Localize(L"Note"));
+        CalloutTipMenuItem().Text(Localize(L"Tip"));
+        CalloutWarningMenuItem().Text(Localize(L"Warning"));
+        InsertButton().Label(Localize(L"Insert"));
+        tooltip(InsertButton(), L"InsertContent");
+        TableButton().Text(Localize(L"Table"));
+        InlineMathButton().Text(Localize(L"InlineMath"));
+        LinkButton().Text(Localize(L"Link"));
+        ImageButton().Text(Localize(L"Image"));
+        FootnoteButton().Text(Localize(L"Footnote"));
+        TocButton().Text(Localize(L"TableOfContents"));
+        SettingsButton().Label(Localize(L"Settings"));
+        tooltip(SettingsButton(), L"Settings");
+        OutlineHeadingText().Text(Localize(L"Outline"));
+        CutMenuItem().Text(Localize(L"Cut"));
+        CopyMenuItem().Text(Localize(L"Copy"));
+        PasteMenuItem().Text(Localize(L"Paste"));
+        SelectAllMenuItem().Text(Localize(L"SelectAll"));
+        tooltip(CancelOperationButton(), L"CancelOperation");
+        tooltip(SourceModeButton(), L"SourceMode");
+        SetStatus(Localize(L"Ready"));
+    }
+
+    winrt::hstring MainWindow::LocalizedDocumentName()
+    {
+        return editorSession.HasFile() ? editorSession.DisplayName() : Localize(L"UntitledMarkdown");
+    }
+
     void MainWindow::UpdateDocumentInfo()
     {
-        auto const displayName = editorSession.DisplayName();
+        auto const displayName = LocalizedDocumentName();
         auto const detail = editorSession.HasFile() ? editorSession.Path() : displayName;
         TitleDocumentText().Text(displayName);
         DocumentNameText().Text(displayName);
         Microsoft::UI::Xaml::Controls::ToolTipService::SetToolTip(TitleDocumentText(), winrt::box_value(detail));
         Microsoft::UI::Xaml::Controls::ToolTipService::SetToolTip(DocumentNameText(), winrt::box_value(detail));
-        CharacterCountText().Text(winrt::to_hstring(editorSession.CharacterCount()) + L" characters");
-        RevisionText().Text(L"Revision " + winrt::to_hstring(editorSession.Revision()));
+        CharacterCountText().Text(LocalizeFormat(
+            L"CharacterCount", { winrt::to_hstring(editorSession.CharacterCount()) }));
+        RevisionText().Text(LocalizeFormat(
+            L"Revision", { winrt::to_hstring(editorSession.Revision()) }));
+        if (!settingsMode) Title(LocalizeFormat(L"WindowTitleDocument", { displayName }));
     }
 
     void MainWindow::UpdateSourceModeUi()
@@ -108,7 +179,7 @@ namespace winrt::ElMd::implementation
         editorRenderer.ResetDocumentCaches();
         UpdateSourceModeUi();
         UpdateDocumentInfo();
-        SetStatus(editorSession.IsSourceMode() ? L"Source mode" : L"Rendered mode");
+        SetStatus(Localize(editorSession.IsSourceMode() ? L"SourceMode" : L"RenderedMode"));
         sidebarController.Refresh();
         textInputController.NotifyTextChanged();
         RenderEditorSurface();
@@ -186,19 +257,19 @@ namespace winrt::ElMd::implementation
         {
             auto text = editorSession.FootnotePreview(hit.label);
             preview.Text(target
-                ? text.empty() ? L"Empty footnote definition." : winrt::to_hstring(text)
-                : L"This reference has no definition.");
+                ? text.empty() ? Localize(L"EmptyFootnoteDefinition") : winrt::to_hstring(text)
+                : Localize(L"ReferenceHasNoDefinition"));
         }
         else
         {
-            preview.Text(target ? L"Return to the first reference." : L"This definition has no reference.");
+            preview.Text(target ? Localize(L"ReturnToFirstReference") : Localize(L"DefinitionHasNoReference"));
         }
         panel.Children().Append(preview);
 
         Button action;
         if (target)
         {
-            action.Content(winrt::box_value(isReference ? L"Go to definition" : L"Back to reference"));
+            action.Content(winrt::box_value(Localize(isReference ? L"GoToDefinition" : L"BackToReference")));
             action.Click([this, target = *target](auto const&, auto const&)
             {
                 if (footnoteFlyout) footnoteFlyout.Hide();
@@ -207,7 +278,7 @@ namespace winrt::ElMd::implementation
         }
         else if (isReference)
         {
-            action.Content(winrt::box_value(L"Create definition"));
+            action.Content(winrt::box_value(Localize(L"CreateDefinition")));
             action.Click([this, label = hit.label](auto const&, auto const&)
             {
                 if (footnoteFlyout) footnoteFlyout.Hide();
@@ -289,7 +360,7 @@ namespace winrt::ElMd::implementation
         }
         catch (winrt::hresult_error const& error)
         {
-            SetStatus(L"Resize failed: " + error.message());
+            SetStatus(LocalizeFormat(L"ResizeFailed", { error.message() }));
         }
     }
 
@@ -303,7 +374,7 @@ namespace winrt::ElMd::implementation
         }
         catch (winrt::hresult_error const& error)
         {
-            SetStatus(L"Render failed: " + error.message());
+            SetStatus(LocalizeFormat(L"RenderFailed", { error.message() }));
         }
     }
 

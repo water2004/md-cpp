@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "MainWindow.xaml.h"
+#include "localization/Localization.h"
 
 namespace winrt::ElMd::implementation
 {
@@ -78,8 +79,8 @@ namespace winrt::ElMd::implementation
             DocumentNavigation().Visibility(Microsoft::UI::Xaml::Visibility::Collapsed);
             SettingsViewHost().Visibility(Microsoft::UI::Xaml::Visibility::Visible);
             StatusBar().Visibility(Microsoft::UI::Xaml::Visibility::Collapsed);
-            TitleDocumentText().Text(L"Settings");
-            Title(L"el-md - Settings");
+            TitleDocumentText().Text(Localize(L"Settings"));
+            Title(Localize(L"WindowTitleSettings"));
             return;
         }
 
@@ -88,7 +89,6 @@ namespace winrt::ElMd::implementation
         DocumentNavigation().Visibility(Microsoft::UI::Xaml::Visibility::Visible);
         DocumentNavigation().IsPaneOpen(documentPaneWasOpen);
         StatusBar().Visibility(Microsoft::UI::Xaml::Visibility::Visible);
-        Title(L"el-md - " + editorSession.DisplayName());
         UpdateDocumentInfo();
         RenderEditorSurface();
         EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Programmatic);

@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "editor/rendering/EditorSurfaceRenderer.h"
 #include "editor/rendering/EditorPreparedDocument.h"
+#include "localization/Localization.h"
 
 import elmd.core.render_model;
 import elmd.core.callout;
@@ -127,8 +128,13 @@ namespace winrt::ElMd
             return fragment.svg && svgPainter.Draw(fragment.renderId, *fragment.svg, fragment.width, fragment.height, origin);
         };
         auto drawMathFallback = [&](elmd::TextSpan, D2D1_POINT_2F origin) {
-            constexpr wchar_t label[] = L"formula";
-            resources.d2dContext->DrawTextW(label, 7, resources.codeFormat.Get(), D2D1::RectF(origin.x, origin.y, documentRight, origin.y + styleSheet.code.lineHeight), resources.textBrush.Get());
+            auto label = Localize(L"Formula");
+            resources.d2dContext->DrawTextW(
+                label.c_str(),
+                static_cast<std::uint32_t>(label.size()),
+                resources.codeFormat.Get(),
+                D2D1::RectF(origin.x, origin.y, documentRight, origin.y + styleSheet.code.lineHeight),
+                resources.textBrush.Get());
         };
         auto drawTaskCheckboxes = [&](IDWriteTextLayout* layout, D2D1_POINT_2F origin, std::vector<DisplayInlineText::TaskCheckboxOverlay> const& overlays)
         {
@@ -517,8 +523,13 @@ namespace winrt::ElMd
 
         if (frame.renderModel.blocks.empty() && !printMode)
         {
-            constexpr wchar_t message[] = L"Open a Markdown file or start editing.";
-            resources.d2dContext->DrawTextW(message, 38, resources.textFormat.Get(), D2D1::RectF(documentLeft, y, documentRight, y + 80.0f), resources.mutedBrush.Get());
+            auto message = Localize(L"EmptyDocumentHint");
+            resources.d2dContext->DrawTextW(
+                message.c_str(),
+                static_cast<std::uint32_t>(message.size()),
+                resources.textFormat.Get(),
+                D2D1::RectF(documentLeft, y, documentRight, y + 80.0f),
+                resources.mutedBrush.Get());
         }
 
         auto remoteImageGeneration = renderCache.RemoteImageGeneration();

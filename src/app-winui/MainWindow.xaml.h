@@ -25,6 +25,8 @@ namespace winrt::ElMd::implementation
         void RegisterWindowHandlers();
         void InitializeEditorSurface();
         void InitializeTextInput();
+        void LocalizeShell();
+        winrt::hstring LocalizedDocumentName();
         void ResizeEditorSurface(double width, double height);
         void RenderEditorSurface();
         void UpdateTheme();
@@ -51,7 +53,7 @@ namespace winrt::ElMd::implementation
             bool cancellable = false);
         HWND WindowHandle();
 
-        winrt::hstring lastCommand = L"Ready";
+        winrt::hstring lastCommand;
         winrt::ElMd::EditorSession editorSession;
         winrt::ElMd::EditorSurfaceRenderer editorRenderer;
         winrt::ElMd::EditorScrollController scrollController;

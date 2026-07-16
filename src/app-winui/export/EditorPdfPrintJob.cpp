@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "export/EditorPdfPrintJob.h"
+#include "localization/Localization.h"
 
 namespace winrt::ElMd
 {
@@ -65,7 +66,9 @@ namespace winrt::ElMd
             CLSCTX_INPROC_SERVER,
             IID_PPV_ARGS(factory.GetAddressOf())));
 
-        auto jobName = title.empty() ? std::wstring(L"Folia PDF export") : title;
+        auto jobName = title.empty()
+            ? std::wstring(Localize(L"PdfExportJobName").c_str())
+            : title;
         winrt::check_hresult(factory->CreateDocumentPackageTargetForPrintJob(
             PdfPrinterName,
             jobName.c_str(),

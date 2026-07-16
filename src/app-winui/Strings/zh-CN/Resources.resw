@@ -133,4 +133,17 @@
   <data name="ThemeApplied" xml:space="preserve"><value>主题已应用</value></data>
   <data name="SettingsFallback" xml:space="preserve"><value>设置已回退：{0}</value></data>
   <data name="UnableSaveSettings" xml:space="preserve"><value>无法保存设置：{0}</value></data>
+  <data name="IgnoredDuplicateTheme" xml:space="preserve"><value>已忽略重复的主题 ID：{0}</value></data>
+  <data name="UnableEnumerateThemeDirectory" xml:space="preserve"><value>无法枚举主题目录：{0}</value></data>
+  <data name="SelectedThemeUnavailable" xml:space="preserve"><value>所选主题不可用，已改为跟随 Windows 主题。</value></data>
+  <data name="BuiltInThemeIdConflict" xml:space="preserve"><value>已有内置主题使用此 ID。</value></data>
+  <data name="ThemeNotFound" xml:space="preserve"><value>找不到该主题。</value></data>
+  <data name="BuiltInThemeCannotRemove" xml:space="preserve"><value>不能移除内置主题。</value></data>
+  <data name="ThemeOutsideManagedDirectory" xml:space="preserve"><value>主题不在受管理的主题目录中。</value></data>
+  <data name="UnableImportTheme" xml:space="preserve"><value>无法导入主题：{0}</value></data>
+  <data name="UnableRemoveTheme" xml:space="preserve"><value>无法移除主题：{0}</value></data>
+  <data name="UnableLoadTheme" xml:space="preserve"><value>无法加载主题 {0}：{1}</value></data>
+  <data name="ThemeVariantMismatch" xml:space="preserve"><value>内置主题的变体与文件不匹配。</value></data>
+  <data name="ThemeFallback" xml:space="preserve"><value>主题已回退：{0}</value></data>
+  <data name="PdfExportJobName" xml:space="preserve"><value>折笺 PDF 导出</value></data>
 </root>

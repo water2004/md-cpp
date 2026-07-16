@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "theme/ThemeCatalog.h"
+#include "localization/Localization.h"
 #include "storage/AssetPaths.h"
 
 namespace
@@ -25,12 +26,14 @@ namespace
             }
             if (!ids.insert(loaded.profile->id).second)
             {
-                diagnostics.push_back(L"Ignored duplicate theme id: " + winrt::to_hstring(loaded.profile->id));
+                diagnostics.push_back(winrt::ElMd::LocalizeFormat(
+                    L"IgnoredDuplicateTheme", { winrt::to_hstring(loaded.profile->id) }));
                 continue;
             }
             entries.push_back({ std::move(*loaded.profile), item.path(), builtIn });
         }
-        if (error) diagnostics.push_back(L"Unable to enumerate theme directory: " + winrt::hstring(directory.c_str()));
+        if (error) diagnostics.push_back(winrt::ElMd::LocalizeFormat(
+            L"UnableEnumerateThemeDirectory", { winrt::hstring(directory.c_str()) }));
     }
 }
 
@@ -62,7 +65,7 @@ namespace winrt::ElMd
         if (found != entries_.end()) return { found->profile, true, {} };
         auto fallback = LoadThemeProfile(systemVariant);
         fallback.loadedFromFile = false;
-        fallback.diagnostic = L"Selected theme is unavailable; using the Windows theme";
+        fallback.diagnostic = Localize(L"SelectedThemeUnavailable");
         return fallback;
     }
 
@@ -74,7 +77,7 @@ namespace winrt::ElMd
         {
             return entry.builtIn && entry.profile.id == loaded.profile->id;
         });
-        if (builtIn != entries_.end()) return L"A built-in theme already uses this id";
+        if (builtIn != entries_.end()) return Localize(L"BuiltInThemeIdConflict");
         try
         {
             auto directory = CustomThemeDirectory();
@@ -88,27 +91,27 @@ namespace winrt::ElMd
         }
         catch (std::exception const& error)
         {
-            return L"Unable to import theme: " + winrt::to_hstring(error.what());
+            return LocalizeFormat(L"UnableImportTheme", { winrt::to_hstring(error.what()) });
         }
     }
 
     std::optional<winrt::hstring> ThemeCatalog::Remove(std::string_view id)
     {
         auto found = std::ranges::find(entries_, id, [](ThemeEntry const& entry) { return std::string_view(entry.profile.id); });
-        if (found == entries_.end()) return L"Theme was not found";
-        if (found->builtIn) return L"Built-in themes cannot be removed";
+        if (found == entries_.end()) return Localize(L"ThemeNotFound");
+        if (found->builtIn) return Localize(L"BuiltInThemeCannotRemove");
         try
         {
             auto parent = std::filesystem::weakly_canonical(found->path.parent_path());
             auto allowed = std::filesystem::weakly_canonical(CustomThemeDirectory());
-            if (parent != allowed) return L"Theme is outside the managed theme directory";
+            if (parent != allowed) return Localize(L"ThemeOutsideManagedDirectory");
             std::filesystem::remove(found->path);
             Refresh();
             return std::nullopt;
         }
         catch (std::exception const& error)
         {
-            return L"Unable to remove theme: " + winrt::to_hstring(error.what());
+            return LocalizeFormat(L"UnableRemoveTheme", { winrt::to_hstring(error.what()) });
         }
     }
 }

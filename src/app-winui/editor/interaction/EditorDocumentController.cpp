@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "editor/interaction/EditorDocumentController.h"
+#include "localization/Localization.h"
 
 import elmd.core.command;
 import elmd.core.utf;
@@ -122,7 +123,7 @@ namespace winrt::ElMd
                 : std::optional<double>{
                     static_cast<double>(state_->pdfWork->completedPages.load()) / total};
             if (state_->setProgress) state_->setProgress(true, value, false);
-            if (state_->setStatus) state_->setStatus(L"Cancelling PDF export…");
+            if (state_->setStatus) state_->setStatus(Localize(L"StatusCancellingPdf"));
             return;
         }
         state_->pdfExporting = false;
@@ -133,7 +134,7 @@ namespace winrt::ElMd
             state_->pdfOutputPath.clear();
         }
         if (state_->setProgress) state_->setProgress(false, std::nullopt, false);
-        if (state_->setStatus) state_->setStatus(L"PDF export cancelled");
+        if (state_->setStatus) state_->setStatus(Localize(L"StatusPdfCancelled"));
     }
 
     void EditorDocumentController::InsertImage()
@@ -166,7 +167,7 @@ namespace winrt::ElMd
         auto package = winrt::Windows::ApplicationModel::DataTransfer::DataPackage();
         package.SetText(winrt::to_hstring(state_->session->SelectedTextUtf8()));
         winrt::Windows::ApplicationModel::DataTransfer::Clipboard::SetContent(package);
-        if (state_->setStatus) state_->setStatus(L"Copied selection");
+        if (state_->setStatus) state_->setStatus(Localize(L"StatusCopiedSelection"));
     }
 
     void EditorDocumentController::CutSelection()
@@ -203,14 +204,14 @@ namespace winrt::ElMd
             if (!Active(state, generation)) co_return;
             if (!file)
             {
-                if (state->setStatus) state->setStatus(L"Open cancelled");
+                if (state->setStatus) state->setStatus(Localize(L"StatusOpenCancelled"));
                 co_return;
             }
-            if (state->setStatus) state->setStatus(L"Reading " + file.Name() + L"…");
+            if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusReadingFile", { file.Name() }));
             if (state->setProgress) state->setProgress(true, std::nullopt, false);
             auto text = co_await winrt::Windows::Storage::FileIO::ReadTextAsync(file);
             if (!Active(state, generation)) co_return;
-            if (state->setStatus) state->setStatus(L"Parsing " + file.Name() + L"…");
+            if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusParsingFile", { file.Name() }));
             if (state->setProgress) state->setProgress(true, 0.0, false);
             auto dispatcher = winrt::Microsoft::UI::Dispatching::DispatcherQueue::GetForCurrentThread();
             auto reportedPercent = std::make_shared<std::atomic_size_t>(0);
@@ -265,14 +266,14 @@ namespace winrt::ElMd
             if (state->textInput) state->textInput->NotifyTextChanged();
             if (state->documentChanged) state->documentChanged();
             if (state->setProgress) state->setProgress(false, std::nullopt, false);
-            if (state->setStatus) state->setStatus(L"Opened " + file.Name());
+            if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusOpenedFile", { file.Name() }));
         }
         catch (winrt::hresult_error const& error)
         {
             if (Active(state, generation))
             {
                 if (state->setProgress) state->setProgress(false, std::nullopt, false);
-                if (state->setStatus) state->setStatus(L"Open failed: " + error.message());
+                if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusOpenFailed", { error.message() }));
             }
         }
         catch (std::exception const& error)
@@ -280,7 +281,8 @@ namespace winrt::ElMd
             if (Active(state, generation))
             {
                 if (state->setProgress) state->setProgress(false, std::nullopt, false);
-                if (state->setStatus) state->setStatus(L"Open failed: " + winrt::to_hstring(error.what()));
+                if (state->setStatus) state->setStatus(LocalizeFormat(
+                    L"StatusOpenFailed", { winrt::to_hstring(error.what()) }));
             }
         }
     }
@@ -299,11 +301,12 @@ namespace winrt::ElMd
             auto text = state->session->Text();
             co_await winrt::Windows::Storage::FileIO::WriteTextAsync(file, text);
             if (!Active(state, generation)) co_return;
-            if (state->setStatus) state->setStatus(L"Saved " + file.Name());
+            if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusSavedFile", { file.Name() }));
         }
         catch (winrt::hresult_error const& error)
         {
-            if (Active(state, generation) && state->setStatus) state->setStatus(L"Save failed: " + error.message());
+            if (Active(state, generation) && state->setStatus)
+                state->setStatus(LocalizeFormat(L"StatusSaveFailed", { error.message() }));
         }
     }
 
@@ -314,27 +317,28 @@ namespace winrt::ElMd
             if (!Active(state, generation) || !state->windowHandle) co_return;
             auto picker = winrt::Windows::Storage::Pickers::FileSavePicker();
             picker.DefaultFileExtension(L".md");
-            picker.SuggestedFileName(L"Untitled.md");
-            picker.FileTypeChoices().Insert(L"Markdown", winrt::single_threaded_vector<winrt::hstring>({ L".md" }));
-            picker.FileTypeChoices().Insert(L"Text", winrt::single_threaded_vector<winrt::hstring>({ L".txt" }));
+            picker.SuggestedFileName(Localize(L"UntitledMarkdown"));
+            picker.FileTypeChoices().Insert(Localize(L"MarkdownFileType"), winrt::single_threaded_vector<winrt::hstring>({ L".md" }));
+            picker.FileTypeChoices().Insert(Localize(L"TextFileType"), winrt::single_threaded_vector<winrt::hstring>({ L".txt" }));
             auto initializeWithWindow = picker.as<IInitializeWithWindow>();
             winrt::check_hresult(initializeWithWindow->Initialize(state->windowHandle()));
             auto file = co_await picker.PickSaveFileAsync();
             if (!Active(state, generation)) co_return;
             if (!file)
             {
-                if (state->setStatus) state->setStatus(L"Save cancelled");
+                if (state->setStatus) state->setStatus(Localize(L"StatusSaveCancelled"));
                 co_return;
             }
             co_await winrt::Windows::Storage::FileIO::WriteTextAsync(file, state->session->Text());
             if (!Active(state, generation)) co_return;
             state->session->SaveAs(file);
             if (state->documentChanged) state->documentChanged();
-            if (state->setStatus) state->setStatus(L"Saved " + file.Name());
+            if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusSavedFile", { file.Name() }));
         }
         catch (winrt::hresult_error const& error)
         {
-            if (Active(state, generation) && state->setStatus) state->setStatus(L"Save failed: " + error.message());
+            if (Active(state, generation) && state->setStatus)
+                state->setStatus(LocalizeFormat(L"StatusSaveFailed", { error.message() }));
         }
     }
 
@@ -347,22 +351,24 @@ namespace winrt::ElMd
             picker.DefaultFileExtension(L".pdf");
             auto displayName = state->session->DisplayName();
             auto suggested = std::filesystem::path(displayName.c_str()).stem().wstring();
-            picker.SuggestedFileName(suggested.empty() ? L"Untitled.pdf" : suggested + L".pdf");
-            picker.FileTypeChoices().Insert(L"PDF document", winrt::single_threaded_vector<winrt::hstring>({L".pdf"}));
+            picker.SuggestedFileName(suggested.empty()
+                ? Localize(L"UntitledPdf")
+                : winrt::hstring(suggested + L".pdf"));
+            picker.FileTypeChoices().Insert(Localize(L"PdfFileType"), winrt::single_threaded_vector<winrt::hstring>({L".pdf"}));
             auto initializeWithWindow = picker.as<IInitializeWithWindow>();
             winrt::check_hresult(initializeWithWindow->Initialize(state->windowHandle()));
             auto file = co_await picker.PickSaveFileAsync();
             if (!Active(state, generation)) co_return;
             if (!file)
             {
-                if (state->setStatus) state->setStatus(L"PDF export cancelled");
+                if (state->setStatus) state->setStatus(Localize(L"StatusPdfCancelled"));
                 co_return;
             }
 
             state->cancelRequested = false;
             state->pdfExporting = true;
             state->pdfOutputPath = std::filesystem::path(file.Path().c_str());
-            if (state->setStatus) state->setStatus(L"Preparing PDF…");
+            if (state->setStatus) state->setStatus(Localize(L"StatusPreparingPdf"));
             if (state->setProgress) state->setProgress(true, std::nullopt, true);
             winrt::apartment_context uiContext;
             co_await winrt::resume_after(std::chrono::milliseconds(16));
@@ -378,7 +384,7 @@ namespace winrt::ElMd
                     state->pdfOutputPath.clear();
                 }
                 if (state->setProgress) state->setProgress(false, std::nullopt, false);
-                if (state->setStatus) state->setStatus(L"PDF export cancelled");
+                if (state->setStatus) state->setStatus(Localize(L"StatusPdfCancelled"));
                 co_return;
             }
 
@@ -398,7 +404,7 @@ namespace winrt::ElMd
                 std::filesystem::remove(outputPath, ignored);
                 state->pdfOutputPath.clear();
                 if (state->setProgress) state->setProgress(false, std::nullopt, false);
-                if (state->setStatus) state->setStatus(L"PDF export cancelled");
+                if (state->setStatus) state->setStatus(Localize(L"StatusPdfCancelled"));
                 co_return;
             }
 
@@ -492,16 +498,13 @@ namespace winrt::ElMd
                     if (state->setStatus)
                     {
                         if (stopping)
-                            state->setStatus(L"Cancelling PDF export…");
+                            state->setStatus(Localize(L"StatusCancellingPdf"));
                         else if (total > 0)
-                            state->setStatus(
-                                L"Exporting PDF page "
-                                + winrt::to_hstring(completed)
-                                + L" of "
-                                + winrt::to_hstring(total)
-                                + L"…");
+                            state->setStatus(LocalizeFormat(
+                                L"StatusExportingPdfPage",
+                                { winrt::to_hstring(completed), winrt::to_hstring(total) }));
                         else
-                            state->setStatus(L"Preparing PDF assets…");
+                            state->setStatus(Localize(L"StatusPreparingPdfAssets"));
                     }
                 }
                 co_await winrt::resume_after(std::chrono::milliseconds(16));
@@ -517,10 +520,10 @@ namespace winrt::ElMd
             if (work->failure) std::rethrow_exception(work->failure);
             if (work->cancelled)
             {
-                if (state->setStatus) state->setStatus(L"PDF export cancelled");
+                if (state->setStatus) state->setStatus(Localize(L"StatusPdfCancelled"));
                 co_return;
             }
-            if (state->setStatus) state->setStatus(L"Exported PDF: " + file.Path());
+            if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusExportedPdf", { file.Path() }));
         }
         catch (winrt::hresult_error const& error)
         {
@@ -536,7 +539,7 @@ namespace winrt::ElMd
                 }
                 state->pdfOutputPath.clear();
                 if (state->setProgress) state->setProgress(false, std::nullopt, false);
-                if (state->setStatus) state->setStatus(L"PDF export failed: " + error.message());
+                if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusPdfFailed", { error.message() }));
             }
         }
         catch (std::exception const& error)
@@ -553,7 +556,8 @@ namespace winrt::ElMd
                 }
                 state->pdfOutputPath.clear();
                 if (state->setProgress) state->setProgress(false, std::nullopt, false);
-                if (state->setStatus) state->setStatus(L"PDF export failed: " + winrt::to_hstring(error.what()));
+                if (state->setStatus) state->setStatus(LocalizeFormat(
+                    L"StatusPdfFailed", { winrt::to_hstring(error.what()) }));
             }
         }
     }
@@ -584,7 +588,8 @@ namespace winrt::ElMd
         }
         catch (winrt::hresult_error const& error)
         {
-            if (Active(state, generation) && state->setStatus) state->setStatus(L"Image insert failed: " + error.message());
+            if (Active(state, generation) && state->setStatus)
+                state->setStatus(LocalizeFormat(L"StatusImageInsertFailed", { error.message() }));
         }
     }
 
@@ -611,7 +616,8 @@ namespace winrt::ElMd
         }
         catch (winrt::hresult_error const& error)
         {
-            if (Active(state, generation) && state->setStatus) state->setStatus(L"Open link failed: " + error.message());
+            if (Active(state, generation) && state->setStatus)
+                state->setStatus(LocalizeFormat(L"StatusOpenLinkFailed", { error.message() }));
         }
     }
 
@@ -634,7 +640,8 @@ namespace winrt::ElMd
         }
         catch (winrt::hresult_error const& error)
         {
-            if (Active(state, generation) && state->setStatus) state->setStatus(L"Paste failed: " + error.message());
+            if (Active(state, generation) && state->setStatus)
+                state->setStatus(LocalizeFormat(L"StatusPasteFailed", { error.message() }));
         }
     }
 }

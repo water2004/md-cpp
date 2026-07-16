@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "theme/ThemeConfig.h"
+#include "localization/Localization.h"
 #include "storage/AssetPaths.h"
 
 namespace
@@ -223,11 +224,14 @@ namespace winrt::ElMd
         }
         catch (winrt::hresult_error const& error)
         {
-            return { std::nullopt, L"Unable to load theme " + winrt::hstring(path.filename().c_str()) + L": " + error.message() };
+            return { std::nullopt, LocalizeFormat(
+                L"UnableLoadTheme", { winrt::hstring(path.filename().c_str()), error.message() }) };
         }
         catch (std::exception const& error)
         {
-            return { std::nullopt, L"Unable to load theme " + winrt::hstring(path.filename().c_str()) + L": " + winrt::to_hstring(error.what()) };
+            return { std::nullopt, LocalizeFormat(
+                L"UnableLoadTheme",
+                { winrt::hstring(path.filename().c_str()), winrt::to_hstring(error.what()) }) };
         }
     }
 
@@ -238,9 +242,10 @@ namespace winrt::ElMd
         {
             return { std::move(*loaded.profile), true, {} };
         }
-        auto diagnostic = loaded.diagnostic.empty()
-            ? winrt::hstring(L"Theme fallback: built-in theme variant does not match its file")
-            : L"Theme fallback: " + loaded.diagnostic;
+        auto reason = loaded.diagnostic.empty()
+            ? Localize(L"ThemeVariantMismatch")
+            : loaded.diagnostic;
+        auto diagnostic = LocalizeFormat(L"ThemeFallback", { reason });
         return { elmd::default_theme_profile(variant), false, std::move(diagnostic) };
     }
 }

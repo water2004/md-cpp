@@ -133,4 +133,17 @@
   <data name="ThemeApplied" xml:space="preserve"><value>Theme applied</value></data>
   <data name="SettingsFallback" xml:space="preserve"><value>Settings fallback: {0}</value></data>
   <data name="UnableSaveSettings" xml:space="preserve"><value>Unable to save settings: {0}</value></data>
+  <data name="IgnoredDuplicateTheme" xml:space="preserve"><value>Ignored duplicate theme id: {0}</value></data>
+  <data name="UnableEnumerateThemeDirectory" xml:space="preserve"><value>Unable to enumerate theme directory: {0}</value></data>
+  <data name="SelectedThemeUnavailable" xml:space="preserve"><value>Selected theme is unavailable; using the Windows theme.</value></data>
+  <data name="BuiltInThemeIdConflict" xml:space="preserve"><value>A built-in theme already uses this id.</value></data>
+  <data name="ThemeNotFound" xml:space="preserve"><value>Theme was not found.</value></data>
+  <data name="BuiltInThemeCannotRemove" xml:space="preserve"><value>Built-in themes cannot be removed.</value></data>
+  <data name="ThemeOutsideManagedDirectory" xml:space="preserve"><value>Theme is outside the managed theme directory.</value></data>
+  <data name="UnableImportTheme" xml:space="preserve"><value>Unable to import theme: {0}</value></data>
+  <data name="UnableRemoveTheme" xml:space="preserve"><value>Unable to remove theme: {0}</value></data>
+  <data name="UnableLoadTheme" xml:space="preserve"><value>Unable to load theme {0}: {1}</value></data>
+  <data name="ThemeVariantMismatch" xml:space="preserve"><value>Built-in theme variant does not match its file.</value></data>
+  <data name="ThemeFallback" xml:space="preserve"><value>Theme fallback: {0}</value></data>
+  <data name="PdfExportJobName" xml:space="preserve"><value>Folia PDF export</value></data>
 </root>

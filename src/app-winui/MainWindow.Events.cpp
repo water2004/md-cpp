@@ -25,7 +25,6 @@ namespace winrt::ElMd::implementation
             },
             [this]
             {
-                Title(L"el-md - " + editorSession.DisplayName());
                 UpdateSourceModeUi();
                 UpdateDocumentInfo();
                 sidebarController.Refresh();
