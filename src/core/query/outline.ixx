@@ -2,6 +2,7 @@
 export module elmd.core.outline;
 import std;
 import elmd.core.ids;
+import elmd.core.instrumentation;
 import elmd.core.ast;
 import elmd.core.slug;
 import elmd.core.utf;
@@ -89,6 +90,7 @@ private:
 // Build the outline from a list of blocks: extract a linear list of heading
 // items (recursing into containers) and then build a hierarchy via a stack.
 inline Outline build_outline_from_blocks(std::uint64_t revision, const std::vector<BlockNode>& blocks) {
+    record_full_document_outline_derivation();
     std::vector<OutlineItem> linear;
     auto extract = [&](auto& self, const std::vector<BlockNode>& bs) -> void {
         for (const auto& b : bs) {

@@ -12,6 +12,7 @@ import elmd.core.dialect;
 import elmd.core.document;
 import elmd.core.document_text;
 import elmd.core.ast;
+import elmd.core.block_tree;
 import elmd.core.document_edit;
 import elmd.core.document_history;
 import elmd.core.document_transaction;
@@ -291,7 +292,7 @@ public:
             entry->operations, false, entry->revision_after, entry->revision_before);
         if (!document_history_.undo(document_, selection_)) return false;
         last_document_change_ = std::move(change);
-        refresh_derived_from_document_();
+        refresh_derived_from_document_(*last_document_change_);
         return true;
     }
 
@@ -303,7 +304,7 @@ public:
             entry->operations, true, entry->revision_before, entry->revision_after);
         if (!document_history_.redo(document_, selection_)) return false;
         last_document_change_ = std::move(change);
-        refresh_derived_from_document_();
+        refresh_derived_from_document_(*last_document_change_);
         return true;
     }
 
@@ -498,6 +499,7 @@ public:
 private:
     EditorDocument document_;
     DocumentSymbolIndex symbols_;
+    DocumentSymbolContributions symbol_contributions_;
     Outline outline_;
     DocumentHistory document_history_{1000};
     std::optional<EditorDocumentChange> last_document_change_;
@@ -511,6 +513,7 @@ private:
         auto parsed = parse_text(revision, std::move(markdown), dialect_);
         document_ = std::move(parsed.document);
         symbols_ = std::move(parsed.symbols);
+        symbol_contributions_ = std::move(parsed.symbol_contributions);
         outline_ = std::move(parsed.outline);
         document_history_.clear();
         last_document_change_.reset();
@@ -526,9 +529,28 @@ private:
         }
     }
 
-    void refresh_derived_from_document_() {
-        symbols_ = build_document_symbol_index(document_);
-        outline_ = build_outline_from_blocks(document_.revision, document_.root.children);
+    void refresh_derived_from_document_(const EditorDocumentChange& change) {
+        if (change.structural) {
+            symbols_ = build_document_symbol_index(document_, &symbol_contributions_);
+            outline_ = build_outline_from_blocks(document_.revision, document_.root.children);
+            outline_.revision = document_.revision;
+            return;
+        }
+
+        bool heading_changed = false;
+        std::unordered_set<std::uint64_t> refreshed;
+        for (const auto& operation : change.text_operations) {
+            const auto& edit = change.forward ? operation.forward : operation.inverse;
+            if (!refreshed.insert(edit.container_id.v).second) continue;
+            if (const auto* block = find_block(document_.root, edit.container_id)) {
+                heading_changed = heading_changed || block->kind == BlockKind::Heading;
+                update_document_symbol_index(
+                    document_, *block, symbol_contributions_, symbols_);
+            }
+        }
+        if (heading_changed) {
+            outline_ = build_outline_from_blocks(document_.revision, document_.root.children);
+        }
         outline_.revision = document_.revision;
     }
 
@@ -540,7 +562,7 @@ private:
             true,
             transaction.revision_before,
             transaction.revision_after);
-        refresh_derived_from_document_();
+        refresh_derived_from_document_(*last_document_change_);
     }
 
 };

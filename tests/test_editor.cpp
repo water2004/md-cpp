@@ -163,6 +163,9 @@ suite editor_tests = [] {
     expect(fatal(bool(edit.full_document_serializations == 0u)));
     expect(fatal(bool(edit.full_tree_transaction_diffs == 0u)));
     expect(fatal(bool(edit.full_document_node_id_scans == 0u)));
+    expect(fatal(bool(edit.full_document_symbol_derivations == 0u)));
+    expect(fatal(bool(edit.full_document_outline_derivations == 0u)));
+    expect(fatal(bool(edit.local_symbol_derivations == 1u)));
     expect(fatal(bool(edit.inline_reparses == 1u)));
 
     reset_core_operation_counters();
@@ -172,7 +175,47 @@ suite editor_tests = [] {
     expect(fatal(bool(undo.full_document_serializations == 0u)));
     expect(fatal(bool(undo.full_tree_transaction_diffs == 0u)));
     expect(fatal(bool(undo.full_document_node_id_scans == 0u)));
+    expect(fatal(bool(undo.full_document_symbol_derivations == 0u)));
+    expect(fatal(bool(undo.full_document_outline_derivations == 0u)));
+    expect(fatal(bool(undo.local_symbol_derivations == 1u)));
     expect(fatal(bool(undo.inline_reparses == 1u)));
+};
+
+"local_symbol_contributions_refresh_only_the_edited_owner"_test = [] {
+    Editor prose("# title\n\nalpha\n\nbeta\n\ngamma");
+    const auto& paragraph = prose.document().root.children.back();
+    prose.set_selection(caret(paragraph, paragraph.inline_content.source.size()));
+    reset_core_operation_counters();
+    expect(fatal(prose.execute_command(Command::InsertText(U"!"))));
+    auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.local_symbol_derivations == 1u)));
+    expect(fatal(bool(counters.full_document_symbol_derivations == 0u)));
+    expect(fatal(bool(counters.full_document_outline_derivations == 0u)));
+    expect(fatal(bool(prose.outline().flat_items().front()->title_plain_text == "title")));
+
+    const auto& heading = prose.document().root.children.front();
+    prose.set_selection(caret(heading, heading.inline_content.source.size()));
+    reset_core_operation_counters();
+    expect(fatal(prose.execute_command(Command::InsertText(U"!"))));
+    counters = read_core_operation_counters();
+    expect(fatal(bool(counters.local_symbol_derivations == 1u)));
+    expect(fatal(bool(counters.full_document_symbol_derivations == 0u)));
+    expect(fatal(bool(counters.full_document_outline_derivations == 1u)));
+    expect(fatal(bool(prose.outline().flat_items().front()->title_plain_text == "title!")));
+
+    Editor link("[x](a)\n\nplain");
+    const auto& link_owner = link.document().root.children.front();
+    link.set_selection(range(link_owner, 4, 5));
+    reset_core_operation_counters();
+    expect(fatal(link.execute_command(Command::InsertText(U"b"))));
+    counters = read_core_operation_counters();
+    expect(fatal(bool(counters.local_symbol_derivations == 1u)));
+    expect(fatal(bool(counters.full_document_symbol_derivations == 0u)));
+    expect(fatal(bool(counters.full_document_outline_derivations == 0u)));
+    expect(fatal(bool(link.symbols().links.size() == 1u)));
+    expect(fatal(bool(link.symbols().links.front().href == "b")));
+    expect(fatal(link.undo()));
+    expect(fatal(bool(link.symbols().links.front().href == "a")));
 };
 
 "node_ids_are_document_owned_monotonic_and_normal_edits_never_scan_the_tree"_test = [] {

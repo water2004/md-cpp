@@ -55,6 +55,7 @@ struct ParseOutput {
     std::uint64_t revision = 1;
     EditorDocument document;
     DocumentSymbolIndex symbols;
+    DocumentSymbolContributions symbol_contributions;
     Outline outline;
     std::vector<Diagnostic> diagnostics;
 };
@@ -1832,7 +1833,7 @@ inline ParseOutput parse(const ParseInput& input) {
     ParseOutput out;
     out.revision = input.revision;
     out.document = std::move(doc);
-    out.symbols = build_document_symbol_index(out.document);
+    out.symbols = build_document_symbol_index(out.document, &out.symbol_contributions);
     out.outline = std::move(outline);
     out.diagnostics = out.document.diagnostics;
     return out;
