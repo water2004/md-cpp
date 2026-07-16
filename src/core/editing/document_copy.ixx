@@ -198,7 +198,7 @@ inline std::optional<std::u32string> document_selected_markdown(
     // fragment serializer choose an unambiguous block separator for every
     // selected top-level sibling instead of accidentally turning the next
     // paragraph into a lazy list continuation.
-    for (auto& block : selected) block.ensure_special().separator_before.reset();
+    for (auto& block : selected) block.separator_before.reset();
     return serialize_markdown_fragment(selected);
 }
 

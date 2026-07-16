@@ -314,7 +314,7 @@ inline bool is_empty_paragraph(const BlockNode& block) {
 }
 
 inline std::u32string block_separator(const BlockNode& previous, const BlockNode& current) {
-    if (current.special().separator_before) return *current.special().separator_before;
+    if (current.separator_before) return *current.separator_before;
     if (is_empty_paragraph(previous)) return U"\n";
     const auto serialized = serialize_block(previous);
     if (!serialized.text.empty() && serialized.text.back() == U'\n') return U"\n";

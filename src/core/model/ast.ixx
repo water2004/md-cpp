@@ -70,10 +70,6 @@ struct BlockNodeSpecial {
     std::string raw;                    // Frontmatter.raw / UnsupportedMarkup.raw
     UnsupportedMarkupReason unsup_reason = UnsupportedMarkupReason::RawHtmlDisabled;
     std::string ext_name;               // Extension
-    // Exact source between the preceding direct sibling and this block.
-    // This is parser/serializer ownership metadata, never an editing
-    // coordinate and never part of a block's local editable source.
-    std::optional<std::u32string> separator_before;
 };
 
 struct BlockNode {
@@ -82,6 +78,12 @@ struct BlockNode {
     BlockVec children;                  // the one structural child collection for every container
     InlineDocument inline_content;      // Paragraph / Heading / CalloutTitle / TableCell
     BlockSourceDocument block_source;   // CodeBlock / MathBlock, exact full Markdown source
+    // Exact source between the preceding direct sibling and this block.
+    // Separators are common on ordinary paragraphs, so keeping this compact
+    // optional beside the node avoids allocating the much larger kind payload
+    // merely to retain a newline.  It is serializer metadata, never an editing
+    // coordinate or part of the block-local source.
+    std::optional<std::u32string> separator_before;
     // Paragraphs and structural containers must not carry the full payload of
     // every unrelated block kind. The optional payload retains ordinary value
     // semantics through the deep-copy operations below.
@@ -91,6 +93,7 @@ struct BlockNode {
     BlockNode(BlockNode const& other)
         : id(other.id), kind(other.kind), children(other.children),
           inline_content(other.inline_content), block_source(other.block_source),
+          separator_before(other.separator_before),
           payload(other.payload ? std::make_unique<BlockNodeSpecial>(*other.payload) : nullptr) {}
     BlockNode& operator=(BlockNode const& other) {
         if (this == &other) return *this;
@@ -99,6 +102,7 @@ struct BlockNode {
         children = other.children;
         inline_content = other.inline_content;
         block_source = other.block_source;
+        separator_before = other.separator_before;
         payload = other.payload ? std::make_unique<BlockNodeSpecial>(*other.payload) : nullptr;
         return *this;
     }

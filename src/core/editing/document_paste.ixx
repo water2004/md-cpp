@@ -220,7 +220,7 @@ inline void split_soft_lines_for_atx_heading(
     if (newline == std::u32string::npos) return;
     auto trailing = blocks.front();
     trailing.inline_content.source = source.substr(newline + 1);
-    trailing.ensure_special().separator_before.reset();
+    trailing.separator_before.reset();
     source.erase(newline);
     blocks.push_back(std::move(trailing));
 }
@@ -520,7 +520,7 @@ inline std::optional<TextPosition> paste_parsed_blocks(
     const auto head_id = anchor->id;
     const auto split_removes_head = anchor->kind == BlockKind::CalloutTitle
         && position.source_offset == 0;
-    const auto original_head_separator = anchor->special().separator_before;
+    const auto original_head_separator = anchor->separator_before;
     auto split = document_edit_detail::split_direct(
         document,
         head_id,
@@ -539,7 +539,7 @@ inline std::optional<TextPosition> paste_parsed_blocks(
     const auto head_was_empty = !head_inline || head_inline->source.empty();
     const auto removable_empty_head = anchor
         && (anchor->kind == BlockKind::Paragraph || anchor->kind == BlockKind::Heading);
-    const auto head_separator = anchor ? anchor->special().separator_before : original_head_separator;
+    const auto head_separator = anchor ? anchor->separator_before : original_head_separator;
     bool merged_first = false;
     if (head_inline && !blocks.empty() && blocks.front().kind == BlockKind::Paragraph) {
         const auto pasted = blocks.front().inline_content.source;
@@ -571,7 +571,7 @@ inline std::optional<TextPosition> paste_parsed_blocks(
     }
 
     if (!blocks.empty()) {
-        blocks.front().ensure_special().separator_before = !merged_first && head_was_empty
+        blocks.front().separator_before = !merged_first && head_was_empty
             ? head_separator
             : std::nullopt;
     }

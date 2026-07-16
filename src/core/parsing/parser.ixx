@@ -473,7 +473,7 @@ public:
                 ? blank_ranges[index].first
                 : blank_ranges[index].second;
             if (!blocks.empty() && preceding_source_end) {
-                paragraph.ensure_special().separator_before = std::u32string(
+                paragraph.separator_before = std::u32string(
                     std::u32string_view(cps).substr(
                         *preceding_source_end,
                         source_end - *preceding_source_end));
@@ -502,7 +502,7 @@ public:
             const auto block_start = cur();
             if (auto b = parse_block()) {
                 if (!blocks.empty() && preceding_source_end) {
-                    b->ensure_special().separator_before = std::u32string(
+                    b->separator_before = std::u32string(
                         std::u32string_view(cps).substr(
                             *preceding_source_end,
                             block_start - *preceding_source_end));
