@@ -12,6 +12,7 @@ struct CoreOperationCounters {
     std::uint64_t full_document_symbol_derivations = 0;
     std::uint64_t full_document_outline_derivations = 0;
     std::uint64_t local_symbol_derivations = 0;
+    std::uint64_t render_source_key_derivations = 0;
     std::uint64_t inline_reparses = 0;
 };
 
@@ -30,6 +31,9 @@ inline void record_full_document_outline_derivation() {
     ++core_operation_counters.full_document_outline_derivations;
 }
 inline void record_local_symbol_derivation() { ++core_operation_counters.local_symbol_derivations; }
+inline void record_render_source_key_derivation() {
+    ++core_operation_counters.render_source_key_derivations;
+}
 inline void record_inline_reparse() { ++core_operation_counters.inline_reparses; }
 
 } // namespace elmd

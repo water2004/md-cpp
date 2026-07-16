@@ -1125,14 +1125,24 @@ suite render_layout_tests = [] {
 "incremental_render_model_matches_a_full_rebuild"_test = [] {
     auto before = parse_text(1, "alpha\n\nbeta with **bold**\n\n> nested\n");
     auto previous = build_render_model(before.document, before.outline);
-    auto after = parse_text(1, "alpha\n\ngamma with **bold**\n\n> nested\n");
+    auto after = parse_text(1, "alpha\n\nbeta with **bold**\n\n> changed\n");
     auto symbols = build_document_symbol_index(after.document);
+    NodeId changed_owner{};
+    walk_blocks(after.document.root, [&](BlockNode const& block) {
+        if (block.inline_content.source == U"changed") changed_owner = block.id;
+    });
+    expect(fatal(bool(changed_owner.v != 0u)));
+    RenderModelUpdate update;
+    update.changed_owners.push_back(changed_owner);
+    reset_core_operation_counters();
     auto incremental = build_render_model_incremental(
         after.document,
         after.outline,
         symbols,
         default_theme_profile(),
-        std::move(previous));
+        std::move(previous),
+        update);
+    auto const incremental_counters = read_core_operation_counters();
     auto full = build_render_model(after.document, after.outline, symbols, default_theme_profile());
     expect(fatal(bool(incremental.blocks.size() == full.blocks.size())));
     if (incremental.blocks.size() != full.blocks.size()) return;
@@ -1142,7 +1152,9 @@ suite render_layout_tests = [] {
     }
     expect(fatal(bool(incremental.editable_order == full.editable_order)));
     expect(fatal(bool(incremental.editable_index == full.editable_index)));
+    expect(fatal(bool(incremental.editable_top_level == full.editable_top_level)));
     expect(fatal(bool(incremental.rebuilt_block_count == 1u)));
+    expect(fatal(bool(incremental_counters.render_source_key_derivations == 1u)));
     expect(fatal(bool(incremental.reused_block_count + incremental.rebuilt_block_count
         == incremental.blocks.size())));
 };

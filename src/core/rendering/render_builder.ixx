@@ -11,6 +11,7 @@ import elmd.core.block_tree;
 import elmd.core.callout;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
+import elmd.core.instrumentation;
 import elmd.core.selection;
 import elmd.core.text_edit;
 import elmd.core.document;
@@ -117,6 +118,7 @@ inline void append(Hasher& hash, BlockNode const& block) {
 }
 
 inline std::uint64_t source_key(BlockNode const& block, std::uint64_t document_dependency_key) {
+    record_render_source_key_derivation();
     Hasher hash;
     hash.scalar(document_dependency_key);
     append(hash, block);
@@ -937,19 +939,30 @@ inline std::uint64_t configure_render_dependencies(
 inline RenderModel finish_render_model(
     const EditorDocument& doc,
     const Outline& outline,
-    std::vector<RenderBlock> blocks) {
+    std::vector<RenderBlock> blocks,
+    std::optional<std::tuple<
+        std::vector<NodeId>,
+        std::unordered_map<std::uint64_t, std::size_t>,
+        std::unordered_map<std::uint64_t, NodeId>>> cached_editable = std::nullopt) {
     std::vector<RenderDiagnostic> diags;
     for (const auto& d : doc.diagnostics) diags.push_back(convert_diagnostic(d));
     RenderModel m; m.revision = doc.revision; m.blocks = std::move(blocks);
     m.outline = outline; m.diagnostics = std::move(diags);
-    auto collect_editable = [&](auto& self, BlockNode const& block) -> void {
+    if (cached_editable) {
+        m.editable_order = std::move(std::get<0>(*cached_editable));
+        m.editable_index = std::move(std::get<1>(*cached_editable));
+        m.editable_top_level = std::move(std::get<2>(*cached_editable));
+        return m;
+    }
+    auto collect_editable = [&](auto& self, BlockNode const& block, NodeId top_level) -> void {
         if (Builder::owns_text_position(block)) {
             m.editable_index.emplace(block.id.v, m.editable_order.size());
             m.editable_order.push_back(block.id);
+            m.editable_top_level.emplace(block.id.v, top_level);
         }
-        for (auto const& child : block.children) self(self, child);
+        for (auto const& child : block.children) self(self, child, top_level);
     };
-    for (auto const& block : doc.root.children) collect_editable(collect_editable, block);
+    for (auto const& block : doc.root.children) collect_editable(collect_editable, block, block.id);
     return m;
 }
 
@@ -969,6 +982,7 @@ inline RenderModel build_render_model(
         blocks.push_back(std::move(rendered));
     }
     auto model = finish_render_model(doc, outline, std::move(blocks));
+    model.document_dependency_key = dependency_key;
     model.rebuilt_block_count = model.blocks.size();
     return model;
 }
@@ -978,19 +992,53 @@ inline RenderModel build_render_model_incremental(
     const Outline& outline,
     DocumentSymbolIndex const& symbols,
     ThemeProfile const& theme,
-    RenderModel previous) {
+    RenderModel previous,
+    RenderModelUpdate const& update) {
     Builder builder(theme);
     auto dependency_key = configure_render_dependencies(builder, symbols);
+    bool structure_unchanged = !update.structural
+        && previous.blocks.size() == doc.root.children.size();
+    if (structure_unchanged) {
+        for (std::size_t index = 0; index < previous.blocks.size(); ++index) {
+            if (previous.blocks[index].id != doc.root.children[index].id) {
+                structure_unchanged = false;
+                break;
+            }
+        }
+    }
+
+    std::unordered_set<std::uint64_t> changed_top_levels;
+    bool local_invalidation = structure_unchanged
+        && dependency_key == previous.document_dependency_key;
+    if (local_invalidation) {
+        for (auto owner : update.changed_owners) {
+            auto found = previous.editable_top_level.find(owner.v);
+            if (found == previous.editable_top_level.end()) {
+                local_invalidation = false;
+                break;
+            }
+            changed_top_levels.insert(found->second.v);
+        }
+    }
+
     std::unordered_map<std::uint64_t, std::size_t> previous_by_id;
-    previous_by_id.reserve(previous.blocks.size());
-    for (std::size_t index = 0; index < previous.blocks.size(); ++index) {
-        previous_by_id.emplace(previous.blocks[index].id.v, index);
+    if (!local_invalidation) {
+        previous_by_id.reserve(previous.blocks.size());
+        for (std::size_t index = 0; index < previous.blocks.size(); ++index) {
+            previous_by_id.emplace(previous.blocks[index].id.v, index);
+        }
     }
     std::vector<RenderBlock> blocks;
     blocks.reserve(doc.root.children.size());
     std::size_t reused = 0;
     std::size_t rebuilt = 0;
-    for (const auto& block : doc.root.children) {
+    for (std::size_t index = 0; index < doc.root.children.size(); ++index) {
+        auto const& block = doc.root.children[index];
+        if (local_invalidation && !changed_top_levels.contains(block.id.v)) {
+            blocks.push_back(std::move(previous.blocks[index]));
+            ++reused;
+            continue;
+        }
         auto source_key = render_key_detail::source_key(block, dependency_key);
         auto found = previous_by_id.find(block.id.v);
         if (found != previous_by_id.end()
@@ -1006,7 +1054,18 @@ inline RenderModel build_render_model_incremental(
         blocks.push_back(std::move(rendered));
         ++rebuilt;
     }
-    auto model = finish_render_model(doc, outline, std::move(blocks));
+    std::optional<std::tuple<
+        std::vector<NodeId>,
+        std::unordered_map<std::uint64_t, std::size_t>,
+        std::unordered_map<std::uint64_t, NodeId>>> cached_editable;
+    if (structure_unchanged) {
+        cached_editable.emplace(
+            std::move(previous.editable_order),
+            std::move(previous.editable_index),
+            std::move(previous.editable_top_level));
+    }
+    auto model = finish_render_model(doc, outline, std::move(blocks), std::move(cached_editable));
+    model.document_dependency_key = dependency_key;
     model.rebuilt_block_count = rebuilt;
     model.reused_block_count = reused;
     return model;

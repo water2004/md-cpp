@@ -265,6 +265,11 @@ struct RenderDiagnostic {
     std::optional<TextSpan> source_span;
 };
 
+struct RenderModelUpdate {
+    bool structural = false;
+    std::vector<NodeId> changed_owners;
+};
+
 struct RenderModel {
     std::uint64_t revision = 1;
     std::vector<RenderBlock> blocks;
@@ -274,6 +279,10 @@ struct RenderModel {
     // Stable document-order rank, built with the render projection instead of
     // reconstructed by every viewport draw.
     std::unordered_map<std::uint64_t, std::size_t> editable_index;
+    // Maps every editable owner to the top-level render block that contains
+    // it, allowing local source transactions to invalidate one subtree.
+    std::unordered_map<std::uint64_t, NodeId> editable_top_level;
+    std::uint64_t document_dependency_key = 0;
     std::size_t rebuilt_block_count = 0;
     std::size_t reused_block_count = 0;
 };

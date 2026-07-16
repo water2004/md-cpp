@@ -95,7 +95,7 @@ namespace winrt::ElMd
 
     private:
         void RebuildCore();
-        void RebuildRenderModel(bool incremental = false);
+        void RebuildRenderModel(elmd::EditorDocumentChange const* change = nullptr);
         void InvalidateBoundaryProjection();
         bool ApplyBoundaryProjectionChange(elmd::EditorDocumentChange const& change);
         detail::BoundaryProjection const& BoundaryProjection() const;

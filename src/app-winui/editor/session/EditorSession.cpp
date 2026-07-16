@@ -145,20 +145,32 @@ namespace winrt::ElMd
         RebuildRenderModel();
     }
 
-    void EditorSession::RebuildRenderModel(bool incremental)
+    void EditorSession::RebuildRenderModel(elmd::EditorDocumentChange const* change)
     {
         if (core_->sourceEditor)
         {
             core_->renderModel = elmd::build_source_render_model(*core_->sourceEditor);
         }
-        else if (incremental)
+        else if (change)
         {
+            elmd::RenderModelUpdate update;
+            update.structural = change->structural;
+            std::unordered_set<std::uint64_t> owners;
+            for (auto const& operation : change->text_operations)
+            {
+                auto const& edit = change->forward ? operation.forward : operation.inverse;
+                if (owners.insert(edit.container_id.v).second)
+                {
+                    update.changed_owners.push_back(edit.container_id);
+                }
+            }
             core_->renderModel = elmd::build_render_model_incremental(
                 core_->editor.document(),
                 core_->editor.outline(),
                 core_->editor.symbols(),
                 core_->theme,
-                std::move(core_->renderModel));
+                std::move(core_->renderModel),
+                update);
         }
         else
         {
@@ -237,7 +249,7 @@ namespace winrt::ElMd
             if (core_->sourceEditor->revision() == previousRevision) return true;
             ++revision_;
             InvalidateBoundaryProjection();
-            RebuildRenderModel(true);
+            RebuildRenderModel();
             return true;
         }
         auto previousDocumentRevision = core_->editor.revision();
@@ -280,7 +292,7 @@ namespace winrt::ElMd
             {
                 InvalidateBoundaryProjection();
             }
-            RebuildRenderModel(true);
+            RebuildRenderModel(change ? &*change : nullptr);
         }
         return true;
     }
