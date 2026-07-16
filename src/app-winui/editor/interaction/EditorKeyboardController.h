@@ -22,6 +22,7 @@ namespace winrt::ElMd
             Action paste,
             Render render);
         void Detach();
+        bool Character(char16_t character);
         bool Key(winrt::Windows::System::VirtualKey key);
         bool InsertNewline();
         void ResetCaretGoal();
@@ -39,5 +40,6 @@ namespace winrt::ElMd
         Action paste_;
         Render render_;
         float caretGoalX_ = -1.0f;
+        std::optional<char16_t> pendingHighSurrogate_;
     };
 }

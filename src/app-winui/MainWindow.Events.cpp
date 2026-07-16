@@ -98,6 +98,11 @@ namespace winrt::ElMd::implementation
         });
 
         EditorSurface().IsTabStop(true);
+        EditorSurface().CharacterReceived([this](auto const&, Microsoft::UI::Xaml::Input::CharacterReceivedRoutedEventArgs const& args)
+        {
+            args.Handled(keyboardController.Character(args.Character()));
+        });
+
         EditorSurface().KeyDown([this](auto const&, Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args)
         {
             args.Handled(keyboardController.Key(args.Key()));

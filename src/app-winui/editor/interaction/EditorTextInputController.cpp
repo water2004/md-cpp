@@ -76,6 +76,8 @@ namespace winrt::ElMd
         activeContainer_ = {};
         knownText_.clear();
         forceFullSynchronization_ = false;
+        pendingCharacterUpdate_.reset();
+        committedCoreTextUpdate_.reset();
         lifetime_.reset();
     }
 
@@ -126,6 +128,39 @@ namespace winrt::ElMd
         catch (winrt::hresult_error const&)
         {
         }
+    }
+
+    void EditorTextInputController::BeginHardwareKey()
+    {
+        pendingCharacterUpdate_.reset();
+        committedCoreTextUpdate_.reset();
+    }
+
+    bool EditorTextInputController::ConsumeCommittedCoreTextCharacter(std::u32string_view text)
+    {
+        if (!session_ || !committedCoreTextUpdate_) return false;
+        auto const fresh = std::chrono::steady_clock::now()
+                - committedCoreTextUpdate_->recordedAt
+            < std::chrono::milliseconds(250);
+        auto const matches = committedCoreTextUpdate_->revision == session_->Revision()
+            && committedCoreTextUpdate_->text == text
+            && fresh;
+        committedCoreTextUpdate_.reset();
+        return matches;
+    }
+
+    void EditorTextInputController::RecordCharacterTextUpdate(
+        std::size_t start,
+        std::u32string text)
+    {
+        if (!session_) return;
+        pendingCharacterUpdate_ = CharacterUpdate{
+            start,
+            std::move(text),
+            session_->Revision(),
+            std::chrono::steady_clock::now(),
+        };
+        committedCoreTextUpdate_.reset();
     }
 
     void EditorTextInputController::QueueSynchronization()
@@ -294,6 +329,21 @@ namespace winrt::ElMd
             auto incomingHstring = args.Text();
             auto incoming = elmd::utf8_to_cps(winrt::to_string(incomingHstring));
             auto isIncomingNewline = incoming == U"\r" || incoming == U"\n" || incoming == U"\r\n";
+            if (!isIncomingNewline
+                && pendingCharacterUpdate_
+                && pendingCharacterUpdate_->revision == session_->Revision()
+                && pendingCharacterUpdate_->start == start
+                && pendingCharacterUpdate_->text == incoming
+                && std::chrono::steady_clock::now()
+                        - pendingCharacterUpdate_->recordedAt
+                    < std::chrono::milliseconds(250))
+            {
+                pendingCharacterUpdate_.reset();
+                args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Succeeded);
+                QueueSynchronization();
+                return;
+            }
+            pendingCharacterUpdate_.reset();
             auto selection = session_->Selection();
             auto const& text = knownText_;
             auto activeAcp = selection.active.container_id == activeContainer_
@@ -395,6 +445,15 @@ namespace winrt::ElMd
             else
             {
                 forceFullSynchronization_ = true;
+            }
+            if (!incoming.empty() && !isIncomingNewline)
+            {
+                committedCoreTextUpdate_ = CharacterUpdate{
+                    start,
+                    incoming,
+                    session_->Revision(),
+                    std::chrono::steady_clock::now(),
+                };
             }
             args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Succeeded);
             QueueSynchronization();

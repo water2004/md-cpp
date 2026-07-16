@@ -36,12 +36,57 @@ namespace winrt::ElMd
         cut_ = {};
         paste_ = {};
         render_ = {};
+        pendingHighSurrogate_.reset();
         ResetCaretGoal();
+    }
+
+    bool EditorKeyboardController::Character(char16_t character)
+    {
+        if (!session_ || !executeCommand_) return false;
+
+        char32_t codepoint = character;
+        if (character >= 0xd800 && character <= 0xdbff)
+        {
+            pendingHighSurrogate_ = character;
+            return true;
+        }
+        if (character >= 0xdc00 && character <= 0xdfff)
+        {
+            if (pendingHighSurrogate_)
+            {
+                codepoint = 0x10000
+                    + ((static_cast<char32_t>(*pendingHighSurrogate_) - 0xd800) << 10)
+                    + (static_cast<char32_t>(character) - 0xdc00);
+            }
+            else
+            {
+                codepoint = 0xfffd;
+            }
+        }
+        pendingHighSurrogate_.reset();
+
+        if (codepoint == U'\r' || codepoint == U'\n') return false;
+        if (codepoint < 0x20 || codepoint == 0x7f) return false;
+
+        std::u32string text(1, codepoint);
+        if (textInput_ && textInput_->ConsumeCommittedCoreTextCharacter(text)) return true;
+
+        auto selection = session_->Selection();
+        auto start = session_->TextInputAcpOffset(selection.active);
+        if (selection.anchor.container_id == selection.active.container_id)
+        {
+            start = (std::min)(start, session_->TextInputAcpOffset(selection.anchor));
+        }
+        if (!executeCommand_(elmd::Command::InsertText(text))) return false;
+        if (textInput_) textInput_->RecordCharacterTextUpdate(start, std::move(text));
+        return true;
     }
 
     bool EditorKeyboardController::Key(winrt::Windows::System::VirtualKey key)
     {
         if (!session_ || !renderer_ || !executeCommand_) return false;
+        if (textInput_) textInput_->BeginHardwareKey();
+        pendingHighSurrogate_.reset();
         elmd::Command command;
         auto ctrl = KeyDown(winrt::Windows::System::VirtualKey::Control)
             || KeyDown(winrt::Windows::System::VirtualKey::LeftControl)

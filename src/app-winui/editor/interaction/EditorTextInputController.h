@@ -28,6 +28,9 @@ namespace winrt::ElMd
         void FocusLeave();
         void NotifyTextChanged();
         void NotifySelectionChanged();
+        void BeginHardwareKey();
+        bool ConsumeCommittedCoreTextCharacter(std::u32string_view text);
+        void RecordCharacterTextUpdate(std::size_t start, std::u32string text);
 
     private:
         winrt::Windows::UI::Text::Core::CoreTextRange CurrentSelection() const;
@@ -58,5 +61,14 @@ namespace winrt::ElMd
         bool notifying_ = false;
         bool synchronizationQueued_ = false;
         bool forceFullSynchronization_ = false;
+        struct CharacterUpdate
+        {
+            std::size_t start = 0;
+            std::u32string text;
+            std::uint64_t revision = 0;
+            std::chrono::steady_clock::time_point recordedAt;
+        };
+        std::optional<CharacterUpdate> pendingCharacterUpdate_;
+        std::optional<CharacterUpdate> committedCoreTextUpdate_;
     };
 }
