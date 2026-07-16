@@ -277,6 +277,10 @@ struct RenderBlock {
     BlockStyle block_style;
     bool source_mode = false;
     bool source_code = false;
+    // Virtualized rich-text models keep an inexpensive block-shaped entry for
+    // offscreen content.  A materialized entry owns the derived inline render
+    // projection; the authoritative block tree remains the source of truth.
+    bool materialized = true;
     // Fingerprint of the authoritative block-tree inputs used to build this
     // projection. It permits block-local render-model rebuilding.
     std::uint64_t source_key = 0;
@@ -328,6 +332,10 @@ struct RenderModelUpdate {
 struct RenderModel {
     std::uint64_t revision = 1;
     std::vector<RenderBlock> blocks;
+    bool virtualized = false;
+    // Only populated for virtualized rich-text models.  Tracking the sparse
+    // working set avoids scanning every block when the viewport moves.
+    std::unordered_set<std::size_t> materialized_block_indices;
     Outline outline;
     std::vector<RenderDiagnostic> diagnostics;
     std::vector<NodeId> editable_order;

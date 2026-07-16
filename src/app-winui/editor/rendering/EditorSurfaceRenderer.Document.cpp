@@ -565,7 +565,11 @@ namespace winrt::ElMd
             if (block.kind == elmd::RenderBlockKind::Math)
                 return styleSheet.body.lineHeight * 2.0f + paddingTop + paddingBottom;
             if (block.kind == elmd::RenderBlockKind::Table)
-                return static_cast<float>((std::max)(std::size_t{1}, special.row_count))
+                return static_cast<float>((std::max)(
+                    std::size_t{1},
+                    special.row_count != 0
+                        ? special.row_count
+                        : static_cast<std::size_t>(block.estimated_line_breaks)))
                     * (styleSheet.body.lineHeight + 16.0f) + paddingTop + paddingBottom;
             if (block.kind == elmd::RenderBlockKind::Image)
             {
@@ -960,13 +964,17 @@ namespace winrt::ElMd
             auto measureBottom = printMode
                 ? (std::numeric_limits<float>::max)()
                 : scrollOffset + resources.surfaceHeightDip * 2.25f + viewportOverscan;
+            auto measureBegin = printMode ? std::size_t{0} : firstIntersecting(measureTop);
+            auto measureEnd = measureBegin;
+            while (measureEnd < frame.renderModel.blocks.size()
+                && (printMode || preparedDocument->placements[measureEnd].top <= measureBottom))
+                ++measureEnd;
+            if (frame.materializeBlocks) frame.materializeBlocks(measureBegin, measureEnd);
             auto measured = false;
             auto geometryChanged = false;
-            for (auto index = printMode ? std::size_t{0} : firstIntersecting(measureTop);
-                index < frame.renderModel.blocks.size(); ++index)
+            for (auto index = measureBegin; index < measureEnd; ++index)
             {
                 auto const& placement = preparedDocument->placements[index];
-                if (!printMode && placement.top > measureBottom) break;
                 auto const& block = frame.renderModel.blocks[index];
                 auto& prepared = preparedDocument->blocks[index];
                 if (block.kind == elmd::RenderBlockKind::ThematicBreak || prepared.valid) continue;
@@ -1002,11 +1010,15 @@ namespace winrt::ElMd
 
         auto embeddedTop = scrollOffset - embeddedOverscanBefore;
         auto embeddedBottom = scrollOffset + resources.surfaceHeightDip + embeddedOverscanAfter;
+        auto embeddedBegin = firstIntersecting(embeddedTop);
+        auto embeddedEnd = embeddedBegin;
+        while (embeddedEnd < frame.renderModel.blocks.size()
+            && preparedDocument->placements[embeddedEnd].top <= embeddedBottom)
+            ++embeddedEnd;
+        if (frame.materializeBlocks) frame.materializeBlocks(embeddedBegin, embeddedEnd);
         auto geometryChanged = false;
-        for (auto index = firstIntersecting(embeddedTop); index < frame.renderModel.blocks.size(); ++index)
+        for (auto index = embeddedBegin; index < embeddedEnd; ++index)
         {
-            auto const& placement = preparedDocument->placements[index];
-            if (placement.top > embeddedBottom) break;
             auto const& block = frame.renderModel.blocks[index];
             if (block.kind == elmd::RenderBlockKind::ThematicBreak) continue;
             auto& prepared = preparedDocument->blocks[index];
@@ -1069,6 +1081,11 @@ namespace winrt::ElMd
             auto retentionAfter = (std::max)(3200.0f, resources.surfaceHeightDip * 3.0f);
             auto retentionTop = scrollOffset - retentionBefore;
             auto retentionBottom = scrollOffset + resources.surfaceHeightDip + retentionAfter;
+            auto retentionBegin = firstIntersecting(retentionTop);
+            auto retentionEnd = retentionBegin;
+            while (retentionEnd < frame.renderModel.blocks.size()
+                && preparedDocument->placements[retentionEnd].top <= retentionBottom)
+                ++retentionEnd;
             auto activeLayouts = std::vector<std::size_t>(
                 preparedDocument->layoutBlocks.begin(),
                 preparedDocument->layoutBlocks.end());
@@ -1096,14 +1113,21 @@ namespace winrt::ElMd
                 preparedDocument->embeddedBlocks.erase(index);
                 preparedDocument->layoutBlocks.erase(index);
             }
+            if (frame.releaseBlocksOutside)
+                frame.releaseBlocksOutside(retentionBegin, retentionEnd);
         }
 
         auto viewportTop = scrollOffset - viewportOverscan;
         auto viewportBottom = scrollOffset + resources.surfaceHeightDip + viewportOverscan;
-        for (auto blockIndex = firstIntersecting(viewportTop); blockIndex < frame.renderModel.blocks.size(); ++blockIndex)
+        auto viewportBegin = firstIntersecting(viewportTop);
+        auto viewportEnd = viewportBegin;
+        while (viewportEnd < frame.renderModel.blocks.size()
+            && preparedDocument->placements[viewportEnd].top <= viewportBottom)
+            ++viewportEnd;
+        if (frame.materializeBlocks) frame.materializeBlocks(viewportBegin, viewportEnd);
+        for (auto blockIndex = viewportBegin; blockIndex < viewportEnd; ++blockIndex)
         {
             auto const& placement = preparedDocument->placements[blockIndex];
-            if (placement.top > viewportBottom) break;
             auto const& block = frame.renderModel.blocks[blockIndex];
             auto& prepared = preparedDocument->blocks[blockIndex];
             auto top = placement.top - scrollOffset;

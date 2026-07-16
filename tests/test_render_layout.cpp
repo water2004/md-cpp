@@ -1203,6 +1203,66 @@ suite render_layout_tests = [] {
         == incremental.blocks.size())));
 };
 
+"virtualized_render_model_materializes_and_releases_only_the_requested_window"_test = [] {
+    auto parsed = parse_text(
+        1,
+        "# title\n\n"
+        "> quote\n> - nested **item**\n\n"
+        "| A | B |\n| --- | --- |\n| 1 | 2 |\n\n"
+        "```cpp\nauto answer = 42;\n```\n\n"
+        "tail $x + y$\n");
+    auto model = build_virtualized_render_model(
+        parsed.document,
+        parsed.outline,
+        parsed.symbols,
+        default_theme_profile());
+    expect(fatal(model.virtualized));
+    expect(fatal(bool(model.blocks.size() == parsed.document.root.children.size())));
+    expect(fatal(bool(model.materialized_block_indices.empty())));
+    expect(fatal(bool(std::ranges::all_of(model.blocks, [](auto const& block) {
+        return !block.materialized
+            && block.inline_items.empty()
+            && block.child_blocks.empty()
+            && block.source_key == 0u
+            && block.presentation_key != 0u;
+    }))));
+    expect(fatal(bool(model.blocks.front().text_heading_level == 1u)));
+    expect(fatal(bool(model.blocks.front().estimated_characters >= 5u)));
+
+    materialize_render_model_range(
+        model,
+        parsed.document,
+        parsed.symbols,
+        default_theme_profile(),
+        1,
+        4);
+    expect(fatal(bool(model.materialized_block_indices
+        == std::unordered_set<std::size_t>{1u, 2u, 3u})));
+    expect(fatal(bool(!model.blocks[0].materialized)));
+    for (auto index : {1u, 2u, 3u}) {
+        expect(fatal(model.blocks[index].materialized));
+        expect(fatal(bool(model.blocks[index].source_key != 0u)));
+    }
+    expect(fatal(bool(!model.blocks[1].inline_items.empty())));
+    expect(fatal(bool(!model.blocks[1].child_blocks.empty())));
+    expect(fatal(bool(!model.blocks[2].special().table_cells.empty())));
+    expect(fatal(bool(!model.blocks[3].special().code_text.empty())));
+
+    auto retained_key = model.blocks[2].presentation_key;
+    release_render_model_blocks_outside(
+        model,
+        parsed.document,
+        default_theme_profile(),
+        2,
+        3);
+    expect(fatal(bool(model.materialized_block_indices
+        == std::unordered_set<std::size_t>{2u})));
+    expect(fatal(bool(!model.blocks[1].materialized && model.blocks[1].inline_items.empty())));
+    expect(fatal(model.blocks[2].materialized));
+    expect(fatal(bool(model.blocks[2].presentation_key == retained_key)));
+    expect(fatal(bool(!model.blocks[3].materialized && model.blocks[3].special().code_text.empty())));
+};
+
 "generated_container_prefixes_anchor_carets_to_the_source_boundary"_test = [] {
     StubMeasurer measurer(8.0f);
     for (auto const& markdown : std::vector<std::string>{"> quoted\n", "> - nested\n"}) {

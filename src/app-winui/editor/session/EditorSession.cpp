@@ -283,13 +283,50 @@ namespace winrt::ElMd
         }
         else
         {
-            core_->renderModel = elmd::build_render_model(
-                core_->editor.document(),
-                core_->editor.outline(),
-                core_->editor.symbols(),
-                core_->theme);
+            core_->renderModel = ShouldVirtualizeRenderModel()
+                ? elmd::build_virtualized_render_model(
+                    core_->editor.document(),
+                    core_->editor.outline(),
+                    core_->editor.symbols(),
+                    core_->theme)
+                : elmd::build_render_model(
+                    core_->editor.document(),
+                    core_->editor.outline(),
+                    core_->editor.symbols(),
+                    core_->theme);
         }
         core_->renderModel.revision = revision_;
+    }
+
+    bool EditorSession::ShouldVirtualizeRenderModel() const
+    {
+        if (!core_ || core_->sourceEditor) return false;
+        auto const& document = core_->editor.document();
+        return document.root.children.size() > 4096
+            || document.cached_editable_order.size() > 8192;
+    }
+
+    void EditorSession::MaterializeRenderBlocks(std::size_t begin, std::size_t end)
+    {
+        if (!core_ || core_->sourceEditor || !core_->renderModel.virtualized) return;
+        elmd::materialize_render_model_range(
+            core_->renderModel,
+            core_->editor.document(),
+            core_->editor.symbols(),
+            core_->theme,
+            begin,
+            end);
+    }
+
+    void EditorSession::ReleaseRenderBlocksOutside(std::size_t begin, std::size_t end)
+    {
+        if (!core_ || core_->sourceEditor || !core_->renderModel.virtualized) return;
+        elmd::release_render_model_blocks_outside(
+            core_->renderModel,
+            core_->editor.document(),
+            core_->theme,
+            begin,
+            end);
     }
 
     bool EditorSession::IsSourceMode() const
@@ -726,6 +763,16 @@ namespace winrt::ElMd
         return core_->renderModel;
     }
 
+    elmd::RenderModel EditorSession::BuildPrintRenderModel() const
+    {
+        if (core_->sourceEditor) return core_->renderModel;
+        return elmd::build_render_model(
+            core_->editor.document(),
+            core_->editor.outline(),
+            core_->editor.symbols(),
+            core_->theme);
+    }
+
     std::optional<elmd::TextPosition> EditorSession::FootnoteDefinitionTarget(std::string_view label) const
     {
         if (core_->sourceEditor) return std::nullopt;
@@ -752,12 +799,20 @@ namespace winrt::ElMd
         return core_->baseDirectory;
     }
 
-    detail::EditorRenderFrame EditorSession::RenderFrame() const
+    detail::EditorRenderFrame EditorSession::RenderFrame()
     {
         return detail::EditorRenderFrame{
             core_->renderModel,
             Selection(),
             core_->baseDirectory,
+            core_->renderModel.virtualized
+                ? std::function<void(std::size_t, std::size_t)>{
+                    [this](auto begin, auto end) { MaterializeRenderBlocks(begin, end); }}
+                : std::function<void(std::size_t, std::size_t)>{},
+            core_->renderModel.virtualized
+                ? std::function<void(std::size_t, std::size_t)>{
+                    [this](auto begin, auto end) { ReleaseRenderBlocksOutside(begin, end); }}
+                : std::function<void(std::size_t, std::size_t)>{},
         };
     }
 }

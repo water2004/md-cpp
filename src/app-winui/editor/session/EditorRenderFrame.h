@@ -11,5 +11,7 @@ namespace winrt::ElMd::detail
         elmd::RenderModel const& renderModel;
         elmd::TextSelection selection;
         std::wstring const& baseDirectory;
+        std::function<void(std::size_t, std::size_t)> materializeBlocks;
+        std::function<void(std::size_t, std::size_t)> releaseBlocksOutside;
     };
 }

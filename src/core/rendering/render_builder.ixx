@@ -929,6 +929,91 @@ struct Builder {
         }
         return base(BlockStyle::paragraph(theme.layout));
     }
+
+    RenderBlock build_block_skeleton(const BlockNode& b) {
+        using BK = BlockKind;
+        auto style = [&]() {
+            switch (b.kind) {
+                case BK::Heading: return BlockStyle::heading(b.special().level, theme.layout);
+                case BK::BlockQuote: return BlockStyle::blockquote(theme.layout);
+                case BK::List:
+                case BK::TaskList: return BlockStyle::list(theme.layout);
+                case BK::CodeBlock: return BlockStyle::code(theme.layout);
+                case BK::MathBlock: return BlockStyle::math(theme.layout);
+                case BK::Table: return BlockStyle::table(theme.layout);
+                case BK::ImageBlock: return BlockStyle::image(theme.layout);
+                case BK::Toc: return BlockStyle::toc(theme.layout);
+                case BK::Callout: return BlockStyle::callout(b.special().callout_kind, theme.layout);
+                case BK::FootnoteDefinition: return BlockStyle::footnote(theme.layout);
+                case BK::Frontmatter: return BlockStyle::frontmatter(theme.layout);
+                case BK::ThematicBreak: return BlockStyle::thematic_break(theme.layout);
+                case BK::UnsupportedMarkup: return BlockStyle::unsupported(theme.layout);
+                case BK::Extension: return BlockStyle::extension(theme.layout);
+                default: return BlockStyle::paragraph(theme.layout);
+            }
+        }();
+        auto rendered = render_block_base(b.kind, b.id, block_local_length(b), std::move(style));
+        rendered.materialized = false;
+        if ((b.kind == BK::Paragraph || b.kind == BK::CalloutTitle || b.kind == BK::TableCell)
+            && b.inline_content.source.empty()
+            && b.special().opening_marker.empty()
+            && b.special().closing_marker.empty()) {
+            rendered.kind = RenderBlockKind::Blank;
+        }
+        if (b.kind == BK::Heading) rendered.text_heading_level = b.special().level;
+        if (b.kind == BK::CodeBlock || b.kind == BK::MathBlock) {
+            auto const& offsets = b.block_source.tree().content_to_source;
+            if (!offsets.empty()) {
+                rendered.content_span = {b.id, {offsets.front(), offsets.back()}};
+            }
+        }
+        if (b.kind == BK::ImageBlock) {
+            auto& special = rendered.ensure_special();
+            special.src = b.special().src;
+            special.alt = b.special().image_alt;
+            special.image_width = b.special().image_width;
+            special.image_height = b.special().image_height;
+        }
+
+        std::uint64_t characters = 0;
+        std::uint64_t line_breaks = 0;
+        auto count_text = [&](auto const& text) {
+            characters += text.size();
+            line_breaks += static_cast<std::uint64_t>(std::ranges::count(text, U'\n'));
+        };
+        auto visit = [&](auto& self, BlockNode const& block) -> void {
+            if (auto const* inline_document = editable_inline_document(block)) {
+                count_text(inline_document->source);
+                characters += block.special().opening_marker.size();
+                characters += block.special().closing_marker.size();
+            } else if (block.kind == BK::CodeBlock || block.kind == BK::MathBlock) {
+                count_text(block.block_source.tree().content);
+            } else if (block.kind == BK::Frontmatter
+                || block.kind == BK::UnsupportedMarkup
+                || block.kind == BK::LinkDefinition) {
+                characters += block.special().raw.size();
+                line_breaks += static_cast<std::uint64_t>(
+                    std::ranges::count(block.special().raw, '\n'));
+            } else if (block.kind == BK::ImageBlock) {
+                characters += block.special().image_alt.size();
+            }
+            characters += block.special().marker.size();
+            for (auto const& child : block.children) self(self, child);
+        };
+        visit(visit, b);
+        if (b.kind == BK::Table) {
+            // The height estimator treats this field as a row-count fallback
+            // until the full table projection is materialized.
+            line_breaks = (std::max)(line_breaks, static_cast<std::uint64_t>(b.children.size()));
+        }
+        rendered.estimated_characters = static_cast<std::uint32_t>((std::min)(
+            characters,
+            static_cast<std::uint64_t>((std::numeric_limits<std::uint32_t>::max)())));
+        rendered.estimated_line_breaks = static_cast<std::uint32_t>((std::min)(
+            line_breaks,
+            static_cast<std::uint64_t>((std::numeric_limits<std::uint32_t>::max)())));
+        return rendered;
+    }
 };
 
 inline std::uint64_t configure_render_dependencies(
@@ -1042,6 +1127,88 @@ inline RenderModel build_render_model(
     return model;
 }
 
+inline std::uint64_t render_skeleton_key(
+    NodeId id,
+    std::uint64_t document_dependency_key) {
+    render_key_detail::Hasher hash;
+    hash.scalar(document_dependency_key);
+    hash.scalar(id);
+    return hash.value;
+}
+
+inline RenderModel build_virtualized_render_model(
+    const EditorDocument& doc,
+    const Outline& outline,
+    DocumentSymbolIndex const& symbols,
+    ThemeProfile const& theme) {
+    Builder builder(theme);
+    auto dependency_key = configure_render_dependencies(builder, symbols);
+    std::vector<RenderBlock> blocks;
+    blocks.reserve(doc.root.children.size());
+    for (auto const& block : doc.root.children) {
+        auto rendered = builder.build_block_skeleton(block);
+        rendered.presentation_key = render_skeleton_key(block.id, dependency_key);
+        blocks.push_back(std::move(rendered));
+    }
+    auto model = finish_render_model(doc, outline, std::move(blocks));
+    model.document_dependency_key = dependency_key;
+    model.virtualized = true;
+    model.reused_block_count = model.blocks.size();
+    return model;
+}
+
+inline void materialize_render_model_range(
+    RenderModel& model,
+    const EditorDocument& doc,
+    DocumentSymbolIndex const& symbols,
+    ThemeProfile const& theme,
+    std::size_t begin,
+    std::size_t end) {
+    if (!model.virtualized || model.blocks.empty()) return;
+    begin = (std::min)(begin, model.blocks.size());
+    end = (std::min)((std::max)(begin, end), model.blocks.size());
+    Builder builder(theme);
+    auto dependency_key = configure_render_dependencies(builder, symbols);
+    for (auto index = begin; index < end; ++index) {
+        if (model.blocks[index].materialized) continue;
+        auto const& source = doc.root.children[index];
+        auto rendered = builder.build_block(source);
+        update_render_geometry_hints(rendered);
+        rendered.source_key = render_key_detail::source_key(source, dependency_key);
+        rendered.presentation_key = rendered.source_key;
+        model.blocks[index] = std::move(rendered);
+        model.materialized_block_indices.insert(index);
+    }
+}
+
+inline void release_render_model_blocks_outside(
+    RenderModel& model,
+    const EditorDocument& doc,
+    ThemeProfile const& theme,
+    std::size_t retain_begin,
+    std::size_t retain_end) {
+    if (!model.virtualized || model.materialized_block_indices.empty()) return;
+    retain_begin = (std::min)(retain_begin, model.blocks.size());
+    retain_end = (std::min)((std::max)(retain_begin, retain_end), model.blocks.size());
+    Builder builder(theme);
+    auto active = std::vector<std::size_t>(
+        model.materialized_block_indices.begin(),
+        model.materialized_block_indices.end());
+    for (auto index : active) {
+        if (index >= retain_begin && index < retain_end) continue;
+        if (index >= doc.root.children.size()) {
+            model.materialized_block_indices.erase(index);
+            continue;
+        }
+        auto skeleton = builder.build_block_skeleton(doc.root.children[index]);
+        skeleton.presentation_key = render_skeleton_key(
+            skeleton.id,
+            model.document_dependency_key);
+        model.blocks[index] = std::move(skeleton);
+        model.materialized_block_indices.erase(index);
+    }
+}
+
 inline RenderModel build_render_model_incremental(
     const EditorDocument& doc,
     const Outline& outline,
@@ -1099,6 +1266,7 @@ inline RenderModel build_render_model_incremental(
                 rendered.source_key = render_key_detail::source_key(block, dependency_key);
                 rendered.presentation_key = rendered.source_key;
                 previous.blocks[index] = std::move(rendered);
+                if (previous.virtualized) previous.materialized_block_indices.insert(index);
             }
             previous.revision = doc.revision;
             if (previous.outline.content_key == outline.content_key) {
@@ -1120,6 +1288,11 @@ inline RenderModel build_render_model_incremental(
         && update.structural_locality_known
         && (!update.changed_owners.empty() || !update.structural_anchors.empty())
         && dependency_key == previous.document_dependency_key;
+    if (previous.virtualized && update.structural && !trusted_structural_locality) {
+        auto model = build_virtualized_render_model(doc, outline, symbols, theme);
+        model.rebuilt_block_count = doc.root.children.size();
+        return model;
+    }
     if (trusted_structural_locality) {
         auto note_top_level = [&](NodeId id) {
             auto path = document_block_path(doc, id);
@@ -1181,6 +1354,14 @@ inline RenderModel build_render_model_incremental(
     model.reused_block_count = reused;
     model.incremental_update = trusted_structural_locality
         && top_level_identity_unchanged;
+    model.virtualized = previous.virtualized;
+    if (model.virtualized) {
+        for (std::size_t index = 0; index < model.blocks.size(); ++index) {
+            if (model.blocks[index].materialized) {
+                model.materialized_block_indices.insert(index);
+            }
+        }
+    }
     if (model.incremental_update) {
         model.changed_block_indices.reserve(changed_top_levels.size());
         for (std::size_t index = 0; index < doc.root.children.size(); ++index) {

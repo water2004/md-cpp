@@ -259,10 +259,10 @@ namespace winrt::ElMd
             // Export the exact document snapshot that existed when the picker
             // closed. Asset preparation may yield to the UI thread, but later
             // edits must not leak into this print job.
-            auto renderModel = state->session->RenderModel();
+            auto renderModel = state->session->BuildPrintRenderModel();
             auto baseDirectory = state->session->BaseDirectory();
             auto title = std::filesystem::path(displayName.c_str()).stem().wstring();
-            detail::EditorRenderFrame frame{renderModel, {}, baseDirectory};
+            detail::EditorRenderFrame frame{renderModel, {}, baseDirectory, {}, {}};
             auto outputPath = std::filesystem::path(file.Path().c_str());
             if (state->setStatus) state->setStatus(L"Preparing PDF…");
             winrt::apartment_context uiContext;

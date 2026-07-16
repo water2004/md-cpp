@@ -103,15 +103,19 @@ namespace winrt::ElMd
         std::size_t AcpOffset(elmd::TextPosition position) const;
         elmd::TextPosition PositionFromAcp(std::size_t offset, elmd::TextAffinity affinity = elmd::TextAffinity::Downstream) const;
         elmd::RenderModel const& RenderModel() const;
+        elmd::RenderModel BuildPrintRenderModel() const;
         std::optional<elmd::TextPosition> FootnoteDefinitionTarget(std::string_view label) const;
         std::optional<elmd::TextPosition> FirstFootnoteReferenceTarget(std::string_view label) const;
         std::string FootnotePreview(std::string_view label) const;
         std::wstring const& BaseDirectory() const;
-        detail::EditorRenderFrame RenderFrame() const;
+        detail::EditorRenderFrame RenderFrame();
 
     private:
         void RebuildCore();
         void RebuildRenderModel(elmd::EditorDocumentChange const* change = nullptr);
+        bool ShouldVirtualizeRenderModel() const;
+        void MaterializeRenderBlocks(std::size_t begin, std::size_t end);
+        void ReleaseRenderBlocksOutside(std::size_t begin, std::size_t end);
         void InvalidateBoundaryProjection();
         bool ApplyBoundaryProjectionChange(elmd::EditorDocumentChange const& change);
         detail::BoundaryProjection const& BoundaryProjection() const;
