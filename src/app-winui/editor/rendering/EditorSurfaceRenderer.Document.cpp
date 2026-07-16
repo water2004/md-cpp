@@ -84,7 +84,7 @@ namespace winrt::ElMd
 
     void EditorSurfaceRenderer::DrawDocument(detail::EditorRenderFrame const& frame)
     {
-        interactionMap.Clear(frame.renderModel.blocks.size());
+        interactionMap.Clear();
         nonInteractiveRegions.clear();
         auto padding = (std::min)(styleSheet.horizontalPadding, (std::max)(12.0f, resources.surfaceWidthDip * 0.06f));
         auto documentLeft = padding;

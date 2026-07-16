@@ -83,7 +83,7 @@ namespace winrt::ElMd
 
     struct EditorInteractionMap
     {
-        void Clear(std::size_t blockCapacity);
+        void Clear();
         void AddBlockLines(std::size_t blockIndex);
         void AddTableCellLines(std::size_t blockIndex, std::size_t tableIndex, std::size_t cellIndex);
         std::optional<elmd::TextPosition> HitTest(float x, float y) const;

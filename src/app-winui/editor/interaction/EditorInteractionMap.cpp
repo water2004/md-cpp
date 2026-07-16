@@ -110,7 +110,7 @@ namespace winrt::ElMd
         }
     }
 
-    void EditorInteractionMap::Clear(std::size_t blockCapacity)
+    void EditorInteractionMap::Clear()
     {
         blocks.clear();
         lines.clear();
@@ -118,7 +118,6 @@ namespace winrt::ElMd
         mathHits.clear();
         taskCheckboxHits.clear();
         footnoteHits.clear();
-        blocks.reserve(blockCapacity);
     }
 
     void EditorInteractionMap::AddBlockLines(std::size_t blockIndex)
