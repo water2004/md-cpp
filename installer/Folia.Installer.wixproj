@@ -1,4 +1,12 @@
-<Project Sdk="WixToolset.Sdk/4.0.6">
+<Project>
+  <PropertyGroup>
+    <FoliaInstallerIntermediatePath Condition="'$(FoliaInstallerIntermediatePath)'==''">$(MSBuildThisFileDirectory)..\build\installer\obj\</FoliaInstallerIntermediatePath>
+    <BaseIntermediateOutputPath>$(FoliaInstallerIntermediatePath)</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(FoliaInstallerIntermediatePath)</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+
+  <Import Project="Sdk.props" Sdk="WixToolset.Sdk" Version="4.0.6" />
+
   <PropertyGroup>
     <OutputType>Package</OutputType>
     <Platform>x64</Platform>
@@ -20,4 +28,6 @@
     <PackageReference Include="WixToolset.UI.wixext" Version="4.0.6" />
     <Compile Include="$(FoliaGeneratedPayload)" Link="GeneratedPayload.wxs" />
   </ItemGroup>
+
+  <Import Project="Sdk.targets" Sdk="WixToolset.Sdk" Version="4.0.6" />
 </Project>
