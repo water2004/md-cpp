@@ -219,14 +219,26 @@
             <Button
                 x:Name="CancelOperationButton"
                 Grid.Column="2"
-                Width="28"
-                Height="28"
-                Padding="4"
+                Width="16"
+                Height="16"
+                MinWidth="16"
+                MinHeight="16"
+                Margin="0,0,8,0"
+                Padding="0"
                 VerticalAlignment="Center"
+                Background="Black"
+                BorderThickness="0"
+                CornerRadius="8"
+                HorizontalContentAlignment="Center"
                 IsTabStop="False"
                 ToolTipService.ToolTip="Cancel operation"
+                VerticalContentAlignment="Center"
                 Visibility="Collapsed">
-                <SymbolIcon Symbol="Cancel"/>
+                <FontIcon
+                    FontFamily="Segoe Fluent Icons"
+                    FontSize="8"
+                    Foreground="White"
+                    Glyph="&#xE711;"/>
             </Button>
             <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="14">
                 <TextBlock

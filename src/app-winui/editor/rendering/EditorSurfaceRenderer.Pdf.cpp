@@ -163,6 +163,15 @@ namespace winrt::ElMd
                     [](PreparedDocument::Block const& block) { return block.pendingMath; });
                 if (pendingMath || renderCache.HasPendingImages())
                 {
+                    // A completed MathJax/image request advances the renderer's
+                    // resource generations, but a retained print preparation
+                    // still carries its old pending flags. Recreate the print
+                    // preparation on the next step so every top-level block
+                    // observes the newly available resources. The asset caches
+                    // themselves remain intact.
+                    preparedDocument.reset();
+                    interactionMap = {};
+                    nonInteractiveRegions.clear();
                     finishStep();
                     return {PdfExportResult::WaitingForAssets, 0, 0};
                 }
