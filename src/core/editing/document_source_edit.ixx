@@ -274,7 +274,10 @@ inline std::optional<DocumentTransaction> document_delete_backward(EditorDocumen
         operations = std::move(removed->operations);
     } else if (target.source_offset > 0) {
         if (auto* owner = document_edit_detail::find_inline_owner(after.root, target.container_id)) {
-            auto range = inline_backward_delete_range(*owner, target.source_offset);
+            auto range = inline_backward_delete_range(
+                *owner,
+                target.source_offset,
+                selected_block && selected_block->kind == BlockKind::TableCell);
             if (!range) return std::nullopt;
             source_edit = document_edit_detail::edit_inline(after, target.container_id, *range, {}, allocator);
             if (!source_edit) return std::nullopt;
@@ -342,7 +345,10 @@ inline std::optional<DocumentTransaction> document_delete_forward(EditorDocument
     const auto length = document_edit_detail::editable_length(after, target.container_id); if (!length) return std::nullopt;
     if (target.source_offset < *length) {
         if (auto* owner = document_edit_detail::find_inline_owner(after.root, target.container_id)) {
-            auto range = inline_forward_delete_range(*owner, target.source_offset);
+            auto range = inline_forward_delete_range(
+                *owner,
+                target.source_offset,
+                selected_block && selected_block->kind == BlockKind::TableCell);
             if (!range) return std::nullopt;
             source_edit = document_edit_detail::edit_inline(after, target.container_id, *range, {}, allocator);
             if (!source_edit) return std::nullopt;

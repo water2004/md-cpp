@@ -82,6 +82,21 @@ suite inline_cst_tests = [] {
     }
 };
 
+"semantic_children_remain_editable_inside_unclosed_delimiters"_test = [] {
+    const auto source = std::u32string{U"p**<br>abcq"};
+    auto document = InlineDocument{source, parse_inline(source, test_context())};
+    const auto* incomplete = first_node(document.tree, InlineCstKind::Incomplete);
+    const auto* hard_break = first_node(document.tree, InlineCstKind::HardBreak);
+    expect(fatal(bool(incomplete != nullptr)));
+    expect(fatal(bool(hard_break != nullptr)));
+    if (!hard_break) return;
+    expect(fatal(bool(source.substr(hard_break->range.start, hard_break->range.length()) == U"<br>")));
+    const auto deletion = inline_backward_delete_range(document, hard_break->range.end);
+    expect(fatal(bool(deletion.has_value())));
+    if (!deletion) return;
+    expect(fatal(bool(*deletion == hard_break->range)));
+};
+
 "original marker and link spellings survive"_test = [] {
     const auto stars_source = std::u32string{U"**abc**"};
     const auto underscores_source = std::u32string{U"__abc__"};

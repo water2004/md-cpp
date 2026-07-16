@@ -228,20 +228,26 @@ struct Parser {
         std::size_t content_start = pos + opener.size();
         std::size_t closer = find_closer(content_start, opener);
         if (closer == npos) {
-            // Incomplete: opener + rest of the source on this construct. We
-            // consume the opener and treat the remainder as a single Incomplete
-            // node (its own children parsed recursively is not needed for
-            // losslessness; the range covers everything verbatim).
+            // Keep the incomplete delimiter as the structural owner, but still
+            // parse its content. Editing must be able to recognize semantic
+            // children such as a table-cell <br> even while the surrounding
+            // emphasis/strong/strike delimiter is temporarily unclosed.
             flush_text_to(out, run_start, start);
             pos = content_start;
             std::size_t end = find_line_or_doc_end(pos);
             if (end > pos) pos = end;
+            Parser inner{src, ctx};
+            inner.counter = counter;
+            inner.pos = content_start;
+            auto children = inner.parse_until(pos);
+            counter = inner.counter;
             InlineCstNode node;
             node.id = next_id();
             node.kind = InlineCstKind::Incomplete;
             node.status = ParseStatus::MissingCloser;
             node.range = {start, pos};
             node.delim = {{start, pos}, {start, content_start}, {content_start, pos}, std::nullopt};
+            node.children = std::move(children);
             out.push_back(std::move(node));
             run_start = pos;
             return true;

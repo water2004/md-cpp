@@ -26,6 +26,26 @@ inline std::optional<SourceRange> adjacent_hard_break(
     return std::nullopt;
 }
 
+inline std::optional<SourceRange> adjacent_explicit_break_lexeme(
+    std::u32string_view source,
+    std::size_t offset,
+    bool backward) {
+    constexpr std::u32string_view marker = U"<br>";
+    const auto first = offset > marker.size() ? offset - marker.size() : 0u;
+    const auto last = (std::min)(offset, source.size() >= marker.size()
+        ? source.size() - marker.size() : 0u);
+    for (auto start = first; start <= last && source.size() >= marker.size(); ++start) {
+        const auto end = start + marker.size();
+        const bool adjacent = backward
+            ? start < offset && offset <= end
+            : start <= offset && offset < end;
+        if (adjacent && source.substr(start, marker.size()) == marker) {
+            return SourceRange{start, end};
+        }
+    }
+    return std::nullopt;
+}
+
 inline std::optional<SourceRange> translated_untouched_range(
     SourceRange range,
     const TextEdit& edit) {
@@ -103,24 +123,38 @@ inline void reconcile_tokens(
 
 inline std::optional<SourceRange> inline_backward_delete_range(
     const InlineDocument& document,
-    std::size_t offset) {
+    std::size_t offset,
+    bool explicit_break_lexemes_are_semantic = false) {
     offset = (std::min)(offset, document.source.size());
     if (offset == 0) return std::nullopt;
     if (auto hard_break = inline_source_edit_detail::adjacent_hard_break(
             document.tree.nodes, offset, true)) {
         return hard_break;
     }
+    if (explicit_break_lexemes_are_semantic) {
+        if (auto hard_break = inline_source_edit_detail::adjacent_explicit_break_lexeme(
+                document.source, offset, true)) {
+            return hard_break;
+        }
+    }
     return SourceRange{offset - 1, offset};
 }
 
 inline std::optional<SourceRange> inline_forward_delete_range(
     const InlineDocument& document,
-    std::size_t offset) {
+    std::size_t offset,
+    bool explicit_break_lexemes_are_semantic = false) {
     offset = (std::min)(offset, document.source.size());
     if (offset == document.source.size()) return std::nullopt;
     if (auto hard_break = inline_source_edit_detail::adjacent_hard_break(
             document.tree.nodes, offset, false)) {
         return hard_break;
+    }
+    if (explicit_break_lexemes_are_semantic) {
+        if (auto hard_break = inline_source_edit_detail::adjacent_explicit_break_lexeme(
+                document.source, offset, false)) {
+            return hard_break;
+        }
     }
     return SourceRange{offset, offset + 1};
 }
