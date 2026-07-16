@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package Name="Folia"
+           Manufacturer="water2004"
+           Version="$(var.ProductVersion)"
+           Language="1033"
+           UpgradeCode="BFEA4C2E-729A-4D77-9EA3-A8EA8B8C30F5"
+           Scope="perUser"
+           Compressed="yes">
+    <SummaryInformation Description="Folia Markdown editor" Manufacturer="water2004" />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Folia is already installed." />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="LOCALPROGRAMS" Name="Programs">
+        <Component Id="LocalProgramsCleanupComponent" Guid="86CB1882-B330-49D7-964B-E4C5858EFA9B" Bitness="always64">
+          <RemoveFolder Id="RemoveLocalProgramsFolder" On="uninstall" />
+          <RegistryValue Root="HKCU" Key="Software\water2004\Folia\Installer" Name="LocalProgramsFolder" Type="integer" Value="1" KeyPath="yes" />
+        </Component>
+        <Directory Id="INSTALLFOLDER" Name="Folia">
+          <Component Id="InstallFolderCleanupComponent" Guid="DBAF6E84-02A9-4F03-967B-5F57CDA33652" Bitness="always64">
+            <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+            <RegistryValue Root="HKCU" Key="Software\water2004\Folia\Installer" Name="InstallFolder" Type="integer" Value="1" KeyPath="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+      <Directory Id="FOLIADATADIR" Name="Folia">
+        <Component Id="DataFolderCleanupComponent" Guid="A21E1701-41CE-4D84-9503-D13948007431" Bitness="always64">
+          <RemoveFolder Id="RemoveDataFolder" On="uninstall" />
+          <RegistryValue Root="HKCU" Key="Software\water2004\Folia\Installer" Name="DataFolder" Type="integer" Value="1" KeyPath="yes" />
+        </Component>
+        <Directory Id="ASSETFOLDER" Name="Assets">
+          <Component Id="AssetsFolderCleanupComponent" Guid="5FF0447F-7D13-4C98-97F5-C4EBB2C17B90" Bitness="always64">
+            <RemoveFolder Id="RemoveAssetsFolder" On="uninstall" />
+            <RegistryValue Root="HKCU" Key="Software\water2004\Folia\Installer" Name="AssetsFolder" Type="integer" Value="1" KeyPath="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="FoliaProgramMenu" Name="Folia">
+        <Component Id="StartMenuShortcutComponent" Guid="*" Bitness="always64">
+          <Shortcut Id="StartMenuShortcut"
+                    Name="Folia"
+                    Description="Folia Markdown editor"
+                    Target="[INSTALLFOLDER]Folia.exe"
+                    WorkingDirectory="INSTALLFOLDER"
+                    Icon="FoliaProductIcon" />
+          <RemoveFolder Id="RemoveFoliaProgramMenu" On="uninstall" />
+          <RegistryValue Root="HKCU"
+                         Key="Software\water2004\Folia\Installer"
+                         Name="StartMenuShortcut"
+                         Type="integer"
+                         Value="1"
+                         KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="FoliaFeature" Title="Folia" Level="1">
+      <ComponentGroupRef Id="ProgramPayload" />
+      <ComponentGroupRef Id="AssetPayload" />
+      <ComponentRef Id="StartMenuShortcutComponent" />
+      <ComponentRef Id="LocalProgramsCleanupComponent" />
+      <ComponentRef Id="InstallFolderCleanupComponent" />
+      <ComponentRef Id="DataFolderCleanupComponent" />
+      <ComponentRef Id="AssetsFolderCleanupComponent" />
+    </Feature>
+
+    <Icon Id="FoliaProductIcon" SourceFile="$(var.ProductIcon)" />
+    <Property Id="ARPPRODUCTICON" Value="FoliaProductIcon" />
+    <Property Id="ARPCONTACT" Value="water2004" />
+
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
+  </Package>
+</Wix>

@@ -1,0 +1,23 @@
+<Project Sdk="WixToolset.Sdk/4.0.6">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <Platform>x64</Platform>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <Cultures>en-US</Cultures>
+    <OutputName>Folia-$(FoliaProductVersion)-x64</OutputName>
+    <OutputPath>$(FoliaInstallerOutputPath)</OutputPath>
+    <IntermediateOutputPath>$(FoliaInstallerIntermediatePath)</IntermediateOutputPath>
+    <!--
+      ICE03 overflows the MSI language column for the Windows App SDK's
+      multilingual Microsoft.UI.Xaml binaries. ICE91 does not account for
+      this package's fixed per-user scope. Both are known false positives.
+    -->
+    <SuppressIces>$(SuppressIces);ICE03;ICE91</SuppressIces>
+    <DefineConstants>$(DefineConstants);ProductVersion=$(FoliaProductVersion);LicenseRtf=$(FoliaLicenseRtf);ProductIcon=$(FoliaProductIcon)</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="4.0.6" />
+    <Compile Include="$(FoliaGeneratedPayload)" Link="GeneratedPayload.wxs" />
+  </ItemGroup>
+</Project>
