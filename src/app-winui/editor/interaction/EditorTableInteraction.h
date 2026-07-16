@@ -20,6 +20,8 @@ namespace winrt::ElMd
         EditorTableActionKind kind = EditorTableActionKind::InsertRow;
         elmd::TextPosition sourcePosition;
         std::size_t index = 0;
+
+        bool operator==(EditorTableAction const&) const = default;
     };
 
     struct EditorTableInteraction

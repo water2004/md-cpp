@@ -47,6 +47,8 @@ namespace winrt::ElMd
         ResetCaretGoal resetCaretGoal_;
         bool selecting_ = false;
         std::optional<std::string> hoverTooltip_;
+        std::optional<elmd::TextPosition> hoverTaskCheckbox_;
+        std::optional<EditorSurfaceRenderer::TableAction> hoverTableAction_;
         elmd::TextPosition anchor_;
         std::optional<EditorSurfaceRenderer::TableAction> tableDrag_;
         std::optional<std::size_t> tableDropIndex_;

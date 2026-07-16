@@ -1,0 +1,63 @@
+#include <string>
+
+#include "elmd_test.hpp"
+import elmd.core.ast;
+import elmd.core.block_tree;
+import elmd.core.document_interaction;
+import elmd.core.editor;
+import elmd.core.text_edit;
+
+using namespace elmd;
+using namespace boost::ut;
+
+namespace {
+
+const BlockNode* first_block(const Editor& editor, BlockKind kind) {
+    const BlockNode* result = nullptr;
+    walk_blocks(editor.document().root, [&](const BlockNode& block) {
+        if (!result && block.kind == kind) result = &block;
+    });
+    return result;
+}
+
+} // namespace
+
+suite document_interaction_tests = [] {
+
+"link interaction is resolved from one inline owner"_test = [] {
+    Editor editor("prefix [label](https://example.com \"Link title\") suffix");
+    const auto* paragraph = first_block(editor, BlockKind::Paragraph);
+    expect(fatal(paragraph != nullptr));
+    auto interaction = document_interaction_at(
+        editor.document(),
+        {paragraph->id, 10, TextAffinity::Downstream});
+    expect(fatal(interaction.has_value()));
+    expect(interaction->link == std::optional<std::string>{"https://example.com"});
+    expect(interaction->tooltip == std::optional<std::string>{"Link title"});
+};
+
+"nested image keeps its parent link and own tooltip"_test = [] {
+    Editor editor("prefix [![image alt](asset.png)](https://example.com) suffix");
+    const auto* paragraph = first_block(editor, BlockKind::Paragraph);
+    expect(fatal(paragraph != nullptr));
+    auto interaction = document_interaction_at(
+        editor.document(),
+        {paragraph->id, 12, TextAffinity::Downstream});
+    expect(fatal(interaction.has_value()));
+    expect(interaction->link == std::optional<std::string>{"https://example.com"});
+    expect(interaction->tooltip == std::optional<std::string>{"image alt"});
+};
+
+"block image interaction is local"_test = [] {
+    Editor editor("[![image alt](asset.png \"Image title\")](https://example.com)\n");
+    const auto* image = first_block(editor, BlockKind::ImageBlock);
+    expect(fatal(image != nullptr));
+    auto interaction = document_interaction_at(
+        editor.document(),
+        {image->id, 0, TextAffinity::Downstream});
+    expect(fatal(interaction.has_value()));
+    expect(interaction->link == std::optional<std::string>{"https://example.com"});
+    expect(interaction->tooltip == std::optional<std::string>{"Image title"});
+};
+
+};

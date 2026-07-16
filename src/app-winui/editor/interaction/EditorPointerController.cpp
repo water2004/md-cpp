@@ -37,6 +37,8 @@ namespace winrt::ElMd
         }
         selecting_ = false;
         hoverTooltip_.reset();
+        hoverTaskCheckbox_.reset();
+        hoverTableAction_.reset();
         tableDrag_.reset();
         tableDropIndex_.reset();
         executeCommand_ = {};
@@ -137,6 +139,11 @@ namespace winrt::ElMd
     {
         if (!session_ || !renderer_ || !surface_) return;
         auto point = args.GetCurrentPoint(surface_).Position();
+        auto taskCheckbox = renderer_->TaskCheckboxAt(static_cast<float>(point.X), static_cast<float>(point.Y));
+        auto tableAction = renderer_->TableActionAt(static_cast<float>(point.X), static_cast<float>(point.Y));
+        auto hoverVisualChanged = taskCheckbox != hoverTaskCheckbox_ || tableAction != hoverTableAction_;
+        hoverTaskCheckbox_ = std::move(taskCheckbox);
+        hoverTableAction_ = std::move(tableAction);
         renderer_->UpdatePointer(static_cast<float>(point.X), static_cast<float>(point.Y));
         if (!selecting_ && !tableDrag_)
         {
@@ -161,7 +168,7 @@ namespace winrt::ElMd
         }
         if (!selecting_)
         {
-            if (render_) render_();
+            if (hoverVisualChanged && render_) render_();
             return;
         }
         auto hit = renderer_->HitTest(static_cast<float>(point.X), static_cast<float>(point.Y));
@@ -212,6 +219,8 @@ namespace winrt::ElMd
     void EditorPointerController::PointerExited()
     {
         hoverTooltip_.reset();
+        hoverTaskCheckbox_.reset();
+        hoverTableAction_.reset();
         if (surface_) winrt::Microsoft::UI::Xaml::Controls::ToolTipService::SetToolTip(surface_, nullptr);
         if (!tableDrag_ && renderer_)
         {
@@ -261,57 +270,14 @@ namespace winrt::ElMd
     std::optional<std::string> EditorPointerController::LinkAtPosition(elmd::TextPosition position) const
     {
         if (!session_) return std::nullopt;
-        auto scanItems = [&](auto& self, auto const& items) -> std::optional<std::string>
-        {
-            for (auto const& item : items)
-            {
-                if (item.kind == elmd::InlineRenderItem::Kind::Link && item.source_span.container_id == position.container_id && item.source_span.source_range.covers(position.source_offset)) return item.href;
-                if (!item.children.empty()) if (auto nested = self(self, item.children)) return nested;
-            }
-            return std::nullopt;
-        };
-        auto scanBlock = [&](auto& self, auto const& block) -> std::optional<std::string>
-        {
-            if (block.kind == elmd::RenderBlockKind::Image && block.link && block.source_span.container_id == position.container_id) return *block.link;
-            if (auto link = scanItems(scanItems, block.inline_items)) return link;
-            for (auto const& cell : block.table_cells) if (auto link = scanItems(scanItems, cell)) return link;
-            for (auto const& child : block.child_blocks) if (auto link = self(self, child)) return link;
-            return std::nullopt;
-        };
-        for (auto const& block : session_->RenderModel().blocks) if (auto link = scanBlock(scanBlock, block)) return link;
-        return std::nullopt;
+        auto interaction = session_->InteractionAt(position);
+        return interaction ? std::move(interaction->link) : std::nullopt;
     }
 
     std::optional<std::string> EditorPointerController::TooltipAtPosition(elmd::TextPosition position) const
     {
         if (!session_) return std::nullopt;
-        auto scanItems = [&](auto& self, auto const& items) -> std::optional<std::string>
-        {
-            for (auto const& item : items)
-            {
-                if (item.source_span.container_id == position.container_id && item.source_span.source_range.covers(position.source_offset))
-                {
-                    if (item.title && !item.title->empty()) return *item.title;
-                    if (item.kind == elmd::InlineRenderItem::Kind::Link && !item.href.empty()) return item.href;
-                    if (item.kind == elmd::InlineRenderItem::Kind::Image && !item.alt.empty()) return item.alt;
-                }
-                if (!item.children.empty()) if (auto nested = self(self, item.children)) return nested;
-            }
-            return std::nullopt;
-        };
-        auto scanBlock = [&](auto& self, auto const& block) -> std::optional<std::string>
-        {
-            if (block.kind == elmd::RenderBlockKind::Image && block.source_span.container_id == position.container_id)
-            {
-                if (block.title && !block.title->empty()) return *block.title;
-                if (!block.alt.empty()) return block.alt;
-            }
-            if (auto tooltip = scanItems(scanItems, block.inline_items)) return tooltip;
-            for (auto const& cell : block.table_cells) if (auto tooltip = scanItems(scanItems, cell)) return tooltip;
-            for (auto const& child : block.child_blocks) if (auto tooltip = self(self, child)) return tooltip;
-            return std::nullopt;
-        };
-        for (auto const& block : session_->RenderModel().blocks) if (auto tooltip = scanBlock(scanBlock, block)) return tooltip;
-        return std::nullopt;
+        auto interaction = session_->InteractionAt(position);
+        return interaction ? std::move(interaction->tooltip) : std::nullopt;
     }
 }

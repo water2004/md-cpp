@@ -10,6 +10,12 @@ import elmd.core.theme;
 
 namespace winrt::ElMd
 {
+    struct EditorDocumentInteraction
+    {
+        std::optional<std::string> link;
+        std::optional<std::string> tooltip;
+    };
+
     namespace detail
     {
         struct BoundaryOffsetIndex
@@ -94,6 +100,7 @@ namespace winrt::ElMd
         std::optional<detail::BoundaryTextChange> const& LastBoundaryTextChange() const;
         std::u32string const& TextView() const;
         std::optional<std::u32string> EditableSource(elmd::NodeId id) const;
+        std::optional<EditorDocumentInteraction> InteractionAt(elmd::TextPosition position) const;
         elmd::TextSelection Selection() const;
         std::size_t AcpOffset(elmd::TextPosition position) const;
         elmd::TextPosition PositionFromAcp(std::size_t offset, elmd::TextAffinity affinity = elmd::TextAffinity::Downstream) const;

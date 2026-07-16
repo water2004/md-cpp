@@ -253,6 +253,9 @@
     <ClCompile Include="..\core\query\document_text.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\core\query\document_interaction.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\core\editing\editor.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>

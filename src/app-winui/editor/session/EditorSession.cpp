@@ -3,6 +3,7 @@
 
 import elmd.core.editor;
 import elmd.core.document_text;
+import elmd.core.document_interaction;
 import elmd.core.document_footnotes;
 import elmd.core.render_builder;
 import elmd.core.render_model;
@@ -637,6 +638,17 @@ namespace winrt::ElMd
             return found->text;
         }
         return core_->editor.editable_source(id);
+    }
+
+    std::optional<EditorDocumentInteraction> EditorSession::InteractionAt(elmd::TextPosition position) const
+    {
+        if (core_->sourceEditor) return std::nullopt;
+        auto interaction = elmd::document_interaction_at(core_->editor.document(), position);
+        if (!interaction) return std::nullopt;
+        return EditorDocumentInteraction{
+            std::move(interaction->link),
+            std::move(interaction->tooltip),
+        };
     }
 
     elmd::TextSelection EditorSession::Selection() const
