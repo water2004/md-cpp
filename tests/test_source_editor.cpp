@@ -78,6 +78,43 @@ suite source_editor_tests = [] {
     expect(fatal(bool(editor.lines().back().presentation_key == after_key)));
 };
 
+"source line repair reports only the converged edited interval"_test = [] {
+    std::u32string source;
+    for (std::size_t index = 0; index < 4096; ++index) {
+        source += U"line ";
+        for (auto digit : std::to_string(index)) source.push_back(static_cast<char32_t>(digit));
+        if (index + 1 != 4096) source.push_back(U'\n');
+    }
+    SourceEditor editor(std::move(source));
+    auto before_id = editor.lines()[2047].id;
+    auto edited_id = editor.lines()[2048].id;
+    auto after_id = editor.lines()[2049].id;
+    editor.set_selection(SourceSelection::caret(editor.lines()[2048].source_start + 2));
+    expect(fatal(editor.insert_text(U"X")));
+    auto const& change = editor.last_line_change();
+    expect(fatal(bool(change.old_start == 2048u)));
+    expect(fatal(bool(change.old_end == 2049u)));
+    expect(fatal(bool(change.new_start == 2048u)));
+    expect(fatal(bool(change.new_end == 2049u)));
+    expect(fatal(bool(change.old_line_count == 4096u)));
+    expect(fatal(bool(change.new_line_count == 4096u)));
+    expect(fatal(bool(editor.lines()[2047].id == before_id)));
+    expect(fatal(bool(editor.lines()[2048].id == edited_id)));
+    expect(fatal(bool(editor.lines()[2049].id == after_id)));
+};
+
+"source line repair follows fence state only to its convergence point"_test = [] {
+    SourceEditor editor(U"plain\nbody\ntail");
+    editor.set_selection(SourceSelection::caret(0));
+    expect(fatal(editor.insert_text(U"```\ninside\n```\n")));
+    auto const& change = editor.last_line_change();
+    expect(fatal(bool(change.new_start == 0u)));
+    expect(fatal(bool(change.new_end == 4u)));
+    expect(fatal(bool(editor.lines()[1].code_content)));
+    expect(fatal(bool(!editor.lines()[2].code_content)));
+    expect(fatal(bool(!editor.lines()[3].code_content)));
+};
+
 "source code presentation invalidates one fenced context rather than the document"_test = [] {
     SourceEditor editor(U"before\n```cpp\n/* first\nstill comment */\n```\nafter");
     auto before = build_source_render_model(editor);

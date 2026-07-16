@@ -62,6 +62,15 @@ struct SourceEditTransaction {
     SourceSelection selection_after;
 };
 
+struct SourceLineChange {
+    std::size_t old_start = 0;
+    std::size_t old_end = 0;
+    std::size_t new_start = 0;
+    std::size_t new_end = 0;
+    std::size_t old_line_count = 0;
+    std::size_t new_line_count = 0;
+};
+
 namespace source_editor_detail {
 
 inline void add_style(std::vector<SourceStyleSpan>& styles, SourceRange range, SourceSyntaxKind kind) {
@@ -253,6 +262,7 @@ public:
     bool has_undo() const { return !undo_.empty(); }
     bool has_redo() const { return !redo_.empty(); }
     std::vector<SourceEditTransaction> const& committed_edits() const { return committed_edits_; }
+    SourceLineChange const& last_line_change() const { return last_line_change_; }
 
     void set_selection(SourceSelection selection) {
         selection.anchor = (std::min)(selection.anchor, source_.size());
@@ -390,6 +400,7 @@ private:
     std::vector<SourceEditTransaction> committed_edits_;
     std::uint64_t revision_ = 1;
     std::uint64_t next_line_id_ = 0xf000000000000001ull;
+    SourceLineChange last_line_change_{};
 
     void move_to_(std::size_t offset, bool extend) {
         offset = (std::min)(offset, source_.size());
@@ -471,7 +482,12 @@ private:
     }
 
     void apply_(SourceEditTransaction const& transaction, bool forward) {
-        auto old_lines = lines_;
+        auto old_start = transaction.range_before.start;
+        auto old_length = forward ? transaction.removed.size() : transaction.inserted.size();
+        auto new_length = forward ? transaction.inserted.size() : transaction.removed.size();
+        auto first_line = line_index_for_offset_(old_start);
+        auto last_line = line_index_for_offset_(old_start + old_length);
+        auto old_lines = std::move(lines_);
         if (forward) {
             source_.replace(transaction.range_before.start, transaction.removed.size(), transaction.inserted);
             selection_ = transaction.selection_after;
@@ -480,7 +496,105 @@ private:
             selection_ = transaction.selection_before;
         }
         ++revision_;
-        rebuild_lines_(std::move(old_lines));
+        rebuild_lines_after_edit_(
+            std::move(old_lines),
+            first_line,
+            last_line,
+            static_cast<std::ptrdiff_t>(new_length) - static_cast<std::ptrdiff_t>(old_length));
+    }
+
+    void rebuild_lines_after_edit_(
+        std::vector<SourceLine> old_lines,
+        std::size_t first_line,
+        std::size_t last_line,
+        std::ptrdiff_t source_delta) {
+        auto old_line_count = old_lines.size();
+        first_line = (std::min)(first_line, old_line_count - 1);
+        last_line = (std::min)((std::max)(last_line, first_line), old_line_count - 1);
+        auto old_suffix = last_line + 1;
+
+        std::vector<SourceLine> fresh;
+        fresh.reserve(old_line_count + (source_delta > 0 ? 1u : 0u));
+        for (std::size_t index = 0; index < first_line; ++index)
+            fresh.push_back(std::move(old_lines[index]));
+
+        SourceLineState state = fresh.empty() ? SourceLineState{} : fresh.back().state_after;
+        auto cursor = old_lines[first_line].source_start;
+        auto first_generated = true;
+        auto shifted_start = [&](SourceLine const& line) {
+            return static_cast<std::size_t>(
+                static_cast<std::ptrdiff_t>(line.source_start) + source_delta);
+        };
+        auto parse_line = [&](std::size_t start) {
+            SourceLine line;
+            line.source_start = start;
+            auto newline = source_.find(U'\n', start);
+            line.has_newline = newline != std::u32string::npos;
+            auto end = line.has_newline ? newline : source_.size();
+            line.text = source_.substr(start, end - start);
+            return line;
+        };
+        auto finish_with_suffix = [&](std::size_t suffix) {
+            auto new_end = fresh.size();
+            for (auto index = suffix; index < old_lines.size(); ++index) {
+                auto line = std::move(old_lines[index]);
+                line.source_start = shifted_start(line);
+                fresh.push_back(std::move(line));
+            }
+            last_line_change_ = {
+                first_line,
+                suffix,
+                first_line,
+                new_end,
+                old_line_count,
+                fresh.size(),
+            };
+            lines_ = std::move(fresh);
+        };
+
+        while (true) {
+            while (old_suffix < old_lines.size() && shifted_start(old_lines[old_suffix]) < cursor)
+                ++old_suffix;
+            if (old_suffix < old_lines.size() && shifted_start(old_lines[old_suffix]) == cursor) {
+                auto candidate = parse_line(cursor);
+                auto const& previous = old_lines[old_suffix];
+                if (candidate.text == previous.text
+                    && candidate.has_newline == previous.has_newline
+                    && previous.state_before == state) {
+                    finish_with_suffix(old_suffix);
+                    return;
+                }
+            }
+
+            auto line = parse_line(cursor);
+            if (old_suffix < old_lines.size()
+                && shifted_start(old_lines[old_suffix]) == cursor
+                && line.text == old_lines[old_suffix].text
+                && line.has_newline == old_lines[old_suffix].has_newline) {
+                line.id = old_lines[old_suffix].id;
+                ++old_suffix;
+            } else if (first_generated) {
+                line.id = old_lines[first_line].id;
+            } else {
+                line.id = NodeId{next_line_id_++};
+            }
+            first_generated = false;
+            source_editor_detail::style_line(line, state);
+            auto has_newline = line.has_newline;
+            cursor = line.source_end() + (has_newline ? 1u : 0u);
+            fresh.push_back(std::move(line));
+            if (!has_newline) break;
+        }
+
+        last_line_change_ = {
+            first_line,
+            old_lines.size(),
+            first_line,
+            fresh.size(),
+            old_line_count,
+            fresh.size(),
+        };
+        lines_ = std::move(fresh);
     }
 
     void rebuild_lines_(std::vector<SourceLine> old_lines) {
@@ -537,6 +651,7 @@ private:
                 source_editor_detail::style_line(line, state);
             }
         }
+        last_line_change_ = {0, old_lines.size(), 0, fresh.size(), old_lines.size(), fresh.size()};
         lines_ = std::move(fresh);
     }
 };
