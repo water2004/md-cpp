@@ -464,11 +464,11 @@ suite document_edit_tests = [] {
         expect(fatal(bool(result.active.container_id == content->id)));
         expect(fatal(bool(result.active.source_offset == 0u)));
         if (root.kind == BlockKind::Heading) {
-            expect(fatal(bool(root.special().level == test.heading_level)));
-            expect(fatal(bool(root.special().opening_marker == test.marker)));
+            expect(fatal(bool(root.text_special().level == test.heading_level)));
+            expect(fatal(bool(root.text_special().opening_marker == test.marker)));
         } else if (root.kind == BlockKind::List || root.kind == BlockKind::TaskList) {
-            expect(fatal(bool(root.children.front().special().marker == test.marker)));
-            expect(fatal(bool(root.special().list_ordered == test.ordered)));
+            expect(fatal(bool(root.children.front().item_special().marker == test.marker)));
+            expect(fatal(bool(root.list_special().ordered == test.ordered)));
         }
         expect_document_valid(after);
     }
@@ -665,7 +665,7 @@ suite document_edit_tests = [] {
     if (continued) {
         const auto& list = continued->after.root.children.front();
         expect(fatal(bool(list.children.size() == 2u)));
-        expect(fatal(bool(list.children.back().special().marker == U"- ")));
+        expect(fatal(bool(list.children.back().item_special().marker == U"- ")));
         expect(fatal(bool(list.children.back().children.front().inline_content.source.empty())));
         expect(fatal(bool(continued->selection_after.active.container_id == list.children.back().children.front().id)));
     }
@@ -675,7 +675,7 @@ suite document_edit_tests = [] {
     auto next_number = test_edit::document_enter(ordered, TextSelection::caret({ordered_id, 3, TextAffinity::Downstream}));
     expect(fatal(bool(next_number.has_value())));
     if (next_number) expect(fatal(bool(
-        next_number->after.root.children.front().children.back().special().marker == U"8) ")));
+        next_number->after.root.children.front().children.back().item_special().marker == U"8) ")));
 
     auto before_ordered = parse_document("7) one");
     auto before_ordered_id = before_ordered.root.children.front().children.front().children.front().id;
@@ -683,8 +683,8 @@ suite document_edit_tests = [] {
     expect(fatal(bool(inserted_before.has_value())));
     if (inserted_before) {
         const auto& list = inserted_before->after.root.children.front();
-        expect(fatal(bool(list.children.front().special().marker == U"7) ")));
-        expect(fatal(bool(list.children.back().special().marker == U"8) ")));
+        expect(fatal(bool(list.children.front().item_special().marker == U"7) ")));
+        expect(fatal(bool(list.children.back().item_special().marker == U"8) ")));
         expect(fatal(bool(list.children.back().children.front().inline_content.source == U"one")));
     }
 
@@ -695,8 +695,8 @@ suite document_edit_tests = [] {
     if (next_task) {
         const auto& item = next_task->after.root.children.front().children.back();
         expect(fatal(bool(item.kind == BlockKind::TaskListItem)));
-        expect(fatal(bool(!item.special().checked)));
-        expect(fatal(bool(item.special().marker == U"- [ ] ")));
+        expect(fatal(bool(!item.item_special().checked)));
+        expect(fatal(bool(item.item_special().marker == U"- [ ] ")));
     }
 
     auto empty = parse_document("- one\n- ");
@@ -824,7 +824,7 @@ suite document_edit_tests = [] {
     expect(fatal(bool(inserted->after.root.children[0].inline_content.source == U"body[^2][^1]")));
     const auto& definition = inserted->after.root.children.back();
     expect(fatal(bool(definition.kind == BlockKind::FootnoteDefinition)));
-    expect(fatal(bool(definition.special().footnote_label == "2")));
+    expect(fatal(bool(definition.container_special().footnote_label == "2")));
     expect(fatal(bool(definition.children.size() == 1u)));
     expect(fatal(bool(inserted->selection_after.active.container_id == definition.children.front().id)));
     expect(fatal(bool(inserted->selection_after.active.source_offset == 0u)));
@@ -855,7 +855,7 @@ suite document_edit_tests = [] {
     expect(fatal(bool(created->operations.size() == 1u)));
     expect(fatal(bool(created->after.root.children.size() == 2u)));
     expect(fatal(bool(created->after.root.children.back().kind == BlockKind::FootnoteDefinition)));
-    expect(fatal(bool(created->after.root.children.back().special().footnote_label == "missing")));
+    expect(fatal(bool(created->after.root.children.back().container_special().footnote_label == "missing")));
     const auto symbols = build_document_symbol_index(created->after);
     expect(fatal(bool(footnote_definition_target(
         created->after, symbols, "missing").has_value())));
@@ -1007,7 +1007,7 @@ suite document_edit_tests = [] {
     expect(fatal(bool(leading.kind == BlockKind::Callout && callout_title_block(leading) != nullptr)));
     expect(fatal(bool(outside.kind == BlockKind::Paragraph && outside.inline_content.source.empty())));
     expect(fatal(bool(trailing.kind == BlockKind::Callout && callout_title_block(trailing) == nullptr)));
-    expect(fatal(bool(trailing.special().callout_kind == "IMPORTANT")));
+    expect(fatal(bool(trailing.container_special().callout_kind == "IMPORTANT")));
     expect(fatal(bool(trailing.children.size() == 1u)));
     expect(fatal(bool(transaction->selection_after.active.container_id == outside.id)));
     expect_document_valid(transaction->after);
@@ -1517,7 +1517,7 @@ suite document_edit_tests = [] {
     expect(fatal(bool(heading.has_value())));
     if (!heading) return;
     expect(fatal(bool(heading->after.root.children.front().kind == BlockKind::Heading)));
-    expect(fatal(bool(heading->after.root.children.front().special().level == 3u)));
+    expect(fatal(bool(heading->after.root.children.front().text_special().level == 3u)));
     expect(fatal(bool(heading->after.root.children.front().inline_content.source == U"__title__")));
     auto paragraph = test_edit::document_set_heading(heading->after, heading->selection_after, 0);
     expect(fatal(bool(paragraph.has_value())));
@@ -1562,13 +1562,13 @@ suite document_edit_tests = [] {
     if (!switched) return;
     auto const* callout = find_block(switched->after.root, callout_id);
     expect(fatal(bool(callout != nullptr && callout->kind == BlockKind::Callout)));
-    expect(fatal(bool(callout != nullptr && callout->special().callout_kind == "TIP")));
+    expect(fatal(bool(callout != nullptr && callout->container_special().callout_kind == "TIP")));
     expect(fatal(bool(callout != nullptr && callout->children.size() == 2u)));
     const auto markdown = serialize_markdown(switched->after);
     expect(fatal(bool(markdown == "> [!TIP]  title\n> body"))) << markdown;
     const auto reparsed = parse_document(markdown);
     expect(fatal(bool(reparsed.root.children.front().kind == BlockKind::Callout)));
-    expect(fatal(bool(reparsed.root.children.front().special().callout_kind == "TIP")));
+    expect(fatal(bool(reparsed.root.children.front().container_special().callout_kind == "TIP")));
     expect_document_valid(switched->after);
 };
 
@@ -1607,7 +1607,7 @@ suite document_edit_tests = [] {
     auto aligned = test_edit::document_edit_table(column->after, in_cell, DocumentTableEdit::SetColumnAlignment, TableAlignment::Center);
     expect(fatal(bool(aligned.has_value())));
     if (aligned) expect(fatal(bool(
-        aligned->after.root.children[1].special().table_aligns.front() == TableAlignment::Center)));
+        aligned->after.root.children[1].table_special().table_aligns.front() == TableAlignment::Center)));
 };
 
 "random_source_edits_preserve_selection_and_losslessness"_test = [] {

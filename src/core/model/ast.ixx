@@ -43,33 +43,78 @@ inline bool is_editable_block_owner(BlockKind kind) {
     }
 }
 
-struct BlockNodeSpecial {
+struct BlockTextSpecial {
     std::uint8_t level = 0;             // Heading
     std::string slug;                   // Heading
+    std::u32string opening_marker;
+    std::u32string closing_marker;
+};
+
+struct BlockListSpecial {
+    bool ordered = false;
+    std::uint64_t start = 1;
+    char32_t delimiter = U'.';
+};
+
+struct BlockItemSpecial {
     std::u32string marker;              // ListItem / TaskListItem
     bool checked = false;               // TaskListItem
-    bool list_ordered = false;
-    std::uint64_t list_start = 1;
-    char32_t list_delimiter = U'.';
+};
+
+struct BlockAtomicSpecial {
     bool code_indented = false;
     MathDelimiter math_delim = MathDelimiter::BlockDollar; // MathBlock / InlineMath (in inline)
+    TocMarkerKind toc_marker = TocMarkerKind::BracketToc; // Toc
+    FrontmatterFormat fmt = FrontmatterFormat::Yaml; // Frontmatter
+    std::string raw;                    // Frontmatter.raw / UnsupportedMarkup.raw
+    UnsupportedMarkupReason unsup_reason = UnsupportedMarkupReason::RawHtmlDisabled;
+    std::string ext_name;               // Extension
+};
+
+struct BlockTableSpecial {
     std::vector<TableAlignment> table_aligns;
     bool table_header_row = false;      // TableRow
+};
+
+struct BlockImageSpecial {
     std::string src;        // ImageBlock
     std::string image_alt;
     std::optional<std::string> image_title;
     std::optional<std::string> image_link;
     std::optional<float> image_width;
     std::optional<float> image_height;
-    std::u32string opening_marker;
-    std::u32string closing_marker;
+};
+
+struct BlockContainerSpecial {
     std::string callout_kind;           // Callout
     std::string footnote_label;        // FootnoteDefinition
-    TocMarkerKind toc_marker = TocMarkerKind::BracketToc; // Toc
-    FrontmatterFormat fmt = FrontmatterFormat::Yaml; // Frontmatter
-    std::string raw;                    // Frontmatter.raw / UnsupportedMarkup.raw
-    UnsupportedMarkupReason unsup_reason = UnsupportedMarkupReason::RawHtmlDisabled;
-    std::string ext_name;               // Extension
+};
+
+struct BlockNodeSpecial {
+    std::unique_ptr<BlockTextSpecial> text;
+    std::unique_ptr<BlockListSpecial> list;
+    std::unique_ptr<BlockItemSpecial> item;
+    std::unique_ptr<BlockAtomicSpecial> atomic;
+    std::unique_ptr<BlockTableSpecial> table;
+    std::unique_ptr<BlockImageSpecial> image;
+    std::unique_ptr<BlockContainerSpecial> container;
+
+    BlockNodeSpecial() = default;
+    BlockNodeSpecial(BlockNodeSpecial const& other)
+        : text(other.text ? std::make_unique<BlockTextSpecial>(*other.text) : nullptr),
+          list(other.list ? std::make_unique<BlockListSpecial>(*other.list) : nullptr),
+          item(other.item ? std::make_unique<BlockItemSpecial>(*other.item) : nullptr),
+          atomic(other.atomic ? std::make_unique<BlockAtomicSpecial>(*other.atomic) : nullptr),
+          table(other.table ? std::make_unique<BlockTableSpecial>(*other.table) : nullptr),
+          image(other.image ? std::make_unique<BlockImageSpecial>(*other.image) : nullptr),
+          container(other.container ? std::make_unique<BlockContainerSpecial>(*other.container) : nullptr) {}
+    BlockNodeSpecial& operator=(BlockNodeSpecial const& other) {
+        if (this == &other) return *this;
+        *this = BlockNodeSpecial(other);
+        return *this;
+    }
+    BlockNodeSpecial(BlockNodeSpecial&&) noexcept = default;
+    BlockNodeSpecial& operator=(BlockNodeSpecial&&) noexcept = default;
 };
 
 struct BlockNode {
@@ -117,6 +162,70 @@ struct BlockNode {
     BlockNodeSpecial& ensure_special() {
         if (!payload) payload = std::make_unique<BlockNodeSpecial>();
         return *payload;
+    }
+
+    BlockTextSpecial const& text_special() const {
+        static const BlockTextSpecial empty{};
+        return payload && payload->text ? *payload->text : empty;
+    }
+    BlockTextSpecial& ensure_text_special() {
+        auto& special = ensure_special();
+        if (!special.text) special.text = std::make_unique<BlockTextSpecial>();
+        return *special.text;
+    }
+    BlockListSpecial const& list_special() const {
+        static const BlockListSpecial empty{};
+        return payload && payload->list ? *payload->list : empty;
+    }
+    BlockListSpecial& ensure_list_special() {
+        auto& special = ensure_special();
+        if (!special.list) special.list = std::make_unique<BlockListSpecial>();
+        return *special.list;
+    }
+    BlockItemSpecial const& item_special() const {
+        static const BlockItemSpecial empty{};
+        return payload && payload->item ? *payload->item : empty;
+    }
+    BlockItemSpecial& ensure_item_special() {
+        auto& special = ensure_special();
+        if (!special.item) special.item = std::make_unique<BlockItemSpecial>();
+        return *special.item;
+    }
+    BlockAtomicSpecial const& atomic_special() const {
+        static const BlockAtomicSpecial empty{};
+        return payload && payload->atomic ? *payload->atomic : empty;
+    }
+    BlockAtomicSpecial& ensure_atomic_special() {
+        auto& special = ensure_special();
+        if (!special.atomic) special.atomic = std::make_unique<BlockAtomicSpecial>();
+        return *special.atomic;
+    }
+    BlockTableSpecial const& table_special() const {
+        static const BlockTableSpecial empty{};
+        return payload && payload->table ? *payload->table : empty;
+    }
+    BlockTableSpecial& ensure_table_special() {
+        auto& special = ensure_special();
+        if (!special.table) special.table = std::make_unique<BlockTableSpecial>();
+        return *special.table;
+    }
+    BlockImageSpecial const& image_special() const {
+        static const BlockImageSpecial empty{};
+        return payload && payload->image ? *payload->image : empty;
+    }
+    BlockImageSpecial& ensure_image_special() {
+        auto& special = ensure_special();
+        if (!special.image) special.image = std::make_unique<BlockImageSpecial>();
+        return *special.image;
+    }
+    BlockContainerSpecial const& container_special() const {
+        static const BlockContainerSpecial empty{};
+        return payload && payload->container ? *payload->container : empty;
+    }
+    BlockContainerSpecial& ensure_container_special() {
+        auto& special = ensure_special();
+        if (!special.container) special.container = std::make_unique<BlockContainerSpecial>();
+        return *special.container;
     }
 };
 

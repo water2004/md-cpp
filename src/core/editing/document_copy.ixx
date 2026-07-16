@@ -117,9 +117,9 @@ inline void truncate_owner(
         if (copy.kind == BlockKind::Heading
             && (range.start != 0 || range.end != full_length)) {
             copy.kind = BlockKind::Paragraph;
-            copy.ensure_special().level = 0;
-            copy.ensure_special().opening_marker.clear();
-            copy.ensure_special().closing_marker.clear();
+            copy.ensure_text_special().level = 0;
+            copy.ensure_text_special().opening_marker.clear();
+            copy.ensure_text_special().closing_marker.clear();
         }
         return;
     }

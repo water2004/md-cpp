@@ -148,11 +148,11 @@ inline std::optional<DocumentTransaction> document_set_heading(EditorDocument& d
     update.kind = DocumentTreeEditKind::UpdatePayload;
     update.before = document_transaction_detail::payload_shell(*block);
     block->kind = level == 0 ? BlockKind::Paragraph : BlockKind::Heading;
-    block->ensure_special().level = level;
-    block->ensure_special().opening_marker = level == 0
+    block->ensure_text_special().level = level;
+    block->ensure_text_special().opening_marker = level == 0
         ? std::u32string{}
         : std::u32string(level, U'#') + U" ";
-    block->ensure_special().closing_marker.clear();
+    block->ensure_text_special().closing_marker.clear();
     update.after = document_transaction_detail::payload_shell(*block);
     std::vector<DocumentOperation> operations;
     operations.emplace_back(std::move(update));
@@ -221,13 +221,13 @@ inline std::optional<DocumentTransaction> document_toggle_callout(EditorDocument
         const auto callout_id = parent->children[range->first].id;
         auto* callout = find_block(after.root, callout_id);
         if (!callout) return std::nullopt;
-        if (callout->special().callout_kind != kind) {
+        if (callout->container_special().callout_kind != kind) {
             DocumentTreeEdit update;
             update.kind = DocumentTreeEditKind::UpdatePayload;
             update.before = document_transaction_detail::payload_shell(*callout);
-            callout->ensure_special().callout_kind = kind;
-            callout->ensure_special().opening_marker = rewrite_callout_opening_marker(
-                callout->special().opening_marker, kind);
+            callout->ensure_container_special().callout_kind = kind;
+            callout->ensure_text_special().opening_marker = rewrite_callout_opening_marker(
+                callout->text_special().opening_marker, kind);
             update.after = document_transaction_detail::payload_shell(*callout);
             operations.emplace_back(std::move(update));
         } else {
@@ -247,7 +247,7 @@ inline std::optional<DocumentTransaction> document_toggle_callout(EditorDocument
         BlockNode callout;
         callout.id = allocator.allocate();
         callout.kind = BlockKind::Callout;
-        callout.ensure_special().callout_kind = kind;
+        callout.ensure_container_special().callout_kind = kind;
         if (!document_structure_detail::insert_container_and_move_range(
                 after, *range, std::move(callout), operations)) return std::nullopt;
     }
@@ -330,7 +330,7 @@ inline std::optional<DocumentTransaction> document_toggle_list(EditorDocument& d
         list.id = allocator.allocate();
         list.kind = style == document_edit_detail::ListStyle::Task
             ? BlockKind::TaskList : BlockKind::List;
-        list.ensure_special().list_ordered = style == document_edit_detail::ListStyle::Ordered;
+        list.ensure_list_special().ordered = style == document_edit_detail::ListStyle::Ordered;
         const auto list_id = list.id;
         DocumentTreeEdit insert_list;
         insert_list.kind = DocumentTreeEditKind::Insert;
@@ -351,7 +351,7 @@ inline std::optional<DocumentTransaction> document_toggle_list(EditorDocument& d
             item.id = allocator.allocate();
             item.kind = style == document_edit_detail::ListStyle::Task
                 ? BlockKind::TaskListItem : BlockKind::ListItem;
-            item.ensure_special().marker = style == document_edit_detail::ListStyle::Task ? U"- [ ] "
+            item.ensure_item_special().marker = style == document_edit_detail::ListStyle::Task ? U"- [ ] "
                 : style == document_edit_detail::ListStyle::Ordered ? U"1. " : U"- ";
             const auto item_id = item.id;
             DocumentTreeEdit insert_item;
@@ -403,7 +403,7 @@ inline std::optional<DocumentTransaction> document_toggle_task_checkbox(EditorDo
     DocumentTreeEdit update;
     update.kind = DocumentTreeEditKind::UpdatePayload;
     update.before = document_transaction_detail::payload_shell(*item);
-    auto& item_special = item->ensure_special();
+    auto& item_special = item->ensure_item_special();
     item_special.checked = !item_special.checked;
     const auto unchecked = item_special.marker.find(U"[ ]");
     const auto checked_lower = item_special.marker.find(U"[x]");
@@ -434,7 +434,7 @@ inline BlockNode make_code_block(std::optional<std::string> language = std::null
 inline BlockNode make_math_block() {
     BlockNode block;
     block.kind = BlockKind::MathBlock;
-    block.ensure_special().math_delim = MathDelimiter::BlockDollar;
+    block.ensure_atomic_special().math_delim = MathDelimiter::BlockDollar;
     block.block_source = make_block_source(U"$$\n$$", BlockSourceKind::DollarMath);
     return block;
 }
@@ -442,8 +442,8 @@ inline BlockNode make_toc_block() { BlockNode block; block.kind = BlockKind::Toc
 
 inline BlockNode make_table_block(EditorDocument& document, std::size_t rows, std::size_t columns) {
     document_edit_detail::NodeAllocator allocator(document);
-    BlockNode table; table.kind = BlockKind::Table; columns = (std::max)(columns, std::size_t{1}); table.ensure_special().table_aligns.assign(columns, TableAlignment::None);
-    BlockNode header; header.id = allocator.allocate(); header.kind = BlockKind::TableRow; header.ensure_special().table_header_row = true;
+    BlockNode table; table.kind = BlockKind::Table; columns = (std::max)(columns, std::size_t{1}); table.ensure_table_special().table_aligns.assign(columns, TableAlignment::None);
+    BlockNode header; header.id = allocator.allocate(); header.kind = BlockKind::TableRow; header.ensure_table_special().table_header_row = true;
     for (std::size_t column = 0; column < columns; ++column) {
         BlockNode cell; cell.id = allocator.allocate(); cell.kind = BlockKind::TableCell;
         cell.inline_content = document_edit_detail::make_inline(U"Header", document, allocator);
@@ -564,9 +564,9 @@ inline std::optional<DocumentTransaction> document_indent_list_item(EditorDocume
         BlockNode created;
         created.id = allocator.allocate();
         created.kind = list->kind;
-        created.ensure_special().list_ordered = list->special().list_ordered;
-        created.ensure_special().list_start = list->special().list_start;
-        created.ensure_special().list_delimiter = list->special().list_delimiter;
+        created.ensure_list_special().ordered = list->list_special().ordered;
+        created.ensure_list_special().start = list->list_special().start;
+        created.ensure_list_special().delimiter = list->list_special().delimiter;
         const auto nested_id = created.id;
         DocumentTreeEdit insert;
         insert.kind = DocumentTreeEditKind::Insert;
@@ -767,7 +767,7 @@ inline std::optional<DocumentTransaction> document_edit_table(
             }
             table = find_block(after.root, table_id);
             if (!table) return std::nullopt;
-            auto& aligns = table->ensure_special().table_aligns;
+            auto& aligns = table->ensure_table_special().table_aligns;
             aligns.insert(aligns.begin() + static_cast<std::ptrdiff_t>((std::min)(index, aligns.size())), TableAlignment::None);
             payload_changed = true;
             break;
@@ -783,7 +783,7 @@ inline std::optional<DocumentTransaction> document_edit_table(
             }
             table = find_block(after.root, table_id);
             if (!table) return std::nullopt;
-            auto& aligns = table->ensure_special().table_aligns;
+            auto& aligns = table->ensure_table_special().table_aligns;
             if (column < aligns.size()) aligns.erase(aligns.begin() + static_cast<std::ptrdiff_t>(column));
             payload_changed = true;
             target_id = table->children[row_index].children[(std::min)(column, column_count - 2)].id;
@@ -800,7 +800,7 @@ inline std::optional<DocumentTransaction> document_edit_table(
             }
             table = find_block(after.root, table_id);
             if (!table) return std::nullopt;
-            auto& aligns = table->ensure_special().table_aligns;
+            auto& aligns = table->ensure_table_special().table_aligns;
             if (column < aligns.size()) std::swap(aligns[column], aligns[column - 1]);
             payload_changed = true;
             break;
@@ -816,7 +816,7 @@ inline std::optional<DocumentTransaction> document_edit_table(
             }
             table = find_block(after.root, table_id);
             if (!table) return std::nullopt;
-            auto& aligns = table->ensure_special().table_aligns;
+            auto& aligns = table->ensure_table_special().table_aligns;
             if (column + 1 < aligns.size()) std::swap(aligns[column], aligns[column + 1]);
             payload_changed = true;
             break;
@@ -830,7 +830,7 @@ inline std::optional<DocumentTransaction> document_edit_table(
             }
             table = find_block(after.root, table_id);
             if (!table) return std::nullopt;
-            auto& aligns = table->ensure_special().table_aligns;
+            auto& aligns = table->ensure_table_special().table_aligns;
             auto value = aligns[column];
             aligns.erase(aligns.begin() + static_cast<std::ptrdiff_t>(column));
             aligns.insert(aligns.begin() + static_cast<std::ptrdiff_t>(argument), value);
@@ -838,10 +838,10 @@ inline std::optional<DocumentTransaction> document_edit_table(
             break;
         }
         case DocumentTableEdit::SetColumnAlignment:
-            if (column >= table->special().table_aligns.size()) {
-                table->ensure_special().table_aligns.resize(column_count, TableAlignment::None);
+            if (column >= table->table_special().table_aligns.size()) {
+                table->ensure_table_special().table_aligns.resize(column_count, TableAlignment::None);
             }
-            table->ensure_special().table_aligns[column] = alignment;
+            table->ensure_table_special().table_aligns[column] = alignment;
             payload_changed = true;
             break;
         case DocumentTableEdit::Normalize: {
@@ -864,7 +864,7 @@ inline std::optional<DocumentTransaction> document_edit_table(
             }
             table = find_block(after.root, table_id);
             if (!table) return std::nullopt;
-            table->ensure_special().table_aligns.resize(columns, TableAlignment::None);
+            table->ensure_table_special().table_aligns.resize(columns, TableAlignment::None);
             payload_changed = true;
             break;
         }

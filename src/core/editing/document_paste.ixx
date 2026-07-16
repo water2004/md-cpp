@@ -145,8 +145,8 @@ inline bool direct_inline_anchor(const BlockNode& block) {
 
 inline bool atx_heading(const BlockNode& block) {
     return block.kind == BlockKind::Heading
-        && !block.special().opening_marker.empty()
-        && block.special().opening_marker.find(U'#') != std::u32string::npos;
+        && !block.text_special().opening_marker.empty()
+        && block.text_special().opening_marker.find(U'#') != std::u32string::npos;
 }
 
 inline bool offset_in_link_destination(
@@ -233,7 +233,7 @@ struct DirectListPasteContext {
 
 inline char32_t unordered_marker(const BlockNode& list) {
     if (list.children.empty()) return U'-';
-    for (const auto value : list.children.front().special().marker) {
+    for (const auto value : list.children.front().item_special().marker) {
         if (value == U'-' || value == U'+' || value == U'*') return value;
     }
     return U'-';
@@ -244,9 +244,9 @@ inline bool paste_compatible_lists(const BlockNode& current, const BlockNode& pa
         || (current.kind != BlockKind::List && current.kind != BlockKind::TaskList)) {
         return false;
     }
-    if (current.special().list_ordered != pasted.special().list_ordered) return false;
-    if (current.special().list_ordered) {
-        return current.special().list_delimiter == pasted.special().list_delimiter;
+    if (current.list_special().ordered != pasted.list_special().ordered) return false;
+    if (current.list_special().ordered) {
+        return current.list_special().delimiter == pasted.list_special().delimiter;
     }
     return unordered_marker(current) == unordered_marker(pasted);
 }

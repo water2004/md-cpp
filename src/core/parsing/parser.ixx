@@ -587,7 +587,7 @@ public:
                 std::string inner = input->text.substr(b2, (b1 < eC ? eC : b1) - b2);
                 NodeId id = next_node_id();
                 push_range(id, PhysicalRange(std::size_t(save), std::size_t(pos)), PhysicalRange(std::size_t(save), std::size_t(pos)));
-                BlockNode b; b.id = id; b.kind = BlockKind::Frontmatter; b.ensure_special().fmt = fmt; b.ensure_special().raw = inner;
+                BlockNode b; b.id = id; b.kind = BlockKind::Frontmatter; b.ensure_atomic_special().fmt = fmt; b.ensure_atomic_special().raw = inner;
                 return b;
             }
             if (peek1() == '\n') advance(); else advance();
@@ -627,9 +627,9 @@ public:
         range.marker_ranges.push_back(PhysicalRange(std::size_t(start), std::size_t(content_start)));
         if (closing_start < line_end) range.marker_ranges.push_back(PhysicalRange(std::size_t(content_end), std::size_t(line_end)));
         source_ranges.push_back(std::move(range));
-        BlockNode b; b.id = id; b.kind = BlockKind::Heading; b.ensure_special().level = level; b.inline_content = std::move(inline_content); b.ensure_special().slug = slug;
-        b.ensure_special().opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
-        if (closing_start < line_end) b.ensure_special().closing_marker = std::u32string(std::u32string_view(cps).substr(content_end, line_end - content_end));
+        BlockNode b; b.id = id; b.kind = BlockKind::Heading; b.ensure_text_special().level = level; b.inline_content = std::move(inline_content); b.ensure_text_special().slug = slug;
+        b.ensure_text_special().opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
+        if (closing_start < line_end) b.ensure_text_special().closing_marker = std::u32string(std::u32string_view(cps).substr(content_end, line_end - content_end));
         return b;
     }
 
@@ -645,7 +645,7 @@ public:
         BlockNode block;
         block.id = next_node_id();
         block.kind = BlockKind::LinkDefinition;
-        block.ensure_special().raw = cps_to_utf8(std::u32string_view(cps).substr(start, definition.source_end - start));
+        block.ensure_atomic_special().raw = cps_to_utf8(std::u32string_view(cps).substr(start, definition.source_end - start));
         push_range(block.id, PhysicalRange(std::size_t(start), std::size_t(pos)), PhysicalRange(std::size_t(start), std::size_t(definition.source_end)));
         return block;
     }
@@ -685,10 +685,10 @@ public:
             BlockNode heading;
             heading.id = id;
             heading.kind = BlockKind::Heading;
-            heading.ensure_special().level = underline->level;
+            heading.ensure_text_special().level = underline->level;
             heading.inline_content = std::move(inline_content);
-            heading.ensure_special().slug = std::move(slug);
-            heading.ensure_special().closing_marker = std::u32string(std::u32string_view(cps).substr(content_end, underline->line_end - content_end));
+            heading.ensure_text_special().slug = std::move(slug);
+            heading.ensure_text_special().closing_marker = std::u32string(std::u32string_view(cps).substr(content_end, underline->line_end - content_end));
             return heading;
         }
 
@@ -731,11 +731,11 @@ public:
                 BlockNode block;
                 block.id = next_node_id();
                 block.kind = BlockKind::ImageBlock;
-                block.ensure_special().src = source;
-                block.ensure_special().image_alt = tag->attributes.contains("alt") ? tag->attributes.at("alt") : std::string{};
-                if (tag->attributes.contains("title")) block.ensure_special().image_title = tag->attributes.at("title");
-                block.ensure_special().image_width = dimension("width");
-                block.ensure_special().image_height = dimension("height");
+                block.ensure_image_special().src = source;
+                block.ensure_image_special().image_alt = tag->attributes.contains("alt") ? tag->attributes.at("alt") : std::string{};
+                if (tag->attributes.contains("title")) block.ensure_image_special().image_title = tag->attributes.at("title");
+                block.ensure_image_special().image_width = dimension("width");
+                block.ensure_image_special().image_height = dimension("height");
                 push_range(block.id, PhysicalRange(std::size_t(start), std::size_t(pos)), PhysicalRange(std::size_t(start), std::size_t(line_end)));
                 return block;
             }
@@ -760,10 +760,10 @@ public:
         BlockNode block;
         block.id = next_node_id();
         block.kind = BlockKind::ImageBlock;
-        block.ensure_special().src = image->semantics().href;
-        block.ensure_special().image_alt = image->semantics().alt;
-        block.ensure_special().image_title = image->semantics().title;
-        block.ensure_special().image_link = std::move(link);
+        block.ensure_image_special().src = image->semantics().href;
+        block.ensure_image_special().image_alt = image->semantics().alt;
+        block.ensure_image_special().image_title = image->semantics().title;
+        block.ensure_image_special().image_link = std::move(link);
         push_range(block.id, PhysicalRange(std::size_t(start), std::size_t(pos)), PhysicalRange(std::size_t(start), std::size_t(line_end)));
         return block;
     }
@@ -790,8 +790,8 @@ public:
             BlockNode block;
             block.id = id;
             block.kind = BlockKind::UnsupportedMarkup;
-            block.ensure_special().raw = cps_to_utf8(raw);
-            block.ensure_special().unsup_reason = UnsupportedMarkupReason::RawHtmlDisabled;
+            block.ensure_atomic_special().raw = cps_to_utf8(raw);
+            block.ensure_atomic_special().unsup_reason = UnsupportedMarkupReason::RawHtmlDisabled;
             return block;
         }
         if (tag->name == "pre") {
@@ -848,14 +848,14 @@ public:
                     cell_cursor = cell_closing->second;
                 }
                 push_range(row.id, PhysicalRange(std::size_t(row_tag->start), std::size_t(row_closing->second)), PhysicalRange(std::size_t(row_tag->end), std::size_t(row_closing->first)));
-                row.ensure_special().table_header_row = row_header;
+                row.ensure_table_special().table_header_row = row_header;
                 if (!row.children.empty()) { rows.push_back(std::move(row)); row_headers.push_back(row_header); }
                 cursor = row_closing->second;
             }
             if (rows.empty()) return std::nullopt;
             block.id = next_node_id();
             block.children = std::move(rows);
-            block.ensure_special().table_aligns.resize(block.children.front().children.size(), TableAlignment::None);
+            block.ensure_table_special().table_aligns.resize(block.children.front().children.size(), TableAlignment::None);
             ParserSourceRange range(block.id, PhysicalRange(std::size_t(start), std::size_t(source_end)), PhysicalRange(std::size_t(content_start), std::size_t(content_end)));
             range.marker_ranges.push_back(PhysicalRange(std::size_t(start), std::size_t(content_start)));
             range.marker_ranges.push_back(PhysicalRange(std::size_t(content_end), std::size_t(source_end)));
@@ -873,8 +873,8 @@ public:
         block.id = id;
         block.kind = BlockKind::Paragraph;
         block.inline_content = make_inline_document(content_start, content_end);
-        block.ensure_special().opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
-        block.ensure_special().closing_marker = std::u32string(std::u32string_view(cps).substr(content_end, source_end - content_end));
+        block.ensure_text_special().opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
+        block.ensure_text_special().closing_marker = std::u32string(std::u32string_view(cps).substr(content_end, source_end - content_end));
         return block;
     }
 
@@ -1028,8 +1028,8 @@ public:
         BlockNode block;
         block.id = id;
         block.kind = BlockKind::FootnoteDefinition;
-        block.ensure_special().footnote_label = cps_to_utf8(label);
-        block.ensure_special().opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
+        block.ensure_container_special().footnote_label = cps_to_utf8(label);
+        block.ensure_text_special().opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
         block.children = std::move(children);
         return block;
     }
@@ -1095,7 +1095,7 @@ public:
         BlockNode block;
         block.id = id;
         block.kind = BlockKind::CodeBlock;
-        block.ensure_special().code_indented = true;
+        block.ensure_atomic_special().code_indented = true;
         block.block_source = make_block_source(
             std::u32string(std::u32string_view(cps).substr(start, pos - start)),
             BlockSourceKind::IndentedCode);
@@ -1150,7 +1150,7 @@ public:
         source_ranges.push_back(std::move(node_range));
         if (lang && *lang == "math" && input->dialect.math.fenced_math) {
             const auto local_end = closing_marker ? closing_marker->end : pos;
-            BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.ensure_special().math_delim = MathDelimiter::FencedMath;
+            BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.ensure_atomic_special().math_delim = MathDelimiter::FencedMath;
             b.block_source = make_block_source(
                 std::u32string(std::u32string_view(cps).substr(start, local_end - start)),
                 BlockSourceKind::FencedMath);
@@ -1189,7 +1189,7 @@ public:
                 range.marker_ranges.push_back(PhysicalRange(std::size_t(start), std::size_t(content_start)));
                 range.marker_ranges.push_back(PhysicalRange(std::size_t(closing_start), std::size_t(closing_end)));
                 source_ranges.push_back(std::move(range));
-                BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.ensure_special().math_delim = dollar ? MathDelimiter::BlockDollar : MathDelimiter::BlockBracket;
+                BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.ensure_atomic_special().math_delim = dollar ? MathDelimiter::BlockDollar : MathDelimiter::BlockBracket;
                 b.block_source = make_block_source(
                     std::u32string(std::u32string_view(cps).substr(start, closing_end - start)),
                     dollar ? BlockSourceKind::DollarMath : BlockSourceKind::BracketMath);
@@ -1207,7 +1207,7 @@ public:
             PhysicalRange(std::size_t(content_start), cur()));
         range.marker_ranges.push_back(PhysicalRange(std::size_t(start), std::size_t(content_start)));
         source_ranges.push_back(std::move(range));
-        BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.ensure_special().math_delim = dollar ? MathDelimiter::BlockDollar : MathDelimiter::BlockBracket;
+        BlockNode b; b.id = id; b.kind = BlockKind::MathBlock; b.ensure_atomic_special().math_delim = dollar ? MathDelimiter::BlockDollar : MathDelimiter::BlockBracket;
         b.block_source = make_block_source(
             std::u32string(std::u32string_view(cps).substr(start, pos - start)),
             dollar ? BlockSourceKind::DollarMath : BlockSourceKind::BracketMath);
@@ -1255,10 +1255,10 @@ public:
         NodeId id = next_node_id();
         push_range(id, PhysicalRange(std::size_t(save), cur()), PhysicalRange(std::size_t(save), cur()));
         BlockNode b; b.id = id; b.kind = BlockKind::Table;
-        header_row->ensure_special().table_header_row = true;
+        header_row->ensure_table_special().table_header_row = true;
         b.children.push_back(std::move(*header_row));
         b.children.insert(b.children.end(), std::make_move_iterator(rows.begin()), std::make_move_iterator(rows.end()));
-        b.ensure_special().table_aligns = std::move(*alignments);
+        b.ensure_table_special().table_aligns = std::move(*alignments);
         return b;
     }
 
@@ -1399,9 +1399,9 @@ public:
         BlockNode result;
         result.id = list_id;
         result.kind = first->task ? BlockKind::TaskList : BlockKind::List;
-        result.ensure_special().list_ordered = first->ordered;
-        result.ensure_special().list_start = first->number;
-        result.ensure_special().list_delimiter = first->delimiter;
+        result.ensure_list_special().ordered = first->ordered;
+        result.ensure_list_special().start = first->number;
+        result.ensure_list_special().delimiter = first->delimiter;
 
         while (auto marker = inspect(pos)) {
             if (marker->indent != first->indent || marker->task != first->task || marker->ordered != first->ordered) break;
@@ -1497,8 +1497,8 @@ public:
             BlockNode item;
             item.id = item_id;
             item.kind = marker->task ? BlockKind::TaskListItem : BlockKind::ListItem;
-            item.ensure_special().checked = marker->checked;
-            item.ensure_special().marker = marker->text;
+            item.ensure_item_special().checked = marker->checked;
+            item.ensure_item_special().marker = marker->text;
             item.children = std::move(children);
             result.children.push_back(std::move(item));
             last_content = item_end;
@@ -1547,9 +1547,9 @@ public:
         auto first_line = first_newline == std::u32string::npos ? inner : inner.substr(0, first_newline);
         auto callout = try_parse_callout_from_line(first_line);
         if (callout) {
-            callout->ensure_special().opening_marker = std::u32string(
+            callout->ensure_text_special().opening_marker = std::u32string(
                 std::u32string_view(cps).substr(start, content_start - start))
-                + callout->special().opening_marker;
+                + callout->text_special().opening_marker;
             if (const auto* title = callout_title_block(*callout)) {
                 const auto title_start = first_line.size() - title->inline_content.source.size();
                 source_ranges.emplace_back(
@@ -1639,13 +1639,13 @@ public:
                 BlockNode b;
                 b.id = NodeId(0);
                 b.kind = BlockKind::Callout;
-                b.ensure_special().callout_kind = *normalized_kind;
+                b.ensure_container_special().callout_kind = *normalized_kind;
                 b.children.push_back(std::move(title));
-                b.ensure_special().opening_marker = line.substr(0, title_start);
+                b.ensure_text_special().opening_marker = line.substr(0, title_start);
                 return b;
             }
-            BlockNode b; b.id = NodeId(0); b.kind = BlockKind::Callout; b.ensure_special().callout_kind = *normalized_kind;
-            b.ensure_special().opening_marker = line.substr(0, title_start);
+            BlockNode b; b.id = NodeId(0); b.kind = BlockKind::Callout; b.ensure_container_special().callout_kind = *normalized_kind;
+            b.ensure_text_special().opening_marker = line.substr(0, title_start);
             return b;
         }
         return std::nullopt;
@@ -1678,7 +1678,7 @@ public:
         if (peek1() == '\n') advance();
         NodeId id = next_node_id();
         push_range(id, PhysicalRange(std::size_t(start), cur()), PhysicalRange(std::size_t(start), cur()));
-        BlockNode b; b.id = id; b.kind = BlockKind::Toc; b.ensure_special().toc_marker = mk;
+        BlockNode b; b.id = id; b.kind = BlockKind::Toc; b.ensure_atomic_special().toc_marker = mk;
         return b;
     }
 
@@ -1745,7 +1745,7 @@ inline ParseOutput parse(const ParseInput& input) {
     bool has_fm = false;
     for (const auto& b : doc.root.children) {
         if (b.kind == BlockKind::Frontmatter) {
-            doc.metadata = from_frontmatter(b.special().raw, b.special().fmt);
+            doc.metadata = from_frontmatter(b.atomic_special().raw, b.atomic_special().fmt);
             has_fm = true;
             break;
         }

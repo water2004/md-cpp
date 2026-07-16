@@ -47,7 +47,7 @@ inline bool same_raw_projection(const BlockNode& current, const BlockVec& parsed
     }
     if (candidate.block_source.tree().kind != current.block_source.tree().kind) return false;
     if (candidate.kind == BlockKind::MathBlock
-        && candidate.special().math_delim != current.special().math_delim) return false;
+        && candidate.atomic_special().math_delim != current.atomic_special().math_delim) return false;
     return true;
 }
 

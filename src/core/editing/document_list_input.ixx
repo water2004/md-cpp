@@ -17,18 +17,18 @@ inline BlockNode list_shell_from(const BlockNode& source, NodeId id) {
     BlockNode result;
     result.id = id;
     result.kind = source.kind;
-    result.ensure_special().list_ordered = source.special().list_ordered;
-    result.ensure_special().list_start = source.special().list_start;
-    result.ensure_special().list_delimiter = source.special().list_delimiter;
+    result.ensure_list_special().ordered = source.list_special().ordered;
+    result.ensure_list_special().start = source.list_special().start;
+    result.ensure_list_special().delimiter = source.list_special().delimiter;
     return result;
 }
 
 inline bool compatible_lists(const BlockNode& left, const BlockNode& right) {
     if (left.kind != right.kind || (left.kind != BlockKind::List && left.kind != BlockKind::TaskList)) return false;
-    if (left.special().list_ordered != right.special().list_ordered
-        || left.special().list_delimiter != right.special().list_delimiter) return false;
-    return !left.special().list_ordered
-        || right.special().list_start == left.special().list_start + left.children.size();
+    if (left.list_special().ordered != right.list_special().ordered
+        || left.list_special().delimiter != right.list_special().delimiter) return false;
+    return !left.list_special().ordered
+        || right.list_special().start == left.list_special().start + left.children.size();
 }
 
 struct DirectListContext {
@@ -66,7 +66,7 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> upgrade_task_item(
     auto context = direct_list_context(document, target.container_id);
     if (!context) return std::nullopt;
     auto* list = block_at_path(document.root, context->list_path);
-    if (!list || list->kind != BlockKind::List || list->special().list_ordered
+    if (!list || list->kind != BlockKind::List || list->list_special().ordered
         || context->item_index >= list->children.size()) return std::nullopt;
 
     document_edit_detail::RecordedBlockEdit result;
@@ -95,8 +95,8 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> upgrade_task_item(
     update_item.kind = DocumentTreeEditKind::UpdatePayload;
     update_item.before = document_transaction_detail::payload_shell(*item);
     item->kind = BlockKind::TaskListItem;
-    item->ensure_special().checked = checked;
-    item->ensure_special().marker += prefix;
+    item->ensure_item_special().checked = checked;
+    item->ensure_item_special().marker += prefix;
     update_item.after = document_transaction_detail::payload_shell(*item);
     result.operations.emplace_back(std::move(update_item));
 
@@ -180,9 +180,9 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> upgrade_task_item(
 
 inline std::u32string next_item_marker(const BlockNode& list, const BlockNode& item, std::size_t item_index) {
     if (list.kind == BlockKind::TaskList) return U"- [ ] ";
-    const auto& list_special = list.special();
-    const auto& item_special = item.special();
-    if (!list_special.list_ordered) return item_special.marker.empty() ? U"- " : item_special.marker;
+    const auto& list_special = list.list_special();
+    const auto& item_special = item.item_special();
+    if (!list_special.ordered) return item_special.marker.empty() ? U"- " : item_special.marker;
     std::u32string indent;
     std::size_t cursor = 0;
     while (cursor < item_special.marker.size() && item_special.marker[cursor] == U' ') {
@@ -192,11 +192,11 @@ inline std::u32string next_item_marker(const BlockNode& list, const BlockNode& i
         && item_special.marker[cursor] <= U'9') ++cursor;
     auto delimiter = cursor < item_special.marker.size()
         && (item_special.marker[cursor] == U'.' || item_special.marker[cursor] == U')')
-        ? item_special.marker[cursor++] : list_special.list_delimiter;
+        ? item_special.marker[cursor++] : list_special.delimiter;
     auto spacing = cursor < item_special.marker.size()
         ? item_special.marker.substr(cursor) : std::u32string(U" ");
     if (spacing.empty()) spacing = U" ";
-    return indent + utf8_to_cps(std::to_string(list_special.list_start + item_index + 1))
+    return indent + utf8_to_cps(std::to_string(list_special.start + item_index + 1))
         + std::u32string(1, delimiter) + spacing;
 }
 
@@ -209,7 +209,7 @@ inline BlockNode empty_item(
     BlockNode item;
     item.id = allocator.allocate();
     item.kind = list.kind == BlockKind::TaskList ? BlockKind::TaskListItem : BlockKind::ListItem;
-    item.ensure_special().marker = next_item_marker(list, reference, item_index);
+    item.ensure_item_special().marker = next_item_marker(list, reference, item_index);
     item.children.push_back(document_edit_detail::empty_paragraph(allocator, document));
     return item;
 }
@@ -272,7 +272,7 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> exit_empty_list_it
         DocumentTreeEdit update_list;
         update_list.kind = DocumentTreeEditKind::UpdatePayload;
         update_list.before = document_transaction_detail::payload_shell(*list);
-        list->ensure_special().list_start += 1;
+        list->ensure_list_special().start += 1;
         update_list.after = document_transaction_detail::payload_shell(*list);
         result.operations.emplace_back(std::move(update_list));
 
@@ -300,7 +300,7 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> exit_empty_list_it
         auto* current_list = find_block(document.root, list_id);
         if (!current_list) return std::nullopt;
         auto trailing = list_shell_from(*current_list, allocator.allocate());
-        trailing.ensure_special().list_start = current_list->special().list_start + context->item_index + 1;
+        trailing.ensure_list_special().start = current_list->list_special().start + context->item_index + 1;
         const auto trailing_id = trailing.id;
         DocumentTreeEdit insert_trailing;
         insert_trailing.kind = DocumentTreeEditKind::Insert;
@@ -363,14 +363,14 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> split_list_item(
 
     if (context->child_index == 0 && offset == 0) {
         auto inserted = empty_item(*list, item, context->item_index == 0 ? 0 : context->item_index - 1, document, allocator);
-        if (list->special().list_ordered) {
-            inserted.ensure_special().marker = utf8_to_cps(
-                std::to_string(list->special().list_start + context->item_index))
-                + std::u32string(1, list->special().list_delimiter) + U" ";
+        if (list->list_special().ordered) {
+            inserted.ensure_item_special().marker = utf8_to_cps(
+                std::to_string(list->list_special().start + context->item_index))
+                + std::u32string(1, list->list_special().delimiter) + U" ";
             DocumentTreeEdit update;
             update.kind = DocumentTreeEditKind::UpdatePayload;
             update.before = document_transaction_detail::payload_shell(item);
-            item.ensure_special().marker = next_item_marker(*list, item, context->item_index);
+            item.ensure_item_special().marker = next_item_marker(*list, item, context->item_index);
             update.after = document_transaction_detail::payload_shell(item);
             result.operations.emplace_back(std::move(update));
         }
@@ -381,8 +381,8 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> split_list_item(
     BlockNode next;
     next.id = allocator.allocate();
     next.kind = item.kind;
-    next.ensure_special().checked = false;
-    next.ensure_special().marker = next_item_marker(*list, item, context->item_index);
+    next.ensure_item_special().checked = false;
+    next.ensure_item_special().marker = next_item_marker(*list, item, context->item_index);
 
     if (offset == leaf.inline_content.source.size() && context->child_index + 1 == item.children.size()) {
         auto paragraph = document_edit_detail::empty_paragraph(allocator, document);
@@ -521,8 +521,8 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> remove_top_level_l
     if (context.item_index > 0 && following_count > 0) {
         auto trailing = document_transaction_detail::payload_shell(*list);
         trailing.id = allocator.allocate();
-        if (trailing.special().list_ordered) {
-            trailing.ensure_special().list_start += context.item_index + 1;
+        if (trailing.list_special().ordered) {
+            trailing.ensure_list_special().start += context.item_index + 1;
         }
         trailing_id = trailing.id;
         DocumentTreeEdit insert_trailing;
@@ -585,7 +585,7 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> remove_top_level_l
         DocumentTreeEdit update_list;
         update_list.kind = DocumentTreeEditKind::UpdatePayload;
         update_list.before = document_transaction_detail::payload_shell(*list);
-        if (list->special().list_ordered) ++list->ensure_special().list_start;
+        if (list->list_special().ordered) ++list->ensure_list_special().start;
         update_list.after = document_transaction_detail::payload_shell(*list);
         result.operations.emplace_back(std::move(update_list));
     }

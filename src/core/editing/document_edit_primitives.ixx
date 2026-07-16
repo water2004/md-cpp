@@ -75,7 +75,7 @@ inline std::optional<std::size_t> local_position_length(const BlockNode& block) 
         return block.block_source.source().size();
     }
     if (block.kind == BlockKind::Frontmatter || block.kind == BlockKind::LinkDefinition
-        || block.kind == BlockKind::UnsupportedMarkup) return utf8_to_cps(block.special().raw).size();
+        || block.kind == BlockKind::UnsupportedMarkup) return utf8_to_cps(block.atomic_special().raw).size();
     if (block.kind == BlockKind::ImageBlock || block.kind == BlockKind::Toc
         || block.kind == BlockKind::ThematicBreak || block.kind == BlockKind::Extension) return 1;
     return std::nullopt;

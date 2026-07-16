@@ -97,11 +97,11 @@ inline DocumentSymbolIndex collect_block_symbols(const BlockNode& block) {
     DocumentSymbolIndex symbols;
     if (block.kind == BlockKind::Heading) {
         symbols.headings.push_back(HeadingSymbol{
-            block.id, block.special().level, cps_to_utf8(inline_visible_text(block.inline_content)), block.special().slug});
+            block.id, block.text_special().level, cps_to_utf8(inline_visible_text(block.inline_content)), block.text_special().slug});
     } else if (block.kind == BlockKind::FootnoteDefinition) {
-        symbols.footnotes.push_back(FootnoteSymbol{block.id, block.special().footnote_label});
+        symbols.footnotes.push_back(FootnoteSymbol{block.id, block.container_special().footnote_label});
     } else if (block.kind == BlockKind::ImageBlock) {
-        symbols.images.push_back(ImageSymbol{block.id, block.special().src, block.special().image_alt});
+        symbols.images.push_back(ImageSymbol{block.id, block.image_special().src, block.image_special().image_alt});
     } else if (block.kind == BlockKind::MathBlock) {
         symbols.math_blocks.push_back(MathSymbol{block.id, cps_to_utf8(block_source_content(block.block_source))});
     } else if (block.kind == BlockKind::CodeBlock) {

@@ -27,7 +27,7 @@ inline std::optional<DocumentInteraction> document_interaction_at(
 
     DocumentInteraction interaction;
     if (block->kind == BlockKind::ImageBlock) {
-        auto const& special = block->special();
+        auto const& special = block->image_special();
         interaction.link = special.image_link;
         if (special.image_title && !special.image_title->empty()) {
             interaction.tooltip = special.image_title;

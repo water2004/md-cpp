@@ -56,19 +56,50 @@ void expect_lossless(const InlineDocument& document) {
 suite parser_tests = [] {
 
 "block_kind_payload_copies_with_value_semantics"_test = [] {
+    static_assert(sizeof(BlockNodeSpecial) <= 7 * sizeof(void*));
+
+    BlockNode paragraph;
+    expect(fatal(bool(paragraph.payload == nullptr)));
+
     BlockNode heading;
     heading.kind = BlockKind::Heading;
-    heading.ensure_special().level = 2;
-    heading.ensure_special().slug = "original";
+    heading.ensure_text_special().level = 2;
+    heading.ensure_text_special().slug = "original";
+    expect(fatal(bool(heading.special().text != nullptr)));
+    expect(fatal(bool(heading.special().list == nullptr)));
+    expect(fatal(bool(heading.special().atomic == nullptr)));
 
     auto copy = heading;
-    copy.ensure_special().level = 3;
-    copy.ensure_special().slug = "copy";
+    copy.ensure_text_special().level = 3;
+    copy.ensure_text_special().slug = "copy";
 
-    expect(fatal(bool(heading.special().level == 2u)));
-    expect(fatal(bool(heading.special().slug == "original")));
-    expect(fatal(bool(copy.special().level == 3u)));
-    expect(fatal(bool(copy.special().slug == "copy")));
+    expect(fatal(bool(heading.text_special().level == 2u)));
+    expect(fatal(bool(heading.text_special().slug == "original")));
+    expect(fatal(bool(copy.text_special().level == 3u)));
+    expect(fatal(bool(copy.text_special().slug == "copy")));
+
+    BlockNode kinds;
+    kinds.ensure_list_special().start = 7;
+    kinds.ensure_item_special().marker = U"- [x] ";
+    kinds.ensure_atomic_special().raw = "raw";
+    kinds.ensure_table_special().table_aligns = {TableAlignment::Center};
+    kinds.ensure_image_special().src = "original.png";
+    kinds.ensure_container_special().footnote_label = "note";
+
+    auto kinds_copy = kinds;
+    kinds_copy.ensure_list_special().start = 9;
+    kinds_copy.ensure_item_special().marker = U"1. ";
+    kinds_copy.ensure_atomic_special().raw = "copy";
+    kinds_copy.ensure_table_special().table_aligns.front() = TableAlignment::Right;
+    kinds_copy.ensure_image_special().src = "copy.png";
+    kinds_copy.ensure_container_special().footnote_label = "copy";
+
+    expect(fatal(bool(kinds.list_special().start == 7u)));
+    expect(fatal(bool(kinds.item_special().marker == U"- [x] ")));
+    expect(fatal(bool(kinds.atomic_special().raw == "raw")));
+    expect(fatal(bool(kinds.table_special().table_aligns.front() == TableAlignment::Center)));
+    expect(fatal(bool(kinds.image_special().src == "original.png")));
+    expect(fatal(bool(kinds.container_special().footnote_label == "note")));
 };
 
 "empty_document_has_no_blocks"_test = [] {
@@ -83,12 +114,12 @@ suite parser_tests = [] {
     const auto& atx = parsed.document.root.children[0];
     const auto& setext = parsed.document.root.children[1];
     expect(fatal(bool(atx.kind == BlockKind::Heading)));
-    expect(fatal(bool(atx.special().level == 1u)));
+    expect(fatal(bool(atx.text_special().level == 1u)));
     expect(fatal(bool(atx.inline_content.source == U"*Hello*")));
     expect(fatal(bool(has_inline(atx.inline_content, InlineCstKind::Emphasis))));
     expect_lossless(atx.inline_content);
     expect(fatal(bool(setext.kind == BlockKind::Heading)));
-    expect(fatal(bool(setext.special().level == 2u)));
+    expect(fatal(bool(setext.text_special().level == 2u)));
     expect(fatal(bool(setext.inline_content.source == U"Setext")));
     expect(fatal(bool(parsed.symbols.headings.size() == 2u)));
 };
@@ -206,15 +237,15 @@ suite parser_tests = [] {
     expect(fatal(bool(list != nullptr)));
     if (list) {
         expect(fatal(bool(list->children.size() == 2u)));
-        expect(fatal(bool(list->special().list_ordered)));
-        expect(fatal(bool(list->special().list_start == 1u)));
+        expect(fatal(bool(list->list_special().ordered)));
+        expect(fatal(bool(list->list_special().start == 1u)));
     }
     const auto* tasks = first_block(parsed.document.root.children, BlockKind::TaskList);
     expect(fatal(bool(tasks != nullptr)));
     if (tasks) {
         expect(fatal(bool(tasks->children.size() == 2u)));
-        expect(fatal(bool(!tasks->children[0].special().checked)));
-        expect(fatal(bool(tasks->children[1].special().checked)));
+        expect(fatal(bool(!tasks->children[0].item_special().checked)));
+        expect(fatal(bool(tasks->children[1].item_special().checked)));
     }
     expect(fatal(bool(first_block(parsed.document.root.children, BlockKind::CodeBlock) != nullptr)));
     expect(fatal(bool(first_block(parsed.document.root.children, BlockKind::MathBlock) != nullptr)));
@@ -285,7 +316,7 @@ suite parser_tests = [] {
 
     const auto& footnote = parsed.document.root.children[1];
     expect(fatal(bool(footnote.kind == BlockKind::FootnoteDefinition)));
-    expect(fatal(bool(footnote.special().footnote_label == "n")));
+    expect(fatal(bool(footnote.container_special().footnote_label == "n")));
     expect(fatal(bool(footnote.children.size() == 2u)));
     if (footnote.children.size() == 2u) {
         expect(fatal(bool(footnote.children[0].kind == BlockKind::Paragraph)));
@@ -389,8 +420,8 @@ suite parser_tests = [] {
         if (parsed.document.root.children.size() != 1) continue;
         const auto& callout = parsed.document.root.children.front();
         expect(fatal(bool(callout.kind == BlockKind::Callout))) << test.source;
-        expect(fatal(bool(callout.special().callout_kind == test.kind))) << test.source;
-        expect(fatal(bool(!callout.special().opening_marker.empty()))) << test.source;
+        expect(fatal(bool(callout.container_special().callout_kind == test.kind))) << test.source;
+        expect(fatal(bool(!callout.text_special().opening_marker.empty()))) << test.source;
         const auto* title = callout_title_block(callout);
         expect(fatal(bool((title != nullptr) == test.title.has_value()))) << test.source;
         if (test.title && title) {
@@ -461,7 +492,7 @@ suite parser_tests = [] {
     const auto closed = parse_text(1, "# title  ###  ");
     const auto& heading = closed.document.root.children.front();
     expect(fatal(bool(heading.inline_content.source == U"title")));
-    expect(fatal(bool(heading.special().closing_marker == U"  ###  ")));
+    expect(fatal(bool(heading.text_special().closing_marker == U"  ###  ")));
     expect(fatal(bool(serialize_markdown(closed.document) == "# title  ###  ")));
 };
 
@@ -475,7 +506,7 @@ suite parser_tests = [] {
     if (!table) return;
     expect(fatal(bool(table->children.front().children.size() == 2u)));
     expect(fatal(bool(table->children.size() == 2u)));
-    expect(fatal(bool(table->special().table_aligns
+    expect(fatal(bool(table->table_special().table_aligns
         == std::vector{TableAlignment::Left, TableAlignment::Right})));
     expect(fatal(bool(has_inline(table->children[0].children[0].inline_content, InlineCstKind::Strong))));
     expect(fatal(bool(has_inline(table->children[0].children[1].inline_content, InlineCstKind::InlineMath))));
@@ -513,9 +544,9 @@ suite parser_tests = [] {
     const auto* image = first_block(markdown.document.root.children, BlockKind::ImageBlock);
     expect(fatal(bool(image != nullptr)));
     if (image) {
-        expect(fatal(bool(image->special().src == "image.png")));
-        expect(fatal(bool(image->special().image_alt == "alt")));
-        expect(fatal(bool(image->special().image_title == std::optional<std::string>{"Title"})));
+        expect(fatal(bool(image->image_special().src == "image.png")));
+        expect(fatal(bool(image->image_special().image_alt == "alt")));
+        expect(fatal(bool(image->image_special().image_title == std::optional<std::string>{"Title"})));
     }
 };
 
