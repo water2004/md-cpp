@@ -77,9 +77,6 @@ namespace winrt::ElMd
             constexpr float contentHeight = pageHeight - pageMargin * 2.0f;
 
             printMode = true;
-            themeProfile = elmd::default_theme_profile(elmd::Theme::Light);
-            ++themeRevision;
-            styleSheet = CreateEditorStyleSheet(themeProfile);
             preparedDocument.reset();
             interactionMap = {};
             nonInteractiveRegions.clear();
@@ -101,7 +98,7 @@ namespace winrt::ElMd
                 resources.d2dContext->SetTarget(page.commands.Get());
                 resources.d2dContext->SetTransform(D2D1::Matrix3x2F::Identity());
                 resources.d2dContext->BeginDraw();
-                resources.d2dContext->Clear(D2D1::ColorF(D2D1::ColorF::White));
+                resources.d2dContext->Clear(styleSheet.canvasColor);
                 resources.d2dContext->SetTransform(D2D1::Matrix3x2F::Translation(pageMargin, pageMargin));
                 resources.d2dContext->PushAxisAlignedClip(
                     D2D1::RectF(0.0f, 0.0f, contentWidth, (std::max)(1.0f, clipHeight)),
