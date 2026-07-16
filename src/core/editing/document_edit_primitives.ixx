@@ -133,6 +133,14 @@ inline const InlineDocument* find_inline_owner(const BlockNode& root, NodeId id)
     const auto* block = elmd::find_block(root, id);
     return block ? editable_inline_document(*block) : nullptr;
 }
+inline InlineDocument* find_inline_owner(EditorDocument& document, NodeId id) {
+    auto* block = find_document_block(document, id);
+    return block ? editable_inline_document(*block) : nullptr;
+}
+inline const InlineDocument* find_inline_owner(const EditorDocument& document, NodeId id) {
+    const auto* block = find_document_block(document, id);
+    return block ? editable_inline_document(*block) : nullptr;
+}
 
 inline void assign_missing_ids(InlineCstNodes& nodes, NodeAllocator& allocator) {
     for (auto& node : nodes) {
@@ -171,7 +179,7 @@ inline std::optional<AppliedSourceEdit> edit_inline(
     SourceRange range,
     std::u32string replacement,
     NodeAllocator& allocator) {
-    auto* inline_document = find_inline_owner(document.root, owner_id);
+    auto* inline_document = find_inline_owner(document, owner_id);
     if (!inline_document || !range.valid_for(inline_document->source.size())) return std::nullopt;
     return apply_inline_source_edit(
         owner_id,
@@ -182,28 +190,43 @@ inline std::optional<AppliedSourceEdit> edit_inline(
 
 inline std::optional<AppliedSourceEdit> edit_block_source(
     EditorDocument& document,
+    BlockNode& block,
+    SourceRange range,
+    std::u32string replacement,
+    NodeAllocator& allocator) {
+    if (auto* inline_document = editable_inline_document(block)) {
+        if (!range.valid_for(inline_document->source.size())) return std::nullopt;
+        return apply_inline_source_edit(
+            block.id,
+            *inline_document,
+            TextEdit{block.id, range, std::move(replacement)},
+            parse_context(document, allocator));
+    }
+    auto* source = editable_raw_block_source(block);
+    if (!source || !range.valid_for(source->size())) return std::nullopt;
+    auto removed = source->substr(range.start, range.length());
+    TextEdit forward{block.id, range, std::move(replacement)};
+    TextEdit inverse{
+        block.id,
+        {range.start, range.start + forward.replacement.size()},
+        std::move(removed)};
+    apply_text_edit(*source, forward);
+    if (block.kind == BlockKind::CodeBlock || block.kind == BlockKind::MathBlock) {
+        reparse_block_source(block.block_source);
+    }
+    return AppliedSourceEdit{std::move(forward), std::move(inverse)};
+}
+
+inline std::optional<AppliedSourceEdit> edit_block_source(
+    EditorDocument& document,
     NodeId owner_id,
     SourceRange range,
     std::u32string replacement,
     NodeAllocator& allocator) {
-    auto* block = elmd::find_block(document.root, owner_id);
+    auto* block = find_document_block(document, owner_id);
     if (!block) return std::nullopt;
-    if (editable_inline_document(*block)) {
-        return edit_inline(document, owner_id, range, std::move(replacement), allocator);
-    }
-    auto* source = editable_raw_block_source(*block);
-    if (!source || !range.valid_for(source->size())) return std::nullopt;
-    auto removed = source->substr(range.start, range.length());
-    TextEdit forward{owner_id, range, std::move(replacement)};
-    TextEdit inverse{
-        owner_id,
-        {range.start, range.start + forward.replacement.size()},
-        std::move(removed)};
-    apply_text_edit(*source, forward);
-    if (block->kind == BlockKind::CodeBlock || block->kind == BlockKind::MathBlock) {
-        reparse_block_source(block->block_source);
-    }
-    return AppliedSourceEdit{std::move(forward), std::move(inverse)};
+    return edit_block_source(
+        document, *block, range, std::move(replacement), allocator);
 }
 
 struct InsertResult {
@@ -216,7 +239,7 @@ inline std::optional<InsertResult> insert_text(
     TextPosition position,
     std::u32string_view text,
     NodeAllocator& allocator) {
-    auto* block = elmd::find_block(document.root, position.container_id);
+    auto* block = find_document_block(document, position.container_id);
     if (!block) return std::nullopt;
     const auto* inline_document = editable_inline_document(*block);
     const auto* raw_source = editable_raw_block_source(*block);
@@ -225,7 +248,7 @@ inline std::optional<InsertResult> insert_text(
     const auto offset = (std::min)(position.source_offset, length);
     auto applied = edit_block_source(
         document,
-        position.container_id,
+        *block,
         {offset, offset},
         std::u32string(text),
         allocator);
@@ -234,8 +257,8 @@ inline std::optional<InsertResult> insert_text(
 }
 
 inline std::optional<std::size_t> editable_length(const EditorDocument& document, NodeId id) {
-    if (const auto* inline_document = find_inline_owner(document.root, id)) return inline_document->source.size();
-    if (const auto* block = elmd::find_block(document.root, id)) {
+    if (const auto* inline_document = find_inline_owner(document, id)) return inline_document->source.size();
+    if (const auto* block = find_document_block(document, id)) {
         if (block->kind == BlockKind::CodeBlock || block->kind == BlockKind::MathBlock) {
             return block->block_source.source.size();
         }

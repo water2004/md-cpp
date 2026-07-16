@@ -218,7 +218,7 @@ inline std::optional<DocumentTransaction> document_insert_link(EditorDocument& d
     if (selection.anchor.container_id != selection.active.container_id) return std::nullopt;
     const auto revision_before = document.revision;
     auto& after = document; document_edit_detail::NodeAllocator allocator(after);
-    auto* owner = document_edit_detail::find_inline_owner(after.root, selection.active.container_id); if (!owner) return std::nullopt;
+    auto* owner = document_edit_detail::find_inline_owner(after, selection.active.container_id); if (!owner) return std::nullopt;
     const auto start = (std::min)(selection.anchor.source_offset, selection.active.source_offset);
     const auto end = (std::min)((std::max)(selection.anchor.source_offset, selection.active.source_offset), owner->source.size());
     const auto label = owner->source.substr(start, end - start);
@@ -238,7 +238,7 @@ inline std::optional<DocumentTransaction> document_insert_image(EditorDocument& 
     if (selection.anchor.container_id != selection.active.container_id) return std::nullopt;
     const auto revision_before = document.revision;
     auto& after = document; document_edit_detail::NodeAllocator allocator(after);
-    auto* owner = document_edit_detail::find_inline_owner(after.root, selection.active.container_id); if (!owner) return std::nullopt;
+    auto* owner = document_edit_detail::find_inline_owner(after, selection.active.container_id); if (!owner) return std::nullopt;
     const auto start = (std::min)(selection.anchor.source_offset, selection.active.source_offset);
     const auto end = (std::min)((std::max)(selection.anchor.source_offset, selection.active.source_offset), owner->source.size());
     auto label = alt.empty() ? owner->source.substr(start, end - start) : utf8_to_cps(alt);
@@ -266,14 +266,14 @@ inline std::optional<DocumentTransaction> document_delete_backward(EditorDocumen
     auto& after = document; auto target = selection.active; document_edit_detail::NodeAllocator allocator(after);
     std::optional<AppliedSourceEdit> source_edit;
     std::vector<DocumentOperation> operations;
-    auto const* selected_block = find_block(after.root, target.container_id);
+    auto const* selected_block = find_document_block(after, target.container_id);
     if (selected_block && document_edit_detail::atomic_block(selected_block->kind)) {
         auto removed = document_edit_detail::remove_atomic(after, target.container_id, allocator);
         if (!removed) return std::nullopt;
         target = removed->target;
         operations = std::move(removed->operations);
     } else if (target.source_offset > 0) {
-        if (auto* owner = document_edit_detail::find_inline_owner(after.root, target.container_id)) {
+        if (auto* owner = document_edit_detail::find_inline_owner(after, target.container_id)) {
             auto range = inline_backward_delete_range(
                 *owner,
                 target.source_offset,
@@ -327,7 +327,7 @@ inline std::optional<DocumentTransaction> document_delete_forward(EditorDocument
     auto& after = document; auto target = selection.active; document_edit_detail::NodeAllocator allocator(after);
     std::optional<AppliedSourceEdit> source_edit;
     std::vector<DocumentOperation> operations;
-    auto const* selected_block = find_block(after.root, target.container_id);
+    auto const* selected_block = find_document_block(after, target.container_id);
     if (selected_block && document_edit_detail::atomic_block(selected_block->kind)) {
         auto removed = document_edit_detail::remove_atomic(after, target.container_id, allocator);
         if (!removed) return std::nullopt;
@@ -344,7 +344,7 @@ inline std::optional<DocumentTransaction> document_delete_forward(EditorDocument
     }
     const auto length = document_edit_detail::editable_length(after, target.container_id); if (!length) return std::nullopt;
     if (target.source_offset < *length) {
-        if (auto* owner = document_edit_detail::find_inline_owner(after.root, target.container_id)) {
+        if (auto* owner = document_edit_detail::find_inline_owner(after, target.container_id)) {
             auto range = inline_forward_delete_range(
                 *owner,
                 target.source_offset,

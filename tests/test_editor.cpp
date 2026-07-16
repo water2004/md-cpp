@@ -163,6 +163,7 @@ suite editor_tests = [] {
     expect(fatal(bool(edit.full_document_serializations == 0u)));
     expect(fatal(bool(edit.full_tree_transaction_diffs == 0u)));
     expect(fatal(bool(edit.full_document_node_id_scans == 0u)));
+    expect(fatal(bool(edit.full_document_block_index_scans == 0u)));
     expect(fatal(bool(edit.full_document_symbol_derivations == 0u)));
     expect(fatal(bool(edit.full_document_outline_derivations == 0u)));
     expect(fatal(bool(edit.local_symbol_derivations == 1u)));
@@ -175,6 +176,7 @@ suite editor_tests = [] {
     expect(fatal(bool(undo.full_document_serializations == 0u)));
     expect(fatal(bool(undo.full_tree_transaction_diffs == 0u)));
     expect(fatal(bool(undo.full_document_node_id_scans == 0u)));
+    expect(fatal(bool(undo.full_document_block_index_scans == 0u)));
     expect(fatal(bool(undo.full_document_symbol_derivations == 0u)));
     expect(fatal(bool(undo.full_document_outline_derivations == 0u)));
     expect(fatal(bool(undo.local_symbol_derivations == 1u)));
@@ -232,17 +234,61 @@ suite editor_tests = [] {
     const auto edited_cursor = editor.document().next_node_id;
     expect(fatal(bool(edited_cursor > parsed_cursor)));
     expect(fatal(bool(read_core_operation_counters().full_document_node_id_scans == 0u)));
+    expect(fatal(bool(read_core_operation_counters().full_document_block_index_scans == 0u)));
 
     reset_core_operation_counters();
     expect(fatal(editor.undo()));
     const auto undone_cursor = editor.document().next_node_id;
     expect(fatal(bool(undone_cursor > edited_cursor)));
     expect(fatal(bool(read_core_operation_counters().full_document_node_id_scans == 0u)));
+    expect(fatal(bool(read_core_operation_counters().full_document_block_index_scans == 0u)));
 
     reset_core_operation_counters();
     expect(fatal(editor.redo()));
     expect(fatal(bool(editor.document().next_node_id > undone_cursor)));
     expect(fatal(bool(read_core_operation_counters().full_document_node_id_scans == 0u)));
+    expect(fatal(bool(read_core_operation_counters().full_document_block_index_scans == 0u)));
+};
+
+"large_document_text_edits_use_the_validated_block_path_index"_test = [] {
+    std::string markdown;
+    constexpr std::size_t block_count = 2048;
+    for (std::size_t index = 0; index < block_count; ++index) {
+        if (index != 0) markdown += "\n\n";
+        markdown += "paragraph " + std::to_string(index);
+    }
+
+    Editor editor(markdown);
+    const auto& last = editor.document().root.children.back();
+    editor.set_selection(caret(last, last.inline_content.source.size()));
+
+    reset_core_operation_counters();
+    expect(fatal(editor.execute_command(Command::InsertText(U"!"))));
+    auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_block_index_scans == 0u)));
+    expect(fatal(bool(counters.full_document_parses == 0u)));
+    expect(fatal(bool(counters.full_document_serializations == 0u)));
+
+    reset_core_operation_counters();
+    expect(fatal(editor.undo()));
+    counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_block_index_scans == 0u)));
+
+    reset_core_operation_counters();
+    expect(fatal(editor.redo()));
+    counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_block_index_scans == 0u)));
+
+    expect(fatal(editor.execute_command(Command{.kind = CommandKind::InsertNewline})));
+    const auto inserted = editor.selection().active.container_id;
+    expect(fatal(bool(find_document_block(editor.document(), inserted) != nullptr)));
+
+    reset_core_operation_counters();
+    expect(fatal(editor.execute_command(Command::InsertText(U"new block"))));
+    counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_block_index_scans == 0u)));
+    expect(fatal(bool(counters.full_document_parses == 0u)));
+    expect(fatal(bool(counters.full_document_serializations == 0u)));
 };
 
 "externally_assembled_documents_calibrate_node_ids_once"_test = [] {

@@ -1833,6 +1833,7 @@ inline ParseOutput parse(const ParseInput& input) {
     ParseOutput out;
     out.revision = input.revision;
     out.document = std::move(doc);
+    rebuild_document_block_index(out.document);
     out.symbols = build_document_symbol_index(out.document, &out.symbol_contributions);
     out.outline = std::move(outline);
     out.diagnostics = out.document.diagnostics;

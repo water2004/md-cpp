@@ -152,9 +152,7 @@ inline std::optional<RecordedBlockEdit> reparse_edited_direct_block(
     TextPosition position,
     NodeAllocator& allocator,
     const AppliedSourceEdit* source_edit = nullptr) {
-    auto path = block_path(document.root, position.container_id);
-    if (!path || path->empty()) return std::nullopt;
-    auto* current = block_at_path(document.root, *path);
+    auto* current = find_document_block(document, position.container_id);
     if (!current) return std::nullopt;
 
     const auto is_raw = current->kind == BlockKind::CodeBlock
@@ -166,6 +164,8 @@ inline std::optional<RecordedBlockEdit> reparse_edited_direct_block(
         && !block_reparse_detail::edit_touches_raw_structure(*current, *source_edit)) {
         return std::nullopt;
     }
+    auto path = document_block_path(document, position.container_id);
+    if (!path || path->empty()) return std::nullopt;
 
     const auto source = is_raw
         ? current->block_source.source

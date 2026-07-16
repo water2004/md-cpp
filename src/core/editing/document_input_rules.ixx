@@ -18,15 +18,16 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> apply_after_text_i
     EditorDocument& document,
     TextPosition& target,
     document_edit_detail::NodeAllocator& allocator) {
-    if (auto task = detail::upgrade_task_item(document, target, allocator)) {
+    auto* block = find_document_block(document, target.container_id);
+    if (!block || block->kind != BlockKind::Paragraph) return std::nullopt;
+    if (auto task = detail::upgrade_task_item(document, target, allocator, *block)) {
         target = task->target;
         return task;
     }
-    auto path = block_path(document.root, target.container_id);
-    auto* block = path ? block_at_path(document.root, *path) : nullptr;
-    if (!block || block->kind != BlockKind::Paragraph) return std::nullopt;
     auto marker = detail::recognize_marker(block->inline_content.source, target.source_offset);
     if (!marker) return std::nullopt;
+    auto path = document_block_path(document, target.container_id);
+    if (!path) return std::nullopt;
     return detail::replace_paragraph_with_container(document, *path, *marker, target, allocator);
 }
 

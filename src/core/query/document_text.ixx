@@ -94,7 +94,7 @@ inline std::vector<DocumentTextFragment> document_text_fragments(const EditorDoc
 inline std::optional<std::u32string> document_editable_text(
     const EditorDocument& document,
     NodeId container_id) {
-    const auto* block = find_block(document.root, container_id);
+    const auto* block = find_document_block(document, container_id);
     return block ? editable_block_text(*block) : std::nullopt;
 }
 

@@ -54,11 +54,11 @@ inline std::optional<DirectListContext> direct_list_context(const EditorDocument
 inline std::optional<document_edit_detail::RecordedBlockEdit> upgrade_task_item(
     EditorDocument& document,
     TextPosition& target,
-    document_edit_detail::NodeAllocator& allocator) {
-    auto* leaf = find_block(document.root, target.container_id);
-    if (!leaf || leaf->kind != BlockKind::Paragraph || target.source_offset != 4
-        || leaf->inline_content.source.size() < 4) return std::nullopt;
-    const auto prefix = leaf->inline_content.source.substr(0, 4);
+    document_edit_detail::NodeAllocator& allocator,
+    BlockNode& leaf) {
+    if (leaf.kind != BlockKind::Paragraph || target.source_offset != 4
+        || leaf.inline_content.source.size() < 4) return std::nullopt;
+    const auto prefix = leaf.inline_content.source.substr(0, 4);
     if (prefix[0] != U'[' || (prefix[1] != U' ' && prefix[1] != U'x' && prefix[1] != U'X')
         || prefix[2] != U']' || !horizontal_space(prefix[3])) return std::nullopt;
     auto context = direct_list_context(document, target.container_id);

@@ -116,7 +116,9 @@ inline bool apply_text_edit(
     const DocumentTextOperation& operation,
     bool forward) {
     const auto& edit = forward ? operation.forward : operation.inverse;
-    if (auto* owner = inline_owner(document.root, edit.container_id)) {
+    auto* block = find_document_block(document, edit.container_id);
+    if (block && editable_inline_document(*block)) {
+        auto* owner = editable_inline_document(*block);
         if (!edit.range.valid_for(owner->source.size())) return false;
         ensure_document_node_id_cursor(document);
         InlineParseContext context;
@@ -125,7 +127,6 @@ inline bool apply_text_edit(
         apply_inline_source_edit(edit.container_id, *owner, edit, context);
         return true;
     }
-    auto* block = find_block(document.root, edit.container_id);
     if (!block) return false;
     auto* source = editable_raw_block_source(*block);
     if (!source || !edit.range.valid_for(source->size())) return false;

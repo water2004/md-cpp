@@ -520,6 +520,7 @@ private:
         if (document_.root.children.empty()) {
             normalize_document(document_);
         }
+        rebuild_document_block_index(document_);
         const auto fragments = document_text_fragments(document_);
         if (!fragments.empty()) {
             selection_ = TextSelection::caret({
@@ -531,6 +532,7 @@ private:
 
     void refresh_derived_from_document_(const EditorDocumentChange& change) {
         if (change.structural) {
+            rebuild_document_block_index(document_);
             symbols_ = build_document_symbol_index(document_, &symbol_contributions_);
             outline_ = build_outline_from_blocks(document_.revision, document_.root.children);
             outline_.revision = document_.revision;
@@ -542,7 +544,7 @@ private:
         for (const auto& operation : change.text_operations) {
             const auto& edit = change.forward ? operation.forward : operation.inverse;
             if (!refreshed.insert(edit.container_id.v).second) continue;
-            if (const auto* block = find_block(document_.root, edit.container_id)) {
+            if (const auto* block = find_document_block(document_, edit.container_id)) {
                 heading_changed = heading_changed || block->kind == BlockKind::Heading;
                 update_document_symbol_index(
                     document_, *block, symbol_contributions_, symbols_);
