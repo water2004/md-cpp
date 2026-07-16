@@ -287,6 +287,7 @@ namespace winrt::ElMd
                 return;
             }
             auto range = args.Range();
+            auto requestedSelection = args.NewSelection();
             auto length = knownText_.size();
             auto start = static_cast<std::size_t>((std::max)(0, range.StartCaretPosition));
             auto end = static_cast<std::size_t>((std::max)(0, range.EndCaretPosition));
@@ -365,6 +366,26 @@ namespace winrt::ElMd
             if (nextSelection.active.container_id == previousActiveContainer
                 && nextText == predicted)
             {
+                auto const requestedStart = static_cast<std::size_t>((std::max)(
+                    0,
+                    requestedSelection.StartCaretPosition));
+                auto const requestedEnd = static_cast<std::size_t>((std::max)(
+                    0,
+                    (std::max)(
+                        requestedSelection.StartCaretPosition,
+                        requestedSelection.EndCaretPosition)));
+                auto const requestedAnchor = session_->TextInputPositionFromAcp(
+                    previousActiveContainer,
+                    (std::min)(requestedStart, nextText.size()));
+                auto const requestedActive = session_->TextInputPositionFromAcp(
+                    previousActiveContainer,
+                    (std::min)(requestedEnd, nextText.size()));
+                if (nextSelection.anchor != requestedAnchor
+                    || nextSelection.active != requestedActive)
+                {
+                    session_->SetSelection(requestedAnchor, requestedActive);
+                    if (render_) render_();
+                }
                 activeContainer_ = previousActiveContainer;
                 knownText_ = std::move(nextText);
                 knownLength_ = knownText_.size();
