@@ -581,6 +581,47 @@ suite editor_tests = [] {
     expect(fatal(bool(render_model.reused_block_count == 1u)));
 };
 
+"tree_moves_keep_render_invalidation_local_to_their_stable_top_level"_test = [] {
+    Editor editor("- one\n- two\n\noutside");
+    auto model = build_render_model(
+        editor.document(),
+        editor.outline(),
+        editor.symbols(),
+        default_theme_profile());
+    const BlockNode* two = nullptr;
+    walk_blocks(editor.document().root, [&](const BlockNode& block) {
+        if (block.inline_content.source == U"two") two = &block;
+    });
+    expect(fatal(bool(two != nullptr)));
+    if (!two) return;
+    editor.set_selection(caret(*two, 0));
+    expect(fatal(bool(editor.execute_document_indent_list_item(editor.selection()).has_value())));
+    auto change = editor.take_last_document_change();
+    expect(fatal(bool(change.has_value())));
+    if (!change) return;
+    expect(fatal(bool(change->structural_locality_known)));
+    expect(fatal(bool(!change->moved_roots.empty())));
+
+    RenderModelUpdate update;
+    update.structural = change->structural;
+    update.structural_locality_known = change->structural_locality_known;
+    update.structural_anchors = change->structural_anchors;
+    reset_core_operation_counters();
+    model = build_render_model_incremental(
+        editor.document(),
+        editor.outline(),
+        editor.symbols(),
+        default_theme_profile(),
+        std::move(model),
+        update);
+    const auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.render_source_key_derivations == 1u)));
+    expect(fatal(bool(model.incremental_update)));
+    expect(fatal(bool(model.changed_block_indices == std::vector<std::size_t>{0})));
+    expect(fatal(bool(model.rebuilt_block_count == 1u)));
+    expect(fatal(bool(model.reused_block_count == 1u)));
+};
+
 "externally_assembled_documents_calibrate_node_ids_once"_test = [] {
     EditorDocument document;
     document.root.id = NodeId{41};
@@ -2770,6 +2811,8 @@ suite editor_tests = [] {
         expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << label;
         expect(fatal(bool(counters.full_document_block_index_scans == 0u))) << label;
         expect(fatal(bool(counters.incremental_document_block_index_repairs == 1u))) << label;
+        expect(fatal(bool(counters.full_document_symbol_derivations == 0u))) << label;
+        expect(fatal(bool(counters.full_document_outline_derivations == 0u))) << label;
         expect(fatal(bool(!transaction->operations.empty()))) << label;
         expect(fatal(document_indexes_are_exact(editor.document()))) << label;
         const auto after_markdown = editor.markdown_utf8();
@@ -2816,6 +2859,36 @@ suite editor_tests = [] {
             false,
             "nested quoted item");
     }
+};
+
+"moves_rederive_only_order_sensitive_data_present_in_the_moved_subtree"_test = [] {
+    Editor symbols("- first\n- second[^1]\n\n[^1]: note");
+    const BlockNode* referenced = nullptr;
+    walk_blocks(symbols.document().root, [&](const BlockNode& block) {
+        if (block.inline_content.source == U"second[^1]") referenced = &block;
+    });
+    expect(fatal(bool(referenced != nullptr)));
+    if (!referenced) return;
+    symbols.set_selection(caret(*referenced, 0));
+    reset_core_operation_counters();
+    expect(fatal(bool(symbols.execute_document_indent_list_item(symbols.selection()).has_value())));
+    auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_symbol_derivations == 1u)));
+    expect(fatal(bool(counters.full_document_outline_derivations == 0u)));
+
+    Editor headings("- first\n- # second");
+    const BlockNode* heading = nullptr;
+    walk_blocks(headings.document().root, [&](const BlockNode& block) {
+        if (block.kind == BlockKind::Heading) heading = &block;
+    });
+    expect(fatal(bool(heading != nullptr)));
+    if (!heading) return;
+    headings.set_selection(caret(*heading, 0));
+    reset_core_operation_counters();
+    expect(fatal(bool(headings.execute_document_indent_list_item(headings.selection()).has_value())));
+    counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_symbol_derivations == 1u)));
+    expect(fatal(bool(counters.full_document_outline_derivations == 1u)));
 };
 
 "table_navigation_changes_selection_without_creating_history"_test = [] {

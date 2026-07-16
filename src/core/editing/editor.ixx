@@ -29,6 +29,7 @@ export namespace elmd {
 struct EditorDocumentChange {
     std::vector<DocumentTextOperation> text_operations;
     std::vector<NodeId> structural_anchors;
+    std::vector<NodeId> moved_roots;
     bool structural = false;
     bool structural_locality_known = true;
     bool structural_symbols_may_change = false;
@@ -63,11 +64,7 @@ inline EditorDocumentChange summarize_document_change(
                 change.structural_anchors.push_back(tree.parent_id);
                 change.structural_anchors.push_back(tree.other_parent_id);
                 change.structural_anchors.push_back(tree.moved_id);
-                // Symbol ordinals and outline hierarchy are order-sensitive.
-                // Re-derive them conservatively until the move transaction
-                // also carries subtree contribution summaries.
-                change.structural_symbols_may_change = true;
-                change.structural_outline_may_change = true;
+                change.moved_roots.push_back(tree.moved_id);
             } else {
                 if (tree.parent_id.v != 0) {
                     change.structural_anchors.push_back(tree.parent_id);
@@ -93,6 +90,10 @@ inline EditorDocumentChange summarize_document_change(
     change.structural_anchors.erase(
         std::unique(change.structural_anchors.begin(), change.structural_anchors.end()),
         change.structural_anchors.end());
+    std::ranges::sort(change.moved_roots, {}, &NodeId::v);
+    change.moved_roots.erase(
+        std::unique(change.moved_roots.begin(), change.moved_roots.end()),
+        change.moved_roots.end());
     return change;
 }
 
@@ -581,8 +582,22 @@ private:
             if (!update_document_block_index(document_, operations, change.forward)) {
                 rebuild_document_block_index(document_);
             }
+            bool symbols_may_change = change.structural_symbols_may_change;
             bool heading_changed = change.structural_outline_may_change;
-            if (change.structural_symbols_may_change) {
+            auto inspect_moved_subtree = [&](auto& self, const BlockNode& block) -> void {
+                symbols_may_change = symbols_may_change
+                    || symbol_contributions_.by_block.contains(block.id.v);
+                heading_changed = heading_changed || block.kind == BlockKind::Heading;
+                if (symbols_may_change && heading_changed) return;
+                for (const auto& child : block.children) self(self, child);
+            };
+            for (auto moved : change.moved_roots) {
+                if (const auto* block = find_document_block(document_, moved)) {
+                    inspect_moved_subtree(inspect_moved_subtree, *block);
+                }
+                if (symbols_may_change && heading_changed) break;
+            }
+            if (symbols_may_change) {
                 symbols_ = build_document_symbol_index(document_, &symbol_contributions_);
             } else {
                 std::unordered_set<std::uint64_t> refreshed;
