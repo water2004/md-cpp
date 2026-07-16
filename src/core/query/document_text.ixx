@@ -16,7 +16,9 @@ export namespace elmd {
 
 struct DocumentTextFragment {
     NodeId container_id{};
-    std::u32string text;
+    // View into the owning EditorDocument. Callers must not retain fragments
+    // across a document mutation.
+    std::u32string_view text;
 };
 
 inline InlineDocument* editable_inline_document(BlockNode& block) {
@@ -63,7 +65,7 @@ inline const std::u32string* editable_raw_block_source(const BlockNode& block) {
     }
 }
 
-inline std::optional<std::u32string> editable_block_text(const BlockNode& block) {
+inline std::optional<std::u32string_view> editable_block_text_view(const BlockNode& block) {
     if (const auto* document = editable_inline_document(block)) return document->source;
     if (const auto* source = editable_raw_block_source(block)) return *source;
     switch (block.kind) {
@@ -74,18 +76,37 @@ inline std::optional<std::u32string> editable_block_text(const BlockNode& block)
         case BlockKind::Toc:
         case BlockKind::ThematicBreak:
         case BlockKind::Extension:
-            return std::u32string{U'\ufffc'};
+            return std::u32string_view{U"\ufffc", 1};
         default:
             return std::nullopt;
     }
+}
+
+inline std::optional<std::u32string> editable_block_text(const BlockNode& block) {
+    auto view = editable_block_text_view(block);
+    return view ? std::optional<std::u32string>{std::u32string{*view}} : std::nullopt;
+}
+
+inline std::optional<TextPosition> first_document_text_position(
+    const EditorDocument& document) {
+    auto find = [&](auto& self, const BlockNode& block) -> std::optional<TextPosition> {
+        if (block.kind != BlockKind::Document && editable_block_text_view(block)) {
+            return TextPosition{block.id, 0, TextAffinity::Downstream};
+        }
+        for (const auto& child : block.children) {
+            if (auto position = self(self, child)) return position;
+        }
+        return std::nullopt;
+    };
+    return find(find, document.root);
 }
 
 inline std::vector<DocumentTextFragment> document_text_fragments(const EditorDocument& document) {
     std::vector<DocumentTextFragment> result;
     walk_blocks(document.root, [&](const BlockNode& block) {
         if (block.kind == BlockKind::Document) return;
-        if (auto text = editable_block_text(block)) {
-            result.push_back({block.id, std::move(*text)});
+        if (auto text = editable_block_text_view(block)) {
+            result.push_back({block.id, *text});
         }
     });
     return result;
@@ -95,7 +116,9 @@ inline std::optional<std::u32string> document_editable_text(
     const EditorDocument& document,
     NodeId container_id) {
     const auto* block = find_document_block(document, container_id);
-    return block ? editable_block_text(*block) : std::nullopt;
+    if (!block) return std::nullopt;
+    auto text = editable_block_text_view(*block);
+    return text ? std::optional<std::u32string>{std::u32string{*text}} : std::nullopt;
 }
 
 inline std::optional<std::u32string> document_selected_text(
@@ -125,10 +148,11 @@ inline std::optional<std::u32string> document_selected_text(
     const auto start_offset = (std::min)(start.source_offset, fragments[start_index].text.size());
     const auto end_offset = (std::min)(end.source_offset, fragments[end_index].text.size());
     if (start_index == end_index) {
-        return fragments[start_index].text.substr(start_offset, end_offset - start_offset);
+        return std::u32string{
+            fragments[start_index].text.substr(start_offset, end_offset - start_offset)};
     }
 
-    std::u32string result = fragments[start_index].text.substr(start_offset);
+    std::u32string result{fragments[start_index].text.substr(start_offset)};
     for (std::size_t index = start_index + 1; index <= end_index; ++index) {
         result.push_back(U'\n');
         const auto length = index == end_index ? end_offset : fragments[index].text.size();

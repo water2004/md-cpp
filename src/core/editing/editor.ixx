@@ -521,12 +521,8 @@ private:
             normalize_document(document_);
             rebuild_document_block_index(document_);
         }
-        const auto fragments = document_text_fragments(document_);
-        if (!fragments.empty()) {
-            selection_ = TextSelection::caret({
-                fragments.front().container_id,
-                0,
-                TextAffinity::Downstream});
+        if (auto position = first_document_text_position(document_)) {
+            selection_ = TextSelection::caret(*position);
         }
     }
 

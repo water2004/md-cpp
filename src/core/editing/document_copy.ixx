@@ -163,9 +163,9 @@ inline std::optional<std::u32string> document_selected_markdown(
         const auto range = document_copy_detail::selected_range(
             *ordered,
             ordered->start_index);
-        return ordered->fragments[ordered->start_index].text.substr(
+        return std::u32string{ordered->fragments[ordered->start_index].text.substr(
             range.start,
-            range.length());
+            range.length())};
     }
 
     BlockVec selected;
