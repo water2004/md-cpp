@@ -174,6 +174,15 @@ namespace winrt::ElMd
         Start();
     }
 
+    void EditorScrollController::ScrollPreciselyBy(float delta)
+    {
+        if (!renderer || !std::isfinite(delta) || delta == 0.0f) return;
+        // Precision touchpads already emit a continuous, inertial stream. Move
+        // the model directly and use the frame scheduler only to coalesce paint.
+        renderer->ScrollBy(delta);
+        Start();
+    }
+
     void EditorScrollController::Start()
     {
         if (frameDispatch)

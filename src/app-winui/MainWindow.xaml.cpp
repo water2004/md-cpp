@@ -226,7 +226,11 @@ namespace winrt::ElMd::implementation
     void MainWindow::HandlePointerWheel(Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
     {
         auto delta = args.GetCurrentPoint(EditorSurface()).Properties().MouseWheelDelta();
-        scrollController.QueueScrollBy(static_cast<float>(-delta));
+        auto scrollDelta = static_cast<float>(-delta);
+        if (args.Pointer().PointerDeviceType() == Microsoft::UI::Input::PointerDeviceType::Touchpad)
+            scrollController.ScrollPreciselyBy(scrollDelta);
+        else
+            scrollController.QueueScrollBy(scrollDelta);
         args.Handled(true);
     }
 

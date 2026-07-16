@@ -9,18 +9,7 @@ namespace winrt::ElMd
         if (!std::isfinite(delta) || delta == 0.0f) return;
         auto pendingDistance = scrollTarget - scrollOffset;
         if (pendingDistance * delta < 0.0f) scrollTarget = scrollOffset;
-        auto previousTarget = scrollTarget;
         scrollTarget = (std::clamp)(scrollTarget + delta, 0.0f, MaximumScrollOffset());
-
-        // Apply a small part of newly accepted wheel input immediately. The
-        // remaining distance stays in the exponential response, preserving the
-        // inertial tail without making the first visible frame feel detached.
-        constexpr float immediateResponse = 0.25f;
-        auto acceptedDelta = scrollTarget - previousTarget;
-        scrollOffset = (std::clamp)(
-            scrollOffset + acceptedDelta * immediateResponse,
-            0.0f,
-            MaximumScrollOffset());
     }
 
     bool EditorSurfaceRenderer::AdvanceScrollAnimation(float elapsedSeconds)

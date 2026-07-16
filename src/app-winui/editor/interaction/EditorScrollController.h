@@ -17,6 +17,7 @@ namespace winrt::ElMd
         void Sync();
         void SetWidth(float value);
         void QueueScrollBy(float delta);
+        void ScrollPreciselyBy(float delta);
         void Stop();
 
     private:
