@@ -45,7 +45,10 @@ namespace winrt::ElMd
     void ApplyLanguageOverride(std::string_view languageId)
     {
         if (!IsSupportedLanguage(languageId)) languageId = "system";
+        // This app is currently unpackaged, so an override is not persisted.
+        // An empty string is not a BCP-47 tag and the WinAppSDK setter rejects it.
+        if (languageId == "system") return;
         Microsoft::Windows::Globalization::ApplicationLanguages::PrimaryLanguageOverride(
-            languageId == "system" ? hstring{} : to_hstring(languageId));
+            to_hstring(languageId));
     }
 }
