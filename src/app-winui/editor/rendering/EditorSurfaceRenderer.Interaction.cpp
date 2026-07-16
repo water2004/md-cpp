@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "editor/rendering/EditorSurfaceRenderer.h"
+#include "editor/rendering/EditorPreparedDocument.h"
 
 namespace winrt::ElMd
 {
@@ -55,14 +56,20 @@ namespace winrt::ElMd
             scrollTarget = scrollOffset;
             return scrollOffset != previous;
         }
-        if (auto owner = documentOwnerY.find(position.container_id.v); owner != documentOwnerY.end())
+        if (preparedDocument)
         {
-            scrollOffset = (std::clamp)(
-                owner->second - styleSheet.verticalPadding,
-                0.0f,
-                MaximumScrollOffset());
-            scrollTarget = scrollOffset;
-            return scrollOffset != previous;
+            auto owner = preparedDocument->ownerBlockIndex.find(position.container_id.v);
+            if (owner != preparedDocument->ownerBlockIndex.end()
+                && owner->second < preparedDocument->geometry.Size())
+            {
+                auto placement = preparedDocument->geometry.At(owner->second);
+                scrollOffset = (std::clamp)(
+                    placement.top - styleSheet.verticalPadding,
+                    0.0f,
+                    MaximumScrollOffset());
+                scrollTarget = scrollOffset;
+                return scrollOffset != previous;
+            }
         }
         for (auto const& block : interactionMap.blocks)
         {

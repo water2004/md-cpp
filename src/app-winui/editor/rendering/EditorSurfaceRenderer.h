@@ -98,7 +98,6 @@ namespace winrt::ElMd
         EditorInteractionMap interactionMap;
         std::vector<D2D1_RECT_F> nonInteractiveRegions;
         std::unique_ptr<PreparedDocument> preparedDocument;
-        std::unordered_map<std::uint64_t, float> documentOwnerY;
         std::uint64_t embeddedGeneration = 0;
         std::optional<D2D1_POINT_2F> pointerPosition;
         std::optional<TableAction> draggedTableAction;

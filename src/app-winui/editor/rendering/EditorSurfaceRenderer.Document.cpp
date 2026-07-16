@@ -629,7 +629,6 @@ namespace winrt::ElMd
             preparedDocument->documentWidth = documentWidth;
             preparedDocument->themeRevision = themeRevision;
             preparedDocument->blocks.resize(frame.renderModel.blocks.size());
-            preparedDocument->placements.resize(frame.renderModel.blocks.size());
             if (previous
                 && previous->documentWidth == documentWidth
                 && previous->themeRevision == themeRevision)
@@ -717,24 +716,36 @@ namespace winrt::ElMd
                     auto found = preparedDocument->ownerBlockIndex.find(owner.v);
                     if (found != preparedDocument->ownerBlockIndex.end() && found->second == index)
                         preparedDocument->ownerBlockIndex.erase(found);
-                    documentOwnerY.erase(owner.v);
                 }
                 prepared = {};
                 initializePreparedMetadata(prepared, source);
-                prepared.height = previousHeight;
-                auto top = index < preparedDocument->placements.size()
-                    ? preparedDocument->placements[index].top
-                    : 0.0f;
-                for (auto owner : prepared.owners)
+                if (source.kind == elmd::RenderBlockKind::ThematicBreak)
                 {
-                    preparedDocument->ownerBlockIndex[owner.v] = index;
-                    documentOwnerY[owner.v] = top;
+                    prepared.height = 40.0f;
+                    prepared.valid = true;
                 }
+                else
+                {
+                    prepared.height = previousHeight;
+                }
+                if (preparedDocument->geometry.Initialized())
+                {
+                    preparedDocument->geometry.Update(index, {
+                        source.block_style.margin_top,
+                        prepared.height,
+                        source.block_style.margin_bottom
+                            + (source.source_mode ? 0.0f : styleSheet.blockGap),
+                    });
+                }
+                for (auto owner : prepared.owners)
+                    preparedDocument->ownerBlockIndex[owner.v] = index;
                 preparedDocument->layoutBlocks.erase(index);
                 preparedDocument->embeddedBlocks.erase(index);
                 for (auto const& imageSource : imageSources) inlineImages.ReleaseGif(imageSource);
             }
             if (modelChanged) preparedDocument->modelRevision = frame.renderModel.revision;
+            if (preparedDocument->geometry.Initialized())
+                preparedDocument->totalHeight = preparedDocument->geometry.TotalHeight();
         }
         preparedDocument->selection = selection;
         auto prepareBlock = [&](elmd::RenderBlock const& block, bool requestEmbedded)
@@ -877,17 +888,16 @@ namespace winrt::ElMd
             return screenTop < resources.surfaceHeightDip + embeddedOverscanAfter
                 && screenTop > -embeddedOverscanBefore;
         };
-        auto rebuildGeometry = [&]
+        auto initializeGeometry = [&]
         {
-            auto documentY = styleSheet.verticalPadding;
-            documentOwnerY.clear();
             preparedDocument->ownerBlockIndex.clear();
             preparedDocument->embeddedBlocks.clear();
+            std::vector<PreparedDocument::GeometryIndex::Entry> entries;
+            entries.reserve(frame.renderModel.blocks.size());
             for (std::size_t index = 0; index < frame.renderModel.blocks.size(); ++index)
             {
                 auto const& block = frame.renderModel.blocks[index];
                 auto& prepared = preparedDocument->blocks[index];
-                documentY += block.block_style.margin_top;
                 if (block.kind == elmd::RenderBlockKind::ThematicBreak)
                 {
                     prepared = {};
@@ -900,51 +910,41 @@ namespace winrt::ElMd
                     initializePreparedMetadata(prepared, block);
                     prepared.height = estimateBlockHeight(block);
                 }
-                auto& placement = preparedDocument->placements[index];
-                placement.top = documentY;
-                placement.bottom = documentY + prepared.height;
+                else if (prepared.sourceId.v == 0)
+                {
+                    initializePreparedMetadata(prepared, block);
+                }
+                entries.push_back({
+                    block.block_style.margin_top,
+                    prepared.height,
+                    block.block_style.margin_bottom
+                        + (block.source_mode ? 0.0f : styleSheet.blockGap),
+                });
                 if (prepared.embeddedRequested && (prepared.containsMath || prepared.containsImage))
                     preparedDocument->embeddedBlocks.insert(index);
                 for (auto owner : prepared.owners)
-                {
-                    documentOwnerY[owner.v] = placement.top;
                     preparedDocument->ownerBlockIndex[owner.v] = index;
-                }
-                documentY = placement.bottom + block.block_style.margin_bottom
-                    + (block.source_mode ? 0.0f : styleSheet.blockGap);
             }
-            if (preparedDocument->topLevelBlockIndex.size() != frame.renderModel.blocks.size())
-            {
-                preparedDocument->topLevelBlockIndex.clear();
-                preparedDocument->topLevelBlockIndex.reserve(frame.renderModel.blocks.size());
-                for (std::size_t index = 0; index < frame.renderModel.blocks.size(); ++index)
-                    preparedDocument->topLevelBlockIndex[frame.renderModel.blocks[index].id.v] = index;
-            }
-            documentOwnerY.reserve(frame.renderModel.editable_top_level.size());
+            preparedDocument->topLevelBlockIndex.clear();
+            preparedDocument->topLevelBlockIndex.reserve(frame.renderModel.blocks.size());
+            for (std::size_t index = 0; index < frame.renderModel.blocks.size(); ++index)
+                preparedDocument->topLevelBlockIndex[frame.renderModel.blocks[index].id.v] = index;
             preparedDocument->ownerBlockIndex.reserve(frame.renderModel.editable_top_level.size());
             for (auto const& [owner, topLevel] : frame.renderModel.editable_top_level)
             {
                 auto found = preparedDocument->topLevelBlockIndex.find(topLevel.v);
                 if (found == preparedDocument->topLevelBlockIndex.end()
-                    || found->second >= preparedDocument->placements.size()) continue;
-                documentOwnerY[owner] = preparedDocument->placements[found->second].top;
+                    || found->second >= entries.size()) continue;
                 preparedDocument->ownerBlockIndex[owner] = found->second;
             }
-            preparedDocument->totalHeight = documentY + styleSheet.verticalPadding;
-            preparedDocument->geometryValid = true;
+            preparedDocument->geometry.Reset(std::move(entries), styleSheet.verticalPadding);
+            preparedDocument->totalHeight = preparedDocument->geometry.TotalHeight();
         };
-        if (!preparedDocument->geometryValid) rebuildGeometry();
+        if (!preparedDocument->geometry.Initialized()) initializeGeometry();
 
         auto firstIntersecting = [&](float documentTop)
         {
-            return static_cast<std::size_t>(std::lower_bound(
-                preparedDocument->placements.begin(),
-                preparedDocument->placements.end(),
-                documentTop,
-                [](PreparedDocument::Placement const& placement, float value)
-                {
-                    return placement.bottom < value;
-                }) - preparedDocument->placements.begin());
+            return preparedDocument->geometry.FirstIntersecting(documentTop);
         };
 
         // Measure only the viewport neighborhood. Offscreen blocks retain a
@@ -957,7 +957,7 @@ namespace winrt::ElMd
             auto anchorIndex = (std::min)(
                 firstIntersecting(scrollOffset),
                 frame.renderModel.blocks.size() - 1);
-            auto anchorTop = preparedDocument->placements[anchorIndex].top;
+            auto anchorTop = preparedDocument->geometry.At(anchorIndex).top;
             auto measureTop = printMode
                 ? (std::numeric_limits<float>::lowest)()
                 : scrollOffset - resources.surfaceHeightDip * 0.75f - viewportOverscan;
@@ -967,14 +967,14 @@ namespace winrt::ElMd
             auto measureBegin = printMode ? std::size_t{0} : firstIntersecting(measureTop);
             auto measureEnd = measureBegin;
             while (measureEnd < frame.renderModel.blocks.size()
-                && (printMode || preparedDocument->placements[measureEnd].top <= measureBottom))
+                && (printMode || preparedDocument->geometry.At(measureEnd).top <= measureBottom))
                 ++measureEnd;
             if (frame.materializeBlocks) frame.materializeBlocks(measureBegin, measureEnd);
             auto measured = false;
             auto geometryChanged = false;
             for (auto index = measureBegin; index < measureEnd; ++index)
             {
-                auto const& placement = preparedDocument->placements[index];
+                auto placement = preparedDocument->geometry.At(index);
                 auto const& block = frame.renderModel.blocks[index];
                 auto& prepared = preparedDocument->blocks[index];
                 if (block.kind == elmd::RenderBlockKind::ThematicBreak || prepared.valid) continue;
@@ -986,20 +986,20 @@ namespace winrt::ElMd
                 else
                     preparedDocument->embeddedBlocks.erase(index);
                 for (auto owner : prepared.owners)
-                {
                     preparedDocument->ownerBlockIndex[owner.v] = index;
-                    documentOwnerY[owner.v] = placement.top;
+                if (prepared.height != previousHeight)
+                {
+                    preparedDocument->geometry.UpdateHeight(index, prepared.height);
+                    geometryChanged = true;
                 }
-                geometryChanged = geometryChanged || prepared.height != previousHeight;
                 measured = true;
             }
             if (!measured) break;
             if (!geometryChanged) break;
-            preparedDocument->geometryValid = false;
-            rebuildGeometry();
-            if (!printMode && anchorIndex < preparedDocument->placements.size())
+            preparedDocument->totalHeight = preparedDocument->geometry.TotalHeight();
+            if (!printMode && anchorIndex < preparedDocument->geometry.Size())
             {
-                auto shift = preparedDocument->placements[anchorIndex].top - anchorTop;
+                auto shift = preparedDocument->geometry.At(anchorIndex).top - anchorTop;
                 if (shift != 0.0f)
                 {
                     scrollOffset = (std::max)(0.0f, scrollOffset + shift);
@@ -1013,7 +1013,7 @@ namespace winrt::ElMd
         auto embeddedBegin = firstIntersecting(embeddedTop);
         auto embeddedEnd = embeddedBegin;
         while (embeddedEnd < frame.renderModel.blocks.size()
-            && preparedDocument->placements[embeddedEnd].top <= embeddedBottom)
+            && preparedDocument->geometry.At(embeddedEnd).top <= embeddedBottom)
             ++embeddedEnd;
         if (frame.materializeBlocks) frame.materializeBlocks(embeddedBegin, embeddedEnd);
         auto geometryChanged = false;
@@ -1036,7 +1036,11 @@ namespace winrt::ElMd
             prepared = prepareBlock(block, true);
             preparedDocument->layoutBlocks.insert(index);
             preparedDocument->embeddedBlocks.insert(index);
-            geometryChanged = geometryChanged || prepared.height != previousHeight;
+            if (prepared.height != previousHeight)
+            {
+                preparedDocument->geometry.UpdateHeight(index, prepared.height);
+                geometryChanged = true;
+            }
         }
 
         auto unloadTop = scrollOffset - embeddedUnloadBefore;
@@ -1048,7 +1052,7 @@ namespace winrt::ElMd
         {
             if (printMode) break;
             if (index >= frame.renderModel.blocks.size()) continue;
-            auto const& placement = preparedDocument->placements[index];
+            auto placement = preparedDocument->geometry.At(index);
             if (placement.bottom >= unloadTop && placement.top <= unloadBottom) continue;
             auto const& block = frame.renderModel.blocks[index];
             auto& prepared = preparedDocument->blocks[index];
@@ -1067,13 +1071,14 @@ namespace winrt::ElMd
             preparedDocument->layoutBlocks.insert(index);
             preparedDocument->embeddedBlocks.erase(index);
             for (auto const& source : imageSources) inlineImages.ReleaseGif(source);
-            geometryChanged = geometryChanged || prepared.height != previousHeight;
+            if (prepared.height != previousHeight)
+            {
+                preparedDocument->geometry.UpdateHeight(index, prepared.height);
+                geometryChanged = true;
+            }
         }
         if (geometryChanged)
-        {
-            preparedDocument->geometryValid = false;
-            rebuildGeometry();
-        }
+            preparedDocument->totalHeight = preparedDocument->geometry.TotalHeight();
 
         if (!printMode)
         {
@@ -1084,7 +1089,7 @@ namespace winrt::ElMd
             auto retentionBegin = firstIntersecting(retentionTop);
             auto retentionEnd = retentionBegin;
             while (retentionEnd < frame.renderModel.blocks.size()
-                && preparedDocument->placements[retentionEnd].top <= retentionBottom)
+                && preparedDocument->geometry.At(retentionEnd).top <= retentionBottom)
                 ++retentionEnd;
             auto activeLayouts = std::vector<std::size_t>(
                 preparedDocument->layoutBlocks.begin(),
@@ -1092,7 +1097,7 @@ namespace winrt::ElMd
             for (auto index : activeLayouts)
             {
                 if (index >= frame.renderModel.blocks.size()) continue;
-                auto const& placement = preparedDocument->placements[index];
+                auto placement = preparedDocument->geometry.At(index);
                 if (placement.bottom >= retentionTop && placement.top <= retentionBottom) continue;
                 auto const& block = frame.renderModel.blocks[index];
                 auto& prepared = preparedDocument->blocks[index];
@@ -1122,12 +1127,12 @@ namespace winrt::ElMd
         auto viewportBegin = firstIntersecting(viewportTop);
         auto viewportEnd = viewportBegin;
         while (viewportEnd < frame.renderModel.blocks.size()
-            && preparedDocument->placements[viewportEnd].top <= viewportBottom)
+            && preparedDocument->geometry.At(viewportEnd).top <= viewportBottom)
             ++viewportEnd;
         if (frame.materializeBlocks) frame.materializeBlocks(viewportBegin, viewportEnd);
         for (auto blockIndex = viewportBegin; blockIndex < viewportEnd; ++blockIndex)
         {
-            auto const& placement = preparedDocument->placements[blockIndex];
+            auto placement = preparedDocument->geometry.At(blockIndex);
             auto const& block = frame.renderModel.blocks[blockIndex];
             auto& prepared = preparedDocument->blocks[blockIndex];
             auto top = placement.top - scrollOffset;

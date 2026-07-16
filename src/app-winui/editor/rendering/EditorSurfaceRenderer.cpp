@@ -56,7 +56,6 @@ namespace winrt::ElMd
     void EditorSurfaceRenderer::ClearPreparedDocument()
     {
         preparedDocument.reset();
-        documentOwnerY.clear();
     }
 
     void EditorSurfaceRenderer::SetInvalidateCallback(std::function<void()> callback)

@@ -29,7 +29,6 @@ namespace winrt::ElMd
         auto originalThemeRevision = themeRevision;
         auto originalStyle = styleSheet;
         auto originalPrepared = std::move(preparedDocument);
-        auto originalOwnerY = std::move(documentOwnerY);
         auto originalInteraction = std::move(interactionMap);
         auto originalNonInteractive = std::move(nonInteractiveRegions);
         bool restored = false;
@@ -50,7 +49,6 @@ namespace winrt::ElMd
             styleSheet = originalStyle;
             printMode = false;
             preparedDocument = std::move(originalPrepared);
-            documentOwnerY = std::move(originalOwnerY);
             interactionMap = std::move(originalInteraction);
             nonInteractiveRegions = std::move(originalNonInteractive);
             try
@@ -83,7 +81,6 @@ namespace winrt::ElMd
             ++themeRevision;
             styleSheet = CreateEditorStyleSheet(themeProfile);
             preparedDocument.reset();
-            documentOwnerY.clear();
             interactionMap = {};
             nonInteractiveRegions.clear();
             resources.surfaceWidthDip = contentWidth;
@@ -138,9 +135,12 @@ namespace winrt::ElMd
             std::vector<elmd::PrintBlockExtent> extents;
             if (preparedDocument)
             {
-                extents.reserve(preparedDocument->placements.size());
-                for (auto const& placement : preparedDocument->placements)
+                extents.reserve(preparedDocument->geometry.Size());
+                for (std::size_t index = 0; index < preparedDocument->geometry.Size(); ++index)
+                {
+                    auto placement = preparedDocument->geometry.At(index);
                     extents.push_back({placement.top, placement.bottom});
+                }
             }
             auto documentBottom = preparedDocument ? preparedDocument->totalHeight : contentHeight;
             auto slices = elmd::plan_print_pages(extents, 0.0f, documentBottom, contentHeight);
