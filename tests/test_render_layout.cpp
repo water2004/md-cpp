@@ -92,6 +92,7 @@ static RenderModel build_model(BlockNode block, std::uint64_t next_id) {
     document.root.kind = BlockKind::Document;
     document.root.children.push_back(std::move(block));
     document.revision = 1;
+    rebuild_document_block_index(document);
     return build_render_model(document, Outline::empty(1));
 }
 
@@ -377,14 +378,16 @@ suite render_layout_tests = [] {
     expect(fatal(bool(code != nullptr)));
     auto const content = code ? block_source_content(code->block_source) : std::u32string{};
     if (!code || content.empty() || content.back() != U'\n') return;
+    auto const code_id = code->id;
 
     auto inserted = document_enter(parsed.document, TextSelection::caret({
-        code->id,
+        code_id,
         block_source_offset_for_content(code->block_source, content.size() - 1),
         TextAffinity::Downstream}));
     expect(fatal(bool(inserted.has_value())));
     if (!inserted) return;
-    expect(fatal(bool(inserted->selection_after.active.container_id == code->id)));
+    rebuild_document_block_index(parsed.document);
+    expect(fatal(bool(inserted->selection_after.active.container_id == code_id)));
     auto model = build_render_model(parsed.document, Outline::empty(parsed.document.revision));
     expect(fatal(bool(model.blocks.size() == 1u)));
     if (model.blocks.empty()) return;
@@ -411,14 +414,16 @@ suite render_layout_tests = [] {
     });
     expect(fatal(bool(code != nullptr)));
     if (!code) return;
+    auto const code_id = code->id;
 
     auto exited = document_enter(parsed.document, TextSelection::caret({
-        code->id,
+        code_id,
         code->block_source.source.size(),
         TextAffinity::Downstream}));
     expect(fatal(bool(exited.has_value())));
     if (!exited) return;
-    expect(fatal(bool(exited->selection_after.active.container_id != code->id)));
+    rebuild_document_block_index(parsed.document);
+    expect(fatal(bool(exited->selection_after.active.container_id != code_id)));
     auto model = build_render_model(parsed.document, Outline::empty(parsed.document.revision));
     expect(fatal(bool(model.blocks.size() == 1u)));
     if (model.blocks.empty()) return;
