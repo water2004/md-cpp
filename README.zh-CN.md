@@ -71,6 +71,23 @@ powershell -ExecutionPolicy Bypass -File .\build_app.ps1 -Configuration Debug
 powershell -ExecutionPolicy Bypass -File .\build_app.ps1 -Configuration Release -Clean
 ```
 
+构建当前用户安装的 x64 MSI：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build_msi.ps1 -Version 0.1.0
+```
+
+安装器会生成自包含 Windows App SDK 的 Release 应用，因此目标电脑无需另行
+安装 Windows App SDK Runtime。MSI 输出到
+`build/installer/bin/Folia-<version>-x64.msi`；程序安装在
+`%LOCALAPPDATA%\Programs\Folia`，可配置的 Assets 树安装在
+`%LOCALAPPDATA%\Folia\Assets`。卸载会移除 MSI 管理的内置资源，但保留
+`settings.json` 和 `themes/custom/`。
+
+安装包构建会通过编译参数把 Assets 根目录设为
+`{LocalAppData}\Folia\Assets`，程序启动时再针对当前用户解析该占位符；普通
+开发构建仍沿用原有 Assets 位置。
+
 所有生成文件都位于 `build/`。应用输出位于
 `build/app-winui/bin/<platform>/<configuration>/`，构建不会向源码树写入文件。
 
