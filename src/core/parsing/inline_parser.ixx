@@ -920,8 +920,8 @@ struct Parser {
     std::vector<InlineToken> tokenize() {
         std::vector<InlineToken> tokens;
         std::size_t cursor = 0;
-        auto emit = [&](TokenKind kind, std::size_t start, std::size_t end) {
-            tokens.push_back(InlineToken{next_id(), kind, {start, end}});
+        auto emit = [&](TokenKind kind, std::size_t, std::size_t end) {
+            tokens.emplace_back(kind, end);
         };
 
         while (cursor < limit) {

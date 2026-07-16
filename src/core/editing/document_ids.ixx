@@ -21,9 +21,6 @@ inline void scan_inline_ids(const InlineCstNodes& nodes, std::uint64_t& maximum)
 inline void scan_block_ids(const BlockNode& block, std::uint64_t& maximum) {
     maximum = (std::max)(maximum, block.id.v);
     scan_inline_ids(block.inline_content.tree.nodes, maximum);
-    for (const auto& token : block.inline_content.tree.tokens) {
-        maximum = (std::max)(maximum, token.id.v);
-    }
     for (const auto& child : block.children) scan_block_ids(child, maximum);
 }
 

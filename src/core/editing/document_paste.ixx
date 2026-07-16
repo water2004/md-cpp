@@ -44,7 +44,6 @@ inline void assign_fresh_ids(
     InlineDocument& document,
     document_edit_detail::NodeAllocator& allocator) {
     assign_fresh_ids(document.tree.nodes, allocator);
-    for (auto& token : document.tree.tokens) token.id = allocator.allocate();
 }
 
 inline void assign_fresh_ids(

@@ -96,29 +96,6 @@ inline void reconcile_nodes(
     }
 }
 
-inline void reconcile_tokens(
-    const std::vector<InlineToken>& before_tokens,
-    std::vector<InlineToken>& after_tokens,
-    std::u32string_view before_source,
-    std::u32string_view after_source,
-    const TextEdit& edit) {
-    std::vector<bool> claimed(after_tokens.size(), false);
-    for (const auto& before : before_tokens) {
-        const auto expected = translated_untouched_range(before.range, edit);
-        if (!expected) continue;
-        for (std::size_t index = 0; index < after_tokens.size(); ++index) {
-            auto& after = after_tokens[index];
-            if (claimed[index] || after.kind != before.kind || after.range != *expected
-                || !same_source_slice(before_source, before.range, after_source, after.range)) {
-                continue;
-            }
-            claimed[index] = true;
-            after.id = before.id;
-            break;
-        }
-    }
-}
-
 } // namespace inline_source_edit_detail
 
 inline std::optional<SourceRange> inline_backward_delete_range(
@@ -179,9 +156,6 @@ inline AppliedSourceEdit apply_inline_source_edit(
 
     inline_source_edit_detail::reconcile_nodes(
         before_tree.nodes, document.tree.nodes, before_source, document.source, edit);
-    inline_source_edit_detail::reconcile_tokens(
-        before_tree.tokens, document.tree.tokens, before_source, document.source, edit);
-
     TextEdit inverse;
     inverse.container_id = owner_id;
     inverse.range = {edit.range.start, edit.range.start + edit.replacement.size()};

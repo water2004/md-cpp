@@ -25,7 +25,6 @@ inline void validate_inline_document(NodeId owner, const InlineDocument& documen
         }
     };
     scan(document.tree.nodes);
-    for (const auto& token : document.tree.tokens) if (token.id.v == 0 || !ids.insert(token.id.v).second) errors.push_back({token.id, "duplicate or missing token id"});
 }
 inline void validate_blocks(
     const BlockVec& blocks,

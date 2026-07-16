@@ -152,7 +152,6 @@ inline void assign_missing_ids(InlineDocument& document, const EditorDocument& o
     if (!tokens_partition_source(document.tree, document.source.size())
         || !roots_partition_source(document.tree, document.source.size())) reparse(document, owner, allocator);
     assign_missing_ids(document.tree.nodes, allocator);
-    for (auto& token : document.tree.tokens) if (token.id.v == 0) token.id = allocator.allocate();
 }
 inline void assign_missing_ids(BlockNode& block, const EditorDocument& owner, NodeAllocator& allocator) {
     if (block.id.v == 0) block.id = allocator.allocate();

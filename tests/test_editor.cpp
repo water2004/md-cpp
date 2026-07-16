@@ -635,14 +635,11 @@ suite editor_tests = [] {
     InlineCstNode inline_node;
     inline_node.id = NodeId{149};
     paragraph.inline_content.tree.nodes.push_back(inline_node);
-    InlineToken token;
-    token.id = NodeId{200};
-    paragraph.inline_content.tree.tokens.push_back(token);
     document.root.children.push_back(paragraph);
 
     reset_core_operation_counters();
-    expect(fatal(bool(allocate_document_node_id(document) == NodeId{201})));
-    expect(fatal(bool(allocate_document_node_id(document) == NodeId{202})));
+    expect(fatal(bool(allocate_document_node_id(document) == NodeId{150})));
+    expect(fatal(bool(allocate_document_node_id(document) == NodeId{151})));
     const auto counters = read_core_operation_counters();
     expect(fatal(bool(counters.full_document_node_id_scans == 1u)));
 };

@@ -57,6 +57,7 @@ suite parser_tests = [] {
 
 "block_kind_payload_copies_with_value_semantics"_test = [] {
     static_assert(sizeof(BlockNodeSpecial) <= 7 * sizeof(void*));
+    static_assert(sizeof(InlineToken) == sizeof(std::uint64_t));
 
     BlockNode paragraph;
     expect(fatal(bool(paragraph.payload == nullptr)));
