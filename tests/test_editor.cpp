@@ -160,8 +160,8 @@ suite editor_tests = [] {
         << "footnote insert full block index";
     expect(fatal(bool(counters.incremental_document_block_index_repairs == 1u)))
         << "footnote insert incremental block index";
-    expect(fatal(bool(counters.full_document_symbol_derivations == 1u)))
-        << "one structural refresh, no command pre-scan";
+    expect(fatal(bool(counters.full_document_symbol_derivations == 0u)))
+        << "inserted definition and edited reference stay contribution-local";
     expect(fatal(bool(counters.inline_reparses == 2u))) << "edited owner plus new definition body";
     expect(fatal(bool(transaction->operations.size() == 2u))) << "operations";
     expect(fatal(document_indexes_are_exact(editor.document()))) << "insert indexes";
@@ -173,10 +173,14 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.undo()))) << "undo";
     expect(fatal(bool(editor.markdown_utf8() == "body"))) << "undo markdown";
     expect(fatal(bool(editor.selection() == before))) << "undo selection";
+    expect(fatal(bool(editor.symbols().footnotes.empty()))) << "undo definition symbols";
+    expect(fatal(bool(editor.symbols().footnote_references.empty()))) << "undo reference symbols";
     expect(fatal(document_indexes_are_exact(editor.document()))) << "undo indexes";
     expect(fatal(bool(editor.redo()))) << "redo";
     expect(fatal(bool(editor.markdown_utf8() == "body[^1]\n\n[^1]: "))) << "redo markdown";
     expect(fatal(bool(editor.selection() == after))) << "redo selection";
+    expect(fatal(bool(editor.symbols().footnotes.size() == 1u))) << "redo definition symbols";
+    expect(fatal(bool(editor.symbols().footnote_references.size() == 1u))) << "redo reference symbols";
     expect(fatal(document_indexes_are_exact(editor.document()))) << "redo indexes";
     expect(fatal(bool(validate_document(editor.document()).empty()))) << "redo document invariants";
 };
@@ -2868,7 +2872,7 @@ suite editor_tests = [] {
     }
 };
 
-"moves_rederive_only_order_sensitive_data_present_in_the_moved_subtree"_test = [] {
+"moves_reproject_only_order_sensitive_data_present_in_the_moved_subtree"_test = [] {
     Editor symbols("- first\n- second[^1]\n\n[^1]: note");
     const BlockNode* referenced = nullptr;
     walk_blocks(symbols.document().root, [&](const BlockNode& block) {
@@ -2880,8 +2884,19 @@ suite editor_tests = [] {
     reset_core_operation_counters();
     expect(fatal(bool(symbols.execute_document_indent_list_item(symbols.selection()).has_value())));
     auto counters = read_core_operation_counters();
-    expect(fatal(bool(counters.full_document_symbol_derivations == 1u)));
+    expect(fatal(bool(counters.full_document_symbol_derivations == 0u)));
     expect(fatal(bool(counters.full_document_outline_derivations == 0u)));
+    expect(fatal(bool(symbols.symbols() == build_document_symbol_index(symbols.document()))));
+    reset_core_operation_counters();
+    expect(fatal(bool(symbols.undo())));
+    counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_symbol_derivations == 0u)));
+    expect(fatal(bool(symbols.symbols() == build_document_symbol_index(symbols.document()))));
+    reset_core_operation_counters();
+    expect(fatal(bool(symbols.redo())));
+    counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_symbol_derivations == 0u)));
+    expect(fatal(bool(symbols.symbols() == build_document_symbol_index(symbols.document()))));
 
     Editor headings("- first\n- # second");
     const BlockNode* heading = nullptr;
@@ -2894,8 +2909,9 @@ suite editor_tests = [] {
     reset_core_operation_counters();
     expect(fatal(bool(headings.execute_document_indent_list_item(headings.selection()).has_value())));
     counters = read_core_operation_counters();
-    expect(fatal(bool(counters.full_document_symbol_derivations == 1u)));
+    expect(fatal(bool(counters.full_document_symbol_derivations == 0u)));
     expect(fatal(bool(counters.full_document_outline_derivations == 1u)));
+    expect(fatal(bool(headings.symbols() == build_document_symbol_index(headings.document()))));
 };
 
 "table_navigation_changes_selection_without_creating_history"_test = [] {
@@ -2969,7 +2985,7 @@ suite editor_tests = [] {
     const auto counters = read_core_operation_counters();
     expect(fatal(bool(counters.full_document_block_index_scans == 0u)));
     expect(fatal(bool(counters.incremental_document_block_index_repairs == 1u)));
-    expect(fatal(bool(counters.full_document_symbol_derivations == 1u)));
+    expect(fatal(bool(counters.full_document_symbol_derivations == 0u)));
     expect(fatal(bool(counters.full_document_outline_derivations == 1u)));
     expect(fatal(document_indexes_are_exact(editor.document())));
     expect(fatal(bool(editor.document().root.children.front().kind == BlockKind::Heading)));

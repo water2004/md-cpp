@@ -43,6 +43,31 @@ inline bool has_symbols(const DocumentSymbolIndex& symbols) {
         || !symbols.code_blocks.empty();
 }
 
+inline bool inline_nodes_have_symbols(const InlineCstNodes& nodes) {
+    for (const auto& node : nodes) {
+        if (node.kind == InlineCstKind::Link
+            || node.kind == InlineCstKind::Autolink
+            || node.kind == InlineCstKind::Image
+            || node.kind == InlineCstKind::FootnoteRef) {
+            return true;
+        }
+        if (inline_nodes_have_symbols(node.children)) return true;
+    }
+    return false;
+}
+
+inline bool block_has_symbols(const BlockNode& block) {
+    if (block.kind == BlockKind::Heading
+        || block.kind == BlockKind::FootnoteDefinition
+        || block.kind == BlockKind::ImageBlock
+        || block.kind == BlockKind::MathBlock
+        || block.kind == BlockKind::CodeBlock) {
+        return true;
+    }
+    const auto* inline_document = editable_inline_document(block);
+    return inline_document && inline_nodes_have_symbols(inline_document->tree.nodes);
+}
+
 inline void collect_inline_symbols(
     const InlineDocument& document,
     const InlineCstNodes& nodes,
@@ -98,14 +123,6 @@ struct DocumentSymbolContributions {
     std::unordered_map<std::uint64_t, DocumentSymbolIndex> by_block;
 };
 
-inline bool document_subtree_has_symbols(const BlockNode& block) {
-    if (document_symbols_detail::has_symbols(
-            document_symbols_detail::collect_block_symbols(block))) {
-        return true;
-    }
-    return std::ranges::any_of(block.children, document_subtree_has_symbols);
-}
-
 inline DocumentSymbolIndex build_document_symbol_index(
     const EditorDocument& document,
     DocumentSymbolContributions* contributions = nullptr) {
@@ -123,16 +140,12 @@ inline DocumentSymbolIndex build_document_symbol_index(
     return symbols;
 }
 
-// A source edit can only change the symbols owned by its editable block. Most
-// prose edits therefore compare equal to the cached empty contribution and do
-// no document-wide work. If a real symbol changed, rebuild the flat public
-// index from already-derived per-block contributions in tree order; no other
-// block's source or inline CST is scanned.
-inline bool update_document_symbol_index(
-    const EditorDocument& document,
+// Refresh only one block's contribution. The caller projects the flat public
+// index once after all text/tree operations in a transaction have been
+// processed, rather than walking the tree once per changed owner.
+inline bool update_document_symbol_contribution(
     const BlockNode& block,
-    DocumentSymbolContributions& contributions,
-    DocumentSymbolIndex& symbols) {
+    DocumentSymbolContributions& contributions) {
     record_local_symbol_derivation();
     auto updated = document_symbols_detail::collect_block_symbols(block);
     auto found = contributions.by_block.find(block.id.v);
@@ -144,7 +157,37 @@ inline bool update_document_symbol_index(
     } else {
         contributions.by_block.erase(block.id.v);
     }
+    return true;
+}
 
+inline bool update_document_symbol_contributions(
+    const BlockNode& subtree,
+    DocumentSymbolContributions& contributions) {
+    bool changed = false;
+    walk_blocks(subtree, [&](const BlockNode& block) {
+        if (block.kind == BlockKind::Document) return;
+        if (!document_symbols_detail::block_has_symbols(block)
+            && !contributions.by_block.contains(block.id.v)) {
+            return;
+        }
+        changed = update_document_symbol_contribution(block, contributions) || changed;
+    });
+    return changed;
+}
+
+inline bool erase_document_symbol_contributions(
+    const BlockNode& subtree,
+    DocumentSymbolContributions& contributions) {
+    bool changed = false;
+    walk_blocks(subtree, [&](const BlockNode& block) {
+        changed = contributions.by_block.erase(block.id.v) != 0 || changed;
+    });
+    return changed;
+}
+
+inline DocumentSymbolIndex project_document_symbol_index(
+    const EditorDocument& document,
+    const DocumentSymbolContributions& contributions) {
     DocumentSymbolIndex rebuilt;
     walk_blocks(document.root, [&](const BlockNode& current) {
         const auto contribution = contributions.by_block.find(current.id.v);
@@ -152,8 +195,7 @@ inline bool update_document_symbol_index(
             document_symbols_detail::append_symbols(rebuilt, contribution->second);
         }
     });
-    symbols = std::move(rebuilt);
-    return true;
+    return rebuilt;
 }
 
 } // namespace elmd

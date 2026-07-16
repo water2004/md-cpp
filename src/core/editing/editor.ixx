@@ -32,7 +32,6 @@ struct EditorDocumentChange {
     std::vector<NodeId> moved_roots;
     bool structural = false;
     bool structural_locality_known = true;
-    bool structural_symbols_may_change = false;
     bool structural_outline_may_change = false;
     bool forward = true;
     std::uint64_t revision_before = 0;
@@ -75,10 +74,6 @@ inline EditorDocumentChange summarize_document_change(
                 if (tree.after.id.v != 0) {
                     change.structural_anchors.push_back(tree.after.id);
                 }
-                change.structural_symbols_may_change =
-                    change.structural_symbols_may_change
-                    || document_subtree_has_symbols(tree.before)
-                    || document_subtree_has_symbols(tree.after);
                 change.structural_outline_may_change =
                     change.structural_outline_may_change
                     || subtree_has_heading(subtree_has_heading, tree.before)
@@ -582,34 +577,60 @@ private:
             if (!update_document_block_index(document_, operations, change.forward)) {
                 rebuild_document_block_index(document_);
             }
-            bool symbols_may_change = change.structural_symbols_may_change;
             bool heading_changed = change.structural_outline_may_change;
+            bool symbol_contributions_changed = false;
+            bool symbol_order_changed = false;
             auto inspect_moved_subtree = [&](auto& self, const BlockNode& block) -> void {
-                symbols_may_change = symbols_may_change
+                symbol_order_changed = symbol_order_changed
                     || symbol_contributions_.by_block.contains(block.id.v);
                 heading_changed = heading_changed || block.kind == BlockKind::Heading;
-                if (symbols_may_change && heading_changed) return;
+                if (symbol_order_changed && heading_changed) return;
                 for (const auto& child : block.children) self(self, child);
             };
             for (auto moved : change.moved_roots) {
                 if (const auto* block = find_document_block(document_, moved)) {
                     inspect_moved_subtree(inspect_moved_subtree, *block);
                 }
-                if (symbols_may_change && heading_changed) break;
+                if (symbol_order_changed && heading_changed) break;
             }
-            if (symbols_may_change) {
-                symbols_ = build_document_symbol_index(document_, &symbol_contributions_);
-            } else {
-                std::unordered_set<std::uint64_t> refreshed;
-                for (const auto& operation : change.text_operations) {
-                    const auto& edit = change.forward ? operation.forward : operation.inverse;
-                    if (!refreshed.insert(edit.container_id.v).second) continue;
-                    if (const auto* block = find_document_block(document_, edit.container_id)) {
-                        heading_changed = heading_changed || block->kind == BlockKind::Heading;
-                        update_document_symbol_index(
-                            document_, *block, symbol_contributions_, symbols_);
+
+            for (const auto& operation : operations) {
+                const auto* tree = std::get_if<DocumentTreeEdit>(&operation);
+                if (!tree || tree->kind == DocumentTreeEditKind::Move) continue;
+                const BlockNode* snapshot = nullptr;
+                if (tree->kind == DocumentTreeEditKind::Insert) snapshot = &tree->after;
+                else if (tree->kind == DocumentTreeEditKind::Remove) snapshot = &tree->before;
+                else snapshot = tree->after.id.v != 0 ? &tree->after : &tree->before;
+                if (!snapshot || snapshot->id.v == 0) continue;
+                symbol_contributions_changed = erase_document_symbol_contributions(
+                    *snapshot, symbol_contributions_) || symbol_contributions_changed;
+                const bool live_expected = tree->kind == DocumentTreeEditKind::UpdatePayload
+                    || (tree->kind == DocumentTreeEditKind::Insert && change.forward)
+                    || (tree->kind == DocumentTreeEditKind::Remove && !change.forward);
+                if (live_expected) {
+                    const auto* live = find_document_block(document_, snapshot->id);
+                    if (!live) continue;
+                    if (tree->kind == DocumentTreeEditKind::UpdatePayload) {
+                        symbol_contributions_changed = update_document_symbol_contribution(
+                            *live, symbol_contributions_) || symbol_contributions_changed;
+                    } else {
+                        symbol_contributions_changed = update_document_symbol_contributions(
+                            *live, symbol_contributions_) || symbol_contributions_changed;
                     }
                 }
+            }
+            std::unordered_set<std::uint64_t> refreshed;
+            for (const auto& operation : change.text_operations) {
+                const auto& edit = change.forward ? operation.forward : operation.inverse;
+                if (!refreshed.insert(edit.container_id.v).second) continue;
+                if (const auto* block = find_document_block(document_, edit.container_id)) {
+                    heading_changed = heading_changed || block->kind == BlockKind::Heading;
+                    symbol_contributions_changed = update_document_symbol_contribution(
+                        *block, symbol_contributions_) || symbol_contributions_changed;
+                }
+            }
+            if (symbol_contributions_changed || symbol_order_changed) {
+                symbols_ = project_document_symbol_index(document_, symbol_contributions_);
             }
             if (heading_changed) {
                 outline_ = build_outline_from_headings(
@@ -620,15 +641,19 @@ private:
         }
 
         bool heading_changed = false;
+        bool symbol_contributions_changed = false;
         std::unordered_set<std::uint64_t> refreshed;
         for (const auto& operation : change.text_operations) {
             const auto& edit = change.forward ? operation.forward : operation.inverse;
             if (!refreshed.insert(edit.container_id.v).second) continue;
             if (const auto* block = find_document_block(document_, edit.container_id)) {
                 heading_changed = heading_changed || block->kind == BlockKind::Heading;
-                update_document_symbol_index(
-                    document_, *block, symbol_contributions_, symbols_);
+                symbol_contributions_changed = update_document_symbol_contribution(
+                    *block, symbol_contributions_) || symbol_contributions_changed;
             }
+        }
+        if (symbol_contributions_changed) {
+            symbols_ = project_document_symbol_index(document_, symbol_contributions_);
         }
         if (heading_changed) {
             outline_ = build_outline_from_headings(document_.revision, symbols_.headings);
