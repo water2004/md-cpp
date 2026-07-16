@@ -240,6 +240,25 @@ namespace winrt::ElMd::implementation
         StatusText().Text(text);
     }
 
+    void MainWindow::SetOperationProgress(
+        bool active,
+        std::optional<double> value,
+        bool cancellable)
+    {
+        OperationProgressBar().Visibility(active
+            ? Microsoft::UI::Xaml::Visibility::Visible
+            : Microsoft::UI::Xaml::Visibility::Collapsed);
+        OperationProgressBar().IsIndeterminate(active && !value.has_value());
+        if (value) OperationProgressBar().Value(
+            (std::clamp)(*value, 0.0, 1.0) * 100.0);
+        CancelOperationButton().Visibility(active && cancellable
+            ? Microsoft::UI::Xaml::Visibility::Visible
+            : Microsoft::UI::Xaml::Visibility::Collapsed);
+        OpenButton().IsEnabled(!active);
+        ExportPdfButton().IsEnabled(!active);
+        SettingsButton().IsEnabled(!active);
+    }
+
     HWND MainWindow::WindowHandle()
     {
         HWND hwnd{};

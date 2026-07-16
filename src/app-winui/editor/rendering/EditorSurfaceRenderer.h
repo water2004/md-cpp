@@ -21,16 +21,25 @@ namespace winrt::ElMd
         enum class PdfExportResult
         {
             WaitingForAssets,
+            InProgress,
             Completed,
+        };
+
+        struct PdfExportProgress
+        {
+            PdfExportResult result = PdfExportResult::WaitingForAssets;
+            std::size_t completedPages = 0;
+            std::size_t totalPages = 0;
         };
 
         void Initialize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel);
         void Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height);
         void Render(detail::EditorRenderFrame const& frame);
-        PdfExportResult ExportPdf(
+        PdfExportProgress ExportPdfStep(
             std::filesystem::path const& path,
             std::wstring const& title,
             detail::EditorRenderFrame const& frame);
+        void CancelPdfExport();
         void SetTheme(elmd::ThemeProfile const& value);
         void SetMathRenderingEnabled(bool enabled);
         bool MathRenderingEnabled() const;
@@ -65,6 +74,7 @@ namespace winrt::ElMd
 
     private:
         struct PreparedDocument;
+        struct PdfExportState;
 
         void DrawDocument(detail::EditorRenderFrame const& frame);
         void ClearPreparedDocument();
@@ -98,6 +108,7 @@ namespace winrt::ElMd
         EditorInteractionMap interactionMap;
         std::vector<D2D1_RECT_F> nonInteractiveRegions;
         std::unique_ptr<PreparedDocument> preparedDocument;
+        std::shared_ptr<PdfExportState> pdfExportState;
         std::uint64_t embeddedGeneration = 0;
         std::optional<D2D1_POINT_2F> pointerPosition;
         std::optional<TableAction> draggedTableAction;

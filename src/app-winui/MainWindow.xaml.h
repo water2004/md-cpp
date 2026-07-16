@@ -45,6 +45,10 @@ namespace winrt::ElMd::implementation
         void NavigateToFootnote(elmd::TextPosition position);
         void HandlePointerWheel(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
         void SetStatus(winrt::hstring const& text);
+        void SetOperationProgress(
+            bool active,
+            std::optional<double> value = std::nullopt,
+            bool cancellable = false);
         HWND WindowHandle();
 
         winrt::hstring lastCommand = L"Ready";

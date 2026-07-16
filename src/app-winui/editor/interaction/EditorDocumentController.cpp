@@ -14,9 +14,13 @@ namespace winrt::ElMd
         EditorTextInputController* textInput = nullptr;
         ExecuteCommand executeCommand;
         SetStatus setStatus;
+        SetProgress setProgress;
         DocumentChanged documentChanged;
         Render render;
         WindowHandle windowHandle;
+        std::atomic_bool cancelRequested = false;
+        std::atomic_bool pdfExporting = false;
+        std::filesystem::path pdfOutputPath;
     };
 
     EditorDocumentController::EditorDocumentController() : state_(std::make_shared<State>())
@@ -34,6 +38,7 @@ namespace winrt::ElMd
         EditorTextInputController& textInput,
         ExecuteCommand executeCommand,
         SetStatus setStatus,
+        SetProgress setProgress,
         DocumentChanged documentChanged,
         Render render,
         WindowHandle windowHandle)
@@ -44,6 +49,7 @@ namespace winrt::ElMd
         state_->textInput = &textInput;
         state_->executeCommand = std::move(executeCommand);
         state_->setStatus = std::move(setStatus);
+        state_->setProgress = std::move(setProgress);
         state_->documentChanged = std::move(documentChanged);
         state_->render = std::move(render);
         state_->windowHandle = std::move(windowHandle);
@@ -51,12 +57,22 @@ namespace winrt::ElMd
 
     void EditorDocumentController::Detach()
     {
+        state_->cancelRequested = true;
+        state_->pdfExporting = false;
+        if (state_->renderer) state_->renderer->CancelPdfExport();
+        if (!state_->pdfOutputPath.empty())
+        {
+            std::error_code ignored;
+            std::filesystem::remove(state_->pdfOutputPath, ignored);
+            state_->pdfOutputPath.clear();
+        }
         state_->generation.fetch_add(1);
         state_->session = nullptr;
         state_->renderer = nullptr;
         state_->textInput = nullptr;
         state_->executeCommand = {};
         state_->setStatus = {};
+        state_->setProgress = {};
         state_->documentChanged = {};
         state_->render = {};
         state_->windowHandle = {};
@@ -80,6 +96,21 @@ namespace winrt::ElMd
     void EditorDocumentController::ExportPdf()
     {
         ExportPdfAsync(state_, state_->generation.load());
+    }
+
+    void EditorDocumentController::CancelOperation()
+    {
+        if (!state_->pdfExporting.exchange(false)) return;
+        state_->cancelRequested = true;
+        if (state_->renderer) state_->renderer->CancelPdfExport();
+        if (!state_->pdfOutputPath.empty())
+        {
+            std::error_code ignored;
+            std::filesystem::remove(state_->pdfOutputPath, ignored);
+            state_->pdfOutputPath.clear();
+        }
+        if (state_->setProgress) state_->setProgress(false, std::nullopt, false);
+        if (state_->setStatus) state_->setStatus(L"PDF export cancelled");
     }
 
     void EditorDocumentController::InsertImage()
@@ -152,16 +183,57 @@ namespace winrt::ElMd
                 if (state->setStatus) state->setStatus(L"Open cancelled");
                 co_return;
             }
+            if (state->setStatus) state->setStatus(L"Reading " + file.Name() + L"…");
+            if (state->setProgress) state->setProgress(true, std::nullopt, false);
             auto text = co_await winrt::Windows::Storage::FileIO::ReadTextAsync(file);
             if (!Active(state, generation)) co_return;
-            if (state->setStatus) state->setStatus(L"Opening " + file.Name() + L"…");
+            if (state->setStatus) state->setStatus(L"Parsing " + file.Name() + L"…");
+            if (state->setProgress) state->setProgress(true, 0.0, false);
+            auto dispatcher = winrt::Microsoft::UI::Dispatching::DispatcherQueue::GetForCurrentThread();
+            auto reportedPercent = std::make_shared<std::atomic_size_t>(0);
+            auto progressActive = std::make_shared<std::atomic_bool>(true);
             winrt::apartment_context uiContext;
+            std::exception_ptr loadFailure;
+            std::optional<EditorSession> loaded;
             co_await winrt::resume_background();
-            EditorSession loaded;
-            loaded.Open(file, text);
+            try
+            {
+                loaded.emplace();
+                loaded->Open(file, text, [
+                    state,
+                    generation,
+                    dispatcher,
+                    reportedPercent,
+                    progressActive](
+                    std::size_t consumed,
+                    std::size_t total)
+                {
+                    if (!progressActive->load()) return;
+                    auto percent = total == 0
+                        ? std::size_t{100}
+                        : (std::min)(std::size_t{100}, consumed * 100 / total);
+                    auto previous = reportedPercent->load();
+                    while (percent > previous
+                        && !reportedPercent->compare_exchange_weak(previous, percent)) {}
+                    if (percent <= previous) return;
+                    dispatcher.TryEnqueue([state, generation, percent, progressActive]
+                    {
+                        if (!progressActive->load()
+                            || !Active(state, generation)
+                            || !state->setProgress) return;
+                        state->setProgress(true, static_cast<double>(percent) / 100.0, false);
+                    });
+                });
+            }
+            catch (...)
+            {
+                loadFailure = std::current_exception();
+            }
+            progressActive->store(false);
             co_await uiContext;
             if (!Active(state, generation)) co_return;
-            *state->session = std::move(loaded);
+            if (loadFailure) std::rethrow_exception(loadFailure);
+            *state->session = std::move(*loaded);
             if (state->renderer)
             {
                 state->renderer->ResetDocumentCaches();
@@ -169,11 +241,24 @@ namespace winrt::ElMd
             }
             if (state->textInput) state->textInput->NotifyTextChanged();
             if (state->documentChanged) state->documentChanged();
+            if (state->setProgress) state->setProgress(false, std::nullopt, false);
             if (state->setStatus) state->setStatus(L"Opened " + file.Name());
         }
         catch (winrt::hresult_error const& error)
         {
-            if (Active(state, generation) && state->setStatus) state->setStatus(L"Open failed: " + error.message());
+            if (Active(state, generation))
+            {
+                if (state->setProgress) state->setProgress(false, std::nullopt, false);
+                if (state->setStatus) state->setStatus(L"Open failed: " + error.message());
+            }
+        }
+        catch (std::exception const& error)
+        {
+            if (Active(state, generation))
+            {
+                if (state->setProgress) state->setProgress(false, std::nullopt, false);
+                if (state->setStatus) state->setStatus(L"Open failed: " + winrt::to_hstring(error.what()));
+            }
         }
     }
 
@@ -251,6 +336,23 @@ namespace winrt::ElMd
                 co_return;
             }
 
+            state->cancelRequested = false;
+            state->pdfExporting = true;
+            state->pdfOutputPath = std::filesystem::path(file.Path().c_str());
+            if (state->setStatus) state->setStatus(L"Preparing PDF…");
+            if (state->setProgress) state->setProgress(true, std::nullopt, true);
+            winrt::apartment_context uiContext;
+            co_await winrt::resume_after(std::chrono::milliseconds(16));
+            co_await uiContext;
+            if (!Active(state, generation)) co_return;
+            if (state->cancelRequested)
+            {
+                state->pdfExporting = false;
+                if (state->setProgress) state->setProgress(false, std::nullopt, false);
+                if (state->setStatus) state->setStatus(L"PDF export cancelled");
+                co_return;
+            }
+
             // Export the exact document snapshot that existed when the picker
             // closed. Asset preparation may yield to the UI thread, but later
             // edits must not leak into this print job.
@@ -258,28 +360,82 @@ namespace winrt::ElMd
             auto baseDirectory = state->session->BaseDirectory();
             auto title = std::filesystem::path(displayName.c_str()).stem().wstring();
             detail::EditorRenderFrame frame{renderModel, {}, baseDirectory, {}, {}};
-            auto outputPath = std::filesystem::path(file.Path().c_str());
-            if (state->setStatus) state->setStatus(L"Preparing PDF…");
-            winrt::apartment_context uiContext;
+            auto outputPath = state->pdfOutputPath;
             for (;;)
             {
                 if (!Active(state, generation)) co_return;
-                auto result = state->renderer->ExportPdf(outputPath, title, frame);
-                if (result == EditorSurfaceRenderer::PdfExportResult::Completed) break;
-                if (state->setStatus) state->setStatus(L"Preparing PDF assets…");
-                co_await winrt::resume_after(std::chrono::milliseconds(80));
+                if (state->cancelRequested)
+                {
+                    state->renderer->CancelPdfExport();
+                    state->pdfExporting = false;
+                    if (state->setProgress) state->setProgress(false, std::nullopt, false);
+                    if (state->setStatus) state->setStatus(L"PDF export cancelled");
+                    co_return;
+                }
+                auto progress = state->renderer->ExportPdfStep(outputPath, title, frame);
+                if (progress.totalPages > 0)
+                {
+                    if (state->setProgress) state->setProgress(
+                        true,
+                        static_cast<double>(progress.completedPages) / progress.totalPages,
+                        true);
+                    if (state->setStatus) state->setStatus(
+                        L"Exporting PDF page "
+                        + winrt::to_hstring(progress.completedPages)
+                        + L" of "
+                        + winrt::to_hstring(progress.totalPages)
+                        + L"…");
+                }
+                else if (state->setStatus)
+                {
+                    state->setStatus(L"Preparing PDF assets…");
+                }
+                if (progress.result == EditorSurfaceRenderer::PdfExportResult::Completed) break;
+                co_await winrt::resume_after(std::chrono::milliseconds(
+                    progress.result == EditorSurfaceRenderer::PdfExportResult::WaitingForAssets
+                        ? 80
+                        : 1));
                 co_await uiContext;
             }
-            if (Active(state, generation) && state->setStatus)
-                state->setStatus(L"Exported PDF: " + file.Path());
+            if (Active(state, generation))
+            {
+                state->pdfExporting = false;
+                state->pdfOutputPath.clear();
+                if (state->setProgress) state->setProgress(false, std::nullopt, false);
+                if (state->setStatus) state->setStatus(L"Exported PDF: " + file.Path());
+            }
         }
         catch (winrt::hresult_error const& error)
         {
-            if (Active(state, generation) && state->setStatus) state->setStatus(L"PDF export failed: " + error.message());
+            if (Active(state, generation))
+            {
+                state->pdfExporting = false;
+                if (state->renderer) state->renderer->CancelPdfExport();
+                if (!state->pdfOutputPath.empty())
+                {
+                    std::error_code ignored;
+                    std::filesystem::remove(state->pdfOutputPath, ignored);
+                }
+                state->pdfOutputPath.clear();
+                if (state->setProgress) state->setProgress(false, std::nullopt, false);
+                if (state->setStatus) state->setStatus(L"PDF export failed: " + error.message());
+            }
         }
         catch (std::exception const& error)
         {
-            if (Active(state, generation) && state->setStatus) state->setStatus(L"PDF export failed: " + winrt::to_hstring(error.what()));
+            if (Active(state, generation))
+            {
+                state->pdfExporting = false;
+                if (state->renderer) state->renderer->CancelPdfExport();
+                if (!state->pdfOutputPath.empty())
+                {
+                    std::error_code ignored;
+                    std::filesystem::remove(state->pdfOutputPath, ignored);
+                }
+                state->pdfOutputPath.clear();
+                if (state->setProgress) state->setProgress(false, std::nullopt, false);
+                if (state->setStatus) state->setStatus(L"PDF export failed: " + winrt::to_hstring(error.what()));
+            }
         }
     }
 

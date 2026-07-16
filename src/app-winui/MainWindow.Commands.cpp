@@ -22,6 +22,11 @@ namespace winrt::ElMd::implementation
             documentController.ExportPdf();
         });
 
+        CancelOperationButton().Click([this](auto const&, auto const&)
+        {
+            documentController.CancelOperation();
+        });
+
         SettingsButton().Click([this](auto const&, auto const&)
         {
             ToggleSettingsMode();

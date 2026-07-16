@@ -10,6 +10,10 @@ namespace winrt::ElMd
     {
         using ExecuteCommand = std::function<bool(elmd::Command const&)>;
         using SetStatus = std::function<void(winrt::hstring const&)>;
+        using SetProgress = std::function<void(
+            bool active,
+            std::optional<double> value,
+            bool cancellable)>;
         using DocumentChanged = std::function<void()>;
         using Render = std::function<void()>;
         using WindowHandle = std::function<HWND()>;
@@ -25,6 +29,7 @@ namespace winrt::ElMd
             EditorTextInputController& textInput,
             ExecuteCommand executeCommand,
             SetStatus setStatus,
+            SetProgress setProgress,
             DocumentChanged documentChanged,
             Render render,
             WindowHandle windowHandle);
@@ -33,6 +38,7 @@ namespace winrt::ElMd
         void SaveDocument();
         void SaveDocumentAs();
         void ExportPdf();
+        void CancelOperation();
         void InsertImage();
         void OpenLink(std::string href);
         void CopySelection();

@@ -19,6 +19,10 @@ namespace winrt::ElMd::implementation
             textInputController,
             [this](elmd::Command const& command) { return ExecuteEditorCommand(command); },
             [this](winrt::hstring const& status) { SetStatus(status); },
+            [this](bool active, std::optional<double> value, bool cancellable)
+            {
+                SetOperationProgress(active, value, cancellable);
+            },
             [this]
             {
                 Title(L"el-md - " + editorSession.DisplayName());

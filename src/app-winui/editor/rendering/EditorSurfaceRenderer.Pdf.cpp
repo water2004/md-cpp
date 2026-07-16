@@ -7,13 +7,67 @@ import elmd.core.layout_plan;
 
 namespace winrt::ElMd
 {
-    EditorSurfaceRenderer::PdfExportResult EditorSurfaceRenderer::ExportPdf(
+    namespace
+    {
+        constexpr float PdfPageWidth = 210.0f / 25.4f * 96.0f;
+        constexpr float PdfPageHeight = 297.0f / 25.4f * 96.0f;
+        constexpr float PdfPageMargin = 48.0f;
+        constexpr float PdfContentWidth = PdfPageWidth - PdfPageMargin * 2.0f;
+        constexpr float PdfContentHeight = PdfPageHeight - PdfPageMargin * 2.0f;
+    }
+
+    struct EditorSurfaceRenderer::PdfExportState
+    {
+        std::filesystem::path path;
+        std::wstring title;
+        std::unique_ptr<PreparedDocument> prepared;
+        EditorInteractionMap interaction;
+        std::vector<D2D1_RECT_F> nonInteractive;
+        float totalHeight = 0.0f;
+        std::vector<elmd::PrintPageSlice> slices;
+        std::size_t nextPage = 0;
+        std::unique_ptr<EditorPdfPrintJob> printJob;
+        bool completed = false;
+
+        ~PdfExportState()
+        {
+            printJob.reset();
+            if (!completed && !path.empty())
+            {
+                std::error_code ignored;
+                std::filesystem::remove(path, ignored);
+            }
+        }
+    };
+
+    EditorSurfaceRenderer::PdfExportProgress EditorSurfaceRenderer::ExportPdfStep(
         std::filesystem::path const& path,
         std::wstring const& title,
         detail::EditorRenderFrame const& frame)
     {
         if (!resources.Ready()) winrt::throw_hresult(E_UNEXPECTED);
-        if (rendering || resizing || exporting) return PdfExportResult::WaitingForAssets;
+        if (rendering || resizing || exporting)
+        {
+            return {
+                PdfExportResult::WaitingForAssets,
+                pdfExportState ? pdfExportState->nextPage : 0,
+                pdfExportState ? pdfExportState->slices.size() : 0,
+            };
+        }
+        if (pdfExportState && (pdfExportState->path != path || pdfExportState->title != title))
+            CancelPdfExport();
+        if (!pdfExportState)
+        {
+            pdfExportState = std::make_shared<PdfExportState>();
+            pdfExportState->path = path;
+            pdfExportState->title = title;
+            renderCache.ClearTextLayouts();
+            renderCache.ClearSvgDocuments();
+            resources.RebuildTextFormats(styleSheet);
+            resources.ResetBrushes();
+            resources.EnsureFrameResources(styleSheet);
+        }
+        auto state = pdfExportState;
         exporting = true;
 
         ::Microsoft::WRL::ComPtr<ID2D1Image> originalTarget;
@@ -25,18 +79,27 @@ namespace winrt::ElMd
         auto originalScroll = scrollOffset;
         auto originalScrollTarget = scrollTarget;
         auto originalTotalHeight = totalDocumentHeight;
-        auto originalTheme = themeProfile;
-        auto originalThemeRevision = themeRevision;
-        auto originalStyle = styleSheet;
         auto originalPrepared = std::move(preparedDocument);
         auto originalInteraction = std::move(interactionMap);
         auto originalNonInteractive = std::move(nonInteractiveRegions);
         bool restored = false;
 
+        preparedDocument = std::move(state->prepared);
+        interactionMap = std::move(state->interaction);
+        nonInteractiveRegions = std::move(state->nonInteractive);
+        totalDocumentHeight = state->totalHeight;
+        printMode = true;
+        resources.surfaceWidthDip = PdfContentWidth;
+        resources.surfaceHeightDip = PdfContentHeight;
+
         auto restore = [&]() noexcept
         {
             if (restored) return;
             restored = true;
+            state->prepared = std::move(preparedDocument);
+            state->interaction = std::move(interactionMap);
+            state->nonInteractive = std::move(nonInteractiveRegions);
+            state->totalHeight = totalDocumentHeight;
             resources.d2dContext->SetTarget(originalTarget.Get());
             resources.d2dContext->SetTransform(originalTransform);
             resources.surfaceWidthDip = originalWidth;
@@ -44,24 +107,12 @@ namespace winrt::ElMd
             scrollOffset = originalScroll;
             scrollTarget = originalScrollTarget;
             totalDocumentHeight = originalTotalHeight;
-            themeProfile = originalTheme;
-            themeRevision = originalThemeRevision;
-            styleSheet = originalStyle;
             printMode = false;
             preparedDocument = std::move(originalPrepared);
             interactionMap = std::move(originalInteraction);
             nonInteractiveRegions = std::move(originalNonInteractive);
-            try
-            {
-                renderCache.ClearTextLayouts();
-                renderCache.ClearSvgDocuments();
-                resources.RebuildTextFormats(styleSheet);
-                resources.ResetBrushes();
-                resources.EnsureFrameResources(styleSheet);
-            }
-            catch (...) {}
         };
-        auto finish = [&]()
+        auto finishStep = [&]() noexcept
         {
             restore();
             exporting = false;
@@ -70,38 +121,23 @@ namespace winrt::ElMd
 
         try
         {
-            constexpr float pageWidth = 210.0f / 25.4f * 96.0f;
-            constexpr float pageHeight = 297.0f / 25.4f * 96.0f;
-            constexpr float pageMargin = 48.0f;
-            constexpr float contentWidth = pageWidth - pageMargin * 2.0f;
-            constexpr float contentHeight = pageHeight - pageMargin * 2.0f;
-
-            printMode = true;
-            preparedDocument.reset();
-            interactionMap = {};
-            nonInteractiveRegions.clear();
-            resources.surfaceWidthDip = contentWidth;
-            resources.surfaceHeightDip = contentHeight;
-            scrollOffset = 0.0f;
-            scrollTarget = 0.0f;
-            renderCache.ClearTextLayouts();
-            renderCache.ClearSvgDocuments();
-            resources.RebuildTextFormats(styleSheet);
-            resources.ResetBrushes();
-            resources.EnsureFrameResources(styleSheet);
-
             auto recordPage = [&](float sourceTop, float clipHeight)
             {
                 EditorPdfPage page;
-                page.size = D2D1::SizeF(pageWidth, pageHeight);
+                page.size = D2D1::SizeF(PdfPageWidth, PdfPageHeight);
                 winrt::check_hresult(resources.d2dContext->CreateCommandList(page.commands.GetAddressOf()));
                 resources.d2dContext->SetTarget(page.commands.Get());
                 resources.d2dContext->SetTransform(D2D1::Matrix3x2F::Identity());
                 resources.d2dContext->BeginDraw();
                 resources.d2dContext->Clear(styleSheet.canvasColor);
-                resources.d2dContext->SetTransform(D2D1::Matrix3x2F::Translation(pageMargin, pageMargin));
+                resources.d2dContext->SetTransform(
+                    D2D1::Matrix3x2F::Translation(PdfPageMargin, PdfPageMargin));
                 resources.d2dContext->PushAxisAlignedClip(
-                    D2D1::RectF(0.0f, 0.0f, contentWidth, (std::max)(1.0f, clipHeight)),
+                    D2D1::RectF(
+                        0.0f,
+                        0.0f,
+                        PdfContentWidth,
+                        (std::max)(1.0f, clipHeight)),
                     D2D1_ANTIALIAS_MODE_ALIASED);
                 scrollOffset = sourceTop;
                 scrollTarget = sourceTop;
@@ -114,49 +150,98 @@ namespace winrt::ElMd
                 return page;
             };
 
-            // The first pass requests every embedded resource and establishes
-            // final block extents at print width. It is intentionally discarded
-            // because the block-aware page boundaries are not known yet.
-            auto preflight = recordPage(0.0f, contentHeight);
-            (void)preflight;
-            auto pendingMath = preparedDocument && std::any_of(
-                preparedDocument->blocks.begin(),
-                preparedDocument->blocks.end(),
-                [](PreparedDocument::Block const& block) { return block.pendingMath; });
-            if (pendingMath || renderCache.HasPendingImages())
+            if (state->slices.empty())
             {
-                finish();
-                return PdfExportResult::WaitingForAssets;
-            }
-
-            std::vector<elmd::PrintBlockExtent> extents;
-            if (preparedDocument)
-            {
-                extents.reserve(preparedDocument->geometry.Size());
-                for (std::size_t index = 0; index < preparedDocument->geometry.Size(); ++index)
+                // The discarded preflight establishes print-width geometry and
+                // starts asynchronous image/math preparation. Page count is
+                // exact once these assets have settled.
+                auto preflight = recordPage(0.0f, PdfContentHeight);
+                (void)preflight;
+                auto pendingMath = preparedDocument && std::any_of(
+                    preparedDocument->blocks.begin(),
+                    preparedDocument->blocks.end(),
+                    [](PreparedDocument::Block const& block) { return block.pendingMath; });
+                if (pendingMath || renderCache.HasPendingImages())
                 {
-                    auto placement = preparedDocument->geometry.At(index);
-                    extents.push_back({placement.top, placement.bottom});
+                    finishStep();
+                    return {PdfExportResult::WaitingForAssets, 0, 0};
                 }
-            }
-            auto documentBottom = preparedDocument ? preparedDocument->totalHeight : contentHeight;
-            auto slices = elmd::plan_print_pages(extents, 0.0f, documentBottom, contentHeight);
-            std::vector<EditorPdfPage> pages;
-            pages.reserve(slices.size());
-            for (auto const& slice : slices)
-                pages.push_back(recordPage(slice.source_top, (std::min)(contentHeight, slice.height())));
 
+                std::vector<elmd::PrintBlockExtent> extents;
+                if (preparedDocument)
+                {
+                    extents.reserve(preparedDocument->geometry.Size());
+                    for (std::size_t index = 0; index < preparedDocument->geometry.Size(); ++index)
+                    {
+                        auto placement = preparedDocument->geometry.At(index);
+                        extents.push_back({placement.top, placement.bottom});
+                    }
+                }
+                auto documentBottom = preparedDocument
+                    ? preparedDocument->totalHeight
+                    : PdfContentHeight;
+                state->slices = elmd::plan_print_pages(
+                    extents,
+                    0.0f,
+                    documentBottom,
+                    PdfContentHeight);
+                if (state->slices.empty())
+                    state->slices.push_back({0.0f, PdfContentHeight});
+                state->printJob = EditorPdfPrintJob::Begin(
+                    path,
+                    title,
+                    resources.d2dDevice.Get(),
+                    resources.wicFactory.Get());
+                auto total = state->slices.size();
+                finishStep();
+                return {PdfExportResult::InProgress, 0, total};
+            }
+
+            auto const& slice = state->slices[state->nextPage];
+            auto page = recordPage(
+                slice.source_top,
+                (std::min)(PdfContentHeight, slice.height()));
             resources.d2dContext->SetTarget(originalTarget.Get());
             resources.d2dContext->SetTransform(originalTransform);
-            EditorPdfPrintJob::Write(path, title, resources.d2dDevice.Get(), resources.wicFactory.Get(), pages);
-            finish();
-            return PdfExportResult::Completed;
+            state->printJob->AddPage(page);
+            ++state->nextPage;
+            auto completed = state->nextPage;
+            auto total = state->slices.size();
+            if (completed < total)
+            {
+                finishStep();
+                return {PdfExportResult::InProgress, completed, total};
+            }
+
+            state->printJob->Complete();
+            state->completed = true;
+            finishStep();
+            pdfExportState.reset();
+            renderCache.ClearTextLayouts();
+            renderCache.ClearSvgDocuments();
+            ClearPreparedDocument();
+            Invalidate();
+            return {PdfExportResult::Completed, completed, total};
         }
         catch (...)
         {
-            finish();
+            finishStep();
+            pdfExportState.reset();
+            renderCache.ClearTextLayouts();
+            renderCache.ClearSvgDocuments();
+            ClearPreparedDocument();
+            Invalidate();
             throw;
         }
     }
 
+    void EditorSurfaceRenderer::CancelPdfExport()
+    {
+        if (!pdfExportState) return;
+        pdfExportState.reset();
+        renderCache.ClearTextLayouts();
+        renderCache.ClearSvgDocuments();
+        ClearPreparedDocument();
+        Invalidate();
+    }
 }
