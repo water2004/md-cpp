@@ -519,8 +519,8 @@ private:
         last_document_change_.reset();
         if (document_.root.children.empty()) {
             normalize_document(document_);
+            rebuild_document_block_index(document_);
         }
-        rebuild_document_block_index(document_);
         const auto fragments = document_text_fragments(document_);
         if (!fragments.empty()) {
             selection_ = TextSelection::caret({

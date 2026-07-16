@@ -183,6 +183,15 @@ suite editor_tests = [] {
     expect(fatal(bool(undo.inline_reparses == 1u)));
 };
 
+"opening_a_nonempty_document_builds_the_block_path_index_once"_test = [] {
+    reset_core_operation_counters();
+    Editor editor("alpha\n\nbeta\n\ngamma");
+    const auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_block_index_scans == 1u)));
+    expect(fatal(bool(find_document_block(
+        editor.document(), editor.document().root.children.back().id) != nullptr)));
+};
+
 "local_symbol_contributions_refresh_only_the_edited_owner"_test = [] {
     Editor prose("# title\n\nalpha\n\nbeta\n\ngamma");
     const auto& paragraph = prose.document().root.children.back();
