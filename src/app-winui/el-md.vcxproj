@@ -143,6 +143,7 @@
     <ClInclude Include="export\EditorPdfPrintJob.h" />
     <ClInclude Include="editor\interaction\EditorSidebarController.h" />
     <ClInclude Include="editor\rendering\EditorSurfaceRenderer.h" />
+    <ClInclude Include="editor\rendering\EditorBlockGeometryIndex.h" />
     <ClInclude Include="editor\rendering\EditorPreparedDocument.h" />
     <ClInclude Include="media\MathJaxRenderer.h" />
     <ClInclude Include="media\MermaidRenderer.h" />

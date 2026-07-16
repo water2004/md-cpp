@@ -464,6 +464,9 @@
     <ClInclude Include="editor\rendering\EditorSurfaceRenderer.h">
       <Filter>Editor\Rendering</Filter>
     </ClInclude>
+    <ClInclude Include="editor\rendering\EditorBlockGeometryIndex.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="editor\rendering\EditorPreparedDocument.h">
       <Filter>Editor\Rendering</Filter>
     </ClInclude>

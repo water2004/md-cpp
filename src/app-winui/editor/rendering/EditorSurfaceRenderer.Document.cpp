@@ -892,7 +892,7 @@ namespace winrt::ElMd
         {
             preparedDocument->ownerBlockIndex.clear();
             preparedDocument->embeddedBlocks.clear();
-            std::vector<PreparedDocument::GeometryIndex::Entry> entries;
+            std::vector<EditorBlockGeometryIndex::Entry> entries;
             entries.reserve(frame.renderModel.blocks.size());
             for (std::size_t index = 0; index < frame.renderModel.blocks.size(); ++index)
             {
