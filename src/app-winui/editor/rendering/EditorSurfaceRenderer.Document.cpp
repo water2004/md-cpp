@@ -624,12 +624,13 @@ namespace winrt::ElMd
         };
         auto activePositionChanged = preparedDocument
             && preparedDocument->selection.active != selection.active;
+        auto modelChanged = preparedDocument
+            && preparedDocument->modelRevision != frame.renderModel.revision;
         auto rebuildAll = !preparedDocument
-            || preparedDocument->modelRevision != frame.renderModel.revision
-            || activePositionChanged
             || preparedDocument->documentWidth != documentWidth
             || preparedDocument->themeRevision != themeRevision
-            || preparedDocument->blocks.size() != frame.renderModel.blocks.size();
+            || preparedDocument->blocks.size() != frame.renderModel.blocks.size()
+            || (modelChanged && !frame.renderModel.incremental_update);
         if (rebuildAll)
         {
             auto previous = std::move(preparedDocument);
@@ -678,6 +679,71 @@ namespace winrt::ElMd
                         preparedDocument->layoutBlocks.insert(index);
                 }
             }
+        }
+        else
+        {
+            std::unordered_set<std::size_t> invalidated;
+            if (modelChanged)
+            {
+                for (auto index : frame.renderModel.changed_block_indices)
+                    if (index < preparedDocument->blocks.size()) invalidated.insert(index);
+            }
+            if (activePositionChanged)
+            {
+                auto addOwner = [&](elmd::NodeId owner)
+                {
+                    auto found = preparedDocument->ownerBlockIndex.find(owner.v);
+                    if (found != preparedDocument->ownerBlockIndex.end())
+                        invalidated.insert(found->second);
+                };
+                addOwner(preparedDocument->selection.active.container_id);
+                addOwner(selection.active.container_id);
+            }
+            auto releaseImages = [&](PreparedDocument::Block const& prepared)
+            {
+                std::vector<std::string> sources;
+                sources.reserve(prepared.images.size());
+                for (auto const& image : prepared.images)
+                    if (!image.source.empty()) sources.push_back(image.source);
+                if (prepared.table)
+                {
+                    for (auto const& cellImages : prepared.table->imageDraws)
+                        for (auto const& image : cellImages)
+                            if (!image.source.empty()) sources.push_back(image.source);
+                }
+                return sources;
+            };
+            for (auto index : invalidated)
+            {
+                auto const& source = frame.renderModel.blocks[index];
+                auto& prepared = preparedDocument->blocks[index];
+                auto imageSources = releaseImages(prepared);
+                auto previousHeight = prepared.height > 0.0f
+                    ? prepared.height
+                    : estimateBlockHeight(source);
+                for (auto owner : prepared.owners)
+                {
+                    auto found = preparedDocument->ownerBlockIndex.find(owner.v);
+                    if (found != preparedDocument->ownerBlockIndex.end() && found->second == index)
+                        preparedDocument->ownerBlockIndex.erase(found);
+                    documentOwnerY.erase(owner.v);
+                }
+                prepared = {};
+                initializePreparedMetadata(prepared, source);
+                prepared.height = previousHeight;
+                auto top = index < preparedDocument->placements.size()
+                    ? preparedDocument->placements[index].top
+                    : 0.0f;
+                for (auto owner : prepared.owners)
+                {
+                    preparedDocument->ownerBlockIndex[owner.v] = index;
+                    documentOwnerY[owner.v] = top;
+                }
+                preparedDocument->layoutBlocks.erase(index);
+                preparedDocument->embeddedBlocks.erase(index);
+                for (auto const& imageSource : imageSources) inlineImages.ReleaseGif(imageSource);
+            }
+            if (modelChanged) preparedDocument->modelRevision = frame.renderModel.revision;
         }
         preparedDocument->selection = selection;
         auto prepareBlock = [&](elmd::RenderBlock const& block, bool requestEmbedded)
@@ -823,6 +889,7 @@ namespace winrt::ElMd
         {
             auto documentY = styleSheet.verticalPadding;
             documentOwnerY.clear();
+            preparedDocument->ownerBlockIndex.clear();
             preparedDocument->embeddedBlocks.clear();
             for (std::size_t index = 0; index < frame.renderModel.blocks.size(); ++index)
             {
@@ -846,7 +913,11 @@ namespace winrt::ElMd
                 placement.bottom = documentY + prepared.height;
                 if (prepared.embeddedRequested && (prepared.containsMath || prepared.containsImage))
                     preparedDocument->embeddedBlocks.insert(index);
-                for (auto owner : prepared.owners) documentOwnerY[owner.v] = placement.top;
+                for (auto owner : prepared.owners)
+                {
+                    documentOwnerY[owner.v] = placement.top;
+                    preparedDocument->ownerBlockIndex[owner.v] = index;
+                }
                 documentY = placement.bottom + block.block_style.margin_bottom
                     + (block.source_mode ? 0.0f : styleSheet.blockGap);
             }
@@ -885,6 +956,7 @@ namespace winrt::ElMd
                 ? (std::numeric_limits<float>::max)()
                 : scrollOffset + resources.surfaceHeightDip * 2.25f + viewportOverscan;
             auto measured = false;
+            auto geometryChanged = false;
             for (auto index = printMode ? std::size_t{0} : firstIntersecting(measureTop);
                 index < frame.renderModel.blocks.size(); ++index)
             {
@@ -893,11 +965,23 @@ namespace winrt::ElMd
                 auto const& block = frame.renderModel.blocks[index];
                 auto& prepared = preparedDocument->blocks[index];
                 if (block.kind == elmd::RenderBlockKind::ThematicBreak || prepared.valid) continue;
+                auto previousHeight = prepared.height;
                 prepared = prepareBlock(block, requestEmbeddedAt(placement.top));
                 preparedDocument->layoutBlocks.insert(index);
+                if (prepared.embeddedRequested && (prepared.containsMath || prepared.containsImage))
+                    preparedDocument->embeddedBlocks.insert(index);
+                else
+                    preparedDocument->embeddedBlocks.erase(index);
+                for (auto owner : prepared.owners)
+                {
+                    preparedDocument->ownerBlockIndex[owner.v] = index;
+                    documentOwnerY[owner.v] = placement.top;
+                }
+                geometryChanged = geometryChanged || prepared.height != previousHeight;
                 measured = true;
             }
             if (!measured) break;
+            if (!geometryChanged) break;
             preparedDocument->geometryValid = false;
             rebuildGeometry();
             if (!printMode && anchorIndex < preparedDocument->placements.size())
