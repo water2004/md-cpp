@@ -98,6 +98,14 @@ struct DocumentSymbolContributions {
     std::unordered_map<std::uint64_t, DocumentSymbolIndex> by_block;
 };
 
+inline bool document_subtree_has_symbols(const BlockNode& block) {
+    if (document_symbols_detail::has_symbols(
+            document_symbols_detail::collect_block_symbols(block))) {
+        return true;
+    }
+    return std::ranges::any_of(block.children, document_subtree_has_symbols);
+}
+
 inline DocumentSymbolIndex build_document_symbol_index(
     const EditorDocument& document,
     DocumentSymbolContributions* contributions = nullptr) {

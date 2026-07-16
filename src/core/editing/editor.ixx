@@ -28,6 +28,8 @@ export namespace elmd {
 struct EditorDocumentChange {
     std::vector<DocumentTextOperation> text_operations;
     bool structural = false;
+    bool structural_symbols_may_change = false;
+    bool structural_outline_may_change = false;
     bool forward = true;
     std::uint64_t revision_before = 0;
     std::uint64_t revision_after = 0;
@@ -42,11 +44,35 @@ inline EditorDocumentChange summarize_document_change(
     change.forward = forward;
     change.revision_before = revision_before;
     change.revision_after = revision_after;
+    auto subtree_has_heading = [&](auto& self, const BlockNode& block) -> bool {
+        if (block.kind == BlockKind::Heading) return true;
+        return std::ranges::any_of(block.children, [&](const auto& child) {
+            return self(self, child);
+        });
+    };
     for (const auto& operation : operations) {
         if (const auto* text = std::get_if<DocumentTextOperation>(&operation)) {
             change.text_operations.push_back(*text);
         } else {
             change.structural = true;
+            const auto& tree = std::get<DocumentTreeEdit>(operation);
+            if (tree.kind == DocumentTreeEditKind::Move) {
+                // A move payload intentionally stores only structural
+                // coordinates. Conservatively re-derive order-sensitive
+                // symbols and headings until the tree index carries the moved
+                // subtree identity directly.
+                change.structural_symbols_may_change = true;
+                change.structural_outline_may_change = true;
+            } else {
+                change.structural_symbols_may_change =
+                    change.structural_symbols_may_change
+                    || document_subtree_has_symbols(tree.before)
+                    || document_subtree_has_symbols(tree.after);
+                change.structural_outline_may_change =
+                    change.structural_outline_may_change
+                    || subtree_has_heading(subtree_has_heading, tree.before)
+                    || subtree_has_heading(subtree_has_heading, tree.after);
+            }
         }
     }
     return change;
@@ -529,8 +555,25 @@ private:
     void refresh_derived_from_document_(const EditorDocumentChange& change) {
         if (change.structural) {
             rebuild_document_block_index(document_);
-            symbols_ = build_document_symbol_index(document_, &symbol_contributions_);
-            outline_ = build_outline_from_blocks(document_.revision, document_.root.children);
+            bool heading_changed = change.structural_outline_may_change;
+            if (change.structural_symbols_may_change) {
+                symbols_ = build_document_symbol_index(document_, &symbol_contributions_);
+            } else {
+                std::unordered_set<std::uint64_t> refreshed;
+                for (const auto& operation : change.text_operations) {
+                    const auto& edit = change.forward ? operation.forward : operation.inverse;
+                    if (!refreshed.insert(edit.container_id.v).second) continue;
+                    if (const auto* block = find_document_block(document_, edit.container_id)) {
+                        heading_changed = heading_changed || block->kind == BlockKind::Heading;
+                        update_document_symbol_index(
+                            document_, *block, symbol_contributions_, symbols_);
+                    }
+                }
+            }
+            if (heading_changed) {
+                outline_ = build_outline_from_blocks(
+                    document_.revision, document_.root.children);
+            }
             outline_.revision = document_.revision;
             return;
         }

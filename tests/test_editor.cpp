@@ -383,6 +383,45 @@ suite editor_tests = [] {
     expect(fatal(bool(counters.full_document_block_index_scans == 0u)));
 };
 
+"large_document_plain_block_splits_skip_unrelated_symbol_and_outline_rebuilds"_test = [] {
+    std::string markdown;
+    constexpr std::size_t block_count = 2048;
+    for (std::size_t index = 0; index < block_count; ++index) {
+        if (index != 0) markdown += "\n\n";
+        markdown += "paragraph " + std::to_string(index);
+    }
+    Editor editor(markdown);
+    const auto& last = editor.document().root.children.back();
+    editor.set_selection(caret(last, last.inline_content.source.size() / 2));
+
+    reset_core_operation_counters();
+    expect(fatal(editor.execute_command(Command{.kind = CommandKind::InsertNewline})));
+    const auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_parses == 0u)));
+    expect(fatal(bool(counters.full_document_serializations == 0u)));
+    expect(fatal(bool(counters.full_document_block_index_scans == 1u)));
+    expect(fatal(bool(counters.full_document_symbol_derivations == 0u)));
+    expect(fatal(bool(counters.full_document_outline_derivations == 0u)));
+    expect(fatal(bool(counters.local_symbol_derivations == 1u)));
+    expect(fatal(bool(validate_document(editor.document()).empty())));
+
+    reset_core_operation_counters();
+    expect(fatal(editor.undo()));
+    auto history_counters = read_core_operation_counters();
+    expect(fatal(bool(history_counters.full_document_block_index_scans == 1u)));
+    expect(fatal(bool(history_counters.full_document_symbol_derivations == 0u)));
+    expect(fatal(bool(history_counters.full_document_outline_derivations == 0u)));
+    expect(fatal(bool(history_counters.local_symbol_derivations == 1u)));
+
+    reset_core_operation_counters();
+    expect(fatal(editor.redo()));
+    history_counters = read_core_operation_counters();
+    expect(fatal(bool(history_counters.full_document_block_index_scans == 1u)));
+    expect(fatal(bool(history_counters.full_document_symbol_derivations == 0u)));
+    expect(fatal(bool(history_counters.full_document_outline_derivations == 0u)));
+    expect(fatal(bool(history_counters.local_symbol_derivations == 1u)));
+};
+
 "externally_assembled_documents_calibrate_node_ids_once"_test = [] {
     EditorDocument document;
     document.root.id = NodeId{41};
@@ -2669,7 +2708,11 @@ suite editor_tests = [] {
 "derived_symbols_and_outline_refresh_after_structure_edits"_test = [] {
     Editor editor("title");
     editor.set_selection(caret(first_text(editor), 0));
+    reset_core_operation_counters();
     expect(fatal(bool(editor.execute_document_set_heading(editor.selection(), 2).has_value())));
+    const auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_symbol_derivations == 1u)));
+    expect(fatal(bool(counters.full_document_outline_derivations == 1u)));
     expect(fatal(bool(editor.document().root.children.front().kind == BlockKind::Heading)));
     expect(fatal(bool(editor.symbols().headings.size() == 1u)));
     expect(fatal(bool(editor.outline().items.size() == 1u)));
