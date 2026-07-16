@@ -159,6 +159,11 @@ namespace winrt::ElMd
             co_await winrt::resume_background();
             EditorSession loaded;
             loaded.Open(file, text);
+            // Parsing, the render model, and the CoreText boundary projection
+            // are all document-sized work. Finish them before returning to the
+            // UI thread so status/selection synchronization cannot trigger a
+            // hidden full projection build during the first frame.
+            (void)loaded.BoundaryTextUtf16();
             co_await uiContext;
             if (!Active(state, generation)) co_return;
             *state->session = std::move(loaded);
