@@ -202,6 +202,7 @@ namespace winrt::ElMd
         }
 
         notifying_ = true;
+        auto const previousServiceLength = knownLength_;
         try
         {
             auto const selection = session_->Selection();
@@ -211,21 +212,37 @@ namespace winrt::ElMd
             auto const anchor = selection.anchor.container_id == container
                 ? (std::min)(session_->TextInputAcpOffset(selection.anchor), current.size())
                 : active;
-            context_.NotifyTextChanged(
-                {0, SafeAcp(knownLength_)},
-                SafeAcp(current.size()),
-                {
-                    SafeAcp(anchor),
-                    SafeAcp(active),
-                });
+
+            // CoreText may synchronously raise TextRequested,
+            // SelectionRequested, or LayoutRequested while processing this
+            // notification. The application text store must already expose
+            // the post-edit text and selection when those callbacks run;
+            // publishing the cache afterwards makes the notification's
+            // replacement length disagree with TextRequested and causes
+            // TextInputFramework to fail-fast. Keep the previous service
+            // length only for the range being replaced.
             activeContainer_ = container;
             knownText_ = std::move(current);
             knownLength_ = knownText_.size();
             knownRevision_ = session_->Revision();
             forceFullSynchronization_ = false;
+            context_.NotifyTextChanged(
+                {0, SafeAcp(previousServiceLength)},
+                SafeAcp(knownLength_),
+                {
+                    SafeAcp(anchor),
+                    SafeAcp(active),
+                });
         }
         catch (winrt::hresult_error const&)
         {
+            // The editor remains authoritative even when the text service
+            // rejects a transient notification. Preserve the new text for
+            // re-entrant requests, but retain the service's old length so the
+            // next full synchronization describes the correct replaced
+            // range.
+            knownLength_ = previousServiceLength;
+            forceFullSynchronization_ = true;
         }
         notifying_ = false;
     }
