@@ -2066,7 +2066,7 @@ suite editor_tests = [] {
 };
 
 "code_fence_closer_deletion_and_undo_preserve_history_and_incremental_rendering"_test = [] {
-    auto exercise = [&](bool delete_as_selection) {
+    auto exercise = [&](bool delete_as_selection, bool reverse_selection) {
         Editor editor("```cpp\n11111111\n```");
         expect(fatal(bool(editor.document().root.children.size() == 1u)));
         if (editor.document().root.children.size() != 1u) return;
@@ -2082,12 +2082,13 @@ suite editor_tests = [] {
         expect(fatal(bool(closing != code->block_source.tree().tokens.end())));
         if (closing == code->block_source.tree().tokens.end()) return;
 
-        const auto original_selection = delete_as_selection
+        auto original_selection = delete_as_selection
             ? TextSelection{
                 {code_id, closing->source_range.start, TextAffinity::Downstream},
                 {code_id, closing->source_range.end, TextAffinity::Upstream}}
             : TextSelection::caret(
                 {code_id, closing->source_range.end, TextAffinity::Downstream});
+        if (reverse_selection) std::swap(original_selection.anchor, original_selection.active);
         editor.set_selection(original_selection);
         auto render_model = build_render_model(
             editor.document(), editor.outline(), editor.symbols(), default_theme_profile());
@@ -2159,8 +2160,9 @@ suite editor_tests = [] {
         expect(fatal(bool(editor.markdown_utf8() == edited_markdown)));
     };
 
-    exercise(true);
-    exercise(false);
+    exercise(true, false);
+    exercise(true, true);
+    exercise(false, false);
 };
 
 "incomplete_raw_marker_edits_restore_exact_source_and_selection"_test = [] {

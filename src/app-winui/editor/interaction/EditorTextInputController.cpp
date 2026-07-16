@@ -16,6 +16,14 @@ namespace
             static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)())));
     }
 
+    CoreTextRange OrderedCoreTextRange(std::size_t first, std::size_t second)
+    {
+        return {
+            SafeAcp((std::min)(first, second)),
+            SafeAcp((std::max)(first, second)),
+        };
+    }
+
 }
 
 namespace winrt::ElMd
@@ -229,10 +237,7 @@ namespace winrt::ElMd
             context_.NotifyTextChanged(
                 {0, SafeAcp(previousServiceLength)},
                 SafeAcp(knownLength_),
-                {
-                    SafeAcp(anchor),
-                    SafeAcp(active),
-                });
+                OrderedCoreTextRange(anchor, active));
         }
         catch (winrt::hresult_error const&)
         {
@@ -257,7 +262,7 @@ namespace winrt::ElMd
         const auto anchor = selection.anchor.container_id == activeContainer_
             ? (std::min)(session_->TextInputAcpOffset(selection.anchor), length)
             : active;
-        return {SafeAcp(anchor), SafeAcp(active)};
+        return OrderedCoreTextRange(anchor, active);
     }
 
     void EditorTextInputController::RegisterHandlers()
