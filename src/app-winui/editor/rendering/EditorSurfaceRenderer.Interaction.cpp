@@ -10,15 +10,6 @@ namespace winrt::ElMd
         auto pendingDistance = scrollTarget - scrollOffset;
         if (pendingDistance * delta < 0.0f) scrollTarget = scrollOffset;
         scrollTarget = (std::clamp)(scrollTarget + delta, 0.0f, MaximumScrollOffset());
-        constexpr float maximumQueuedDistanceDip = 300.0f;
-        auto queuedDistance = scrollTarget - scrollOffset;
-        if (std::fabs(queuedDistance) > maximumQueuedDistanceDip)
-        {
-            scrollTarget = (std::clamp)(
-                scrollOffset + std::copysign(maximumQueuedDistanceDip, queuedDistance),
-                0.0f,
-                MaximumScrollOffset());
-        }
     }
 
     bool EditorSurfaceRenderer::AdvanceScrollAnimation(float elapsedSeconds)
@@ -30,8 +21,8 @@ namespace winrt::ElMd
             scrollOffset = scrollTarget;
             return false;
         }
-        // A bounded target and an analytic exponential response give each wheel
-        // gesture one monotonically decelerating phase without scroll debt.
+        // Actual elapsed time and an analytic exponential response give each
+        // completed wheel gesture one monotonically decelerating phase.
         constexpr float responseHalfLifeSeconds = 0.075f;
         auto response = 1.0f - std::exp2(-elapsed / responseHalfLifeSeconds);
         scrollOffset += distance * response;
