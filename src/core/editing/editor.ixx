@@ -268,7 +268,7 @@ public:
     }
 
     std::optional<DocumentTransaction> execute_document_insert_footnote(TextSelection selection, const Command&) {
-        auto transaction = document_insert_footnote(document_, selection);
+        auto transaction = document_insert_footnote(document_, symbols_, selection);
         if (!transaction) return std::nullopt;
         apply_document_transaction_(*transaction);
         return transaction;
@@ -278,7 +278,7 @@ public:
         TextSelection selection,
         std::string label) {
         auto transaction = document_create_footnote_definition(
-            document_, selection, std::move(label));
+            document_, symbols_, selection, std::move(label));
         if (!transaction) return std::nullopt;
         apply_document_transaction_(*transaction);
         return transaction;

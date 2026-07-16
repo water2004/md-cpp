@@ -115,15 +115,18 @@ std::optional<MaterializedTransaction> document_insert_image(
 
 std::optional<MaterializedTransaction> document_insert_footnote(
     EditorDocument document, const TextSelection& selection) {
+    auto symbols = build_document_symbol_index(document);
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_insert_footnote(working, selection);
+        return elmd::document_insert_footnote(working, symbols, selection);
     });
 }
 
 std::optional<MaterializedTransaction> document_create_footnote_definition(
     EditorDocument document, const TextSelection& selection, std::string label) {
+    auto symbols = build_document_symbol_index(document);
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_create_footnote_definition(working, selection, std::move(label));
+        return elmd::document_create_footnote_definition(
+            working, symbols, selection, std::move(label));
     });
 }
 
@@ -843,8 +846,11 @@ suite document_edit_tests = [] {
     expect(fatal(bool(created->after.root.children.size() == 2u)));
     expect(fatal(bool(created->after.root.children.back().kind == BlockKind::FootnoteDefinition)));
     expect(fatal(bool(created->after.root.children.back().footnote_label == "missing")));
-    expect(fatal(bool(footnote_definition_target(created->after, "missing").has_value())));
-    const auto reference = first_footnote_reference_target(created->after, "missing");
+    const auto symbols = build_document_symbol_index(created->after);
+    expect(fatal(bool(footnote_definition_target(
+        created->after, symbols, "missing").has_value())));
+    const auto reference = first_footnote_reference_target(
+        symbols, "missing");
     expect(fatal(bool(reference.has_value())));
     if (reference) {
         expect(fatal(bool(reference->container_id == owner.id)));

@@ -681,19 +681,22 @@ namespace winrt::ElMd
     std::optional<elmd::TextPosition> EditorSession::FootnoteDefinitionTarget(std::string_view label) const
     {
         if (core_->sourceEditor) return std::nullopt;
-        return elmd::footnote_definition_target(core_->editor.document(), label);
+        return elmd::footnote_definition_target(
+            core_->editor.document(), core_->editor.symbols(), label);
     }
 
     std::optional<elmd::TextPosition> EditorSession::FirstFootnoteReferenceTarget(std::string_view label) const
     {
         if (core_->sourceEditor) return std::nullopt;
-        return elmd::first_footnote_reference_target(core_->editor.document(), label);
+        return elmd::first_footnote_reference_target(
+            core_->editor.symbols(), label);
     }
 
     std::string EditorSession::FootnotePreview(std::string_view label) const
     {
         if (core_->sourceEditor) return {};
-        return elmd::footnote_preview(core_->editor.document(), label, 240);
+        return elmd::footnote_preview(
+            core_->editor.document(), core_->editor.symbols(), label, 240);
     }
 
     std::wstring const& EditorSession::BaseDirectory() const

@@ -8,7 +8,6 @@ import elmd.core.block_source;
 import elmd.core.block_tree;
 import elmd.core.document;
 import elmd.core.document_edit_support;
-import elmd.core.document_symbols;
 import elmd.core.document_text;
 import elmd.core.document_transaction;
 import elmd.core.inline_document;
@@ -71,18 +70,17 @@ inline std::string next_footnote_label(const DocumentSymbolIndex& symbols) {
 
 inline std::optional<TextPosition> footnote_definition_target(
     const EditorDocument& document,
+    const DocumentSymbolIndex& symbols,
     std::string_view label) {
-    const auto symbols = build_document_symbol_index(document);
     const auto* definition = find_footnote_definition(symbols, label);
     if (!definition) return std::nullopt;
-    const auto* block = find_block(document.root, definition->node_id);
+    const auto* block = find_document_block(document, definition->node_id);
     return block ? document_edit_detail::first_editable_position(*block) : std::nullopt;
 }
 
 inline std::optional<TextPosition> first_footnote_reference_target(
-    const EditorDocument& document,
+    const DocumentSymbolIndex& symbols,
     std::string_view label) {
-    const auto symbols = build_document_symbol_index(document);
     const auto* reference = find_footnote_reference(symbols, label);
     if (!reference) return std::nullopt;
     return TextPosition{
@@ -126,12 +124,12 @@ inline void collect_preview(const BlockNode& block, std::u32string& preview) {
 
 inline std::string footnote_preview(
     const EditorDocument& document,
+    const DocumentSymbolIndex& symbols,
     std::string_view label,
     std::size_t maximum_codepoints = 100) {
-    const auto symbols = build_document_symbol_index(document);
     const auto* definition = find_footnote_definition(symbols, label);
     if (!definition) return {};
-    const auto* block = find_block(document.root, definition->node_id);
+    const auto* block = find_document_block(document, definition->node_id);
     if (!block) return {};
     std::u32string preview;
     document_footnotes_detail::collect_preview(*block, preview);
@@ -141,10 +139,10 @@ inline std::string footnote_preview(
 
 inline std::optional<DocumentTransaction> document_create_footnote_definition(
     EditorDocument& document,
+    const DocumentSymbolIndex& symbols,
     const TextSelection& selection,
     std::string label) {
     if (label.empty()) return std::nullopt;
-    const auto symbols = build_document_symbol_index(document);
     if (find_footnote_definition(symbols, label)) return std::nullopt;
 
     const auto revision_before = document.revision;
@@ -176,6 +174,7 @@ inline std::optional<DocumentTransaction> document_create_footnote_definition(
 
 inline std::optional<DocumentTransaction> document_insert_footnote(
     EditorDocument& document,
+    const DocumentSymbolIndex& symbols,
     const TextSelection& selection) {
     if (selection.anchor.container_id != selection.active.container_id) return std::nullopt;
     const auto revision_before = document.revision;
@@ -189,7 +188,7 @@ inline std::optional<DocumentTransaction> document_insert_footnote(
         ? selection.active.source_offset
         : (std::max)(selection.anchor.source_offset, selection.active.source_offset);
     if (offset > owner->source.size()) return std::nullopt;
-    const auto label = next_footnote_label(build_document_symbol_index(after));
+    const auto label = next_footnote_label(symbols);
     const auto reference_source = U"[^" + utf8_to_cps(label) + U"]";
     auto source_edit = document_edit_detail::edit_inline(
         after,

@@ -124,6 +124,8 @@ suite editor_tests = [] {
     expect(fatal(bool(counters.full_document_parses == 0u))) << "full parse";
     expect(fatal(bool(counters.full_document_serializations == 0u))) << "full serialize";
     expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << "tree diff";
+    expect(fatal(bool(counters.full_document_symbol_derivations == 1u)))
+        << "one structural refresh, no command pre-scan";
     expect(fatal(bool(counters.inline_reparses == 2u))) << "edited owner plus new definition body";
     expect(fatal(bool(transaction->operations.size() == 2u))) << "operations";
     expect(fatal(bool(editor.markdown_utf8() == "body[^1]\n\n[^1]: "))) << "insert markdown";
@@ -151,6 +153,32 @@ suite editor_tests = [] {
     expect(fatal(editor.undo()));
     expect(editor.markdown_utf8() == "body[^missing]");
     expect(editor.selection() == before);
+};
+
+"large_document_footnote_queries_use_the_cached_symbol_and_block_indexes"_test = [] {
+    std::string markdown = "first[^note]";
+    constexpr std::size_t block_count = 2048;
+    for (std::size_t index = 1; index < block_count; ++index) {
+        markdown += "\n\nparagraph " + std::to_string(index);
+    }
+    markdown += "\n\n[^note]: preview body";
+    Editor editor(markdown);
+
+    reset_core_operation_counters();
+    const auto definition = footnote_definition_target(
+        editor.document(), editor.symbols(), "note");
+    const auto reference = first_footnote_reference_target(
+        editor.symbols(), "note");
+    const auto preview = footnote_preview(
+        editor.document(), editor.symbols(), "note", 240);
+    const auto counters = read_core_operation_counters();
+
+    expect(fatal(bool(definition.has_value())));
+    expect(fatal(bool(reference.has_value())));
+    expect(fatal(bool(preview == "preview body")));
+    expect(fatal(bool(counters.full_document_symbol_derivations == 0u)));
+    expect(fatal(bool(counters.full_document_block_index_scans == 0u)));
+    expect(fatal(bool(counters.full_document_text_projections == 0u)));
 };
 
 "normal_source_edits_never_parse_or_serialize_the_full_document"_test = [] {
