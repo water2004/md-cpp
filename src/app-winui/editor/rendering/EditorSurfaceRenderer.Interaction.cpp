@@ -24,8 +24,8 @@ namespace winrt::ElMd
         // Keep wheel motion responsive at the start while preserving a visible
         // inertial tail. Capping the step prevents accumulated wheel input from
         // turning the exponential response into an abrupt high-speed jump.
-        constexpr float responseHalfLifeSeconds = 0.065f;
-        constexpr float maximumSpeedDipPerSecond = 1500.0f;
+        constexpr float responseHalfLifeSeconds = 0.120f;
+        constexpr float maximumSpeedDipPerSecond = 900.0f;
         auto response = 1.0f - std::exp2(-elapsed / responseHalfLifeSeconds);
         auto step = distance * response;
         auto maximumStep = maximumSpeedDipPerSecond * elapsed;
