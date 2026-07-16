@@ -19,3 +19,13 @@ Settings use schema version 1 and are saved atomically to `Assets/settings.json`
 ```
 
 An invalid or unavailable file falls back to safe defaults and reports a diagnostic. The MathJax switch applies and saves immediately. Theme selection is staged: it updates only the theme preview until the Theme page's `Apply` button is pressed. Leaving Settings without applying discards the pending theme selection. The preview uses the profile's actual typography, code, quote, and color values. An active custom theme cannot be removed until a different theme has been applied, preventing a dangling persisted ID.
+
+## Built-in themes
+
+Built-in themes are complete profiles rather than accent-color overlays. Each profile supplies editor and shell colors, typography, syntax colors, and block layout metrics.
+
+- `el-md Light`, `el-md Dark`, and `el-md High Contrast` are the neutral defaults.
+- `Inkstone Paper` is a spacious warm-paper reading theme with ink and cinnabar accents.
+- `Moss & Linen` is a compact, low-glare light theme with subdued green structure.
+- `Arctic Night` is a cool dark theme with cyan navigation and restrained syntax colors.
+- `Ember Night` is a warm dark theme with amber headings and terracotta structure.

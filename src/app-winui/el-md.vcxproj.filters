@@ -505,6 +505,18 @@
     <None Include="Assets\themes\high-contrast.json">
       <Filter>Theme</Filter>
     </None>
+    <None Include="Assets\themes\inkstone-paper.json">
+      <Filter>Theme</Filter>
+    </None>
+    <None Include="Assets\themes\moss-linen.json">
+      <Filter>Theme</Filter>
+    </None>
+    <None Include="Assets\themes\arctic-night.json">
+      <Filter>Theme</Filter>
+    </None>
+    <None Include="Assets\themes\ember-night.json">
+      <Filter>Theme</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="app.manifest">
