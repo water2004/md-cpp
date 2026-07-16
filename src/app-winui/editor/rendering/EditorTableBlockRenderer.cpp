@@ -21,14 +21,15 @@ namespace winrt::ElMd
         MathJaxRenderer& mathJax,
         SvgNormalizer& svgNormalizer)
     {
-        auto modeledTable = block.row_count > 0 && block.column_count > 0 && !block.table_cells.empty();
+        auto const& special = block.special();
+        auto modeledTable = special.row_count > 0 && special.column_count > 0 && !special.table_cells.empty();
         if (!modeledTable) return std::nullopt;
         PreparedTable prepared;
         auto& table = prepared.visual;
-        table.sourceSpans = block.table_cell_spans;
+        table.sourceSpans = special.table_cell_spans;
         table.editable = true;
-        table.columnCount = block.column_count;
-        table.rowCount = block.row_count;
+        table.columnCount = special.column_count;
+        table.rowCount = special.row_count;
         tableWidth = (std::max)(1.0f, tableWidth);
         auto columnWidth = tableWidth / static_cast<float>(table.columnCount);
         std::vector<float> rowHeights(table.rowCount, styleSheet.body.lineHeight + 16.0f);
@@ -42,15 +43,15 @@ namespace winrt::ElMd
             {
                 auto sourceSpan = elmd::TextSpan{block.id, {0, 0}};
                 auto rangeIndex = row * table.columnCount + column;
-                if (rangeIndex < block.table_cell_spans.size())
+                if (rangeIndex < special.table_cell_spans.size())
                 {
-                    sourceSpan = block.table_cell_spans[rangeIndex];
+                    sourceSpan = special.table_cell_spans[rangeIndex];
                 }
                 DisplayInlineText display;
                 auto renderCellIndex = row * table.columnCount + column;
-                if (renderCellIndex < block.table_cells.size())
+                if (renderCellIndex < special.table_cells.size())
                 {
-                    display = BuildDisplayInlineText(block.table_cells[renderCellIndex], caret, {sourceSpan.container_id, sourceSpan.source_range.end, elmd::TextAffinity::Downstream}, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, (std::max)(1.0f, columnWidth - 20.0f), svgSupported, requestEmbedded);
+                    display = BuildDisplayInlineText(special.table_cells[renderCellIndex], caret, {sourceSpan.container_id, sourceSpan.source_range.end, elmd::TextAffinity::Downstream}, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, (std::max)(1.0f, columnWidth - 20.0f), svgSupported, requestEmbedded);
                 }
                 else
                 {
@@ -66,8 +67,8 @@ namespace winrt::ElMd
                     layout->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
                     textLayoutEngine.ApplyStyles(layout.Get(), display.ranges);
                     ApplyMathInlineObjects(layout.Get(), display.mathOverlays);
-                    if (row == 0 && block.table_header_row) layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_RANGE{0, static_cast<UINT32>(wide.size())});
-                    auto alignment = column < block.table_aligns.size() ? block.table_aligns[column] : elmd::TableAlignment::None;
+                    if (row == 0 && special.table_header_row) layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_RANGE{0, static_cast<UINT32>(wide.size())});
+                    auto alignment = column < special.table_aligns.size() ? special.table_aligns[column] : elmd::TableAlignment::None;
                     if (alignment == elmd::TableAlignment::Center) layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
                     else if (alignment == elmd::TableAlignment::Right) layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
                     else layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);

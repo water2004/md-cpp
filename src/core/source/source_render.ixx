@@ -118,7 +118,7 @@ inline RenderBlock render_line(
             + (block.presentation_key << 6)
             + (block.presentation_key >> 2);
     }
-    block.language = line.code_language;
+    block.ensure_special().language = line.code_language;
     return block;
 }
 

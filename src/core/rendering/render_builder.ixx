@@ -335,9 +335,9 @@ struct Builder {
             (std::min)(context.indent_columns, parent_indent_columns);
         rendered.flow_anchor_owner_id = first_editable_owner(block).value_or(block.id);
         if (block.kind == BlockKind::Callout) {
-            rendered.callout_kind = block.callout_kind;
+            rendered.ensure_special().callout_kind = block.callout_kind;
         } else if (block.kind == BlockKind::FootnoteDefinition) {
-            rendered.footnote_label = block.footnote_label;
+            rendered.ensure_special().footnote_label = block.footnote_label;
         }
         return rendered;
     }
@@ -847,46 +847,50 @@ struct Builder {
             }
             case BK::CodeBlock: {
                 auto rb = base(BlockStyle::code(theme.layout));
-                rb.raw_source = b.block_source.source();
-                rb.content_to_source = b.block_source.tree().content_to_source;
-                rb.language = b.block_source.tree().language;
-                rb.code_text = block_source_content(b.block_source);
-                rb.code_indented = b.code_indented;
-                std::size_t n = 1; for (char32_t c : rb.code_text) if (c == '\n') ++n;
-                rb.line_count = n;
-                if (!rb.content_to_source.empty()) {
-                    rb.content_span = {b.id, {rb.content_to_source.front(), rb.content_to_source.back()}};
+                auto& special = rb.ensure_special();
+                special.raw_source = b.block_source.source();
+                special.content_to_source = b.block_source.tree().content_to_source;
+                special.language = b.block_source.tree().language;
+                special.code_text = block_source_content(b.block_source);
+                special.code_indented = b.code_indented;
+                std::size_t n = 1; for (char32_t c : special.code_text) if (c == '\n') ++n;
+                special.line_count = n;
+                if (!special.content_to_source.empty()) {
+                    rb.content_span = {b.id, {special.content_to_source.front(), special.content_to_source.back()}};
                 }
                 return rb;
             }
             case BK::MathBlock: {
                 auto rb = base(BlockStyle::math(theme.layout));
-                rb.raw_source = b.block_source.source();
-                rb.content_to_source = b.block_source.tree().content_to_source;
-                rb.tex = block_source_content(b.block_source);
-                rb.math_delim = b.math_delim;
-                if (!rb.content_to_source.empty()) {
-                    rb.content_span = {b.id, {rb.content_to_source.front(), rb.content_to_source.back()}};
+                auto& special = rb.ensure_special();
+                special.raw_source = b.block_source.source();
+                special.content_to_source = b.block_source.tree().content_to_source;
+                special.tex = block_source_content(b.block_source);
+                special.math_delim = b.math_delim;
+                if (!special.content_to_source.empty()) {
+                    rb.content_span = {b.id, {special.content_to_source.front(), special.content_to_source.back()}};
                 }
                 return rb;
             }
             case BK::Table: {
                 auto rb = base(BlockStyle::table(theme.layout));
-                rb.table_aligns = b.table_aligns;
-                rb.table_header_row = !b.children.empty() && b.children.front().table_header_row;
-                rb.column_count = b.children.empty() ? 0 : b.children.front().children.size();
-                rb.row_count = b.children.size();
+                auto& special = rb.ensure_special();
+                special.table_aligns = b.table_aligns;
+                special.table_header_row = !b.children.empty() && b.children.front().table_header_row;
+                special.column_count = b.children.empty() ? 0 : b.children.front().children.size();
+                special.row_count = b.children.size();
                 auto build_cell = [&](const BlockNode& cell) {
-                    rb.table_cell_spans.push_back({cell.id, {0, cell.inline_content.source.size()}});
+                    special.table_cell_spans.push_back({cell.id, {0, cell.inline_content.source.size()}});
                     return build_inline_document(cell.inline_content, cell.id, InlineStyle::plain());
                 };
-                for (const auto& row : b.children) for (const auto& cell : row.children) rb.table_cells.push_back(build_cell(cell));
+                for (const auto& row : b.children) for (const auto& cell : row.children) special.table_cells.push_back(build_cell(cell));
                 return rb;
             }
             case BK::ImageBlock: {
                 auto rb = base(BlockStyle::image(theme.layout));
-                rb.alt = b.image_alt; rb.src = b.src; rb.title = b.image_title; rb.link = b.image_link;
-                rb.image_width = b.image_width; rb.image_height = b.image_height;
+                auto& special = rb.ensure_special();
+                special.alt = b.image_alt; special.src = b.src; special.title = b.image_title; special.link = b.image_link;
+                special.image_width = b.image_width; special.image_height = b.image_height;
                 return rb;
             }
             case BK::Toc: {
@@ -894,7 +898,7 @@ struct Builder {
             }
             case BK::Frontmatter: {
                 auto rb = base(BlockStyle::frontmatter(theme.layout));
-                rb.raw = b.raw;
+                rb.ensure_special().raw = b.raw;
                 return rb;
             }
             case BK::ThematicBreak: {
@@ -905,13 +909,14 @@ struct Builder {
             }
             case BK::UnsupportedMarkup: {
                 auto rb = base(BlockStyle::unsupported(theme.layout));
-                rb.raw = b.raw;
-                rb.reason_text = unsupported_reason_message(b.unsup_reason);
+                auto& special = rb.ensure_special();
+                special.raw = b.raw;
+                special.reason_text = unsupported_reason_message(b.unsup_reason);
                 return rb;
             }
             case BK::Extension: {
                 auto rb = base(BlockStyle::extension(theme.layout));
-                rb.extension_name = b.ext_name;
+                rb.ensure_special().extension_name = b.ext_name;
                 return rb;
             }
         }
@@ -942,6 +947,33 @@ inline std::uint64_t configure_render_dependencies(
         assign_footnote_ordinal(definition.label);
     }
     return dependency_hash.value;
+}
+
+inline void update_render_geometry_hints(RenderBlock& block) {
+    std::uint64_t characters = 0;
+    std::uint64_t line_breaks = 0;
+    std::vector<std::string> image_sources;
+    auto visit = [&](auto& self, std::vector<InlineRenderItem> const& items) -> void {
+        for (auto const& item : items) {
+            if (block.text_heading_level == 0 && item.style.heading_level)
+                block.text_heading_level = *item.style.heading_level;
+            auto const& text = item.display_text.empty() ? item.text : item.display_text;
+            characters += text.size();
+            line_breaks += static_cast<std::uint64_t>(std::ranges::count(text, U'\n'));
+            if (item.kind == InlineRenderItem::Kind::Image && !item.special().src.empty())
+                image_sources.push_back(item.special().src);
+            self(self, item.special().children);
+        }
+    };
+    visit(visit, block.inline_items);
+    block.estimated_characters = static_cast<std::uint32_t>((std::min)(
+        characters,
+        static_cast<std::uint64_t>((std::numeric_limits<std::uint32_t>::max)())));
+    block.estimated_line_breaks = static_cast<std::uint32_t>((std::min)(
+        line_breaks,
+        static_cast<std::uint64_t>((std::numeric_limits<std::uint32_t>::max)())));
+    if (!image_sources.empty())
+        block.ensure_special().inline_image_sources = std::move(image_sources);
 }
 
 inline RenderModel finish_render_model(
@@ -990,6 +1022,7 @@ inline RenderModel build_render_model(
     blocks.reserve(doc.root.children.size());
     for (const auto& block : doc.root.children) {
         auto rendered = builder.build_block(block);
+        update_render_geometry_hints(rendered);
         rendered.source_key = render_key_detail::source_key(block, dependency_key);
         rendered.presentation_key = rendered.source_key;
         blocks.push_back(std::move(rendered));
@@ -1053,6 +1086,7 @@ inline RenderModel build_render_model_incremental(
             for (auto index : changed_indices) {
                 auto const& block = doc.root.children[index];
                 auto rendered = builder.build_block(block);
+                update_render_geometry_hints(rendered);
                 rendered.source_key = render_key_detail::source_key(block, dependency_key);
                 rendered.presentation_key = rendered.source_key;
                 previous.blocks[index] = std::move(rendered);
@@ -1116,6 +1150,7 @@ inline RenderModel build_render_model_incremental(
             continue;
         }
         auto rendered = builder.build_block(block);
+        update_render_geometry_hints(rendered);
         rendered.source_key = source_key;
         rendered.presentation_key = source_key;
         blocks.push_back(std::move(rendered));

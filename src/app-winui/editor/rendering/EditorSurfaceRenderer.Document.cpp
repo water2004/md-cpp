@@ -31,7 +31,7 @@ namespace winrt::ElMd
         {
             if (block.kind == elmd::RenderBlockKind::Math
                 || InlineItemsContain(block.inline_items, elmd::InlineRenderItem::Kind::Math)) return true;
-            for (auto const& cell : block.table_cells)
+            for (auto const& cell : block.special().table_cells)
                 if (InlineItemsContain(cell, elmd::InlineRenderItem::Kind::Math)) return true;
             for (auto const& child : block.child_blocks)
                 if (RenderBlockContainsMath(child)) return true;
@@ -42,7 +42,7 @@ namespace winrt::ElMd
         {
             if (block.kind == elmd::RenderBlockKind::Image
                 || InlineItemsContain(block.inline_items, elmd::InlineRenderItem::Kind::Image)) return true;
-            for (auto const& cell : block.table_cells)
+            for (auto const& cell : block.special().table_cells)
                 if (InlineItemsContain(cell, elmd::InlineRenderItem::Kind::Image)) return true;
             for (auto const& child : block.child_blocks)
                 if (RenderBlockContainsImage(child)) return true;
@@ -75,8 +75,8 @@ namespace winrt::ElMd
             add(block.source_span.container_id);
             add(block.content_span.container_id);
             CollectInlineOwners(block.inline_items, seen, owners);
-            for (auto const& cell : block.table_cells) CollectInlineOwners(cell, seen, owners);
-            for (auto const& span : block.table_cell_spans) add(span.container_id);
+            for (auto const& cell : block.special().table_cells) CollectInlineOwners(cell, seen, owners);
+            for (auto const& span : block.special().table_cell_spans) add(span.container_id);
             for (auto const& child : block.child_blocks) CollectRenderOwners(child, seen, owners);
         }
     }
@@ -300,10 +300,11 @@ namespace winrt::ElMd
             DisplayInlineText display;
             if (block.kind == elmd::RenderBlockKind::Image)
             {
+                auto const& special = block.special();
                 auto position = elmd::TextPosition{block.id, 0, elmd::TextAffinity::Downstream};
                 auto start = static_cast<std::uint32_t>(display.displayToSource.size());
                 AppendGeneratedText(display, U"\uFFFC", position, elmd::InlineStyle::plain());
-                display.imageOverlays.push_back({start, block.source_span, block.src, block.alt, block.image_width, block.image_height, true});
+                display.imageOverlays.push_back({start, block.source_span, special.src, special.alt, special.image_width, special.image_height, true});
             }
             else if (block.kind == elmd::RenderBlockKind::Toc)
             {
@@ -314,7 +315,8 @@ namespace winrt::ElMd
             }
             else
             {
-                auto raw = elmd::utf8_to_cps(block.raw.empty() ? block.reason_text : block.raw);
+                auto const& special = block.special();
+                auto raw = elmd::utf8_to_cps(special.raw.empty() ? special.reason_text : special.raw);
                 AppendSourceText(display, raw, {block.id, {0, raw.size()}}, elmd::InlineStyle::plain(), false);
             }
             if (display.text.empty()) AppendGeneratedText(display, U"\u200B", {block.id, 0, elmd::TextAffinity::Downstream}, elmd::InlineStyle::plain());
@@ -349,19 +351,20 @@ namespace winrt::ElMd
         {
             auto apply = [&](auto& self, elmd::RenderBlock const& block) -> void
             {
-                if (block.kind == elmd::RenderBlockKind::Code && block.language && !block.code_text.empty())
+                auto const& special = block.special();
+                if (block.kind == elmd::RenderBlockKind::Code && special.language && !special.code_text.empty())
                 {
-                    auto highlights = treeSitter.Highlight(*block.language, elmd::cps_to_utf8(block.code_text));
+                    auto highlights = treeSitter.Highlight(*special.language, elmd::cps_to_utf8(special.code_text));
                     for (auto const& highlight : highlights)
                     {
-                        auto contentStart = (std::min)(static_cast<std::size_t>(highlight.start), block.code_text.size());
-                        auto contentEnd = (std::min)(contentStart + static_cast<std::size_t>(highlight.length), block.code_text.size());
-                        auto sourceStart = block.content_to_source.empty()
+                        auto contentStart = (std::min)(static_cast<std::size_t>(highlight.start), special.code_text.size());
+                        auto contentEnd = (std::min)(contentStart + static_cast<std::size_t>(highlight.length), special.code_text.size());
+                        auto sourceStart = special.content_to_source.empty()
                             ? contentStart
-                            : block.content_to_source[(std::min)(contentStart, block.content_to_source.size() - 1)];
-                        auto sourceEnd = block.content_to_source.empty()
+                            : special.content_to_source[(std::min)(contentStart, special.content_to_source.size() - 1)];
+                        auto sourceEnd = special.content_to_source.empty()
                             ? contentEnd
-                            : block.content_to_source[(std::min)(contentEnd, block.content_to_source.size() - 1)];
+                            : special.content_to_source[(std::min)(contentEnd, special.content_to_source.size() - 1)];
                         auto start = DisplayPositionForSource(display.displayToSource, {block.id, sourceStart, elmd::TextAffinity::Downstream});
                         auto end = DisplayPositionForSource(display.displayToSource, {block.id, sourceEnd, elmd::TextAffinity::Downstream});
                         if (end <= start) continue;
@@ -474,7 +477,7 @@ namespace winrt::ElMd
                         if (contentLeft && accumulateRange(*range, top, bottom)) {
                             auto left = (std::clamp)(*contentLeft, origin.x, documentRight);
                             auto rect = D2D1::RectF(left, top - 4.0f, documentRight, bottom + 4.0f);
-                            auto calloutPalette = calloutBrushes(nested.callout_kind);
+                            auto calloutPalette = calloutBrushes(nested.special().callout_kind);
                             auto brush = nested.kind == elmd::RenderBlockKind::Callout
                                 ? calloutPalette.first
                                 : nested.kind == elmd::RenderBlockKind::Code
@@ -522,6 +525,9 @@ namespace winrt::ElMd
             prepared.code = block.kind == elmd::RenderBlockKind::Code
                 || block.kind == elmd::RenderBlockKind::Frontmatter
                 || block.kind == elmd::RenderBlockKind::Unsupported;
+        };
+        auto initializePreparedContentMetadata = [&](PreparedDocument::Block& prepared, elmd::RenderBlock const& block)
+        {
             prepared.containsMath = RenderBlockContainsMath(block);
             prepared.containsImage = RenderBlockContainsImage(block);
             std::unordered_set<std::uint64_t> owners;
@@ -529,6 +535,7 @@ namespace winrt::ElMd
         };
         auto estimateBlockHeight = [&](elmd::RenderBlock const& block)
         {
+            auto const& special = block.special();
             auto flowContainer = !block.inline_items.empty()
                 && (block.kind == elmd::RenderBlockKind::Quote
                     || block.kind == elmd::RenderBlockKind::Callout);
@@ -546,10 +553,10 @@ namespace winrt::ElMd
                 || block.kind == elmd::RenderBlockKind::Frontmatter
                 || block.kind == elmd::RenderBlockKind::Unsupported)
             {
-                auto lines = (std::max)(std::size_t{1}, block.line_count);
-                if (block.line_count == 0)
+                auto lines = (std::max)(std::size_t{1}, special.line_count);
+                if (special.line_count == 0)
                 {
-                    auto const& source = block.code_text.empty() ? block.raw_source : block.code_text;
+                    auto const& source = special.code_text.empty() ? special.raw_source : special.code_text;
                     lines = 1 + static_cast<std::size_t>(std::ranges::count(source, U'\n'));
                 }
                 return static_cast<float>(lines) * styleSheet.code.lineHeight + paddingTop + paddingBottom;
@@ -557,18 +564,18 @@ namespace winrt::ElMd
             if (block.kind == elmd::RenderBlockKind::Math)
                 return styleSheet.body.lineHeight * 2.0f + paddingTop + paddingBottom;
             if (block.kind == elmd::RenderBlockKind::Table)
-                return static_cast<float>((std::max)(std::size_t{1}, block.row_count))
+                return static_cast<float>((std::max)(std::size_t{1}, special.row_count))
                     * (styleSheet.body.lineHeight + 16.0f) + paddingTop + paddingBottom;
             if (block.kind == elmd::RenderBlockKind::Image)
             {
-                auto width = block.image_width.value_or(0.0f);
-                auto height = block.image_height.value_or(0.0f);
-                if ((width <= 0.0f || height <= 0.0f) && !block.src.empty())
+                auto width = special.image_width.value_or(0.0f);
+                auto height = special.image_height.value_or(0.0f);
+                if ((width <= 0.0f || height <= 0.0f) && !special.src.empty())
                 {
-                    if (auto dimensions = renderCache.ProbeGifDimensions(frame.baseDirectory, block.src))
+                    if (auto dimensions = renderCache.ProbeGifDimensions(frame.baseDirectory, special.src))
                     {
-                        width = block.image_width.value_or(dimensions->width);
-                        height = block.image_height.value_or(dimensions->height);
+                        width = special.image_width.value_or(dimensions->width);
+                        height = special.image_height.value_or(dimensions->height);
                     }
                 }
                 if (width <= 0.0f) width = contentWidth * 0.5f;
@@ -576,50 +583,27 @@ namespace winrt::ElMd
                 auto scale = (std::min)(1.0f, (std::min)(
                     (std::max)(48.0f, contentWidth * 0.75f) / width,
                     240.0f / height));
-                auto caption = block.alt.empty() ? 0.0f : styleSheet.body.lineHeight + 4.0f;
+                auto caption = special.alt.empty() ? 0.0f : styleSheet.body.lineHeight + 4.0f;
                 return (std::max)(styleSheet.body.lineHeight, height * scale)
                     + caption + paddingTop + paddingBottom;
             }
 
-            auto font = styleSheet.body;
-            for (auto const& item : block.inline_items)
-            {
-                if (!item.style.heading_level) continue;
-                auto level = *item.style.heading_level;
-                font = level <= 1 ? styleSheet.heading1 : level == 2 ? styleSheet.heading2 : styleSheet.heading3;
-                break;
-            }
-            auto lineWidth = 0.0f;
-            std::size_t lines = 1;
-            auto appendText = [&](auto& self, std::vector<elmd::InlineRenderItem> const& items) -> void
-            {
-                for (auto const& item : items)
-                {
-                    if (item.kind == elmd::InlineRenderItem::Kind::Image)
-                    {
-                        if (!item.special().src.empty()) renderCache.ProbeGifDimensions(frame.baseDirectory, item.special().src);
-                        lineWidth += font.size * 8.0f;
-                    }
-                    auto const& visible = item.display_text.empty() ? item.text : item.display_text;
-                    if (item.kind != elmd::InlineRenderItem::Kind::Marker
-                        || item.visibility == elmd::MarkerVisibility::Always)
-                    {
-                        for (auto character : visible)
-                        {
-                            if (character == U'\n') { ++lines; lineWidth = 0.0f; continue; }
-                            auto advance = character < 0x80 ? font.size * 0.56f : font.size;
-                            if (lineWidth > 0.0f && lineWidth + advance > contentWidth)
-                            {
-                                ++lines;
-                                lineWidth = 0.0f;
-                            }
-                            lineWidth += advance;
-                        }
-                    }
-                    self(self, item.special().children);
-                }
-            };
-            appendText(appendText, block.inline_items);
+            auto level = block.text_heading_level;
+            auto font = level == 0 ? styleSheet.body
+                : level <= 1 ? styleSheet.heading1
+                : level == 2 ? styleSheet.heading2
+                : styleSheet.heading3;
+            for (auto const& source : special.inline_image_sources)
+                renderCache.ProbeGifDimensions(frame.baseDirectory, source);
+            auto averageAdvance = (std::max)(1.0f, font.size * 0.72f);
+            auto charactersPerLine = (std::max)(
+                std::size_t{1},
+                static_cast<std::size_t>(contentWidth / averageAdvance));
+            auto wrappedLines = (static_cast<std::size_t>(block.estimated_characters)
+                + charactersPerLine - 1) / charactersPerLine;
+            auto lines = (std::max)(
+                std::size_t{1} + static_cast<std::size_t>(block.estimated_line_breaks),
+                (std::max)(std::size_t{1}, wrappedLines));
             return static_cast<float>(lines) * font.lineHeight + paddingTop + paddingBottom;
         };
         auto activePositionChanged = preparedDocument
@@ -752,6 +736,7 @@ namespace winrt::ElMd
         {
             PreparedDocument::Block prepared;
             initializePreparedMetadata(prepared, block);
+            initializePreparedContentMetadata(prepared, block);
             prepared.embeddedRequested = requestEmbedded;
             prepared.embeddedGeneration = embeddedGeneration;
             prepared.remoteImageGeneration = remoteImageGeneration;
@@ -779,7 +764,7 @@ namespace winrt::ElMd
                     svgNormalizer);
                 if (prepared.table)
                 {
-                    for (auto const& span : block.table_cell_spans) addOwner(span.container_id);
+                    for (auto const& span : block.special().table_cell_spans) addOwner(span.container_id);
                     prepared.pendingMath = prepared.table->pendingMath;
                     prepared.height = prepared.table->height;
                     prepared.valid = true;
@@ -795,7 +780,7 @@ namespace winrt::ElMd
             auto paddingRight = flowContainer ? 0.0f : block.block_style.padding_right;
             auto contentWidth = (std::max)(1.0f, documentWidth - paddingLeft - paddingRight);
             prepared.display = prepare(block, contentWidth, requestEmbedded);
-            if (block.source_mode && block.source_code && block.language && !prepared.display.text.empty())
+            if (block.source_mode && block.source_code && block.special().language && !prepared.display.text.empty())
             {
                 auto const* contextKey = block.source_code_context
                     ? static_cast<void const*>(block.source_code_context.get())
@@ -806,7 +791,7 @@ namespace winrt::ElMd
                     auto const& context = block.source_code_context
                         ? *block.source_code_context
                         : prepared.display.text;
-                    found->second = treeSitter.Highlight(*block.language, elmd::cps_to_utf8(context));
+                    found->second = treeSitter.Highlight(*block.special().language, elmd::cps_to_utf8(context));
                 }
                 auto lineStart = block.source_code_context ? block.source_code_context_offset : 0;
                 auto lineEnd = lineStart + prepared.display.text.size();
@@ -922,6 +907,23 @@ namespace winrt::ElMd
                 }
                 documentY = placement.bottom + block.block_style.margin_bottom
                     + (block.source_mode ? 0.0f : styleSheet.blockGap);
+            }
+            if (preparedDocument->topLevelBlockIndex.size() != frame.renderModel.blocks.size())
+            {
+                preparedDocument->topLevelBlockIndex.clear();
+                preparedDocument->topLevelBlockIndex.reserve(frame.renderModel.blocks.size());
+                for (std::size_t index = 0; index < frame.renderModel.blocks.size(); ++index)
+                    preparedDocument->topLevelBlockIndex[frame.renderModel.blocks[index].id.v] = index;
+            }
+            documentOwnerY.reserve(frame.renderModel.editable_top_level.size());
+            preparedDocument->ownerBlockIndex.reserve(frame.renderModel.editable_top_level.size());
+            for (auto const& [owner, topLevel] : frame.renderModel.editable_top_level)
+            {
+                auto found = preparedDocument->topLevelBlockIndex.find(topLevel.v);
+                if (found == preparedDocument->topLevelBlockIndex.end()
+                    || found->second >= preparedDocument->placements.size()) continue;
+                documentOwnerY[owner] = preparedDocument->placements[found->second].top;
+                preparedDocument->ownerBlockIndex[owner] = found->second;
             }
             preparedDocument->totalHeight = documentY + styleSheet.verticalPadding;
             preparedDocument->geometryValid = true;

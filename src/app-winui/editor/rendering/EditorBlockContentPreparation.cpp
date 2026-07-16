@@ -9,19 +9,20 @@ namespace winrt::ElMd
     DisplayInlineText BuildCodeBlockText(elmd::RenderBlock const& block, elmd::TextPosition caret, TreeSitterHighlighter& highlighter)
     {
         DisplayInlineText display;
+        auto const& special = block.special();
         // An indented code block has no user-visible delimiter. Its leading
         // indentation is structural Markdown syntax and must stay hidden even
         // while the block owns the caret. content_to_source keeps every
         // displayed boundary in the one authoritative source coordinate.
-        auto editingRawFence = caret.container_id == block.id && !block.code_indented;
-        auto code = block.code_text;
+        auto editingRawFence = caret.container_id == block.id && !special.code_indented;
+        auto code = special.code_text;
         if (!editingRawFence && !code.empty() && code.back() == U'\n') code.pop_back();
         if (editingRawFence)
         {
             AppendSourceText(
                 display,
-                block.raw_source,
-                {block.id, {0, block.raw_source.size()}},
+                special.raw_source,
+                {block.id, {0, special.raw_source.size()}},
                 elmd::InlineStyle::plain(),
                 false);
         }
@@ -31,25 +32,25 @@ namespace winrt::ElMd
                 display,
                 code,
                 block.id,
-                block.content_to_source,
+                special.content_to_source,
                 elmd::InlineStyle::plain());
         }
-        if (block.language && !code.empty())
+        if (special.language && !code.empty())
         {
-            auto highlights = highlighter.Highlight(*block.language, elmd::cps_to_utf8(code));
+            auto highlights = highlighter.Highlight(*special.language, elmd::cps_to_utf8(code));
             for (auto const& highlight : highlights)
             {
                 auto start = (std::min)(static_cast<std::size_t>(highlight.start), code.size());
                 auto end = (std::min)(start + static_cast<std::size_t>(highlight.length), code.size());
                 auto displayStart = editingRawFence
                     ? static_cast<std::uint32_t>(elmd::char_index_to_utf16(
-                        block.raw_source,
-                        block.content_to_source.empty() ? start : block.content_to_source[start]))
+                        special.raw_source,
+                        special.content_to_source.empty() ? start : special.content_to_source[start]))
                     : static_cast<std::uint32_t>(elmd::char_index_to_utf16(code, start));
                 auto displayEnd = editingRawFence
                     ? static_cast<std::uint32_t>(elmd::char_index_to_utf16(
-                        block.raw_source,
-                        block.content_to_source.empty() ? end : block.content_to_source[end]))
+                        special.raw_source,
+                        special.content_to_source.empty() ? end : special.content_to_source[end]))
                     : static_cast<std::uint32_t>(elmd::char_index_to_utf16(code, end));
                 if (displayStart < displayEnd)
                 {
@@ -64,10 +65,10 @@ namespace winrt::ElMd
             }
         }
         const auto endpoint = editingRawFence
-            ? block.raw_source.size()
-            : (block.content_to_source.empty()
+            ? special.raw_source.size()
+            : (special.content_to_source.empty()
                 ? code.size()
-                : block.content_to_source[(std::min)(code.size(), block.content_to_source.size() - 1)]);
+                : special.content_to_source[(std::min)(code.size(), special.content_to_source.size() - 1)]);
         if (display.text.empty())
         {
             AppendGeneratedText(
@@ -93,19 +94,20 @@ namespace winrt::ElMd
         bool requestMath)
     {
         DisplayInlineText display;
+        auto const& special = block.special();
         auto span = block.content_span;
         auto editing = caret.container_id == block.id;
         if (!svgSupported)
         {
             const auto endpoint = editing
-                ? block.raw_source.size()
-                : block.content_to_source.empty()
-                    ? block.tex.size()
-                    : block.content_to_source.back();
+                ? special.raw_source.size()
+                : special.content_to_source.empty()
+                    ? special.tex.size()
+                    : special.content_to_source.back();
             if (editing)
-                AppendSourceText(display, block.raw_source, {block.id, {0, endpoint}}, elmd::InlineStyle::plain(), false);
+                AppendSourceText(display, special.raw_source, {block.id, {0, endpoint}}, elmd::InlineStyle::plain(), false);
             else
-                AppendProjectedSourceText(display, block.tex, block.id, block.content_to_source, elmd::InlineStyle::plain());
+                AppendProjectedSourceText(display, special.tex, block.id, special.content_to_source, elmd::InlineStyle::plain());
             if (display.text.empty())
             {
                 AppendGeneratedText(
@@ -119,15 +121,15 @@ namespace winrt::ElMd
             return display;
         }
 
-        auto rawMath = mathJax.GetOrQueue(elmd::cps_to_utf8(block.tex), true, fontSize, containerWidth, requestMath);
+        auto rawMath = mathJax.GetOrQueue(elmd::cps_to_utf8(special.tex), true, fontSize, containerWidth, requestMath);
         auto math = rawMath ? NormalizeMathJaxSvg(*rawMath, svgNormalizer, svgColor, fontSize, requestMath) : std::nullopt;
         display.pendingMath = !rawMath || !math;
         if (editing)
         {
             AppendSourceText(
                 display,
-                block.raw_source,
-                {block.id, {0, block.raw_source.size()}},
+                special.raw_source,
+                {block.id, {0, special.raw_source.size()}},
                 elmd::InlineStyle::plain(),
                 false);
             // The preview is rendered below this editable source as its own
@@ -144,9 +146,9 @@ namespace winrt::ElMd
         {
             AppendProjectedSourceText(
                 display,
-                block.tex,
+                special.tex,
                 block.id,
-                block.content_to_source,
+                special.content_to_source,
                 elmd::InlineStyle::plain());
         }
         else
@@ -154,10 +156,10 @@ namespace winrt::ElMd
             AppendMathFragments(display, *math, span, false, elmd::InlineStyle::plain());
         }
         const auto endpoint = editing
-            ? block.raw_source.size()
-            : block.content_to_source.empty()
-                ? block.tex.size()
-                : block.content_to_source.back();
+            ? special.raw_source.size()
+            : special.content_to_source.empty()
+                ? special.tex.size()
+                : special.content_to_source.back();
         if (display.text.empty())
         {
             AppendGeneratedText(

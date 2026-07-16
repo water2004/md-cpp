@@ -179,6 +179,8 @@ suite render_layout_tests = [] {
     for (const auto& it : m.blocks[0].inline_items) if (it.kind == InlineRenderItem::Kind::Text) has_text = true;
     expect(fatal(bool(has_opening)));
     expect(fatal(bool(has_text)));
+    expect(fatal(bool(m.blocks[0].text_heading_level == 1u)));
+    expect(fatal(bool(m.blocks[0].estimated_characters >= 7u)));
 };
 
 "builds_setext_heading_with_a_structural_trailing_marker"_test = [] {
@@ -281,19 +283,19 @@ suite render_layout_tests = [] {
     auto m = build_model("```rust\nfn main() {}\n```");
     expect(fatal(bool(!m.blocks.empty())));
     expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Code)));
-    expect(fatal(bool(m.blocks[0].language && *m.blocks[0].language == "rust")));
-    expect(fatal(bool(m.blocks[0].line_count >= 1)));
+    expect(fatal(bool(m.blocks[0].special().language && *m.blocks[0].special().language == "rust")));
+    expect(fatal(bool(m.blocks[0].special().line_count >= 1)));
 };
 
 "builds_indented_code_block_with_local_code_source"_test = [] {
     auto m = build_model("    **alpha**\n    _beta_ $gamma$\n");
     expect(fatal(bool((m.blocks.size()) == (1u))));
     expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Code)));
-    expect(fatal(bool(m.blocks[0].code_indented)));
-    expect(fatal(bool((m.blocks[0].code_text) == (std::u32string(U"**alpha**\n_beta_ $gamma$\n")))));
+    expect(fatal(bool(m.blocks[0].special().code_indented)));
+    expect(fatal(bool((m.blocks[0].special().code_text) == (std::u32string(U"**alpha**\n_beta_ $gamma$\n")))));
     expect(fatal(bool(m.blocks[0].inline_items.empty())));
     expect(fatal(bool((m.blocks[0].source_span.source_range.start) == (0u))));
-    expect(fatal(bool((m.blocks[0].source_span.source_range.end) == (m.blocks[0].raw_source.size()))));
+    expect(fatal(bool((m.blocks[0].source_span.source_range.end) == (m.blocks[0].special().raw_source.size()))));
 };
 
 "nested_indented_code_keeps_markdown_markers_literal"_test = [] {
@@ -304,8 +306,8 @@ suite render_layout_tests = [] {
     const auto* code = find_render_block(model.blocks.front(), RenderBlockKind::Code);
     expect(fatal(bool(code != nullptr))) << "nested code node";
     if (!code) return;
-    expect(fatal(bool(code->code_indented))) << "indented code kind";
-    auto literal = code->code_text;
+    expect(fatal(bool(code->special().code_indented))) << "indented code kind";
+    auto literal = code->special().code_text;
     if (!literal.empty() && literal.back() == U'\n') literal.pop_back();
     expect(fatal(bool(literal == U"**bold** _italic_ $math$"))) << "literal code source";
 
@@ -318,7 +320,7 @@ suite render_layout_tests = [] {
         expect(fatal(bool(!item.style.bold && !item.style.italic
             && !item.style.link && !item.style.strikethrough))) << "no markdown inline style";
     }
-    expect(fatal(bool(displayed == code->code_text))) << "displayed literal source";
+    expect(fatal(bool(displayed == code->special().code_text))) << "displayed literal source";
 };
 
 "list_render_model_retains_nested_code_block_identity"_test = [] {
@@ -342,9 +344,9 @@ suite render_layout_tests = [] {
     if (code) {
         const auto code_indent = flow_indent_for(list, code->id);
         expect(fatal(bool(code_indent.has_value())));
-        expect(fatal(bool(code->code_indented)));
-        expect(fatal(bool((code->code_text) == (std::u32string(U"<html>\n  <head>\n    <title>Test</title>\n  </head>\n")))));
-        expect(fatal(bool((code->source_span.source_range.end) == (code->raw_source.size()))));
+        expect(fatal(bool(code->special().code_indented)));
+        expect(fatal(bool((code->special().code_text) == (std::u32string(U"<html>\n  <head>\n    <title>Test</title>\n  </head>\n")))));
+        expect(fatal(bool((code->source_span.source_range.end) == (code->special().raw_source.size()))));
         std::size_t line_indents = 0;
         std::u32string flattened_code;
         for (auto const& item : list.inline_items) {
@@ -357,8 +359,8 @@ suite render_layout_tests = [] {
                 flattened_code += item.text;
             }
         }
-        expect(fatal(bool(line_indents == code->line_count)));
-        expect(fatal(bool(flattened_code == code->code_text)));
+        expect(fatal(bool(line_indents == code->special().line_count)));
+        expect(fatal(bool(flattened_code == code->special().code_text)));
         auto trailingBreak = std::find_if(list.inline_items.begin(), list.inline_items.end(), [&](auto const& item) {
             return item.marker_role == MarkerRole::Structural && item.text == U"\n"
                 && item.source_span.container_id == code->id
@@ -553,19 +555,19 @@ suite render_layout_tests = [] {
 "builds_table_block"_test = [] {
     auto m = build_model("| A | B |\n|---|---|\n| 1 | 2 |\n");
     expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Table)));
-    expect(fatal(bool(m.blocks[0].row_count >= 2)));
-    expect(fatal(bool(m.blocks[0].column_count >= 2)));
+    expect(fatal(bool(m.blocks[0].special().row_count >= 2)));
+    expect(fatal(bool(m.blocks[0].special().column_count >= 2)));
 };
 
 "builds_safe_html_table_with_cell_ranges"_test = [] {
     auto m = build_model("<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>\n");
     expect(fatal(bool((m.blocks.size()) == (1u))));
     expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Table)));
-    expect(fatal(bool(m.blocks[0].table_header_row)));
-    expect(fatal(bool((m.blocks[0].row_count) == (2u))));
-    expect(fatal(bool((m.blocks[0].column_count) == (2u))));
-    expect(fatal(bool((m.blocks[0].table_cell_spans.size()) == (4u))));
-    for (auto const& range : m.blocks[0].table_cell_spans) expect(fatal(bool(range.source_range.end >= range.source_range.start)));
+    expect(fatal(bool(m.blocks[0].special().table_header_row)));
+    expect(fatal(bool((m.blocks[0].special().row_count) == (2u))));
+    expect(fatal(bool((m.blocks[0].special().column_count) == (2u))));
+    expect(fatal(bool((m.blocks[0].special().table_cell_spans.size()) == (4u))));
+    for (auto const& range : m.blocks[0].special().table_cell_spans) expect(fatal(bool(range.source_range.end >= range.source_range.start)));
 };
 
 "builds_ordered_list_with_source_markers_and_line_breaks"_test = [] {
@@ -745,26 +747,26 @@ suite render_layout_tests = [] {
 "table_render_cells_keep_their_own_source_ranges"_test = [] {
     auto m = build_model("| A | B |\n| :--- | ---: |\n| 1 | 2 |\n");
     expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Table)));
-    expect(fatal(bool((m.blocks[0].table_cells.size()) == (4u))));
-    expect(fatal(bool(!m.blocks[0].table_cells[0].empty())));
-    expect(fatal(bool(!m.blocks[0].table_cells[1].empty())));
-    if (!m.blocks[0].table_cells[0].empty() && !m.blocks[0].table_cells[1].empty()) {
-        expect(fatal(bool((m.blocks[0].table_cells[0][0].source_span.source_range.start) == (0u))));
-        expect(fatal(bool((m.blocks[0].table_cells[1][0].source_span.source_range.start) == (0u))));
-        expect(fatal(bool(m.blocks[0].table_cells[0][0].source_span.container_id != m.blocks[0].table_cells[1][0].source_span.container_id)));
+    expect(fatal(bool((m.blocks[0].special().table_cells.size()) == (4u))));
+    expect(fatal(bool(!m.blocks[0].special().table_cells[0].empty())));
+    expect(fatal(bool(!m.blocks[0].special().table_cells[1].empty())));
+    if (!m.blocks[0].special().table_cells[0].empty() && !m.blocks[0].special().table_cells[1].empty()) {
+        expect(fatal(bool((m.blocks[0].special().table_cells[0][0].source_span.source_range.start) == (0u))));
+        expect(fatal(bool((m.blocks[0].special().table_cells[1][0].source_span.source_range.start) == (0u))));
+        expect(fatal(bool(m.blocks[0].special().table_cells[0][0].source_span.container_id != m.blocks[0].special().table_cells[1][0].source_span.container_id)));
     }
 };
 
 "table_render_cells_preserve_inline_styles"_test = [] {
     auto m = build_model("| **bold** | plain |\n| --- | --- |\n| `code` | ~~gone~~ |\n");
     expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Table)));
-    expect(fatal(bool((m.blocks[0].table_cells.size()) == (4u))));
+    expect(fatal(bool((m.blocks[0].special().table_cells.size()) == (4u))));
     bool bold = false;
     bool code = false;
     bool strike = false;
-    for (auto const& item : m.blocks[0].table_cells[0]) bold = bold || item.style.bold;
-    for (auto const& item : m.blocks[0].table_cells[2]) code = code || item.style.code;
-    for (auto const& item : m.blocks[0].table_cells[3]) strike = strike || item.style.strikethrough;
+    for (auto const& item : m.blocks[0].special().table_cells[0]) bold = bold || item.style.bold;
+    for (auto const& item : m.blocks[0].special().table_cells[2]) code = code || item.style.code;
+    for (auto const& item : m.blocks[0].special().table_cells[3]) strike = strike || item.style.strikethrough;
     expect(fatal(bool(bold)));
     expect(fatal(bool(code)));
     expect(fatal(bool(strike)));
@@ -934,7 +936,7 @@ suite render_layout_tests = [] {
         expect(fatal(bool(model.blocks.size() == 1u))) << test.marker;
         if (model.blocks.empty()) continue;
         expect(fatal(bool(model.blocks.front().kind == RenderBlockKind::Callout))) << test.marker;
-        expect(fatal(bool(model.blocks.front().callout_kind == test.marker))) << test.marker;
+        expect(fatal(bool(model.blocks.front().special().callout_kind == test.marker))) << test.marker;
         const auto label = std::ranges::find_if(model.blocks.front().inline_items, [&](auto const& item) {
             return item.kind == InlineRenderItem::Kind::Marker
                 && item.source_span.source_range.empty()

@@ -171,6 +171,7 @@ inline std::pair<LayoutBlock, float> layout_thematic_break(const RenderBlock& rb
 }
 
 inline std::pair<LayoutBlock, float> layout_code_block(const RenderBlock& rb, float y, float viewport_width, float scale, TextMeasurer& measurer) {
+    const auto& special = rb.special();
     float font_size = 14.0f * scale;
     float line_height = font_size * 1.4f;
     const auto& style = rb.block_style;
@@ -178,18 +179,18 @@ inline std::pair<LayoutBlock, float> layout_code_block(const RenderBlock& rb, fl
     std::vector<SourceRange> lines;
     std::size_t line_start = 0;
     while (true) {
-        const auto newline = rb.code_text.find(U'\n', line_start);
-        const auto line_end = newline == std::u32string::npos ? rb.code_text.size() : newline;
+        const auto newline = special.code_text.find(U'\n', line_start);
+        const auto line_end = newline == std::u32string::npos ? special.code_text.size() : newline;
         lines.push_back({line_start, line_end});
         if (newline == std::u32string::npos) break;
         line_start = newline + 1;
     }
     LayoutBlock lb(rb.id, rb.source_span, {LayoutBlockKind::CodeBlock}, style);
     for (std::size_t i = 0; i < lines.size(); ++i) {
-        const auto text = rb.code_text.substr(lines[i].start, lines[i].length());
+        const auto text = special.code_text.substr(lines[i].start, lines[i].length());
         const auto source_range = SourceRange{
-            rb.content_to_source.empty() ? lines[i].start : rb.content_to_source[lines[i].start],
-            rb.content_to_source.empty() ? lines[i].end : rb.content_to_source[lines[i].end]};
+            special.content_to_source.empty() ? lines[i].start : special.content_to_source[lines[i].start],
+            special.content_to_source.empty() ? lines[i].end : special.content_to_source[lines[i].end]};
         auto shape = measurer.measure(text, font_size, InlineStyle::plain());
         TextLineLayout ll{{rb.id, source_range}};
         ll.rect = LogicalRect(pad, y + style.margin_top * scale + pad + i * line_height, viewport_width - pad, line_height);
@@ -234,20 +235,21 @@ inline TextSpan table_cell_layout_span(const std::vector<InlineRenderItem>& item
 }
 
 inline std::pair<LayoutBlock, float> layout_table_block(const RenderBlock& rb, float y, float viewport_width, float scale, TextMeasurer& measurer, LogicalPoint origin) {
+    const auto& special = rb.special();
     const auto& style = rb.block_style;
     float font_size = 16.0f * scale;
     float line_height = font_size * 1.5f;
     float margin_top = style.margin_top * scale;
     float margin_bottom = style.margin_bottom * scale;
     float cell_padding = 8.0f * scale;
-    std::size_t columns = (std::max)(std::size_t{1}, rb.column_count);
-    std::size_t rows = (std::max)(std::size_t{1}, rb.row_count);
+    std::size_t columns = (std::max)(std::size_t{1}, special.column_count);
+    std::size_t rows = (std::max)(std::size_t{1}, special.row_count);
     std::vector<float> widths(columns, 48.0f * scale);
     for (std::size_t row = 0; row < rows; ++row) {
         for (std::size_t column = 0; column < columns; ++column) {
             auto index = row * columns + column;
-            if (index >= rb.table_cells.size()) continue;
-            auto text = table_cell_layout_text(rb.table_cells[index]);
+            if (index >= special.table_cells.size()) continue;
+            auto text = table_cell_layout_text(special.table_cells[index]);
             auto shape = measurer.measure(text, font_size, InlineStyle::plain());
             widths[column] = (std::max)(widths[column], shape.width + cell_padding * 2.0f);
         }
@@ -269,7 +271,7 @@ inline std::pair<LayoutBlock, float> layout_table_block(const RenderBlock& rb, f
     for (std::size_t column = 0; column < columns; ++column) {
         TableLayoutColumn layout_column;
         layout_column.width = widths[column];
-        layout_column.alignment = column < rb.table_aligns.size() ? rb.table_aligns[column] : TableAlignment::None;
+        layout_column.alignment = column < special.table_aligns.size() ? special.table_aligns[column] : TableAlignment::None;
         table.columns.push_back(layout_column);
     }
 
@@ -280,7 +282,7 @@ inline std::pair<LayoutBlock, float> layout_table_block(const RenderBlock& rb, f
         float x = table.rect.x;
         for (std::size_t column = 0; column < columns; ++column) {
             auto index = row * columns + column;
-            const std::vector<InlineRenderItem>* items = index < rb.table_cells.size() ? &rb.table_cells[index] : nullptr;
+            const std::vector<InlineRenderItem>* items = index < special.table_cells.size() ? &special.table_cells[index] : nullptr;
             TextSpan source_span = items ? table_cell_layout_span(*items, rb.id) : TextSpan{rb.id, {0, 0}};
             TableLayoutCell cell;
             cell.source_span = source_span;
@@ -294,7 +296,7 @@ inline std::pair<LayoutBlock, float> layout_table_block(const RenderBlock& rb, f
             auto shape = measurer.measure(text, font_size, text_style);
             float text_x = x + cell_padding;
             float inner_width = (std::max)(0.0f, widths[column] - cell_padding * 2.0f);
-            auto alignment = column < rb.table_aligns.size() ? rb.table_aligns[column] : TableAlignment::None;
+            auto alignment = column < special.table_aligns.size() ? special.table_aligns[column] : TableAlignment::None;
             if (alignment == TableAlignment::Right) text_x += (std::max)(0.0f, inner_width - shape.width);
             if (alignment == TableAlignment::Center) text_x += (std::max)(0.0f, (inner_width - shape.width) * 0.5f);
             GlyphRunLayout run;
@@ -326,6 +328,7 @@ inline std::pair<LayoutBlock, float> layout_table_block(const RenderBlock& rb, f
 }
 
 inline std::pair<LayoutBlock, float> layout_math_block(const RenderBlock& rb, float y, float viewport_width, float scale, TextMeasurer& measurer) {
+    const auto& special = rb.special();
     float font_size = 14.0f * scale;
     float line_height = font_size * 1.5f;
     const auto& style = rb.block_style;
@@ -333,18 +336,18 @@ inline std::pair<LayoutBlock, float> layout_math_block(const RenderBlock& rb, fl
     std::vector<SourceRange> lines;
     std::size_t line_start = 0;
     while (true) {
-        const auto newline = rb.tex.find(U'\n', line_start);
-        const auto line_end = newline == std::u32string::npos ? rb.tex.size() : newline;
+        const auto newline = special.tex.find(U'\n', line_start);
+        const auto line_end = newline == std::u32string::npos ? special.tex.size() : newline;
         lines.push_back({line_start, line_end});
         if (newline == std::u32string::npos) break;
         line_start = newline + 1;
     }
     LayoutBlock lb(rb.id, rb.source_span, {LayoutBlockKind::MathBlock}, style);
     for (std::size_t i = 0; i < lines.size(); ++i) {
-        const auto text = rb.tex.substr(lines[i].start, lines[i].length());
+        const auto text = special.tex.substr(lines[i].start, lines[i].length());
         const auto source_range = SourceRange{
-            rb.content_to_source.empty() ? lines[i].start : rb.content_to_source[lines[i].start],
-            rb.content_to_source.empty() ? lines[i].end : rb.content_to_source[lines[i].end]};
+            special.content_to_source.empty() ? lines[i].start : special.content_to_source[lines[i].start],
+            special.content_to_source.empty() ? lines[i].end : special.content_to_source[lines[i].end]};
         auto shape = measurer.measure(text, font_size, InlineStyle::plain());
         TextLineLayout ll{{rb.id, source_range}};
         ll.rect = LogicalRect(pad, y + style.margin_top * scale + pad + i * line_height, viewport_width - pad, line_height);
@@ -393,7 +396,7 @@ inline std::pair<LayoutBlock, float> layout_unsupported(const RenderBlock& rb, f
     float line_height = font_size * 1.5f;
     const auto& style = rb.block_style;
     std::vector<std::u32string> lines;
-    std::u32string acc; auto cps = utf8_to_cps(rb.raw);
+    std::u32string acc; auto cps = utf8_to_cps(rb.special().raw);
     for (char32_t c : cps + U"\n") { if (c == '\n') { lines.push_back(acc); acc.clear(); } else acc.push_back(c); }
     LayoutBlock lb(rb.id, rb.source_span, {LayoutBlockKind::UnsupportedMarkup}, style);
     for (std::size_t i = 0; i < lines.size(); ++i) {

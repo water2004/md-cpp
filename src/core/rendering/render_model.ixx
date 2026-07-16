@@ -216,6 +216,42 @@ enum class RenderBlockKind {
     Text, Blank, Quote, Code, Math, Table, Image, ThematicBreak, Toc, Callout, Frontmatter, Footnote, Unsupported, Extension,
 };
 
+struct RenderBlockSpecial {
+    // CodeBlock
+    std::u32string raw_source;
+    std::vector<std::size_t> content_to_source;
+    std::optional<std::string> language;
+    std::u32string code_text;
+    std::size_t line_count = 0;
+    bool code_indented = false;
+    // MathBlock
+    std::u32string tex;
+    MathDelimiter math_delim = MathDelimiter::BlockDollar;
+    std::shared_ptr<RenderedMath> math_rendered;
+    // Table
+    std::vector<std::vector<InlineRenderItem>> table_cells;
+    std::vector<TextSpan> table_cell_spans;
+    std::vector<TableAlignment> table_aligns;
+    std::size_t column_count = 0, row_count = 0;
+    bool table_header_row = true;
+    // Container labels / raw and extension payloads
+    std::string callout_kind;
+    std::string footnote_label;
+    std::string raw;
+    std::string reason_text;
+    std::string extension_name;
+    // Image block
+    std::string src;
+    std::string alt;
+    std::optional<std::string> title;
+    std::optional<std::string> link;
+    std::optional<float> image_width;
+    std::optional<float> image_height;
+    // Local GIF headers are probed before viewport materialization so image
+    // placeholders keep stable dimensions without walking every inline item.
+    std::vector<std::string> inline_image_sources;
+};
+
 struct RenderBlock {
     RenderBlockKind kind = RenderBlockKind::Text;
     NodeId id{};
@@ -235,23 +271,6 @@ struct RenderBlock {
 
     // TextBlock
     std::vector<InlineRenderItem> inline_items;
-    // CodeBlock
-    std::u32string raw_source;
-    std::vector<std::size_t> content_to_source;
-    std::optional<std::string> language;
-    std::u32string code_text;
-    std::size_t line_count = 0;
-    bool code_indented = false;
-    // MathBlock
-    std::u32string tex;
-    MathDelimiter math_delim = MathDelimiter::BlockDollar;
-    std::shared_ptr<RenderedMath> math_rendered;       // None in v1
-    // Table
-    std::vector<std::vector<InlineRenderItem>> table_cells;
-    std::vector<TextSpan> table_cell_spans;
-    std::vector<TableAlignment> table_aligns;
-    std::size_t column_count = 0, row_count = 0;
-    bool table_header_row = true;
     // Image block (block-level, alt-only)
     // Quote / Callout / Footnote
     std::vector<RenderBlock> child_blocks;
@@ -259,19 +278,22 @@ struct RenderBlock {
     // this node. Cumulative indentation is derived only by walking child_blocks.
     std::size_t flow_local_indent_columns = 0;
     NodeId flow_anchor_owner_id{};
-    std::string callout_kind;
-    std::string footnote_label;
-    // Frontmatter / Unsupported
-    std::string raw;
-    std::string reason_text;             // Unsupported reason text
-    std::string extension_name;
-    // Image block (block-level)
-    std::string src;
-    std::string alt;
-    std::optional<std::string> title;
-    std::optional<std::string> link;
-    std::optional<float> image_width;
-    std::optional<float> image_height;
+    // Cheap geometry hints computed once with the render projection. The UI
+    // must not rescan every inline item merely to estimate offscreen height.
+    std::uint32_t estimated_characters = 0;
+    std::uint32_t estimated_line_breaks = 0;
+    std::uint8_t text_heading_level = 0;
+    std::shared_ptr<RenderBlockSpecial> payload;
+
+    RenderBlockSpecial const& special() const {
+        static const RenderBlockSpecial empty{};
+        return payload ? *payload : empty;
+    }
+
+    RenderBlockSpecial& ensure_special() {
+        if (!payload) payload = std::make_shared<RenderBlockSpecial>();
+        return *payload;
+    }
 };
 
 struct RenderDiagnostic {

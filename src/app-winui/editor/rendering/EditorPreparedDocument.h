@@ -52,6 +52,7 @@ namespace winrt::ElMd
         std::uint64_t themeRevision = 0;
         std::vector<Block> blocks;
         std::vector<Placement> placements;
+        std::unordered_map<std::uint64_t, std::size_t> topLevelBlockIndex;
         std::unordered_map<std::uint64_t, std::size_t> ownerBlockIndex;
         std::unordered_set<std::size_t> embeddedBlocks;
         std::unordered_set<std::size_t> layoutBlocks;
