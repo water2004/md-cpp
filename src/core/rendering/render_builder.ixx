@@ -97,22 +97,23 @@ inline void append(Hasher& hash, InlineDocument const& document) {
 }
 
 inline void append(Hasher& hash, BlockNode const& block) {
+    auto const& special = block.special();
     hash.scalar(block.id); hash.scalar(block.kind); append(hash, block.inline_content);
     hash.text(block.block_source.source());
-    hash.scalar(block.level); hash.text(block.slug); hash.text(block.marker); hash.scalar(block.checked);
-    hash.scalar(block.list_ordered); hash.scalar(block.list_start); hash.scalar(block.list_delimiter);
-    hash.scalar(block.code_indented); hash.scalar(block.math_delim);
-    hash.scalar(block.table_aligns.size());
-    for (auto alignment : block.table_aligns) hash.scalar(alignment);
-    hash.scalar(block.table_header_row); hash.text(block.src); hash.text(block.image_alt);
-    hash.optional(block.image_title, [&](auto const& value) { hash.text(value); });
-    hash.optional(block.image_link, [&](auto const& value) { hash.text(value); });
-    hash.optional(block.image_width, [&](auto value) { hash.scalar(value); });
-    hash.optional(block.image_height, [&](auto value) { hash.scalar(value); });
-    hash.text(block.opening_marker); hash.text(block.closing_marker);
-    hash.text(block.callout_kind); hash.text(block.footnote_label);
-    hash.scalar(block.toc_marker); hash.scalar(block.fmt); hash.text(block.raw);
-    hash.scalar(block.unsup_reason); hash.text(block.ext_name);
+    hash.scalar(special.level); hash.text(special.slug); hash.text(special.marker); hash.scalar(special.checked);
+    hash.scalar(special.list_ordered); hash.scalar(special.list_start); hash.scalar(special.list_delimiter);
+    hash.scalar(special.code_indented); hash.scalar(special.math_delim);
+    hash.scalar(special.table_aligns.size());
+    for (auto alignment : special.table_aligns) hash.scalar(alignment);
+    hash.scalar(special.table_header_row); hash.text(special.src); hash.text(special.image_alt);
+    hash.optional(special.image_title, [&](auto const& value) { hash.text(value); });
+    hash.optional(special.image_link, [&](auto const& value) { hash.text(value); });
+    hash.optional(special.image_width, [&](auto value) { hash.scalar(value); });
+    hash.optional(special.image_height, [&](auto value) { hash.scalar(value); });
+    hash.text(special.opening_marker); hash.text(special.closing_marker);
+    hash.text(special.callout_kind); hash.text(special.footnote_label);
+    hash.scalar(special.toc_marker); hash.scalar(special.fmt); hash.text(special.raw);
+    hash.scalar(special.unsup_reason); hash.text(special.ext_name);
     hash.scalar(block.children.size());
     for (auto const& child : block.children) append(hash, child);
 }
@@ -136,7 +137,7 @@ inline std::size_t block_local_length(const BlockNode& block) {
         case BlockKind::Frontmatter:
         case BlockKind::UnsupportedMarkup:
         case BlockKind::LinkDefinition:
-            return utf8_to_cps(block.raw).size();
+            return utf8_to_cps(block.special().raw).size();
         case BlockKind::ImageBlock:
         case BlockKind::Toc:
         case BlockKind::ThematicBreak:
@@ -303,7 +304,7 @@ struct Builder {
 
     std::size_t list_marker_columns(const BlockNode& list, std::size_t index) const {
         if (list.kind == BlockKind::TaskList) return 6;
-        if (list.list_ordered) return std::to_string(list.list_start + index).size() + 2;
+        if (list.special().list_ordered) return std::to_string(list.special().list_start + index).size() + 2;
         return 2;
     }
 
@@ -330,14 +331,14 @@ struct Builder {
             block.kind,
             block.id,
             block_local_length(block),
-            flow_container_style(block.kind, block.callout_kind));
+            flow_container_style(block.kind, block.special().callout_kind));
         rendered.flow_local_indent_columns = context.indent_columns -
             (std::min)(context.indent_columns, parent_indent_columns);
         rendered.flow_anchor_owner_id = first_editable_owner(block).value_or(block.id);
         if (block.kind == BlockKind::Callout) {
-            rendered.ensure_special().callout_kind = block.callout_kind;
+            rendered.ensure_special().callout_kind = block.special().callout_kind;
         } else if (block.kind == BlockKind::FootnoteDefinition) {
-            rendered.ensure_special().footnote_label = block.footnote_label;
+            rendered.ensure_special().footnote_label = block.special().footnote_label;
         }
         return rendered;
     }
@@ -394,10 +395,10 @@ struct Builder {
                             .value_or(TextPosition{item_owner, 0, TextAffinity::Upstream});
                         append_block_break(out, previous.container_id, previous.source_offset);
                     }
-                    auto marker = item.marker;
+                    auto marker = item.special().marker;
                     if (marker.empty()) {
-                        if (tasks) marker = item.checked ? U"- [x] " : U"- [ ] ";
-                        else if (block.list_ordered) marker = utf8_to_cps(std::to_string(block.list_start + index)) + std::u32string(1, block.list_delimiter) + U" ";
+                        if (tasks) marker = item.special().checked ? U"- [x] " : U"- [ ] ";
+                        else if (block.special().list_ordered) marker = utf8_to_cps(std::to_string(block.special().list_start + index)) + std::u32string(1, block.special().list_delimiter) + U" ";
                         else marker = U"- ";
                     }
                     auto marker_columns = list_marker_columns(block, index);
@@ -406,8 +407,8 @@ struct Builder {
                         : 0;
                     auto display_marker = tasks
                         ? marker
-                        : block.list_ordered
-                            ? utf8_to_cps(std::to_string(block.list_start + index)) + std::u32string(1, block.list_delimiter) + U" "
+                        : block.special().list_ordered
+                            ? utf8_to_cps(std::to_string(block.special().list_start + index)) + std::u32string(1, block.special().list_delimiter) + U" "
                             : U"\u2022 ";
                     std::size_t cursor = 0;
                     push_marker(
@@ -415,10 +416,10 @@ struct Builder {
                         item_owner,
                         cursor,
                         marker,
-                        tasks ? MarkerRole::TaskCheckbox : block.list_ordered ? MarkerRole::ListNumber : MarkerRole::ListBullet,
+                        tasks ? MarkerRole::TaskCheckbox : block.special().list_ordered ? MarkerRole::ListNumber : MarkerRole::ListBullet,
                         TextAffinity::Downstream,
                         std::u32string(missing_indent, U' ') + display_marker);
-                    if (tasks) out.back().task_checked = item.checked;
+                    if (tasks) out.back().task_checked = item.special().checked;
 
                     FlowContext item_context{context.indent_columns + marker_columns};
                     auto item_rendered = make_flow_container(item, item_context, context.indent_columns);
@@ -445,11 +446,11 @@ struct Builder {
                 auto rendered = make_flow_container(block, context, parent_indent_columns);
                 std::u32string footnote_marker;
                 std::u32string callout_label;
-                if (block.kind == BlockKind::FootnoteDefinition && !block.footnote_label.empty()) {
-                    footnote_marker = footnote_display_label(block.footnote_label) + U". ";
+                if (block.kind == BlockKind::FootnoteDefinition && !block.special().footnote_label.empty()) {
+                    footnote_marker = footnote_display_label(block.special().footnote_label) + U". ";
                 }
                 if (block.kind == BlockKind::Callout) {
-                    callout_label = callout_display_label(block.callout_kind);
+                    callout_label = callout_display_label(block.special().callout_kind);
                 }
                 auto const content_indent = context.indent_columns
                     + (footnote_marker.empty() ? 2u : footnote_marker.size());
@@ -459,7 +460,7 @@ struct Builder {
                     label.kind = InlineRenderItem::Kind::Marker;
                     label.source_span = {owner, {0, 0}};
                     label.display_text = footnote_marker;
-                    label.ensure_special().footnote_label = block.footnote_label;
+                    label.ensure_special().footnote_label = block.special().footnote_label;
                     label.marker_role = MarkerRole::FootnoteLabel;
                     label.generated_boundary_affinity = TextAffinity::Downstream;
                     label.visibility = MarkerVisibility::Always;
@@ -527,7 +528,7 @@ struct Builder {
                 item.ensure_special().source_text = math;
                 item.text = math;
                 item.display = MathDisplayMode::Block;
-                item.math_delim = block.math_delim;
+                item.math_delim = block.special().math_delim;
                 out.push_back(std::move(item));
                 break;
             }
@@ -538,11 +539,11 @@ struct Builder {
                 item.id = block.id;
                 item.source_span = {block.id, {0, block_local_length(block)}};
                 auto& special = item.ensure_special();
-                special.src = block.src;
-                special.alt = block.image_alt;
-                special.title = block.image_title;
-                special.image_width = block.image_width;
-                special.image_height = block.image_height;
+                special.src = block.special().src;
+                special.alt = block.special().image_alt;
+                special.title = block.special().image_title;
+                special.image_width = block.special().image_width;
+                special.image_height = block.special().image_height;
                 special.block_image = true;
                 out.push_back(std::move(item));
                 break;
@@ -565,7 +566,7 @@ struct Builder {
             case BlockKind::UnsupportedMarkup:
             case BlockKind::Extension: {
                 append_missing_indent(out, owner, 0, context.indent_columns, emitted_columns);
-                auto raw = utf8_to_cps(block.raw);
+                auto raw = utf8_to_cps(block.special().raw);
                 out.push_back(InlineRenderItem::plain_text(raw, {block.id, {0, raw.size()}}));
                 break;
             }
@@ -771,32 +772,32 @@ struct Builder {
             case BK::CalloutTitle:
             case BK::TableCell: {
                 auto rb = base(BlockStyle::paragraph(theme.layout));
-                if (b.inline_content.source.empty() && b.opening_marker.empty() && b.closing_marker.empty()) {
+                if (b.inline_content.source.empty() && b.special().opening_marker.empty() && b.special().closing_marker.empty()) {
                     rb.kind = RenderBlockKind::Blank;
                     return rb;
                 }
                 InlineStyle s = InlineStyle::plain();
                 std::size_t cursor = 0;
-                if (!b.opening_marker.empty()) {
+                if (!b.special().opening_marker.empty()) {
                     cursor = 0;
                     push_marker(
                         rb.inline_items,
                         b.id,
                         cursor,
-                        b.opening_marker,
+                        b.special().opening_marker,
                         MarkerRole::Syntax,
                         TextAffinity::Downstream);
                     rb.inline_items.back().marker_owner = b.id;
                 }
                 auto items = build_inline_document(b.inline_content, b.id, s);
                 for (auto& item : items) rb.inline_items.push_back(std::move(item));
-                if (!b.closing_marker.empty()) {
+                if (!b.special().closing_marker.empty()) {
                     cursor = b.inline_content.source.size();
                     push_marker(
                         rb.inline_items,
                         b.id,
                         cursor,
-                        b.closing_marker,
+                        b.special().closing_marker,
                         MarkerRole::Syntax,
                         TextAffinity::Upstream);
                     rb.inline_items.back().marker_owner = b.id;
@@ -804,8 +805,8 @@ struct Builder {
                 return rb;
             }
             case BK::Heading: {
-                auto rb = base(BlockStyle::heading(b.level, theme.layout));
-                InlineStyle s = InlineStyle::plain(); s.heading_level = b.level;
+                auto rb = base(BlockStyle::heading(b.special().level, theme.layout));
+                InlineStyle s = InlineStyle::plain(); s.heading_level = b.special().level;
                 auto append_heading_marker = [&](
                     std::u32string const& text,
                     std::size_t offset,
@@ -823,11 +824,11 @@ struct Builder {
                     marker.visibility = MarkerVisibility::WhenBlockFocused;
                     rb.inline_items.push_back(std::move(marker));
                 };
-                append_heading_marker(b.opening_marker, 0, TextAffinity::Downstream);
+                append_heading_marker(b.special().opening_marker, 0, TextAffinity::Downstream);
                 auto items = build_inline_document(b.inline_content, b.id, s);
                 for (auto& it : items) rb.inline_items.push_back(std::move(it));
                 append_heading_marker(
-                    b.closing_marker,
+                    b.special().closing_marker,
                     b.inline_content.source.size(),
                     TextAffinity::Upstream);
                 std::stable_sort(rb.inline_items.begin(), rb.inline_items.end(), [](auto const& left, auto const& right) {
@@ -852,7 +853,7 @@ struct Builder {
                 special.content_to_source = b.block_source.tree().content_to_source;
                 special.language = b.block_source.tree().language;
                 special.code_text = block_source_content(b.block_source);
-                special.code_indented = b.code_indented;
+                special.code_indented = b.special().code_indented;
                 std::size_t n = 1; for (char32_t c : special.code_text) if (c == '\n') ++n;
                 special.line_count = n;
                 if (!special.content_to_source.empty()) {
@@ -866,7 +867,7 @@ struct Builder {
                 special.raw_source = b.block_source.source();
                 special.content_to_source = b.block_source.tree().content_to_source;
                 special.tex = block_source_content(b.block_source);
-                special.math_delim = b.math_delim;
+                special.math_delim = b.special().math_delim;
                 if (!special.content_to_source.empty()) {
                     rb.content_span = {b.id, {special.content_to_source.front(), special.content_to_source.back()}};
                 }
@@ -875,8 +876,8 @@ struct Builder {
             case BK::Table: {
                 auto rb = base(BlockStyle::table(theme.layout));
                 auto& special = rb.ensure_special();
-                special.table_aligns = b.table_aligns;
-                special.table_header_row = !b.children.empty() && b.children.front().table_header_row;
+                special.table_aligns = b.special().table_aligns;
+                special.table_header_row = !b.children.empty() && b.children.front().special().table_header_row;
                 special.column_count = b.children.empty() ? 0 : b.children.front().children.size();
                 special.row_count = b.children.size();
                 auto build_cell = [&](const BlockNode& cell) {
@@ -889,8 +890,8 @@ struct Builder {
             case BK::ImageBlock: {
                 auto rb = base(BlockStyle::image(theme.layout));
                 auto& special = rb.ensure_special();
-                special.alt = b.image_alt; special.src = b.src; special.title = b.image_title; special.link = b.image_link;
-                special.image_width = b.image_width; special.image_height = b.image_height;
+                special.alt = b.special().image_alt; special.src = b.special().src; special.title = b.special().image_title; special.link = b.special().image_link;
+                special.image_width = b.special().image_width; special.image_height = b.special().image_height;
                 return rb;
             }
             case BK::Toc: {
@@ -898,7 +899,7 @@ struct Builder {
             }
             case BK::Frontmatter: {
                 auto rb = base(BlockStyle::frontmatter(theme.layout));
-                rb.ensure_special().raw = b.raw;
+                rb.ensure_special().raw = b.special().raw;
                 return rb;
             }
             case BK::ThematicBreak: {
@@ -910,13 +911,13 @@ struct Builder {
             case BK::UnsupportedMarkup: {
                 auto rb = base(BlockStyle::unsupported(theme.layout));
                 auto& special = rb.ensure_special();
-                special.raw = b.raw;
-                special.reason_text = unsupported_reason_message(b.unsup_reason);
+                special.raw = b.special().raw;
+                special.reason_text = unsupported_reason_message(b.special().unsup_reason);
                 return rb;
             }
             case BK::Extension: {
                 auto rb = base(BlockStyle::extension(theme.layout));
-                rb.ensure_special().extension_name = b.ext_name;
+                rb.ensure_special().extension_name = b.special().ext_name;
                 return rb;
             }
         }

@@ -46,7 +46,8 @@ inline bool same_raw_projection(const BlockNode& current, const BlockVec& parsed
         return false;
     }
     if (candidate.block_source.tree().kind != current.block_source.tree().kind) return false;
-    if (candidate.kind == BlockKind::MathBlock && candidate.math_delim != current.math_delim) return false;
+    if (candidate.kind == BlockKind::MathBlock
+        && candidate.special().math_delim != current.special().math_delim) return false;
     return true;
 }
 
@@ -137,7 +138,7 @@ inline BlockNode exact_paragraph(
     paragraph.id = id;
     paragraph.kind = BlockKind::Paragraph;
     paragraph.inline_content = make_inline(std::move(source), owner, allocator);
-    paragraph.separator_before = std::move(separator_before);
+    paragraph.ensure_special().separator_before = std::move(separator_before);
     return paragraph;
 }
 
@@ -191,7 +192,7 @@ inline std::optional<RecordedBlockEdit> reparse_edited_direct_block(
         parsed.blocks.push_back(block_reparse_detail::exact_paragraph(
             source,
             current->id,
-            current->separator_before,
+            current->special().separator_before,
             document,
             allocator));
         target = block_reparse_detail::TargetCandidate{
@@ -201,7 +202,7 @@ inline std::optional<RecordedBlockEdit> reparse_edited_direct_block(
             source.size(),
         };
     } else {
-        parsed.blocks.front().separator_before = current->separator_before;
+        parsed.blocks.front().ensure_special().separator_before = current->special().separator_before;
         for (auto& block : parsed.blocks) {
             block_reparse_detail::assign_fresh_ids(
                 block,

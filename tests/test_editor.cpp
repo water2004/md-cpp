@@ -1098,7 +1098,9 @@ suite editor_tests = [] {
     Editor code("    one\n\n    two");
     const BlockNode* code_block = nullptr;
     walk_blocks(code.document().root, [&](const BlockNode& block) {
-        if (!code_block && block.kind == BlockKind::CodeBlock && block.code_indented) code_block = &block;
+        if (!code_block && block.kind == BlockKind::CodeBlock && block.special().code_indented) {
+            code_block = &block;
+        }
     });
     expect(fatal(bool(code_block != nullptr)));
     if (code_block) {
@@ -1596,7 +1598,7 @@ suite editor_tests = [] {
 
     Editor heading("title");
     expect(fatal(bool(heading.execute_document_set_heading(heading.selection(), 1).has_value())));
-    expect(fatal(bool(heading.document().root.children.front().opening_marker == U"# ")));
+    expect(fatal(bool(heading.document().root.children.front().special().opening_marker == U"# ")));
     expect(fatal(bool(heading.markdown_utf8() == "# title")));
 };
 

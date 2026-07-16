@@ -195,11 +195,12 @@ inline std::string blocks_to_html(const BlockVec& v, ExportRawHtmlPolicy pol) {
 
 inline std::string block_to_html(const BlockNode& b, ExportRawHtmlPolicy pol) {
     using BK = BlockKind;
+    auto const& special = b.special();
     switch (b.kind) {
         case BK::Heading: {
             std::string s = inline_document_to_html(b.inline_content, pol);
-            std::string h = "h" + std::to_string(b.level);
-            return "<" + h + " id=\"" + escape_text(b.slug) + "\">" + s + "</" + h + ">\n";
+            std::string h = "h" + std::to_string(special.level);
+            return "<" + h + " id=\"" + escape_text(special.slug) + "\">" + s + "</" + h + ">\n";
         }
         case BK::Paragraph: {
             std::string s = inline_document_to_html(b.inline_content, pol);
@@ -215,8 +216,8 @@ inline std::string block_to_html(const BlockNode& b, ExportRawHtmlPolicy pol) {
         case BK::List: {
             std::string items;
             for (const auto& it : b.children) items += "<li>" + blocks_to_html(it.children, pol) + "</li>\n";
-            if (b.list_ordered) {
-                auto start = b.list_start == 1 ? std::string{} : " start=\"" + std::to_string(b.list_start) + "\"";
+            if (special.list_ordered) {
+                auto start = special.list_start == 1 ? std::string{} : " start=\"" + std::to_string(special.list_start) + "\"";
                 return "<ol" + start + ">\n" + items + "</ol>\n";
             }
             return "<ul>\n" + items + "</ul>\n";
@@ -224,7 +225,7 @@ inline std::string block_to_html(const BlockNode& b, ExportRawHtmlPolicy pol) {
         case BK::TaskList: {
             std::string items;
             for (const auto& it : b.children) {
-                items += "<li>" + std::string(it.checked ? "[x] " : "[ ] ") + blocks_to_html(it.children, pol) + "</li>\n";
+                items += "<li>" + std::string(it.special().checked ? "[x] " : "[ ] ") + blocks_to_html(it.children, pol) + "</li>\n";
             }
             return "<ul class=\"task-list\">\n" + items + "</ul>\n";
         }
@@ -253,30 +254,30 @@ inline std::string block_to_html(const BlockNode& b, ExportRawHtmlPolicy pol) {
         case BK::ThematicBreak: return "<hr>\n";
         case BK::LinkDefinition: return {};
         case BK::Frontmatter:
-            return pol == ExportRawHtmlPolicy::Drop ? std::string{} : escape_raw_html(b.raw);
+            return pol == ExportRawHtmlPolicy::Drop ? std::string{} : escape_raw_html(special.raw);
         case BK::UnsupportedMarkup:
-            return pol == ExportRawHtmlPolicy::Drop ? std::string{} : escape_raw_html(b.raw);
+            return pol == ExportRawHtmlPolicy::Drop ? std::string{} : escape_raw_html(special.raw);
         case BK::Toc: return "<nav class=\"toc\"></nav>\n";
         case BK::Callout: {
-            std::string s = "<div class=\"callout callout-" + escape_text(b.callout_kind) + "\">\n";
+            std::string s = "<div class=\"callout callout-" + escape_text(special.callout_kind) + "\">\n";
             s += blocks_to_html(b.children, pol);
             s += "</div>\n";
             return s;
         }
         case BK::FootnoteDefinition: {
-            std::string s = "<section class=\"footnote\" id=\"fn-" + escape_text(b.footnote_label) + "\">\n";
+            std::string s = "<section class=\"footnote\" id=\"fn-" + escape_text(special.footnote_label) + "\">\n";
             s += blocks_to_html(b.children, pol);
             s += "</section>\n";
             return s;
         }
         case BK::ImageBlock: {
-            auto title = b.image_title ? " title=\"" + escape_text(*b.image_title) + "\"" : std::string{};
-            auto image = "<img src=\"" + escape_text(sanitized_target(b.src, true)) + "\" alt=\"" + escape_text(b.image_alt) + "\"" + title + image_dimension_attributes(b.image_width, b.image_height) + " />";
-            if (b.image_link) image = "<a href=\"" + escape_text(sanitized_target(*b.image_link, false)) + "\">" + image + "</a>";
+            auto title = special.image_title ? " title=\"" + escape_text(*special.image_title) + "\"" : std::string{};
+            auto image = "<img src=\"" + escape_text(sanitized_target(special.src, true)) + "\" alt=\"" + escape_text(special.image_alt) + "\"" + title + image_dimension_attributes(special.image_width, special.image_height) + " />";
+            if (special.image_link) image = "<a href=\"" + escape_text(sanitized_target(*special.image_link, false)) + "\">" + image + "</a>";
             return image + "\n";
         }
         case BK::Extension:
-            return "<div class=\"extension\">" + escape_text(b.ext_name) + "</div>\n";
+            return "<div class=\"extension\">" + escape_text(special.ext_name) + "</div>\n";
         case BK::Document:
         case BK::ListItem:
         case BK::TaskListItem:

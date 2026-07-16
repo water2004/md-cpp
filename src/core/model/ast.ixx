@@ -43,13 +43,7 @@ inline bool is_editable_block_owner(BlockKind kind) {
     }
 }
 
-struct BlockNode {
-    NodeId id{};
-    BlockKind kind = BlockKind::Paragraph;
-    // Payload — only the relevant per `kind`.
-    BlockVec children;                  // the one structural child collection for every container
-    InlineDocument inline_content;      // Paragraph / Heading / CalloutTitle / TableCell
-    BlockSourceDocument block_source;   // CodeBlock / MathBlock, exact full Markdown source
+struct BlockNodeSpecial {
     std::uint8_t level = 0;             // Heading
     std::string slug;                   // Heading
     std::u32string marker;              // ListItem / TaskListItem
@@ -80,6 +74,46 @@ struct BlockNode {
     // This is parser/serializer ownership metadata, never an editing
     // coordinate and never part of a block's local editable source.
     std::optional<std::u32string> separator_before;
+};
+
+struct BlockNode {
+    NodeId id{};
+    BlockKind kind = BlockKind::Paragraph;
+    BlockVec children;                  // the one structural child collection for every container
+    InlineDocument inline_content;      // Paragraph / Heading / CalloutTitle / TableCell
+    BlockSourceDocument block_source;   // CodeBlock / MathBlock, exact full Markdown source
+    // Paragraphs and structural containers must not carry the full payload of
+    // every unrelated block kind. The optional payload retains ordinary value
+    // semantics through the deep-copy operations below.
+    std::unique_ptr<BlockNodeSpecial> payload;
+
+    BlockNode() = default;
+    BlockNode(BlockNode const& other)
+        : id(other.id), kind(other.kind), children(other.children),
+          inline_content(other.inline_content), block_source(other.block_source),
+          payload(other.payload ? std::make_unique<BlockNodeSpecial>(*other.payload) : nullptr) {}
+    BlockNode& operator=(BlockNode const& other) {
+        if (this == &other) return *this;
+        id = other.id;
+        kind = other.kind;
+        children = other.children;
+        inline_content = other.inline_content;
+        block_source = other.block_source;
+        payload = other.payload ? std::make_unique<BlockNodeSpecial>(*other.payload) : nullptr;
+        return *this;
+    }
+    BlockNode(BlockNode&&) noexcept = default;
+    BlockNode& operator=(BlockNode&&) noexcept = default;
+
+    BlockNodeSpecial const& special() const {
+        static const BlockNodeSpecial empty{};
+        return payload ? *payload : empty;
+    }
+
+    BlockNodeSpecial& ensure_special() {
+        if (!payload) payload = std::make_unique<BlockNodeSpecial>();
+        return *payload;
+    }
 };
 
 // Heading sibling helper used in several places.

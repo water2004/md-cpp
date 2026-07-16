@@ -99,8 +99,9 @@ inline BlockNode make_definition(
     BlockNode definition;
     definition.id = allocator.allocate();
     definition.kind = BlockKind::FootnoteDefinition;
-    definition.footnote_label = std::move(label);
-    definition.opening_marker = U"[^" + utf8_to_cps(definition.footnote_label) + U"]: ";
+    definition.ensure_special().footnote_label = std::move(label);
+    definition.ensure_special().opening_marker =
+        U"[^" + utf8_to_cps(definition.special().footnote_label) + U"]: ";
     definition.children.push_back(document_edit_detail::empty_paragraph(allocator, owner));
     return definition;
 }

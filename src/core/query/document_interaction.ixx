@@ -27,11 +27,12 @@ inline std::optional<DocumentInteraction> document_interaction_at(
 
     DocumentInteraction interaction;
     if (block->kind == BlockKind::ImageBlock) {
-        interaction.link = block->image_link;
-        if (block->image_title && !block->image_title->empty()) {
-            interaction.tooltip = block->image_title;
-        } else if (!block->image_alt.empty()) {
-            interaction.tooltip = block->image_alt;
+        auto const& special = block->special();
+        interaction.link = special.image_link;
+        if (special.image_title && !special.image_title->empty()) {
+            interaction.tooltip = special.image_title;
+        } else if (!special.image_alt.empty()) {
+            interaction.tooltip = special.image_alt;
         }
         return interaction.link || interaction.tooltip
             ? std::optional{std::move(interaction)}

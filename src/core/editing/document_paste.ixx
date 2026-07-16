@@ -145,8 +145,8 @@ inline bool direct_inline_anchor(const BlockNode& block) {
 
 inline bool atx_heading(const BlockNode& block) {
     return block.kind == BlockKind::Heading
-        && !block.opening_marker.empty()
-        && block.opening_marker.find(U'#') != std::u32string::npos;
+        && !block.special().opening_marker.empty()
+        && block.special().opening_marker.find(U'#') != std::u32string::npos;
 }
 
 inline bool offset_in_link_destination(
@@ -220,7 +220,7 @@ inline void split_soft_lines_for_atx_heading(
     if (newline == std::u32string::npos) return;
     auto trailing = blocks.front();
     trailing.inline_content.source = source.substr(newline + 1);
-    trailing.separator_before.reset();
+    trailing.ensure_special().separator_before.reset();
     source.erase(newline);
     blocks.push_back(std::move(trailing));
 }
@@ -233,7 +233,7 @@ struct DirectListPasteContext {
 
 inline char32_t unordered_marker(const BlockNode& list) {
     if (list.children.empty()) return U'-';
-    for (const auto value : list.children.front().marker) {
+    for (const auto value : list.children.front().special().marker) {
         if (value == U'-' || value == U'+' || value == U'*') return value;
     }
     return U'-';
@@ -244,8 +244,10 @@ inline bool paste_compatible_lists(const BlockNode& current, const BlockNode& pa
         || (current.kind != BlockKind::List && current.kind != BlockKind::TaskList)) {
         return false;
     }
-    if (current.list_ordered != pasted.list_ordered) return false;
-    if (current.list_ordered) return current.list_delimiter == pasted.list_delimiter;
+    if (current.special().list_ordered != pasted.special().list_ordered) return false;
+    if (current.special().list_ordered) {
+        return current.special().list_delimiter == pasted.special().list_delimiter;
+    }
     return unordered_marker(current) == unordered_marker(pasted);
 }
 
@@ -518,7 +520,7 @@ inline std::optional<TextPosition> paste_parsed_blocks(
     const auto head_id = anchor->id;
     const auto split_removes_head = anchor->kind == BlockKind::CalloutTitle
         && position.source_offset == 0;
-    const auto original_head_separator = anchor->separator_before;
+    const auto original_head_separator = anchor->special().separator_before;
     auto split = document_edit_detail::split_direct(
         document,
         head_id,
@@ -537,7 +539,7 @@ inline std::optional<TextPosition> paste_parsed_blocks(
     const auto head_was_empty = !head_inline || head_inline->source.empty();
     const auto removable_empty_head = anchor
         && (anchor->kind == BlockKind::Paragraph || anchor->kind == BlockKind::Heading);
-    const auto head_separator = anchor ? anchor->separator_before : original_head_separator;
+    const auto head_separator = anchor ? anchor->special().separator_before : original_head_separator;
     bool merged_first = false;
     if (head_inline && !blocks.empty() && blocks.front().kind == BlockKind::Paragraph) {
         const auto pasted = blocks.front().inline_content.source;
@@ -569,7 +571,7 @@ inline std::optional<TextPosition> paste_parsed_blocks(
     }
 
     if (!blocks.empty()) {
-        blocks.front().separator_before = !merged_first && head_was_empty
+        blocks.front().ensure_special().separator_before = !merged_first && head_was_empty
             ? head_separator
             : std::nullopt;
     }

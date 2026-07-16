@@ -193,7 +193,7 @@ inline std::optional<RecordedBlockEdit> exit_empty_indented_code(
     auto path = block_path(document.root, position.container_id);
     if (!path || path->empty()) return std::nullopt;
     auto* block = block_at_path(document.root, *path);
-    if (!block || block->kind != BlockKind::CodeBlock || !block->code_indented) return std::nullopt;
+    if (!block || block->kind != BlockKind::CodeBlock || !block->special().code_indented) return std::nullopt;
 
     const auto& source = block->block_source.source();
     const auto offset = (std::min)(position.source_offset, source.size());
@@ -382,7 +382,7 @@ inline std::optional<RecordedBlockEdit> exit_empty_flow_container(
         if (!current_container) return std::nullopt;
         auto trailing = document_transaction_detail::payload_shell(*current_container);
         trailing.id = allocator.allocate();
-        if (trailing.kind == BlockKind::Callout) trailing.opening_marker.clear();
+        if (trailing.kind == BlockKind::Callout) trailing.ensure_special().opening_marker.clear();
         trailing_id = trailing.id;
         DocumentTreeEdit insert_trailing;
         insert_trailing.kind = DocumentTreeEditKind::Insert;
