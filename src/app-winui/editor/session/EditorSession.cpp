@@ -31,68 +31,6 @@ namespace winrt::ElMd
             return result;
         }
 
-        // TSF requires one flat UTF-16 ACP space. Keep that projection at the
-        // WinUI boundary; the editor itself remains in block-local TextPosition
-        // coordinates and never stores an ACP/global source offset.
-        struct TextStoreProjection
-        {
-            explicit TextStoreProjection(elmd::EditorDocument const& document)
-                : fragments(elmd::document_text_fragments(document))
-            {
-                for (std::size_t index = 0; index < fragments.size(); ++index)
-                {
-                    if (index) text.push_back(U'\n');
-                    text += fragments[index].text;
-                }
-            }
-
-            std::optional<std::size_t> CodepointOffset(elmd::TextPosition position) const
-            {
-                std::size_t offset = 0;
-                for (auto const& fragment : fragments)
-                {
-                    if (fragment.container_id == position.container_id)
-                    {
-                        return offset + (std::min)(position.source_offset, fragment.text.size());
-                    }
-                    offset += fragment.text.size() + 1;
-                }
-                return std::nullopt;
-            }
-
-            std::optional<elmd::TextPosition> Position(
-                std::size_t offset,
-                elmd::TextAffinity affinity) const
-            {
-                for (std::size_t index = 0; index < fragments.size(); ++index)
-                {
-                    auto const& fragment = fragments[index];
-                    if (offset <= fragment.text.size())
-                    {
-                        return elmd::TextPosition{fragment.container_id, offset, affinity};
-                    }
-                    offset -= fragment.text.size();
-                    if (index + 1 < fragments.size())
-                    {
-                        if (offset == 0)
-                        {
-                            return elmd::TextPosition{
-                                fragment.container_id,
-                                fragment.text.size(),
-                                affinity};
-                        }
-                        --offset;
-                    }
-                }
-                if (fragments.empty()) return std::nullopt;
-                auto const& last = fragments.back();
-                return elmd::TextPosition{last.container_id, last.text.size(), affinity};
-            }
-
-            std::vector<elmd::DocumentTextFragment> fragments;
-            std::u32string text;
-        };
-
         // Mode switches consume the serializer's exact source-boundary map.
         // This remains a boundary projection and never becomes editor state.
         struct SerializedSourceProjection
@@ -184,6 +122,7 @@ namespace winrt::ElMd
         core_->baseDirectory = file_ ? std::filesystem::path(file_.Path().c_str()).parent_path().wstring() : std::wstring{};
         core_->sourceEditor.reset();
         core_->editor = elmd::Editor(winrt::to_string(text_));
+        InvalidateBoundaryProjection();
         RebuildRenderModel();
     }
 
@@ -219,6 +158,7 @@ namespace winrt::ElMd
             sourceSelection.active_affinity,
         });
         ++revision_;
+        InvalidateBoundaryProjection();
         RebuildRenderModel();
         return true;
     }
@@ -241,6 +181,7 @@ namespace winrt::ElMd
             core_->editor.set_selection({anchor, active});
         }
         ++revision_;
+        InvalidateBoundaryProjection();
         RebuildRenderModel();
         return true;
     }
@@ -258,6 +199,7 @@ namespace winrt::ElMd
             if (!ExecuteSourceCommand(*core_->sourceEditor, command)) return false;
             if (core_->sourceEditor->revision() == previousRevision) return true;
             ++revision_;
+            InvalidateBoundaryProjection();
             RebuildRenderModel();
             return true;
         }
@@ -294,6 +236,7 @@ namespace winrt::ElMd
         if (core_->editor.revision() != previousDocumentRevision)
         {
             ++revision_;
+            InvalidateBoundaryProjection();
             RebuildRenderModel();
         }
         return true;
@@ -369,21 +312,68 @@ namespace winrt::ElMd
         return revision_;
     }
 
-    std::wstring EditorSession::BoundaryTextUtf16() const
+    void EditorSession::InvalidateBoundaryProjection()
     {
-        if (core_->sourceEditor) return BoundaryWide(core_->sourceEditor->source());
-        return BoundaryWide(TextStoreProjection(core_->editor.document()).text);
+        core_->boundaryProjection.reset();
+    }
+
+    detail::BoundaryProjection const& EditorSession::BoundaryProjection() const
+    {
+        if (core_->boundaryProjection) return *core_->boundaryProjection;
+
+        detail::BoundaryProjection projection;
+        if (core_->sourceEditor)
+        {
+            projection.text = core_->sourceEditor->source();
+            projection.fragments.reserve(core_->sourceEditor->lines().size());
+            for (auto const& line : core_->sourceEditor->lines())
+            {
+                projection.fragmentIndex.emplace(line.id.v, projection.fragments.size());
+                projection.fragments.push_back({line.id, line.source_start, line.text.size()});
+            }
+        }
+        else
+        {
+            auto fragments = elmd::document_text_fragments(core_->editor.document());
+            projection.fragments.reserve(fragments.size());
+            for (std::size_t index = 0; index < fragments.size(); ++index)
+            {
+                if (index) projection.text.push_back(U'\n');
+                projection.fragmentIndex.emplace(fragments[index].container_id.v, projection.fragments.size());
+                projection.fragments.push_back({
+                    fragments[index].container_id,
+                    projection.text.size(),
+                    fragments[index].text.size(),
+                });
+                projection.text += fragments[index].text;
+            }
+        }
+
+        projection.utf16 = BoundaryWide(projection.text);
+        projection.codepointToUtf16.reserve(projection.text.size() + 1);
+        projection.codepointToUtf16.push_back(0);
+        for (auto codepoint : projection.text)
+        {
+            projection.codepointToUtf16.push_back(
+                projection.codepointToUtf16.back() + elmd::utf16_len_of_cp(codepoint));
+        }
+        core_->boundaryProjection.emplace(std::move(projection));
+        return *core_->boundaryProjection;
+    }
+
+    std::wstring const& EditorSession::BoundaryTextUtf16() const
+    {
+        return BoundaryProjection().utf16;
     }
 
     std::size_t EditorSession::AcpLength() const
     {
-        return BoundaryTextUtf16().size();
+        return BoundaryProjection().utf16.size();
     }
 
-    std::u32string EditorSession::TextView() const
+    std::u32string const& EditorSession::TextView() const
     {
-        if (core_->sourceEditor) return core_->sourceEditor->source();
-        return TextStoreProjection(core_->editor.document()).text;
+        return BoundaryProjection().text;
     }
 
     std::optional<std::u32string> EditorSession::EditableSource(elmd::NodeId id) const
@@ -404,27 +394,38 @@ namespace winrt::ElMd
 
     std::size_t EditorSession::AcpOffset(elmd::TextPosition position) const
     {
-        if (core_->sourceEditor)
-        {
-            auto sourceOffset = core_->sourceEditor->source_offset_from_position(position).value_or(0);
-            return elmd::char_index_to_utf16(core_->sourceEditor->source(), sourceOffset);
-        }
-        TextStoreProjection projection(core_->editor.document());
-        auto codepointOffset = projection.CodepointOffset(position).value_or(0);
-        codepointOffset = (std::min)(codepointOffset, projection.text.size());
-        return elmd::char_index_to_utf16(projection.text, codepointOffset);
+        auto const& projection = BoundaryProjection();
+        auto found = projection.fragmentIndex.find(position.container_id.v);
+        if (found == projection.fragmentIndex.end()) return 0;
+        auto const& fragment = projection.fragments[found->second];
+        auto codepointOffset = fragment.codepointStart
+            + (std::min)(position.source_offset, fragment.codepointLength);
+        return projection.codepointToUtf16[(std::min)(codepointOffset, projection.text.size())];
     }
 
     elmd::TextPosition EditorSession::PositionFromAcp(std::size_t offset, elmd::TextAffinity affinity) const
     {
-        if (core_->sourceEditor)
-        {
-            auto sourceOffset = elmd::utf16_to_char_index(core_->sourceEditor->source(), offset);
-            return core_->sourceEditor->position_from_source_offset(sourceOffset, affinity);
-        }
-        TextStoreProjection projection(core_->editor.document());
-        auto codepointOffset = elmd::utf16_to_char_index(projection.text, offset);
-        return projection.Position(codepointOffset, affinity).value_or(elmd::TextPosition{});
+        auto const& projection = BoundaryProjection();
+        if (projection.fragments.empty()) return {};
+        offset = (std::min)(offset, projection.utf16.size());
+        auto codepointOffset = static_cast<std::size_t>(std::lower_bound(
+            projection.codepointToUtf16.begin(),
+            projection.codepointToUtf16.end(),
+            offset) - projection.codepointToUtf16.begin());
+        codepointOffset = (std::min)(codepointOffset, projection.text.size());
+        auto found = std::upper_bound(
+            projection.fragments.begin(),
+            projection.fragments.end(),
+            codepointOffset,
+            [](std::size_t value, detail::BoundaryFragment const& fragment)
+            {
+                return value < fragment.codepointStart;
+            });
+        if (found != projection.fragments.begin()) --found;
+        auto localOffset = codepointOffset >= found->codepointStart
+            ? codepointOffset - found->codepointStart
+            : 0;
+        return {found->containerId, (std::min)(localOffset, found->codepointLength), affinity};
     }
 
     elmd::RenderModel const& EditorSession::RenderModel() const

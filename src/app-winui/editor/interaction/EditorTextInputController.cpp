@@ -199,7 +199,7 @@ namespace winrt::ElMd
             return;
         }
 
-        auto current = session_->BoundaryTextUtf16();
+        auto const& current = session_->BoundaryTextUtf16();
         auto change = Difference(knownText_, current);
         if (!change)
         {
@@ -208,7 +208,7 @@ namespace winrt::ElMd
         }
 
         auto previous = knownText_;
-        knownText_ = std::move(current);
+        knownText_ = current;
         notifying_ = true;
         try
         {
@@ -247,7 +247,7 @@ namespace winrt::ElMd
             if (!session_) return;
             auto request = args.Request();
             auto range = request.Range();
-            auto boundary = session_->BoundaryTextUtf16();
+            auto const& boundary = session_->BoundaryTextUtf16();
             auto text = winrt::hstring(boundary);
             auto textLength = static_cast<int32_t>(text.size());
             auto start = (std::max)(0, (std::min)(range.StartCaretPosition, textLength));
@@ -325,7 +325,7 @@ namespace winrt::ElMd
             auto incoming = elmd::utf8_to_cps(winrt::to_string(incomingHstring));
             auto isIncomingNewline = incoming == U"\r" || incoming == U"\n" || incoming == U"\r\n";
             auto selection = session_->Selection();
-            auto text = session_->BoundaryTextUtf16();
+            auto const& text = session_->BoundaryTextUtf16();
             auto activeAcp = session_->AcpOffset(selection.active);
             if (isIncomingNewline && start < text.size() && text[start] == L'\n' && selection.is_caret() && activeAcp == start + 1)
             {

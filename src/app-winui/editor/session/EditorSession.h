@@ -12,6 +12,22 @@ namespace winrt::ElMd
 {
     namespace detail
     {
+        struct BoundaryFragment
+        {
+            elmd::NodeId containerId{};
+            std::size_t codepointStart = 0;
+            std::size_t codepointLength = 0;
+        };
+
+        struct BoundaryProjection
+        {
+            std::u32string text;
+            std::wstring utf16;
+            std::vector<std::size_t> codepointToUtf16;
+            std::vector<BoundaryFragment> fragments;
+            std::unordered_map<std::uint64_t, std::size_t> fragmentIndex;
+        };
+
         struct EditorSessionCore
         {
             elmd::Editor editor;
@@ -19,6 +35,7 @@ namespace winrt::ElMd
             elmd::RenderModel renderModel;
             elmd::ThemeProfile theme = elmd::default_theme_profile();
             std::wstring baseDirectory;
+            mutable std::optional<BoundaryProjection> boundaryProjection;
         };
     }
 
@@ -51,8 +68,8 @@ namespace winrt::ElMd
         winrt::hstring Path() const;
         uint64_t Revision() const;
         std::size_t AcpLength() const;
-        std::wstring BoundaryTextUtf16() const;
-        std::u32string TextView() const;
+        std::wstring const& BoundaryTextUtf16() const;
+        std::u32string const& TextView() const;
         std::optional<std::u32string> EditableSource(elmd::NodeId id) const;
         elmd::TextSelection Selection() const;
         std::size_t AcpOffset(elmd::TextPosition position) const;
@@ -67,6 +84,8 @@ namespace winrt::ElMd
     private:
         void RebuildCore();
         void RebuildRenderModel();
+        void InvalidateBoundaryProjection();
+        detail::BoundaryProjection const& BoundaryProjection() const;
 
         winrt::Windows::Storage::StorageFile file_{ nullptr };
         winrt::hstring text_;
