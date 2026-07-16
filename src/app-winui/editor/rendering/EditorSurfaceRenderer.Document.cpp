@@ -925,15 +925,15 @@ namespace winrt::ElMd
                 for (auto owner : prepared.owners)
                     preparedDocument->ownerBlockIndex[owner.v] = index;
             }
-            preparedDocument->topLevelBlockIndex.clear();
-            preparedDocument->topLevelBlockIndex.reserve(frame.renderModel.blocks.size());
+            std::unordered_map<std::uint64_t, std::size_t> topLevelBlockIndex;
+            topLevelBlockIndex.reserve(frame.renderModel.blocks.size());
             for (std::size_t index = 0; index < frame.renderModel.blocks.size(); ++index)
-                preparedDocument->topLevelBlockIndex[frame.renderModel.blocks[index].id.v] = index;
+                topLevelBlockIndex[frame.renderModel.blocks[index].id.v] = index;
             preparedDocument->ownerBlockIndex.reserve(frame.renderModel.editable_top_level.size());
             for (auto const& [owner, topLevel] : frame.renderModel.editable_top_level)
             {
-                auto found = preparedDocument->topLevelBlockIndex.find(topLevel.v);
-                if (found == preparedDocument->topLevelBlockIndex.end()
+                auto found = topLevelBlockIndex.find(topLevel.v);
+                if (found == topLevelBlockIndex.end()
                     || found->second >= entries.size()) continue;
                 preparedDocument->ownerBlockIndex[owner] = found->second;
             }
