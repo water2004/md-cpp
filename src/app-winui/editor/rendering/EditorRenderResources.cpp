@@ -98,7 +98,7 @@ namespace winrt::ElMd
         createFormat(styleSheet.heading3, heading3Format);
         createFormat(styleSheet.code, codeFormat);
         createFormat(styleSheet.code, lineNumberFormat);
-        winrt::check_hresult(lineNumberFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING));
+        winrt::check_hresult(lineNumberFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER));
         winrt::check_hresult(lineNumberFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR));
     }
 
