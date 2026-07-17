@@ -54,6 +54,39 @@ static const RenderBlock* first_render_leaf(const RenderBlock& root) {
     return nullptr;
 }
 
+static const InlineRenderItem* find_text_item(
+    const RenderBlock& root,
+    std::u32string_view text) {
+    for (auto const& item : root.inline_items) {
+        if (item.kind == InlineRenderItem::Kind::Text && item.text == text) return &item;
+        if (item.payload && item.payload->semantic_payload) {
+            for (auto const& child : item.payload->semantic_payload->children) {
+                if (child.kind == InlineRenderItem::Kind::Text && child.text == text) return &child;
+            }
+        }
+    }
+    if (root.payload) {
+        for (auto const& row : root.special().table_cells) {
+            for (auto const& item : row) {
+                if (item.kind == InlineRenderItem::Kind::Text && item.text == text) return &item;
+            }
+        }
+    }
+    for (auto const& child : root.child_blocks) {
+        if (auto found = find_text_item(child, text)) return found;
+    }
+    return nullptr;
+}
+
+static const InlineRenderItem* find_text_item(
+    const RenderModel& model,
+    std::u32string_view text) {
+    for (auto const& block : model.blocks) {
+        if (auto found = find_text_item(block, text)) return found;
+    }
+    return nullptr;
+}
+
 static const RenderBlock* find_render_block(const RenderBlock& root, NodeId id) {
     if (root.id == id) return &root;
     for (auto const& child : root.child_blocks) {
@@ -2055,6 +2088,62 @@ suite render_layout_tests = [] {
     if (definitions.size() != 2u) return;
     expect(fatal(bool(definition_label(definitions[0]) == U"2. ")));
     expect(fatal(bool(definition_label(definitions[1]) == U"1. ")));
+};
+
+"inline_html_presentation_reaches_the_render_model"_test = [] {
+    auto model = build_model(
+        "<span style=\"color:#123456; background-color:rgba(10,20,30,.5); "
+        "font-family:'Segoe UI'; font-size:20px\">"
+        "<strong style=\"font-weight:normal\">plain</strong>"
+        "<em><u>styled</u></em></span>\n");
+    const auto* plain = find_text_item(model, U"plain");
+    const auto* styled = find_text_item(model, U"styled");
+    expect(fatal(bool(plain != nullptr)));
+    expect(fatal(bool(styled != nullptr)));
+    if (plain) {
+        expect(!plain->style.bold);
+        expect(fatal(bool(plain->style.presentation != nullptr)));
+        if (plain->style.presentation) {
+            expect(plain->style.presentation->foreground
+                == std::optional<Color>{Color(0x12, 0x34, 0x56)});
+            expect(plain->style.presentation->background
+                == std::optional<Color>{Color(10, 20, 30, 128)});
+            expect(plain->style.presentation->font_family
+                == std::optional<std::string>{"Segoe UI"});
+            expect(plain->style.presentation->absolute_font_size
+                == std::optional<float>{20.0f});
+        }
+    }
+    if (styled) {
+        expect(styled->style.italic);
+        expect(styled->style.underline);
+        expect(fatal(bool(styled->style.presentation != nullptr)));
+    }
+};
+
+"inline_html_styles_work_in_every_markdown_container"_test = [] {
+    const std::vector<std::string> sources{
+        "<span style='color:red'>paragraph</span>\n",
+        "## <span style='color:red'>heading</span>\n",
+        "> <span style='color:red'>quote</span>\n",
+        "- <span style='color:red'>list</span>\n",
+        "| <span style='color:red'>cell</span> |\n| --- |\n",
+        "> [!NOTE]\n> <span style='color:red'>callout</span>\n",
+        "body[^a]\n\n[^a]: <span style='color:red'>footnote</span>\n",
+    };
+    const std::vector<std::u32string> labels{
+        U"paragraph", U"heading", U"quote", U"list", U"cell", U"callout", U"footnote"};
+    for (std::size_t index = 0; index < sources.size(); ++index) {
+        auto model = build_model(sources[index]);
+        const auto* item = find_text_item(model, labels[index]);
+        expect(fatal(bool(item != nullptr))) << "container=" << index;
+        if (!item) continue;
+        expect(fatal(bool(item->style.presentation != nullptr))) << "container=" << index;
+        if (item->style.presentation) {
+            expect(item->style.presentation->foreground
+                == std::optional<Color>{Color(255, 0, 0)}) << "container=" << index;
+        }
+    }
 };
 
 }; // suite render_layout_tests

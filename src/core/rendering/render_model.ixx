@@ -98,10 +98,27 @@ struct RenderedMath {
     std::vector<MathDiagnostic> diagnostics;
 };
 
+enum class InlineBaseline { Normal, Subscript, Superscript };
+
+// Optional presentation data used by embedded HTML.  It is shared by every
+// leaf under one HTML element so ordinary Markdown InlineStyle values stay
+// compact and nested HTML does not duplicate strings or colors per glyph run.
+struct InlinePresentationStyle {
+    std::optional<Color> foreground;
+    std::optional<Color> background;
+    std::optional<std::string> font_family;
+    std::optional<float> absolute_font_size;
+    float relative_font_scale = 1.0f;
+    std::optional<std::uint16_t> font_weight;
+    InlineBaseline baseline = InlineBaseline::Normal;
+    bool highlight = false;
+};
+
 struct InlineStyle {
     bool bold = false, italic = false, underline = false, strikethrough = false;
     bool code = false, link = false;
     std::optional<std::uint8_t> heading_level;
+    std::shared_ptr<const InlinePresentationStyle> presentation;
     static InlineStyle plain() { return {}; }
 };
 

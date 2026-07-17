@@ -210,6 +210,9 @@
     <ClCompile Include="..\core\parsing\parser.ixx">
       <Filter>Core Modules\Parsing</Filter>
     </ClCompile>
+    <ClCompile Include="..\core\rendering\html_inline_presentation.ixx">
+      <Filter>Core Modules\Rendering</Filter>
+    </ClCompile>
     <ClCompile Include="..\core\rendering\render_builder.ixx">
       <Filter>Core Modules\Rendering</Filter>
     </ClCompile>

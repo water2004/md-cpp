@@ -21,6 +21,7 @@ import elmd.core.outline;
 import elmd.core.diagnostics;
 import elmd.core.utf;
 import elmd.core.render_model;
+import elmd.core.html_inline_presentation;
 
 export namespace elmd {
 
@@ -762,25 +763,10 @@ struct Builder {
                             target.push_back(std::move(item));
                             break;
                         }
-                        auto child_style = style;
-                        if (semantic.html_tag == "strong" || semantic.html_tag == "b") {
-                            child_style.bold = true;
-                        }
-                        if (semantic.html_tag == "em" || semantic.html_tag == "i"
-                            || semantic.html_tag == "cite" || semantic.html_tag == "var") {
-                            child_style.italic = true;
-                        }
-                        if (semantic.html_tag == "del" || semantic.html_tag == "s"
-                            || semantic.html_tag == "strike") {
-                            child_style.strikethrough = true;
-                        }
-                        if (semantic.html_tag == "u" || semantic.html_tag == "ins") {
-                            child_style.underline = true;
-                        }
-                        if (semantic.html_tag == "code" || semantic.html_tag == "kbd"
-                            || semantic.html_tag == "samp" || semantic.html_tag == "tt") {
-                            child_style.code = true;
-                        }
+                        auto child_style = apply_html_inline_presentation(
+                            style,
+                            semantic.html_tag,
+                            semantic.html_attributes);
                         append_marker(target, node, delim.opening);
                         append_nodes(node.children, child_style, target);
                         if (delim.closing) append_marker(target, node, *delim.closing);
