@@ -6,6 +6,7 @@ import std;
 import elmd.core.block_source;
 import elmd.core.ids;
 import elmd.core.dialect;
+import elmd.core.image_dimension;
 import elmd.core.text_edit;
 import elmd.core.inline_document;
 import elmd.core.html_cst;
@@ -88,8 +89,8 @@ struct BlockImageSpecial {
     std::string image_alt;
     std::optional<std::string> image_title;
     std::optional<std::string> image_link;
-    std::optional<float> image_width;
-    std::optional<float> image_height;
+    std::optional<ImageDimension> image_width;
+    std::optional<ImageDimension> image_height;
 };
 
 struct BlockContainerSpecial {

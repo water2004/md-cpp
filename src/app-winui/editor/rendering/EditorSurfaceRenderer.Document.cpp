@@ -608,14 +608,20 @@ namespace winrt::ElMd
                     * (styleSheet.body.lineHeight + 16.0f) + paddingTop + paddingBottom;
             if (block.kind == elmd::RenderBlockKind::Image)
             {
-                auto width = special.image_width.value_or(0.0f);
-                auto height = special.image_height.value_or(0.0f);
+                auto requestedWidth = ResolveImageDimension(special.image_width, contentWidth);
+                auto requestedHeight = ResolveImageDimension(special.image_height);
+                auto width = requestedWidth.value_or(0.0f);
+                auto height = requestedHeight.value_or(0.0f);
                 if ((width <= 0.0f || height <= 0.0f) && !special.src.empty())
                 {
                     if (auto dimensions = renderCache.ProbeImageDimensions(resources, frame.baseDirectory, special.src))
                     {
-                        width = special.image_width.value_or(dimensions->width);
-                        height = special.image_height.value_or(dimensions->height);
+                        width = requestedWidth.value_or(dimensions->width);
+                        height = requestedHeight.value_or(dimensions->height);
+                        if (requestedWidth && !requestedHeight)
+                            height = dimensions->height * width / dimensions->width;
+                        if (!requestedWidth && requestedHeight)
+                            width = dimensions->width * height / dimensions->height;
                     }
                 }
                 if (width <= 0.0f) width = contentWidth * 0.5f;

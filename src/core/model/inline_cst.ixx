@@ -3,6 +3,7 @@ export module elmd.core.inline_cst;
 import std;
 import elmd.core.ids;
 import elmd.core.dialect;
+import elmd.core.image_dimension;
 import elmd.core.text_edit;
 
 export namespace elmd {
@@ -81,8 +82,8 @@ struct InlineCstSemantic {
     std::optional<std::string> alias;
     MathDelimiter math_delim = MathDelimiter::InlineDollar;
     std::string ext_name;
-    std::optional<float> image_width;
-    std::optional<float> image_height;
+    std::optional<ImageDimension> image_width;
+    std::optional<ImageDimension> image_height;
     std::string html_tag;
 };
 

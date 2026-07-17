@@ -70,20 +70,28 @@ namespace winrt::ElMd
                 : draw.image
                     ? std::optional(EditorRenderCache::ImageDimensions{draw.image->width, draw.image->height})
                     : cache.ProbeImageDimensions(resources, baseDirectory, overlay.source);
+            auto requestedWidth = ResolveImageDimension(overlay.width, availableWidth);
+            // Percentage heights require a definite containing-block height.
+            // Editor text flow has no such height, matching HTML's automatic
+            // height behavior for replaced elements in an indefinite block.
+            auto requestedHeight = ResolveImageDimension(overlay.height);
             if (dimensions)
             {
-                draw.width = overlay.width.value_or(dimensions->width);
-                draw.height = overlay.height.value_or(dimensions->height);
-                if (overlay.width && !overlay.height) draw.height = dimensions->height * draw.width / dimensions->width;
-                if (!overlay.width && overlay.height) draw.width = dimensions->width * draw.height / dimensions->height;
-                auto scale = (std::min)(1.0f, (std::min)((std::max)(48.0f, availableWidth * 0.75f) / draw.width, 240.0f / draw.height));
+                draw.width = requestedWidth.value_or(dimensions->width);
+                draw.height = requestedHeight.value_or(dimensions->height);
+                if (requestedWidth && !requestedHeight) draw.height = dimensions->height * draw.width / dimensions->width;
+                if (!requestedWidth && requestedHeight) draw.width = dimensions->width * draw.height / dimensions->height;
+                auto maximumWidth = requestedWidth
+                    ? (std::max)(48.0f, availableWidth)
+                    : (std::max)(48.0f, availableWidth * 0.75f);
+                auto scale = (std::min)(1.0f, (std::min)(maximumWidth / draw.width, 240.0f / draw.height));
                 draw.width = (std::max)(1.0f, draw.width * scale);
                 draw.height = (std::max)(styleSheet.body.lineHeight, draw.height * scale);
             }
             else
             {
-                draw.width = overlay.width.value_or((std::min)((std::max)(48.0f, static_cast<float>(draw.alt.size()) * styleSheet.body.size * 0.56f), (std::max)(48.0f, availableWidth)));
-                draw.height = overlay.height.value_or(styleSheet.body.lineHeight);
+                draw.width = requestedWidth.value_or((std::min)((std::max)(48.0f, static_cast<float>(draw.alt.size()) * styleSheet.body.size * 0.56f), (std::max)(48.0f, availableWidth)));
+                draw.height = requestedHeight.value_or(styleSheet.body.lineHeight);
             }
             draw.advance = draw.width;
             if (draw.block)

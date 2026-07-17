@@ -5,6 +5,7 @@ import std;
 import elmd.core.types;
 import elmd.core.ids;
 import elmd.core.dialect;
+import elmd.core.image_dimension;
 import elmd.core.theme;
 import elmd.core.outline;
 import elmd.core.diagnostics;
@@ -209,8 +210,8 @@ struct InlineRenderSemanticPayload {
     std::string href, src, alt;          // Image/Link
     std::string footnote_label;          // FootnoteReference / generated footnote controls
     std::optional<std::string> title;
-    std::optional<float> image_width;
-    std::optional<float> image_height;
+    std::optional<ImageDimension> image_width;
+    std::optional<ImageDimension> image_height;
     bool block_image = false;            // Image occupying its own block flow line
     std::vector<InlineRenderItem> children; // Link children
 };
@@ -301,9 +302,9 @@ struct RenderBlockSpecial {
     std::string alt;
     std::optional<std::string> title;
     std::optional<std::string> link;
-    std::optional<float> image_width;
-    std::optional<float> image_height;
-    // Local GIF headers are probed before viewport materialization so image
+    std::optional<ImageDimension> image_width;
+    std::optional<ImageDimension> image_height;
+    // Encoded-image metadata is probed before viewport materialization so
     // placeholders keep stable dimensions without walking every inline item.
     std::vector<std::string> inline_image_sources;
 };

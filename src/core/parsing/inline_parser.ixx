@@ -19,6 +19,7 @@ export module elmd.core.inline_parser;
 import std;
 import elmd.core.ids;
 import elmd.core.dialect;
+import elmd.core.image_dimension;
 import elmd.core.utf;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
@@ -803,19 +804,10 @@ struct Parser {
         return true;
     }
 
-    static std::optional<float> html_dimension(const HtmlTag& tag, std::string_view name) {
+    static std::optional<ImageDimension> html_dimension(const HtmlTag& tag, std::string_view name) {
         const auto found = tag.attributes.find(std::string(name));
         if (found == tag.attributes.end()) return std::nullopt;
-        auto value = found->second;
-        while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) value.pop_back();
-        if (value.size() >= 2 && lower_ascii(value.substr(value.size() - 2)) == "px") value.resize(value.size() - 2);
-        try {
-            const auto parsed = std::stof(value);
-            if (!std::isfinite(parsed) || parsed <= 0.0f) return std::nullopt;
-            return (std::min)(parsed, 4096.0f);
-        } catch (...) {
-            return std::nullopt;
-        }
+        return parse_html_image_dimension(found->second);
     }
 
     static bool safe_html_container(std::string_view name) {

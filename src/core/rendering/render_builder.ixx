@@ -117,8 +117,14 @@ inline void append(Hasher& hash, BlockNode const& block) {
     hash.text(image.src); hash.text(image.image_alt);
     hash.optional(image.image_title, [&](auto const& value) { hash.text(value); });
     hash.optional(image.image_link, [&](auto const& value) { hash.text(value); });
-    hash.optional(image.image_width, [&](auto value) { hash.scalar(value); });
-    hash.optional(image.image_height, [&](auto value) { hash.scalar(value); });
+    hash.optional(image.image_width, [&](auto const& value) {
+        hash.scalar(value.value);
+        hash.scalar(value.unit);
+    });
+    hash.optional(image.image_height, [&](auto const& value) {
+        hash.scalar(value.value);
+        hash.scalar(value.unit);
+    });
     auto const& container = block.container_special();
     hash.text(container.callout_kind); hash.text(container.footnote_label);
     hash.scalar(block.children.size());

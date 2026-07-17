@@ -20,6 +20,7 @@ import std;
 import elmd.core.types;
 import elmd.core.ids;
 import elmd.core.dialect;
+import elmd.core.image_dimension;
 import elmd.core.diagnostics;
 import elmd.core.metadata;
 import elmd.core.symbols;
@@ -798,19 +799,10 @@ public:
             if (tag && !tag->closing && tag->name == "img" && tag->end == line_end) {
                 const auto source = tag->attributes.contains("src") ? tag->attributes.at("src") : std::string{};
                 if (!safe_link_target(source, true)) return std::nullopt;
-                auto dimension = [&](std::string_view name) -> std::optional<float> {
+                auto dimension = [&](std::string_view name) -> std::optional<ImageDimension> {
                     const auto found = tag->attributes.find(std::string(name));
                     if (found == tag->attributes.end()) return std::nullopt;
-                    auto value = found->second;
-                    if (value.ends_with("px")) value.resize(value.size() - 2);
-                    try {
-                        std::size_t consumed = 0;
-                        const auto parsed = std::stof(value, &consumed);
-                        if (consumed != value.size() || !std::isfinite(parsed) || parsed <= 0.0f) return std::nullopt;
-                        return parsed;
-                    } catch (...) {
-                        return std::nullopt;
-                    }
+                    return parse_html_image_dimension(found->second);
                 };
                 pos = line_end;
                 consume_line_ending();

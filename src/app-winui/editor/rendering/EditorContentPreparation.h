@@ -1,6 +1,7 @@
 #pragma once
 
 import elmd.core.ids;
+import elmd.core.image_dimension;
 import elmd.core.render_model;
 import elmd.core.text_edit;
 
@@ -12,6 +13,16 @@ import elmd.core.text_edit;
 
 namespace winrt::ElMd
 {
+    inline std::optional<float> ResolveImageDimension(
+        std::optional<elmd::ImageDimension> const& dimension,
+        std::optional<float> percentBasis = std::nullopt)
+    {
+        if (!dimension) return std::nullopt;
+        if (dimension->unit == elmd::ImageDimensionUnit::Pixels) return dimension->value;
+        if (!percentBasis || *percentBasis <= 0.0f) return std::nullopt;
+        return *percentBasis * dimension->value / 100.0f;
+    }
+
     struct InlineStyleRange
     {
         UINT32 start = 0;
@@ -49,8 +60,8 @@ namespace winrt::ElMd
             elmd::TextSpan sourceSpan;
             std::string source;
             std::string alt;
-            std::optional<float> width;
-            std::optional<float> height;
+            std::optional<elmd::ImageDimension> width;
+            std::optional<elmd::ImageDimension> height;
             bool block = false;
         };
 

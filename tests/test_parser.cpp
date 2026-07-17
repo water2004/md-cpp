@@ -10,6 +10,7 @@ import elmd.core.ast;
 import elmd.core.block_source;
 import elmd.core.block_tree;
 import elmd.core.document_text;
+import elmd.core.image_dimension;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
 import elmd.core.serializer;
@@ -875,9 +876,47 @@ suite parser_tests = [] {
     if (html_image) {
         expect(fatal(html_image->has_html_source()));
         expect(fatal(html_image->image_special().src == "image.png"));
-        expect(fatal(html_image->image_special().image_width == std::optional<float>{320.0f}));
+        expect(fatal(html_image->image_special().image_width
+            == std::optional<ImageDimension>{ImageDimension::pixels(320.0f)}));
     }
     expect(fatal(serialize_markdown(html.document) == html_source));
+};
+
+"html_image_dimensions_are_unit_aware_and_strict"_test = [] {
+    const std::string source =
+        "<p align=\"center\">\n"
+        "  <img src=\"./img/readme-header.svg\" width=\"100%\" alt=\"Header\">\n"
+        "</p>";
+    const auto parsed = parse_text(1, source);
+    expect(fatal(parsed.document.root.children.size() == 1u));
+    if (parsed.document.root.children.empty()) return;
+    const auto& paragraph = parsed.document.root.children.front();
+    expect(fatal(paragraph.kind == BlockKind::Paragraph));
+    const auto image = std::ranges::find_if(
+        paragraph.inline_content.tree.nodes,
+        [](auto const& node) { return node.kind == InlineCstKind::Image; });
+    expect(fatal(image != paragraph.inline_content.tree.nodes.end()));
+    if (image != paragraph.inline_content.tree.nodes.end()) {
+        expect(fatal(image->semantics().image_width
+            == std::optional<ImageDimension>{ImageDimension::percent(100.0f)}));
+    }
+    expect(fatal(serialize_markdown(parsed.document) == source));
+
+    const auto direct = parse_text(2, "<img src='x.svg' width='50%'>");
+    const auto* direct_image = first_block(direct.document.root.children, BlockKind::ImageBlock);
+    expect(fatal(direct_image != nullptr));
+    if (direct_image) {
+        expect(fatal(direct_image->image_special().image_width
+            == std::optional<ImageDimension>{ImageDimension::percent(50.0f)}));
+    }
+
+    const auto malformed = parse_text(3, "<img src='x.svg' width='100oops'>");
+    const auto* malformed_image = first_block(
+        malformed.document.root.children,
+        BlockKind::ImageBlock);
+    expect(fatal(malformed_image != nullptr));
+    if (malformed_image)
+        expect(fatal(!malformed_image->image_special().image_width.has_value()));
 };
 
 "save_reload_is_character_exact_for_unchanged_content"_test = [] {

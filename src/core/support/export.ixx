@@ -5,6 +5,7 @@
 export module elmd.core.exporter;
 import std;
 import elmd.core.ast;
+import elmd.core.image_dimension;
 import elmd.core.block_source;
 import elmd.core.document;
 import elmd.core.settings;
@@ -98,10 +99,17 @@ inline std::string sanitized_target(std::string_view value, bool image) {
     return result;
 }
 
-inline std::string image_dimension_attributes(std::optional<float> width, std::optional<float> height) {
+inline std::string image_dimension_attributes(
+    std::optional<ImageDimension> width,
+    std::optional<ImageDimension> height) {
     std::string attributes;
-    if (width) attributes += " width=\"" + std::to_string(*width) + "\"";
-    if (height) attributes += " height=\"" + std::to_string(*height) + "\"";
+    auto append = [&](std::string_view name, ImageDimension const& dimension) {
+        attributes += " " + std::string(name) + "=\"" + std::to_string(dimension.value);
+        if (dimension.unit == ImageDimensionUnit::Percent) attributes += '%';
+        attributes += "\"";
+    };
+    if (width) append("width", *width);
+    if (height) append("height", *height);
     return attributes;
 }
 
