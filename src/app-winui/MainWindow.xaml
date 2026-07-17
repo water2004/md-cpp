@@ -185,7 +185,8 @@
                         IsTabStop="False"
                         Minimum="0"
                         Orientation="Vertical"
-                        SmallChange="48"/>
+                        SmallChange="48"
+                        UseLayoutRounding="False"/>
                 </Grid>
             </NavigationView>
             <Grid x:Name="SettingsViewHost" Visibility="Collapsed"/>
