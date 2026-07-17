@@ -246,6 +246,9 @@
     <ClCompile Include="..\core\support\types.ixx">
       <Filter>Core Modules\Support</Filter>
     </ClCompile>
+    <ClCompile Include="..\core\support\image_metadata.ixx">
+      <Filter>Core Modules\Support</Filter>
+    </ClCompile>
     <ClCompile Include="..\core\support\utf.ixx">
       <Filter>Core Modules\Support</Filter>
     </ClCompile>

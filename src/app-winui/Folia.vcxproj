@@ -307,6 +307,9 @@
     <ClCompile Include="..\core\support\instrumentation.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\core\support\image_metadata.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\core\model\inline_cst.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
