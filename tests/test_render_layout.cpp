@@ -366,7 +366,12 @@ suite render_layout_tests = [] {
         expect(fatal(bool(!item.style.bold && !item.style.italic
             && !item.style.link && !item.style.strikethrough))) << "no markdown inline style";
     }
-    expect(fatal(bool(displayed == code->special().code_text))) << "displayed literal source";
+    const auto presentation_lines = code_presentation_lines(code->special().code_text);
+    const auto presentation_end = presentation_lines.empty()
+        ? std::size_t{0}
+        : presentation_lines.back().content_range.end;
+    expect(fatal(bool(displayed == code->special().code_text.substr(0, presentation_end))))
+        << "displayed literal source without a phantom terminal line";
 };
 
 "list_render_model_retains_nested_code_block_identity"_test = [] {
@@ -406,7 +411,11 @@ suite render_layout_tests = [] {
             }
         }
         expect(fatal(bool(line_indents == code->special().line_count)));
-        expect(fatal(bool(flattened_code == code->special().code_text)));
+        const auto presentation_lines = code_presentation_lines(code->special().code_text);
+        const auto presentation_end = presentation_lines.empty()
+            ? std::size_t{0}
+            : presentation_lines.back().content_range.end;
+        expect(fatal(bool(flattened_code == code->special().code_text.substr(0, presentation_end))));
         auto trailingBreak = std::find_if(list.inline_items.begin(), list.inline_items.end(), [&](auto const& item) {
             return item.special().marker_role == MarkerRole::Structural && item.text == U"\n"
                 && item.source_span.container_id == code->id
@@ -978,8 +987,48 @@ suite render_layout_tests = [] {
             expect(fatal(bool((item.special().display_text.size()) == (9u))));
         }
     }
-    expect(fatal(bool(flattened_code == U"int x;\n")));
+    expect(fatal(bool(flattened_code == U"int x;")));
     expect(fatal(bool((code_indents) == (1u))));
+};
+
+"nested_code_flow_omits_only_the_terminal_physical_ending"_test = [] {
+    struct Case {
+        std::u32string source;
+        std::u32string displayed_code;
+        std::size_t displayed_lines;
+    };
+    const std::vector<Case> cases{
+        {U"```cpp\nvalue\n```", U"value", 1u},
+        {U"```cpp\r\nvalue\r\n```", U"value", 1u},
+        {U"```cpp\rvalue\r```", U"value", 1u},
+        {U"```cpp\nvalue\n\n```", U"value\n", 2u},
+        {U"```cpp\r\nvalue\r\n\r\n```", U"value\r\n", 2u},
+    };
+    for (const auto& item : cases) {
+        std::uint64_t next_id = 1;
+        auto code = make_render_block(BlockKind::CodeBlock, next_id);
+        code.block_source = make_block_source(item.source, BlockSourceKind::FencedCode);
+        auto code_id = code.id;
+        auto quote = make_render_block(BlockKind::BlockQuote, next_id);
+        quote.children.push_back(std::move(code));
+
+        auto model = build_model(std::move(quote), next_id);
+        expect(fatal(bool(model.blocks.size() == 1u)));
+        if (model.blocks.empty()) continue;
+        std::u32string displayed_code;
+        std::size_t code_indents = 0;
+        for (const auto& inline_item : model.blocks.front().inline_items) {
+            if (inline_item.source_span.container_id != code_id) continue;
+            if (inline_item.kind == InlineRenderItem::Kind::Text && inline_item.style.code)
+                displayed_code += inline_item.text;
+            if (inline_item.special().marker_role == MarkerRole::Structural
+                && !inline_item.special().display_text.empty()) {
+                ++code_indents;
+            }
+        }
+        expect(fatal(bool(displayed_code == item.displayed_code)));
+        expect(fatal(bool(code_indents == item.displayed_lines)));
+    }
 };
 
 "unified_flow_composes_task_callout_footnote_quote_code_and_blank"_test = [] {
