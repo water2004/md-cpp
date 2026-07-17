@@ -9,7 +9,9 @@ name = "elmd_svg_normalizer"
 crate-type = ["cdylib"]
 
 [dependencies]
+base64 = "=0.22.1"
 mermaid-rs-renderer = { version = "=0.3.1", default-features = false }
+roxmltree = "=0.21.1"
 usvg = { version = "=0.47.0", default-features = true }
 
 [profile.release]
