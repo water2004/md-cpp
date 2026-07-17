@@ -593,9 +593,11 @@ inline SerializedMarkdownProjection serialize_markdown_projection(const EditorDo
     auto projected = serializer_detail::serialize_blocks(document.root.children);
     const auto trailing_empty_paragraph = !document.root.children.empty()
         && serializer_detail::is_empty_paragraph(document.root.children.back());
-    if (document.trailing_newline
-        && (projected.text.empty() || projected.text.back() != U'\n' || trailing_empty_paragraph)) {
-        projected.append_generated(U"\n");
+    if (!document.trailing_line_ending.empty()
+        && (projected.text.empty()
+            || (projected.text.back() != U'\n' && projected.text.back() != U'\r')
+            || trailing_empty_paragraph)) {
+        projected.append_generated(document.trailing_line_ending);
     }
     return serializer_detail::finish(std::move(projected));
 }

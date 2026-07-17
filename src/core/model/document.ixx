@@ -34,7 +34,9 @@ struct EditorDocument {
     }();
     DocumentMetadata metadata;
     std::vector<Diagnostic> diagnostics;
-    bool trailing_newline = false;
+    // Exact final physical line ending, if the source ends with one. This is
+    // deliberately not a boolean: saving must preserve CRLF/CR/LF verbatim.
+    std::u32string trailing_line_ending;
     // Derived lookup acceleration only.  Store one tree edge per block rather
     // than an independently allocated root-to-node path.  Paths are rebuilt on
     // demand by following parent edges and are always validated against the

@@ -118,7 +118,11 @@ inline std::size_t next_grapheme_boundary_char(std::u32string_view cps, std::siz
     while (i < cps.size() && is_extend_class(cps[i])) ++i;
     if (i >= cps.size()) return cps.size();
     // base at i, advance one.
+    const auto base = cps[i];
     ++i;
+    // Unicode grapheme rule GB3: CR × LF. A physical CRLF terminator is one
+    // caret/delete unit, matching the reverse-boundary implementation above.
+    if (base == U'\r' && i < cps.size() && cps[i] == U'\n') ++i;
     // consume trailing extends / ZWJ clusters.
     while (i < cps.size()) {
         char32_t cur = cps[i];

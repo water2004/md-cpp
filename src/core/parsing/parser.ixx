@@ -380,10 +380,29 @@ public:
     }
     char32_t ch_at(std::size_t i) const { return (i < cps.size()) ? cps[i] : 0; }
     void skip_ws_inline() { while (peek1() == ' ' || peek1() == '\t') advance(); }
-    bool peek_line_start() const { return pos == 0 || cps[pos - 1] == '\n'; }
+    static bool is_line_ending_character(char32_t value) {
+        return value == U'\r' || value == U'\n';
+    }
+    std::size_t line_ending_length(std::size_t at) const {
+        if (at >= cps.size() || !is_line_ending_character(cps[at])) return 0;
+        return cps[at] == U'\r' && at + 1 < cps.size() && cps[at + 1] == U'\n' ? 2u : 1u;
+    }
+    std::size_t line_content_end(std::size_t at) const {
+        while (at < cps.size() && !is_line_ending_character(cps[at])) ++at;
+        return at;
+    }
+    bool consume_line_ending() {
+        const auto length = line_ending_length(pos);
+        if (length == 0) return false;
+        advance_n(length);
+        return true;
+    }
+    bool peek_line_start() const {
+        return pos == 0 || cps[pos - 1] == U'\n' || cps[pos - 1] == U'\r';
+    }
     bool is_blank_line() const {
         std::size_t i = pos;
-        while (i < cps.size() && cps[i] != '\n') {
+        while (i < cps.size() && !is_line_ending_character(cps[i])) {
             if (cps[i] != ' ' && cps[i] != '\t') return false;
             ++i;
         }
@@ -400,8 +419,7 @@ public:
         return peek_line_start() && line_starts_fenced_code(pos);
     }
     bool line_is_thematic_break(std::size_t start, std::size_t* end = nullptr) const {
-        std::size_t line_end = start;
-        while (line_end < cps.size() && cps[line_end] != U'\n') ++line_end;
+        const auto line_end = line_content_end(start);
         std::size_t cursor = start;
         std::size_t leading_spaces = 0;
         while (cursor < line_end && cps[cursor] == U' ' && leading_spaces < 4) {
@@ -424,8 +442,7 @@ public:
         std::size_t line_end = 0;
     };
     std::optional<SetextUnderline> setext_underline_at(std::size_t start) const {
-        std::size_t line_end = start;
-        while (line_end < cps.size() && cps[line_end] != U'\n') ++line_end;
+        const auto line_end = line_content_end(start);
         std::size_t cursor = start;
         std::size_t leading_spaces = 0;
         while (cursor < line_end && cps[cursor] == U' ' && leading_spaces < 4) { ++cursor; ++leading_spaces; }
@@ -489,12 +506,10 @@ public:
     bool line_starts_interrupting_block() const {
         return peek_line_start() && line_starts_interrupting_block(pos);
     }
-    // read current line up to \n (not consumed). Implementation note: READ-ONLY.
+    // Read the current physical line without its CRLF/CR/LF terminator.
     std::pair<std::u32string, std::size_t> rest_of_line() const {
-        std::u32string s;
-        std::size_t i = pos;
-        while (i < cps.size() && cps[i] != '\n') { s.push_back(cps[i]); ++i; }
-        return {s, i - pos};
+        const auto end = line_content_end(pos);
+        return {std::u32string(std::u32string_view(cps).substr(pos, end - pos)), end - pos};
     }
     // Push a source range. idempotent.
     void push_range(NodeId id, PhysicalRange sr, PhysicalRange cr) {
@@ -509,7 +524,7 @@ public:
         while (!eof() && is_blank_line()) {
             const auto start = cur();
             while (peek1() == ' ' || peek1() == '\t') advance();
-            if (peek1() == '\n') advance();
+            consume_line_ending();
             blank_ranges.emplace_back(start, cur());
         }
         for (std::size_t index = 0; index < blank_ranges.size(); ++index) {
@@ -555,9 +570,13 @@ public:
                 auto block_end = cur();
                 const auto serialized = serializer_detail::serialize_block(*b);
                 if (block_end > block_start
-                    && cps[block_end - 1] == U'\n'
-                    && (serialized.text.empty() || serialized.text.back() != U'\n')) {
+                    && is_line_ending_character(cps[block_end - 1])
+                    && (serialized.text.empty()
+                        || !is_line_ending_character(serialized.text.back()))) {
                     --block_end;
+                    if (block_end > block_start
+                        && cps[block_end] == U'\n'
+                        && cps[block_end - 1] == U'\r') --block_end;
                 }
                 blocks.push_back(std::move(*b));
                 preceding_source_end = block_end;
@@ -618,14 +637,14 @@ public:
         else return std::nullopt;
         std::size_t save = pos;
         advance_n(opening_length);
-        if (peek1() == U'\n') advance();
+        consume_line_ending();
         while (true) {
             if (eof()) { pos = save; return std::nullopt; }
             auto [closing_line, closing_length] = rest_of_line();
             if (peek_line_start() && trim_utf8(cps_to_utf8(closing_line)) == "---") {
                 std::size_t closing_start = pos;
                 advance_n(closing_length);
-                if (peek1() == '\n') advance();
+                consume_line_ending();
                 std::size_t content_end = closing_start;
                 // slice by CHAR indices into UTF8 — safe for CJK
                 std::size_t b1 = char_to_byte_in_input_(save), b2 = char_to_byte_in_input_(save + 3);
@@ -636,7 +655,7 @@ public:
                 BlockNode b; b.id = id; b.kind = BlockKind::Frontmatter; b.ensure_atomic_special().fmt = fmt; b.ensure_atomic_special().raw = inner;
                 return b;
             }
-            if (peek1() == '\n') advance(); else advance();
+            if (!consume_line_ending()) advance();
         }
     }
 
@@ -648,8 +667,7 @@ public:
         if (peek1() != U' ' && peek1() != U'\t') { pos = start; return std::nullopt; }
         while (peek1() == U' ' || peek1() == U'\t') advance();
         std::size_t content_start = pos;
-        std::size_t line_end = pos;
-        while (line_end < cps.size() && cps[line_end] != U'\n') ++line_end;
+        const auto line_end = line_content_end(pos);
         std::size_t trimmed_end = line_end;
         while (trimmed_end > content_start && (cps[trimmed_end - 1] == U' ' || cps[trimmed_end - 1] == U'\t')) --trimmed_end;
         std::size_t content_end = trimmed_end;
@@ -663,7 +681,7 @@ public:
             content_end = line_end;
         }
         pos = line_end;
-        if (peek1() == '\n') advance();
+        consume_line_ending();
         auto inline_content = make_inline_document(content_start, content_end);
         std::u32string title = trim_cps_(inline_visible_text(inline_content));
         std::string title_utf8 = cps_to_utf8(title);
@@ -687,7 +705,7 @@ public:
         const auto start = pos;
         const auto& definition = found->second;
         pos = definition.source_end;
-        if (peek1() == U'\n') advance();
+        consume_line_ending();
         BlockNode block;
         block.id = next_node_id();
         block.kind = BlockKind::LinkDefinition;
@@ -701,14 +719,14 @@ public:
         auto content_end = pos;
         const auto limit = (std::min)(cps.size(), stop_at.value_or(cps.size()));
         while (pos < limit) {
-            if (peek1() != U'\n') {
+            if (!is_line_ending_character(peek1())) {
                 advance();
                 content_end = pos;
                 continue;
             }
             const auto newline = pos;
-            advance();
-            if (pos >= limit || peek1() == U'\n' || line_starts_interrupting_block()) {
+            consume_line_ending();
+            if (pos >= limit || is_line_ending_character(peek1()) || line_starts_interrupting_block()) {
                 const auto hard_break = (newline >= start + 2 && cps[newline - 1] == U' ' && cps[newline - 2] == U' ')
                     || (newline > start && cps[newline - 1] == U'\\');
                 content_end = hard_break ? pos : newline;
@@ -720,7 +738,7 @@ public:
 
         if (const auto underline = peek_line_start() ? setext_underline_at(pos) : std::nullopt) {
             pos = underline->line_end;
-            if (peek1() == U'\n') advance();
+            consume_line_ending();
             auto inline_content = make_inline_document(start, content_end);
             auto title_utf8 = cps_to_utf8(inline_visible_text(inline_content));
             auto slug = generate_slug(title_utf8, {});
@@ -2061,7 +2079,13 @@ inline ParseOutput parse(const ParseInput& input) {
     doc.dialect = input.dialect;
     doc.revision = input.revision;
     doc.root.children = std::move(blocks);
-    doc.trailing_newline = !p.cps.empty() && p.cps.back() == U'\n';
+    if (!p.cps.empty() && p.cps.back() == U'\n') {
+        doc.trailing_line_ending = p.cps.size() >= 2 && p.cps[p.cps.size() - 2] == U'\r'
+            ? U"\r\n"
+            : U"\n";
+    } else if (!p.cps.empty() && p.cps.back() == U'\r') {
+        doc.trailing_line_ending = U"\r";
+    }
 
     // metadata: frontmatter first
     bool has_fm = false;

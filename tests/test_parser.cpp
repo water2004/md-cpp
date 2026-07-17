@@ -200,6 +200,31 @@ suite parser_tests = [] {
     }
 };
 
+"crlf_heading_boundaries_keep_blank_block_identity_and_exact_source"_test = [] {
+    const std::string source = "# first\r\n\r\n## second\r\n";
+    const auto parsed = parse_text(1, source);
+    expect(bool(parsed.document.root.children.size() == 3u))
+        << "CRLF root block count: " << parsed.document.root.children.size();
+    if (parsed.document.root.children.size() != 3u) return;
+    expect(fatal(bool(parsed.document.root.children[0].kind == BlockKind::Heading)));
+    expect(fatal(bool(parsed.document.root.children[0].inline_content.source == U"first")));
+    expect(fatal(bool(parsed.document.root.children[1].kind == BlockKind::Paragraph)));
+    expect(fatal(bool(parsed.document.root.children[1].inline_content.source.empty())));
+    expect(fatal(bool(parsed.document.root.children[2].kind == BlockKind::Heading)));
+    expect(fatal(bool(parsed.document.root.children[2].inline_content.source == U"second")));
+    expect(fatal(bool(serialize_markdown(parsed.document) == source)));
+
+    const auto projection = serialize_markdown_projection(parsed.document);
+    const auto blank_line_offset = projection.text.find(U"\r\n\r\n") + 2u;
+    const auto restored = source_position_for_serialized_offset(
+        projection,
+        blank_line_offset,
+        TextAffinity::Downstream);
+    expect(fatal(bool(restored.has_value())));
+    if (restored)
+        expect(fatal(bool(restored->container_id == parsed.document.root.children[1].id)));
+};
+
 "blank_lines_have_editable_block_identity_at_document_boundaries"_test = [] {
     struct Case {
         std::string source;

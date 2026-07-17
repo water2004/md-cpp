@@ -271,6 +271,44 @@ suite source_editor_tests = [] {
     expect(fatal(bool(editor.selection() == SourceSelection::caret(7))));
 };
 
+"source lines preserve mixed physical line endings"_test = [] {
+    const std::u32string source = U"# first\r\n\r\n## second\rthird\n";
+    SourceEditor editor(source);
+    expect(fatal(bool(editor.lines().size() == 5u)));
+    const std::array<std::u32string, 5> texts{U"# first", U"", U"## second", U"third", U""};
+    const std::array<std::u32string, 5> endings{U"\r\n", U"\r\n", U"\r", U"\n", U""};
+    std::u32string reconstructed;
+    for (std::size_t index = 0; index < editor.lines().size(); ++index) {
+        expect(fatal(bool(editor.lines()[index].text == texts[index]))) << index;
+        expect(fatal(bool(editor.lines()[index].line_ending == endings[index]))) << index;
+        reconstructed += editor.lines()[index].text;
+        reconstructed += editor.lines()[index].line_ending;
+    }
+    expect(fatal(bool(reconstructed == source)));
+
+    const auto model = build_source_render_model(editor);
+    expect(fatal(bool(model.blocks.size() == 5u)));
+    for (std::size_t index = 0; index < model.blocks.size(); ++index)
+        expect(fatal(bool(model.blocks[index].source_line_number == index + 1u))) << index;
+
+    const auto downstream_inside_crlf = editor.position_from_source_offset(8u, TextAffinity::Downstream);
+    expect(fatal(bool(downstream_inside_crlf.container_id == editor.lines()[1].id)));
+    expect(fatal(bool(downstream_inside_crlf.source_offset == 0u)));
+    const auto upstream_inside_crlf = editor.position_from_source_offset(8u, TextAffinity::Upstream);
+    expect(fatal(bool(upstream_inside_crlf.container_id == editor.lines()[0].id)));
+    expect(fatal(bool(upstream_inside_crlf.source_offset == editor.lines()[0].text.size())));
+
+    editor.set_selection(SourceSelection::caret(7u));
+    editor.move_right();
+    expect(fatal(bool(editor.selection().active == 9u))) << "right crosses CRLF atomically";
+    editor.move_left();
+    expect(fatal(bool(editor.selection().active == 7u))) << "left crosses CRLF atomically";
+    expect(fatal(editor.delete_forward()));
+    expect(fatal(bool(editor.source() == U"# first\r\n## second\rthird\n")));
+    expect(fatal(editor.undo()));
+    expect(fatal(bool(editor.source() == source)));
+};
+
 "random source edits preserve the flat source and render projection"_test = [] {
     SourceEditor editor(U"# start\n\ntext");
     auto initial = editor.source();
@@ -301,7 +339,7 @@ suite source_editor_tests = [] {
         std::u32string fromLines;
         for (auto const& line : editor.lines()) {
             fromLines += line.text;
-            if (line.has_newline) fromLines.push_back(U'\n');
+            fromLines += line.line_ending;
         }
         expect(fatal(bool(fromLines == editor.source())));
         std::u32string visible;

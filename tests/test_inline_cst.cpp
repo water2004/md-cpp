@@ -254,6 +254,27 @@ suite inline_cst_tests = [] {
     expect(inline_forward_delete_range(markdown, 1) == SourceRange{1, 4});
 };
 
+"physical line endings_are_lossless_single_break_nodes"_test = [] {
+    const std::array<std::u32string, 3> sources{U"a\r\nb", U"a\rb", U"a\nb"};
+    for (auto const& source : sources) {
+        const auto tree = parse_inline(source, test_context());
+        expect(fatal(bool(flatten_tokens(tree, source) == source)));
+        expect(fatal(bool(serialize_lossless(tree, source) == source)));
+        const auto* soft_break = first_node(tree, InlineCstKind::SoftBreak);
+        expect(fatal(soft_break != nullptr));
+        expect(fatal(bool(soft_break->range.start == 1u)));
+        expect(fatal(bool(soft_break->range.end == source.size() - 1u)));
+    }
+
+    InlineDocument markdown{U"a  \r\nb", {}};
+    reparse_inline_document(markdown, test_context());
+    const auto* hard_break = first_node(markdown.tree, InlineCstKind::HardBreak);
+    expect(fatal(hard_break != nullptr));
+    expect(fatal(bool(hard_break->range == SourceRange{1, 5})));
+    expect(fatal(bool(inline_backward_delete_range(markdown, 5) == SourceRange{1, 5})));
+    expect(fatal(bool(inline_forward_delete_range(markdown, 1) == SourceRange{1, 5})));
+};
+
 "underscore delimiters respect CommonMark word boundaries"_test = [] {
     const std::vector<std::u32string> literal_sources{
         U"0x1_fffff_ffff",

@@ -45,6 +45,15 @@ struct Parser {
     char32_t ch(std::size_t i) const { return i < limit ? src[i] : char32_t{0}; }
     void advance(std::size_t n = 1) { pos = (std::min)(pos + n, limit); }
 
+    static bool is_line_ending(char32_t value) {
+        return value == U'\r' || value == U'\n';
+    }
+
+    std::size_t line_ending_length(std::size_t at) const {
+        if (at >= limit || !is_line_ending(src[at])) return 0;
+        return src[at] == U'\r' && at + 1 < limit && src[at + 1] == U'\n' ? 2u : 1u;
+    }
+
     static bool ascii_punct(char32_t c) {
         return (c >= U'!' && c <= U'/') || (c >= U':' && c <= U'@') || (c >= U'[' && c <= U'`') || (c >= U'{' && c <= U'~');
     }
@@ -105,10 +114,10 @@ struct Parser {
         return true;
     }
 
-    // Find the next occurrence of `lit` from `from`, not crossing a '\n'.
+    // Find the next occurrence of `lit` without crossing a physical line ending.
     static std::size_t find_on_line(std::u32string_view s, std::size_t from, std::u32string_view lit) {
         for (std::size_t i = from; i + lit.size() <= s.size(); ++i) {
-            if (s[i] == U'\n') return npos;
+            if (is_line_ending(s[i])) return npos;
             bool ok = true;
             for (std::size_t j = 0; j < lit.size(); ++j) if (s[i + j] != lit[j]) { ok = false; break; }
             if (ok) return i;
@@ -122,7 +131,7 @@ struct Parser {
     static std::size_t entity_end(std::u32string_view s, std::size_t at) {
         if (at >= s.size() || s[at] != U'&') return npos;
         std::size_t end = at + 1;
-        while (end < s.size() && end - at <= 12 && s[end] != U';' && s[end] != U'\n') ++end;
+        while (end < s.size() && end - at <= 12 && s[end] != U';' && !is_line_ending(s[end])) ++end;
         if (end >= s.size() || s[end] != U';') return npos;
         auto body = cps_to_utf8(s.substr(at + 1, end - at - 1));
         if (body == "amp" || body == "lt" || body == "gt" || body == "quot" || body == "apos"
@@ -148,14 +157,15 @@ struct Parser {
         flush_text_to(out, run_start, pos);
     }
 
-    // ---- soft / hard break at a '\n' ----
-    // Returns true if a break node was emitted (consuming through the newline).
+    // ---- soft / hard physical line break ----
+    // CRLF is one exact CST node and therefore one visual/caret unit.
     bool parse_break(
         InlineCstNodes& out,
         std::size_t& run_start,
         bool markdown_hard_breaks = true) {
-        if (peek() != U'\n') return false;
+        if (!is_line_ending(peek())) return false;
         std::size_t nl = pos;
+        const auto ending_length = line_ending_length(pos);
         // Hard break: two trailing spaces (already in the text run) — detect by
         // looking back into the pending run.
         bool hard = false;
@@ -189,7 +199,7 @@ struct Parser {
                 out.push_back(std::move(node));
             }
             run_start = pos;
-            advance(); // consume '\n'
+            advance(ending_length);
             InlineCstNode hb;
             hb.id = next_id();
             hb.kind = InlineCstKind::HardBreak;
@@ -199,7 +209,7 @@ struct Parser {
             run_start = pos;
         } else {
             flush_text(out, run_start);
-            advance();
+            advance(ending_length);
             InlineCstNode sb;
             sb.id = next_id();
             sb.kind = InlineCstKind::SoftBreak;
@@ -988,10 +998,10 @@ struct Parser {
             const auto start = cursor;
             const auto c = src[cursor];
 
-            if (c == U'\n') {
+            if (is_line_ending(c)) {
                 const bool hard = (cursor >= 2 && src[cursor - 1] == U' ' && src[cursor - 2] == U' ')
                     || (cursor >= 1 && src[cursor - 1] == U'\\');
-                ++cursor;
+                cursor += line_ending_length(cursor);
                 emit(hard ? TokenKind::HardBreak : TokenKind::SoftBreak, start, cursor);
                 continue;
             }
@@ -1022,7 +1032,7 @@ struct Parser {
             ++cursor;
             while (cursor < limit) {
                 const auto next = src[cursor];
-                if (next == U'\n' || next == U' ' || next == U'\t' || delimiter_char(next)) break;
+                if (is_line_ending(next) || next == U' ' || next == U'\t' || delimiter_char(next)) break;
                 if (next == U'\\' && cursor + 1 < limit && ascii_punct(src[cursor + 1])) break;
                 if (next == U'&' && entity_end(src.substr(0, limit), cursor) != npos) break;
                 ++cursor;
@@ -1042,7 +1052,7 @@ struct Parser {
                     out,
                     run_start,
                     ctx.syntax_mode == InlineSyntaxMode::Markdown)) continue;
-            if (peek() == U'\n') { advance(); continue; } // stray newline safety
+            if (is_line_ending(peek())) { advance(line_ending_length(pos)); continue; }
             if (ctx.syntax_mode == InlineSyntaxMode::HtmlText) {
                 if (parse_entity(out, run_start)) continue;
                 if (peek() == U'<' && parse_html_element(out, run_start)) continue;
@@ -1085,7 +1095,7 @@ struct Parser {
         InlineCstNodes out;
         std::size_t run_start = pos;
         while (!eof()) {
-            if (peek() == U'\n') {
+            if (is_line_ending(peek())) {
                 // soft break within nested content (no hard-break detection
                 // needed for losslessness; the newline becomes its own node).
                 flush_text(out, run_start);

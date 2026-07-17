@@ -43,7 +43,10 @@ struct SourceLine {
     NodeId id{};
     std::size_t source_start = 0;
     std::u32string text;
-    bool has_newline = false;
+    // The exact physical line ending is part of the authoritative source.
+    // Keeping it outside `text` gives every physical line one render block
+    // without normalizing CRLF/CR documents to LF.
+    std::u32string line_ending;
     SourceLineState state_before;
     SourceLineState state_after;
     std::vector<SourceStyleSpan> styles;
@@ -52,6 +55,8 @@ struct SourceLine {
     std::uint64_t presentation_key = 0;
 
     std::size_t source_end() const { return source_start + text.size(); }
+    std::size_t next_source_start() const { return source_end() + line_ending.size(); }
+    bool has_line_ending() const { return !line_ending.empty(); }
 };
 
 struct SourceEditTransaction {
@@ -194,7 +199,7 @@ inline std::uint64_t hash_line(SourceLine const& line) {
     auto value = offset;
     auto mix = [&](std::uint64_t next) { value ^= next; value *= prime; };
     for (auto character : line.text) mix(static_cast<std::uint32_t>(character));
-    mix(line.has_newline);
+    for (auto character : line.line_ending) mix(static_cast<std::uint32_t>(character));
     mix(static_cast<std::uint32_t>(line.state_before.fence_character));
     mix(line.state_before.fence_length);
     for (auto character : line.state_before.language) mix(static_cast<unsigned char>(character));
@@ -319,13 +324,13 @@ public:
     bool delete_backward() {
         if (!selection_.is_caret()) return replace_selection({});
         if (selection_.active == 0) return false;
-        return replace({selection_.active - 1, selection_.active}, {});
+        return replace({prev_grapheme_boundary_char(source_, selection_.active), selection_.active}, {});
     }
 
     bool delete_forward() {
         if (!selection_.is_caret()) return replace_selection({});
         if (selection_.active >= source_.size()) return false;
-        return replace({selection_.active, selection_.active + 1}, {});
+        return replace({selection_.active, next_grapheme_boundary_char(source_, selection_.active)}, {});
     }
 
     bool undo() {
@@ -351,11 +356,11 @@ public:
     void select_all() { selection_ = {0, source_.size(), TextAffinity::Downstream, TextAffinity::Upstream}; }
     void move_left(bool extend = false) {
         if (!extend && !selection_.is_caret()) { move_to_(selection_.ordered_range().start, false); return; }
-        move_to_(selection_.active == 0 ? 0 : selection_.active - 1, extend);
+        move_to_(prev_grapheme_boundary_char(source_, selection_.active), extend);
     }
     void move_right(bool extend = false) {
         if (!extend && !selection_.is_caret()) { move_to_(selection_.ordered_range().end, false); return; }
-        move_to_((std::min)(source_.size(), selection_.active + 1), extend);
+        move_to_(next_grapheme_boundary_char(source_, selection_.active), extend);
     }
     void move_document_start(bool extend = false) { move_to_(0, extend); }
     void move_document_end(bool extend = false) { move_to_(source_.size(), extend); }
@@ -376,6 +381,16 @@ public:
         offset = (std::min)(offset, source_.size());
         auto const* line = line_for_offset_(offset);
         if (!line) return {};
+        // An externally restored flat offset may point between CR and LF.
+        // The render model has no position inside a physical line terminator,
+        // so project it to one of its two semantic boundaries by affinity.
+        if (offset < line->source_start) {
+            if (affinity == TextAffinity::Upstream && line != lines_.data()) {
+                auto const& previous = *(line - 1);
+                return {previous.id, previous.text.size(), affinity};
+            }
+            return {line->id, 0, affinity};
+        }
         return {line->id, offset - line->source_start, affinity};
     }
 
@@ -421,7 +436,7 @@ private:
         });
         if (found == lines_.begin()) return &lines_.front();
         --found;
-        if (found->has_newline && offset > found->source_end() && found + 1 != lines_.end()) ++found;
+        if (found->has_line_ending() && offset > found->source_end() && found + 1 != lines_.end()) ++found;
         return &*found;
     }
 
@@ -440,7 +455,7 @@ private:
         std::vector<std::size_t> changed(lines_.size(), 0);
         std::u32string replacement;
         for (auto index = first; index <= last; ++index) {
-            if (index != first) replacement.push_back(U'\n');
+            if (index != first) replacement += lines_[index - 1].line_ending;
             auto const& line = lines_[index];
             if (indenting) {
                 changed[index] = 4;
@@ -529,10 +544,14 @@ private:
         auto parse_line = [&](std::size_t start) {
             SourceLine line;
             line.source_start = start;
-            auto newline = source_.find(U'\n', start);
-            line.has_newline = newline != std::u32string::npos;
-            auto end = line.has_newline ? newline : source_.size();
+            auto end = start;
+            while (end < source_.size() && source_[end] != U'\r' && source_[end] != U'\n') ++end;
             line.text = source_.substr(start, end - start);
+            if (end < source_.size()) {
+                line.line_ending.push_back(source_[end]);
+                if (source_[end] == U'\r' && end + 1 < source_.size() && source_[end + 1] == U'\n')
+                    line.line_ending.push_back(U'\n');
+            }
             return line;
         };
         auto finish_with_suffix = [&](std::size_t suffix) {
@@ -560,7 +579,7 @@ private:
                 auto candidate = parse_line(cursor);
                 auto const& previous = old_lines[old_suffix];
                 if (candidate.text == previous.text
-                    && candidate.has_newline == previous.has_newline
+                    && candidate.line_ending == previous.line_ending
                     && previous.state_before == state) {
                     finish_with_suffix(old_suffix);
                     return;
@@ -571,7 +590,7 @@ private:
             if (old_suffix < old_lines.size()
                 && shifted_start(old_lines[old_suffix]) == cursor
                 && line.text == old_lines[old_suffix].text
-                && line.has_newline == old_lines[old_suffix].has_newline) {
+                && line.line_ending == old_lines[old_suffix].line_ending) {
                 line.id = old_lines[old_suffix].id;
                 ++old_suffix;
             } else if (first_generated) {
@@ -581,10 +600,10 @@ private:
             }
             first_generated = false;
             source_editor_detail::style_line(line, state);
-            auto has_newline = line.has_newline;
-            cursor = line.source_end() + (has_newline ? 1u : 0u);
+            auto has_line_ending = line.has_line_ending();
+            cursor = line.next_source_start();
             fresh.push_back(std::move(line));
-            if (!has_newline) break;
+            if (!has_line_ending) break;
         }
 
         last_line_change_ = {
@@ -602,21 +621,25 @@ private:
         std::vector<SourceLine> fresh;
         std::size_t start = 0;
         while (true) {
-            auto newline = source_.find(U'\n', start);
             SourceLine line;
             line.source_start = start;
-            line.has_newline = newline != std::u32string::npos;
-            auto end = line.has_newline ? newline : source_.size();
+            auto end = start;
+            while (end < source_.size() && source_[end] != U'\r' && source_[end] != U'\n') ++end;
             line.text = source_.substr(start, end - start);
+            if (end < source_.size()) {
+                line.line_ending.push_back(source_[end]);
+                if (source_[end] == U'\r' && end + 1 < source_.size() && source_[end + 1] == U'\n')
+                    line.line_ending.push_back(U'\n');
+            }
             fresh.push_back(std::move(line));
-            if (!line.has_newline) break;
-            start = newline + 1;
+            if (!fresh.back().has_line_ending()) break;
+            start = fresh.back().next_source_start();
         }
 
         std::size_t prefix = 0;
         while (prefix < fresh.size() && prefix < old_lines.size()
             && fresh[prefix].text == old_lines[prefix].text
-            && fresh[prefix].has_newline == old_lines[prefix].has_newline) {
+            && fresh[prefix].line_ending == old_lines[prefix].line_ending) {
             fresh[prefix].id = old_lines[prefix].id;
             ++prefix;
         }
@@ -625,7 +648,7 @@ private:
             auto fresh_index = fresh.size() - suffix - 1;
             auto old_index = old_lines.size() - suffix - 1;
             if (fresh[fresh_index].text != old_lines[old_index].text
-                || fresh[fresh_index].has_newline != old_lines[old_index].has_newline) break;
+                || fresh[fresh_index].line_ending != old_lines[old_index].line_ending) break;
             fresh[fresh_index].id = old_lines[old_index].id;
             ++suffix;
         }
@@ -642,7 +665,7 @@ private:
             auto previous = old_by_id.find(line.id.v);
             if (previous != old_by_id.end()
                 && previous->second->text == line.text
-                && previous->second->has_newline == line.has_newline
+                && previous->second->line_ending == line.line_ending
                 && previous->second->state_before == state) {
                 auto start_offset = line.source_start;
                 line = *previous->second;

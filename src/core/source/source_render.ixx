@@ -246,7 +246,7 @@ inline std::vector<std::optional<CodeContext>> code_contexts(
         while (run_end < end && lines[run_end].code_content) {
             offsets.push_back(context.size());
             context += lines[run_end].text;
-            if (lines[run_end].has_newline) context.push_back(U'\n');
+            if (lines[run_end].has_line_ending()) context.push_back(U'\n');
             ++run_end;
         }
         auto key = hash_context(context);
