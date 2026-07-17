@@ -363,10 +363,10 @@
     <ClCompile Include="media\TreeSitterHighlighter.cpp">
       <Filter>Media Services</Filter>
     </ClCompile>
-    <ClCompile Include="third_party\tree-sitter\runtime\lib.c">
+    <ClCompile Include="..\..\third_party\tree-sitter\runtime\lib.c">
       <Filter>Third Party</Filter>
     </ClCompile>
-    <ClCompile Include="third_party\tree-sitter\grammars\*.c">
+    <ClCompile Include="..\..\third_party\tree-sitter\grammars\*.c">
       <Filter>Third Party</Filter>
     </ClCompile>
     <ClCompile Include="App.xaml.cpp">

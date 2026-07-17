@@ -50,9 +50,9 @@ Add-LicenseFile 'MathJax and MathJax NewCM font — Apache License 2.0' `
 Add-LicenseFile 'Native SVG normalizer wrapper — MIT License' `
     (Join-Path $Root 'src\app-winui\third_party\usvg-normalizer\LICENSE-MIT')
 Add-LicenseFile 'Tree-sitter Unicode support data' `
-    (Join-Path $Root 'src\app-winui\third_party\tree-sitter\runtime\unicode\LICENSE')
+    (Join-Path $Root 'third_party\tree-sitter\runtime\unicode\LICENSE')
 
-$TreeSitterLicenses = Join-Path $Root 'src\app-winui\third_party\tree-sitter\licenses'
+$TreeSitterLicenses = Join-Path $Root 'third_party\tree-sitter\licenses'
 Get-ChildItem -LiteralPath $TreeSitterLicenses -File | Sort-Object Name | ForEach-Object {
     Add-LicenseFile "Tree-sitter component — $($_.BaseName)" $_.FullName
 }
