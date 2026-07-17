@@ -151,6 +151,76 @@ suite source_editor_tests = [] {
     expect(fatal(bool(model.blocks[2049].presentation_key == untouchedKey)));
 };
 
+"source render projection exposes logical line numbers and renumbers after splits"_test = [] {
+    SourceEditor editor(U"one\ntwo\nthree");
+    auto model = build_source_render_model(editor);
+    expect(fatal(bool(model.blocks[0].source_line_number == 1u)));
+    expect(fatal(bool(model.blocks[1].source_line_number == 2u)));
+    expect(fatal(bool(model.blocks[2].source_line_number == 3u)));
+
+    editor.set_selection(SourceSelection::caret(1));
+    expect(fatal(editor.insert_newline()));
+    model = build_source_render_model_incremental(editor, std::move(model));
+    expect(fatal(bool(model.blocks.size() == 4u)));
+    for (std::size_t index = 0; index < model.blocks.size(); ++index)
+        expect(fatal(bool(model.blocks[index].source_line_number == index + 1)));
+};
+
+"source outline recognizes visible headings without parsing the full document"_test = [] {
+    SourceEditor editor(
+        U"# **First**\n"
+        U"> ## Nested\n"
+        U"- ### Listed\n"
+        U"Setext *title*\n"
+        U"---\n"
+        U"```md\n"
+        U"# not a heading\n"
+        U"```\n");
+    auto model = build_source_render_model(editor);
+    auto flat = model.outline.flat_items();
+    expect(fatal(bool(flat.size() == 4u)));
+    expect(fatal(bool(flat[0]->title_plain_text == "First" && flat[0]->level == 1u)));
+    expect(fatal(bool(flat[1]->title_plain_text == "Nested" && flat[1]->level == 2u)));
+    expect(fatal(bool(flat[2]->title_plain_text == "Listed" && flat[2]->level == 3u)));
+    expect(fatal(bool(flat[3]->title_plain_text == "Setext title" && flat[3]->level == 2u)));
+    expect(fatal(bool(flat[0]->position.container_id == editor.lines()[0].id)));
+};
+
+"source outline repairs only the edited heading neighborhood"_test = [] {
+    SourceEditor editor(U"# First\nbody\n## Last");
+    auto model = build_source_render_model(editor);
+    auto first_id = model.outline.flat_items()[0]->id;
+    auto last_id = model.outline.flat_items()[1]->id;
+
+    editor.set_selection({editor.lines()[1].source_start, editor.lines()[1].source_end()});
+    expect(fatal(editor.replace_selection(U"### Middle")));
+    model = build_source_render_model_incremental(editor, std::move(model));
+    auto flat = model.outline.flat_items();
+    expect(fatal(bool(flat.size() == 3u)));
+    expect(fatal(bool(flat[0]->id == first_id && flat[0]->title_plain_text == "First")));
+    expect(fatal(bool(flat[1]->title_plain_text == "Middle" && flat[1]->level == 3u)));
+    expect(fatal(bool(flat[2]->id == last_id && flat[2]->title_plain_text == "Last")));
+};
+
+"source outline repairs the preceding line when a setext marker changes"_test = [] {
+    SourceEditor editor(U"Title\nbody\n# Tail");
+    auto model = build_source_render_model(editor);
+    expect(fatal(bool(model.outline.flat_items().size() == 1u)));
+
+    editor.set_selection({editor.lines()[1].source_start, editor.lines()[1].source_end()});
+    expect(fatal(editor.replace_selection(U"===")));
+    model = build_source_render_model_incremental(editor, std::move(model));
+    auto flat = model.outline.flat_items();
+    expect(fatal(bool(flat.size() == 2u)));
+    expect(fatal(bool(flat[0]->title_plain_text == "Title" && flat[0]->level == 1u)));
+
+    editor.set_selection({editor.lines()[1].source_start, editor.lines()[1].source_end()});
+    expect(fatal(editor.replace_selection(U"body")));
+    model = build_source_render_model_incremental(editor, std::move(model));
+    flat = model.outline.flat_items();
+    expect(fatal(bool(flat.size() == 1u && flat[0]->title_plain_text == "Tail")));
+};
+
 "source positions translate only at the render boundary"_test = [] {
     SourceEditor editor(U"one\ntwo");
     editor.set_selection({1, 6, TextAffinity::Downstream, TextAffinity::Upstream});

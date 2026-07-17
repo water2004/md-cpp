@@ -277,6 +277,9 @@ struct RenderBlock {
     BlockStyle block_style;
     bool source_mode = false;
     bool source_code = false;
+    // One-based logical source line. Zero outside source mode. Kept outside
+    // the editable text so gutters never participate in hit testing.
+    std::uint32_t source_line_number = 0;
     // Virtualized rich-text models keep an inexpensive block-shaped entry for
     // offscreen content.  A materialized entry owns the derived inline render
     // projection; the authoritative block tree remains the source of truth.
