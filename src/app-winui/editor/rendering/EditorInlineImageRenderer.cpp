@@ -179,7 +179,9 @@ namespace winrt::ElMd
                         *image.svg->svg,
                         image.width,
                         image.imageHeight,
-                        D2D1::Point2F(rect.left, rect.top)))
+                        D2D1::Point2F(rect.left, rect.top),
+                        image.svg->width,
+                        image.svg->height))
                     resources.d2dContext->DrawTextW(
                         image.alt.c_str(),
                         static_cast<UINT32>(image.alt.size()),
