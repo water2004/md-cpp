@@ -421,10 +421,16 @@ public:
     }
     bool line_starts_fenced_code(std::size_t at) const {
         std::size_t i = at;
-        auto marker = ch_at(at);
+        std::size_t indentation = 0;
+        while (i < cps.size() && cps[i] == U' ' && indentation < 4) {
+            ++i;
+            ++indentation;
+        }
+        if (indentation > 3) return false;
+        auto marker = ch_at(i);
         if (marker != U'`' && marker != U'~') return false;
         while (i < cps.size() && cps[i] == marker) ++i;
-        return i - at >= 3;
+        return i - at - indentation >= 3;
     }
     bool line_starts_fenced_code() const {
         return peek_line_start() && line_starts_fenced_code(pos);
@@ -1450,8 +1456,17 @@ public:
 
     std::optional<BlockNode> try_parse_code_block() {
         std::size_t start = pos;
+        std::size_t opening_indent = 0;
+        while (opening_indent < 4 && peek1() == U' ') {
+            ++opening_indent;
+            advance();
+        }
+        if (opening_indent > 3) { pos = start; return std::nullopt; }
+
+        const auto marker = peek1();
+        if (marker != U'`' && marker != U'~') { pos = start; return std::nullopt; }
         std::size_t count = 0;
-        while (peek1() == '`') { ++count; advance(); }
+        while (peek1() == marker) { ++count; advance(); }
         if (count < 3) { pos = start; return std::nullopt; }
         auto [info_line, info_length] = rest_of_line();
         advance_n(info_length);
@@ -1467,11 +1482,18 @@ public:
         while (!eof()) {
             std::size_t line_start = pos;
             std::size_t scan = pos;
-            while (scan < cps.size() && cps[scan] == U'`') ++scan;
-            std::size_t fence_count = scan - line_start;
+            std::size_t closing_indent = 0;
+            while (scan < cps.size() && cps[scan] == U' ' && closing_indent < 4) {
+                ++scan;
+                ++closing_indent;
+            }
+            const auto fence_start = scan;
+            while (scan < cps.size() && cps[scan] == marker) ++scan;
+            std::size_t fence_count = scan - fence_start;
             std::size_t marker_end = scan;
             while (marker_end < cps.size() && (cps[marker_end] == U' ' || cps[marker_end] == U'\t')) ++marker_end;
-            if (fence_count >= count
+            if (closing_indent <= 3
+                && fence_count >= count
                 && (marker_end == cps.size() || is_line_ending_character(cps[marker_end]))) {
                 content_end = line_start;
                 closing_marker = PhysicalRange(std::size_t(line_start), std::size_t(marker_end));

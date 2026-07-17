@@ -1614,6 +1614,37 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.selection() == newline_selection)));
 };
 
+"typed_tilde_fence_auto_closes_and_round_trips_history"_test = [] {
+    Editor editor;
+    expect(fatal(bool(editor.execute_document_insert_text(
+        editor.selection(), U"~~~cpp").has_value())));
+    const auto before_markdown = editor.markdown_utf8();
+    const auto before_selection = editor.selection();
+
+    reset_core_operation_counters();
+    expect(fatal(bool(editor.execute_document_enter(editor.selection()).has_value())));
+    auto counters = read_core_operation_counters();
+    expect(fatal(bool(counters.full_document_parses == 0u)));
+    expect(fatal(bool(counters.full_document_serializations == 0u)));
+    expect(fatal(bool(counters.full_tree_transaction_diffs == 0u)));
+    expect(fatal(bool(editor.document().root.children.size() == 1u)));
+    if (editor.document().root.children.size() != 1u) return;
+    const auto& code = editor.document().root.children.front();
+    expect(fatal(bool(code.kind == BlockKind::CodeBlock)));
+    expect(fatal(bool(code.block_source.source() == U"~~~cpp\n~~~")));
+    expect(fatal(bool(code.block_source.tree().language == std::optional<std::string>{"cpp"})));
+    expect(fatal(bool(editor.selection().active.source_offset == 7u)));
+
+    const auto after_markdown = editor.markdown_utf8();
+    const auto after_selection = editor.selection();
+    expect(fatal(bool(editor.undo())));
+    expect(fatal(bool(editor.markdown_utf8() == before_markdown)));
+    expect(fatal(bool(editor.selection() == before_selection)));
+    expect(fatal(bool(editor.redo())));
+    expect(fatal(bool(editor.markdown_utf8() == after_markdown)));
+    expect(fatal(bool(editor.selection() == after_selection)));
+};
+
 "toolbar_blocks_share_complete_source_construction_with_typed_rules"_test = [] {
     Editor code;
     Command insert_code;

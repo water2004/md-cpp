@@ -454,6 +454,59 @@ suite parser_tests = [] {
     expect(fatal(bool(first_block(parsed.document.root.children, BlockKind::ThematicBreak) != nullptr)));
 };
 
+"fenced_code_accepts_lossless_backtick_and_tilde_fences"_test = [] {
+    struct Case {
+        std::string source;
+        std::string language;
+    };
+    const std::vector<Case> cases{
+        {"```cpp\nint x;\n```", "cpp"},
+        {"~~~cpp\nint x;\n~~~", "cpp"},
+        // A shorter run and a run of the other marker are code content. A
+        // longer run of the opening marker is a valid closer.
+        {"~~~~cpp\nalpha\n~~~\n```\nomega\n~~~~", "cpp"},
+        {"   ~~~text\nvalue\n   ~~~~~", "text"},
+    };
+
+    for (const auto& test_case : cases) {
+        const auto parsed = parse_text(1, test_case.source);
+        expect(fatal(bool(parsed.document.root.children.size() == 1u))) << test_case.source;
+        if (parsed.document.root.children.size() != 1u) continue;
+        const auto& block = parsed.document.root.children.front();
+        expect(fatal(bool(block.kind == BlockKind::CodeBlock))) << test_case.source;
+        expect(fatal(bool(block.block_source.source() == utf8_to_cps(test_case.source)))) << test_case.source;
+        expect(fatal(bool(block.block_source.tree().language
+            == std::optional<std::string>{test_case.language}))) << test_case.source;
+        expect(fatal(bool(block_source_tokens_partition(block.block_source)))) << test_case.source;
+        expect(fatal(bool(flatten_block_source_tokens(block.block_source)
+            == block.block_source.source()))) << test_case.source;
+        expect(fatal(bool(serialize_markdown(parsed.document) == test_case.source))) << test_case.source;
+    }
+
+    const auto nested = parse_text(
+        2,
+        "> ~~~cpp\n"
+        "> quoted();\n"
+        "> ~~~\n\n"
+        "- ~~~js\n"
+        "  listed();\n"
+        "  ~~~");
+    const auto* quoted = first_block(nested.document.root.children, BlockKind::BlockQuote);
+    const auto* listed = first_block(nested.document.root.children, BlockKind::List);
+    expect(fatal(bool(quoted != nullptr)));
+    expect(fatal(bool(listed != nullptr)));
+    if (quoted) {
+        const auto* code = first_block(quoted->children, BlockKind::CodeBlock);
+        expect(fatal(bool(code != nullptr)));
+        if (code) expect(fatal(bool(block_source_content(code->block_source) == U"quoted();\n")));
+    }
+    if (listed) {
+        const auto* code = first_block(listed->children, BlockKind::CodeBlock);
+        expect(fatal(bool(code != nullptr)));
+        if (code) expect(fatal(bool(block_source_content(code->block_source) == U"listed();\n")));
+    }
+};
+
 "math_blocks_preserve_exact_local_source_and_fences"_test = [] {
     for (const auto& source : {
              std::string{"$$\n  x + y  \n$$"},
