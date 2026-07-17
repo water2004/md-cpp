@@ -86,7 +86,7 @@ namespace winrt::ElMd
                     : (std::max)(48.0f, availableWidth * 0.75f);
                 auto scale = (std::min)(1.0f, (std::min)(maximumWidth / draw.width, 240.0f / draw.height));
                 draw.width = (std::max)(1.0f, draw.width * scale);
-                draw.height = (std::max)(styleSheet.body.lineHeight, draw.height * scale);
+                draw.height = (std::max)(1.0f, draw.height * scale);
             }
             else
             {
@@ -109,7 +109,13 @@ namespace winrt::ElMd
                     draw.advance = (std::max)(draw.width, availableWidth - pointX);
                 }
             }
+            // The DirectWrite inline-object placeholder must be at least one
+            // body line tall, but that line box is not the image's draw rect.
+            // Keeping the two dimensions separate prevents short inline
+            // images such as badges from being stretched to the line height.
             draw.imageHeight = draw.height;
+            draw.height = (std::max)(styleSheet.body.lineHeight, draw.imageHeight);
+            draw.imageTopOffset = draw.height - draw.imageHeight;
             if (draw.block && !overlay.alt.empty())
             {
                 draw.caption = winrt::to_hstring(overlay.alt).c_str();
@@ -171,7 +177,8 @@ namespace winrt::ElMd
             auto imageLeft = origin.x + pointX;
             if (image.block && image.advance > image.width)
                 imageLeft += (image.advance - image.width) * 0.5f;
-            auto rect = D2D1::RectF(imageLeft, origin.y + lineTop, imageLeft + image.width, origin.y + lineTop + image.imageHeight);
+            auto imageTop = origin.y + lineTop + image.imageTopOffset;
+            auto rect = D2D1::RectF(imageLeft, imageTop, imageLeft + image.width, imageTop + image.imageHeight);
             if (image.svg)
             {
                 if (!svgPainter.Draw(
@@ -210,7 +217,7 @@ namespace winrt::ElMd
             {
                 auto captionOrigin = D2D1::Point2F(
                     origin.x + pointX,
-                    origin.y + lineTop + image.imageHeight + image.captionGap);
+                    imageTop + image.imageHeight + image.captionGap);
                 if (image.captionLayout)
                     resources.d2dContext->DrawTextLayout(
                         captionOrigin,
