@@ -62,7 +62,8 @@ namespace
         return winrt::Windows::Foundation::Uri(L"file:///" + winrt::hstring(value));
     }
 
-    winrt::hstring ReadUtf8Text(std::filesystem::path const& path)
+    winrt::Windows::Foundation::Collections::IObservableVector<winrt::hstring> ReadUtf8Lines(
+        std::filesystem::path const& path)
     {
         std::ifstream stream(path, std::ios::binary);
         if (!stream) throw std::runtime_error("cannot open text asset");
@@ -70,7 +71,20 @@ namespace
             std::istreambuf_iterator<char>{ stream },
             std::istreambuf_iterator<char>{});
         if (source.starts_with("\xEF\xBB\xBF")) source.erase(0, 3);
-        return winrt::to_hstring(source);
+
+        auto lines = winrt::single_threaded_observable_vector<winrt::hstring>();
+        std::size_t start = 0;
+        while (start <= source.size())
+        {
+            auto end = source.find('\n', start);
+            if (end == std::string::npos) end = source.size();
+            auto length = end - start;
+            if (length != 0 && source[start + length - 1] == '\r') --length;
+            lines.Append(winrt::to_hstring(std::string_view{ source }.substr(start, length)));
+            if (end == source.size()) break;
+            start = end + 1;
+        }
+        return lines;
     }
 
     Controls::NavigationViewItem NavigationItem(winrt::hstring const& label, winrt::hstring const& tag, wchar_t const* glyph)
@@ -317,17 +331,33 @@ namespace winrt::ElMd
         Grid::SetRow(licenseSelector_, 2);
         page.Children().Append(licenseSelector_);
 
-        licenseText_.AcceptsReturn(true);
-        licenseText_.IsReadOnly(true);
-        licenseText_.IsSpellCheckEnabled(false);
-        licenseText_.TextWrapping(TextWrapping::NoWrap);
-        licenseText_.FontFamily(Microsoft::UI::Xaml::Media::FontFamily(L"Consolas"));
-        licenseText_.HorizontalAlignment(HorizontalAlignment::Stretch);
-        licenseText_.VerticalAlignment(VerticalAlignment::Stretch);
-        ScrollViewer::SetHorizontalScrollBarVisibility(licenseText_, ScrollBarVisibility::Auto);
-        ScrollViewer::SetVerticalScrollBarVisibility(licenseText_, ScrollBarVisibility::Auto);
-        Grid::SetRow(licenseText_, 3);
-        page.Children().Append(licenseText_);
+        auto itemTemplate = Markup::XamlReader::Load(LR"(
+            <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+                <TextBlock
+                    Text="{Binding}"
+                    TextWrapping="Wrap"
+                    FontFamily="Consolas"
+                    FontSize="14"
+                    MinHeight="20"
+                    Padding="4,0,4,0"/>
+            </DataTemplate>)").as<DataTemplate>();
+        licenseRepeater_.ItemTemplate(itemTemplate);
+        StackLayout licenseLayout;
+        licenseRepeater_.Layout(licenseLayout);
+        licenseRepeater_.HorizontalAlignment(HorizontalAlignment::Stretch);
+
+        licenseScroller_.Content(licenseRepeater_);
+        licenseScroller_.HorizontalAlignment(HorizontalAlignment::Stretch);
+        licenseScroller_.VerticalAlignment(VerticalAlignment::Stretch);
+        licenseScroller_.HorizontalScrollMode(ScrollMode::Disabled);
+        licenseScroller_.HorizontalScrollBarVisibility(ScrollBarVisibility::Disabled);
+        licenseScroller_.VerticalScrollMode(ScrollMode::Enabled);
+        licenseScroller_.VerticalScrollBarVisibility(ScrollBarVisibility::Auto);
+        licenseScroller_.ZoomMode(ZoomMode::Disabled);
+
+        auto licenseCard = Card(licenseScroller_);
+        Grid::SetRow(licenseCard, 3);
+        page.Children().Append(licenseCard);
 
         licenseStatus_.TextWrapping(TextWrapping::Wrap);
         Grid::SetRow(licenseStatus_, 4);
@@ -402,13 +432,16 @@ namespace winrt::ElMd
         {
             auto const file = index == 0 ? L"LICENSE.txt" : L"THIRD-PARTY-NOTICES.txt";
             auto const path = AssetPath(std::filesystem::path(L"licenses") / file);
-            licenseText_.Text(ReadUtf8Text(path));
+            licenseLines_ = ReadUtf8Lines(path);
+            licenseRepeater_.ItemsSource(licenseLines_);
+            licenseScroller_.ChangeView(nullptr, 0.0, nullptr, true);
             licenseStatus_.Text({});
             loadedLicenseIndex_ = index;
         }
         catch (std::exception const& error)
         {
-            licenseText_.Text({});
+            licenseLines_ = nullptr;
+            licenseRepeater_.ItemsSource(nullptr);
             licenseStatus_.Text(LocalizeFormat(
                 L"UnableLoadLicense",
                 { winrt::to_hstring(error.what()) }));
