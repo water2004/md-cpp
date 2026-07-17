@@ -436,10 +436,35 @@ public:
         if (count == 0 || cursor != line_end) return std::nullopt;
         return SetextUnderline{static_cast<std::uint8_t>(marker == U'=' ? 1 : 2), line_end};
     }
+    bool line_starts_block_html() const {
+        if (!peek_line_start() || peek1() != U'<') return false;
+        auto cursor = pos + 1;
+        if (cursor >= cps.size() || cps[cursor] == U'/') return false;
+        const auto name_start = cursor;
+        while (cursor < cps.size()
+            && (is_alnum_(cps[cursor]) || cps[cursor] == U'-')) {
+            ++cursor;
+        }
+        if (cursor == name_start) return false;
+        if (cursor < cps.size()
+            && cps[cursor] != U' ' && cps[cursor] != U'\t'
+            && cps[cursor] != U'\r' && cps[cursor] != U'\n'
+            && cps[cursor] != U'>' && cps[cursor] != U'/') {
+            return false;
+        }
+        auto name = cps_to_utf8(std::u32string_view(cps).substr(
+            name_start,
+            cursor - name_start));
+        std::ranges::transform(name, name.begin(), [](unsigned char value) {
+            return static_cast<char>(std::tolower(value));
+        });
+        return html_is_block_element(name);
+    }
     bool line_starts_interrupting_block() const {
         if (!peek_line_start()) return false;
         if (setext_underline_at(pos)) return true;
         if (line_is_thematic_break(pos)) return true;
+        if (line_starts_block_html()) return true;
         if (peek1() == U'>' || line_starts_fenced_code()) return true;
         if (peek1() == U'#') {
             std::size_t cursor = pos;

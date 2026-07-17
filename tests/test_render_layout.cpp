@@ -573,6 +573,37 @@ suite render_layout_tests = [] {
     for (auto const& range : m.blocks[0].special().table_cell_spans) expect(fatal(bool(range.source_range.end >= range.source_range.start)));
 };
 
+"register_html_table_reaches_native_table_render_model"_test = [] {
+    const std::string source =
+        "<table><tr><td>寄存器</td><td>位宽/bit</td><td>助记符</td><td>汇编用法</td><td>类型</td></tr>"
+        "<tr><td>0</td><td>32</td><td>%A0</td><td>临时寄存器 0</td><td>通用寄存器</td></tr>"
+        "<tr><td>1</td><td>32</td><td>%A1</td><td>临时寄存器 1</td><td>通用寄存器</td></tr>"
+        "<tr><td>2</td><td>32</td><td>%A2</td><td>临时寄存器 2</td><td>通用寄存器</td></tr>"
+        "<tr><td>3</td><td>32</td><td>%A3</td><td>临时寄存器 3</td><td>通用寄存器</td></tr>"
+        "<tr><td>4</td><td>32</td><td>%A4</td><td>临时寄存器 4</td><td>通用寄存器</td></tr>"
+        "<tr><td>5</td><td>32</td><td>%A5</td><td>临时寄存器 5</td><td>通用寄存器</td></tr>"
+        "<tr><td>6</td><td>32</td><td>%A6</td><td>临时寄存器 6</td><td>通用寄存器</td></tr>"
+        "<tr><td>7</td><td>32</td><td>%A7</td><td>临时寄存器 7</td><td>通用寄存器</td></tr></table>";
+    auto model = build_model(source);
+    expect(fatal(model.blocks.size() == 1u));
+    if (model.blocks.empty()) return;
+    const auto& table = model.blocks.front();
+    expect(fatal(table.kind == RenderBlockKind::Table));
+    expect(fatal(table.special().row_count == 9u));
+    expect(fatal(table.special().column_count == 5u));
+    expect(fatal(table.special().table_cells.size() == 45u));
+    expect(fatal(table.special().table_cell_spans.size() == 45u));
+    expect(!table.special().table_header_row);
+
+    auto afterParagraph = build_model("preceding paragraph\n" + source);
+    expect(fatal(afterParagraph.blocks.size() == 2u));
+    if (afterParagraph.blocks.size() == 2u) {
+        expect(fatal(afterParagraph.blocks[0].kind == RenderBlockKind::Text));
+        expect(fatal(afterParagraph.blocks[1].kind == RenderBlockKind::Table));
+        expect(fatal(afterParagraph.blocks[1].special().row_count == 9u));
+    }
+};
+
 "builds_ordered_list_with_source_markers_and_line_breaks"_test = [] {
     auto m = build_model("9. alpha\n10. beta\n");
     expect(fatal(bool((m.blocks.size()) == (1u))));
