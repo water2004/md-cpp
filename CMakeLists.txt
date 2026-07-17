@@ -16,7 +16,7 @@ cmake_minimum_required(VERSION 4.0)
 
 project(folia
     VERSION 0.1.0
-    LANGUAGES CXX
+    LANGUAGES C CXX
     DESCRIPTION "Folia: native self-rendered WYSIWYG Markdown editor (C++)")
 
 set(CMAKE_CXX_STANDARD 23)
@@ -54,9 +54,26 @@ endif()
 # ---------------------------------------------------------------------------
 # Core library — pure C++, portable. Acceptance gate: no Windows dependency.
 # ---------------------------------------------------------------------------
+add_library(elmd_tree_sitter_html STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tree-sitter/runtime/lib.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tree-sitter/grammars/html_parser.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tree-sitter/grammars/html_scanner.c)
+target_include_directories(elmd_tree_sitter_html PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tree-sitter/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tree-sitter/runtime)
+set_target_properties(elmd_tree_sitter_html PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON)
+if(MSVC)
+    target_compile_options(elmd_tree_sitter_html PRIVATE /wd4244 /wd4996)
+endif()
+
 add_library(elmd_core STATIC)
 target_compile_features(elmd_core PUBLIC cxx_std_23)
 set_target_properties(elmd_core PROPERTIES CXX_MODULE_STD ON)
+target_include_directories(elmd_core PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tree-sitter/include)
+target_link_libraries(elmd_core PRIVATE elmd_tree_sitter_html)
 
 file(GLOB_RECURSE ELMD_CORE_MODULE CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.ixx)

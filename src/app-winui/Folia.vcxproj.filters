@@ -78,6 +78,9 @@
     <ClCompile Include="..\core\parsing\block_source.ixx">
       <Filter>Core Modules\Parsing</Filter>
     </ClCompile>
+    <ClCompile Include="..\core\parsing\html_cst.ixx">
+      <Filter>Core Modules\Parsing</Filter>
+    </ClCompile>
     <ClCompile Include="..\core\model\block_tree.ixx">
       <Filter>Core Modules\Model</Filter>
     </ClCompile>
