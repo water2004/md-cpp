@@ -630,6 +630,12 @@ struct Builder {
                 auto append_text = [&](std::u32string text, SourceRange range, InlineStyle text_style = InlineStyle::plain()) {
                     InlineRenderItem item = InlineRenderItem::plain_text(std::move(text), source_span(range));
                     item.id = node.id;
+                    if (text_style.link && !item.text.empty()
+                        && std::ranges::all_of(item.text, [](char32_t ch) {
+                            return ch == U' ' || ch == U'\t' || ch == U'\n' || ch == U'\r';
+                        })) {
+                        text_style.link = false;
+                    }
                     item.style = text_style;
                     target.push_back(std::move(item));
                 };
@@ -708,6 +714,8 @@ struct Builder {
                         item.kind = InlineRenderItem::Kind::Image;
                         item.id = node.id;
                         item.source_span = source_span(node.range);
+                        item.style = style;
+                        item.style.link = false;
                         auto& special = item.ensure_special().ensure_semantic();
                         special.src = semantic.href;
                         special.alt = semantic.alt;

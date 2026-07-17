@@ -845,6 +845,47 @@ suite render_layout_tests = [] {
         expect(fatal(bool(nested_image->special().semantic().block_image)));
 };
 
+"linked_html_images_keep_text_only_link_decoration"_test = [] {
+    auto model = build_model(
+        "<p align=\"center\">\n"
+        "  <a href=\"https://example.com\">\n"
+        "    <img src=\"badge.svg\">\n"
+        "  </a>\n"
+        "</p>\n\n"
+        "[linked text](https://example.com)\n");
+
+    bool linked_image = false;
+    bool decorated_text = false;
+    bool decorated_whitespace = false;
+    auto visit_items = [&](auto&& self, const std::vector<InlineRenderItem>& items, bool inside_link) -> void {
+        for (auto const& item : items) {
+            if (item.kind == InlineRenderItem::Kind::Image && inside_link) {
+                linked_image = true;
+                expect(bool(!item.style.link));
+            }
+            if (item.kind == InlineRenderItem::Kind::Text && inside_link) {
+                const auto whitespace = !item.text.empty() && std::ranges::all_of(item.text, [](char32_t ch) {
+                    return ch == U' ' || ch == U'\t' || ch == U'\n' || ch == U'\r';
+                });
+                if (whitespace && item.style.link) decorated_whitespace = true;
+                if (!whitespace && item.style.link) decorated_text = true;
+            }
+            if (item.kind == InlineRenderItem::Kind::Link) {
+                self(self, item.special().semantic().children, true);
+            }
+        }
+    };
+    auto visit_block = [&](auto&& self, const RenderBlock& block) -> void {
+        visit_items(visit_items, block.inline_items, false);
+        for (auto const& child : block.child_blocks) self(self, child);
+    };
+    for (auto const& block : model.blocks) visit_block(visit_block, block);
+
+    expect(fatal(bool(linked_image))) << "linked image reaches the render model";
+    expect(fatal(bool(decorated_text))) << "link text keeps its decoration";
+    expect(fatal(bool(!decorated_whitespace))) << "link indentation remains undecorated";
+};
+
 "math_inside_emphasis_renders_without_inheriting_text_style"_test = [] {
     auto m = build_model("**before $x$ after** *\\(y\\)* ~~$z$~~\n- **$q$**\n");
     std::vector<InlineRenderItem> math;
