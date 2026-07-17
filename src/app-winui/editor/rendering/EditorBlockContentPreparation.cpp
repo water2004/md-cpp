@@ -16,7 +16,16 @@ namespace winrt::ElMd
         // displayed boundary in the one authoritative source coordinate.
         auto editingRawFence = caret.container_id == block.id && !special.code_indented;
         auto code = special.code_text;
-        if (!editingRawFence && !code.empty() && code.back() == U'\n') code.pop_back();
+        if (!editingRawFence)
+        {
+            // The final physical line ending terminates the last code line;
+            // it does not introduce another presentation line.  Use the same
+            // LF/CRLF/CR-aware projection as the core render model instead of
+            // removing just '\n' (which left a visible DirectWrite line for
+            // CRLF documents).
+            auto const lines = elmd::code_presentation_lines(code);
+            if (!lines.empty()) code.resize(lines.back().content_range.end);
+        }
         if (editingRawFence)
         {
             AppendSourceText(

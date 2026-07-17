@@ -282,18 +282,22 @@ struct Builder {
         const auto code = block_source_content(block.block_source);
         const auto lines = code_presentation_lines(code);
         bool first_line = true;
-        for (const auto& line : lines) {
+        for (std::size_t index = 0; index < lines.size(); ++index) {
+            const auto& line = lines[index];
+            const auto display_range = index + 1 == lines.size()
+                ? line.content_range
+                : line.range_with_ending;
             const auto source_start = block_source_offset_for_content(
                 block.block_source,
-                line.range_with_ending.start);
+                display_range.start);
             append_line_indent(source_start, first_line);
             const auto source_end = block_source_offset_for_content(
                 block.block_source,
-                line.range_with_ending.end);
+                display_range.end);
             auto item = InlineRenderItem::plain_text(
                 code.substr(
-                    line.range_with_ending.start,
-                    line.range_with_ending.length()),
+                    display_range.start,
+                    display_range.length()),
                 {block.id, {source_start, source_end}});
             item.style.code = true;
             out.push_back(std::move(item));
