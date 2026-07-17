@@ -62,8 +62,8 @@ namespace
         return winrt::Windows::Foundation::Uri(L"file:///" + winrt::hstring(value));
     }
 
-    winrt::Windows::Foundation::Collections::IObservableVector<winrt::hstring> ReadUtf8Lines(
-        std::filesystem::path const& path)
+    winrt::Windows::Foundation::Collections::IObservableVector<winrt::Windows::Foundation::IInspectable>
+        ReadUtf8Lines(std::filesystem::path const& path)
     {
         std::ifstream stream(path, std::ios::binary);
         if (!stream) throw std::runtime_error("cannot open text asset");
@@ -72,7 +72,7 @@ namespace
             std::istreambuf_iterator<char>{});
         if (source.starts_with("\xEF\xBB\xBF")) source.erase(0, 3);
 
-        auto lines = winrt::single_threaded_observable_vector<winrt::hstring>();
+        auto lines = winrt::single_threaded_observable_vector<winrt::Windows::Foundation::IInspectable>();
         std::size_t start = 0;
         while (start <= source.size())
         {
@@ -80,7 +80,8 @@ namespace
             if (end == std::string::npos) end = source.size();
             auto length = end - start;
             if (length != 0 && source[start + length - 1] == '\r') --length;
-            lines.Append(winrt::to_hstring(std::string_view{ source }.substr(start, length)));
+            lines.Append(winrt::box_value(winrt::to_hstring(
+                std::string_view{ source }.substr(start, length))));
             if (end == source.size()) break;
             start = end + 1;
         }
@@ -341,21 +342,30 @@ namespace winrt::ElMd
                     MinHeight="20"
                     Padding="4,0,4,0"/>
             </DataTemplate>)").as<DataTemplate>();
-        licenseRepeater_.ItemTemplate(itemTemplate);
-        StackLayout licenseLayout;
-        licenseRepeater_.Layout(licenseLayout);
-        licenseRepeater_.HorizontalAlignment(HorizontalAlignment::Stretch);
+        auto itemContainerStyle = Markup::XamlReader::Load(LR"(
+            <Style
+                xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                TargetType="ListViewItem">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="MinHeight" Value="20"/>
+                <Setter Property="IsTabStop" Value="False"/>
+            </Style>)").as<Style>();
 
-        licenseScroller_.Content(licenseRepeater_);
-        licenseScroller_.HorizontalAlignment(HorizontalAlignment::Stretch);
-        licenseScroller_.VerticalAlignment(VerticalAlignment::Stretch);
-        licenseScroller_.HorizontalScrollMode(ScrollMode::Disabled);
-        licenseScroller_.HorizontalScrollBarVisibility(ScrollBarVisibility::Disabled);
-        licenseScroller_.VerticalScrollMode(ScrollMode::Enabled);
-        licenseScroller_.VerticalScrollBarVisibility(ScrollBarVisibility::Auto);
-        licenseScroller_.ZoomMode(ZoomMode::Disabled);
+        licenseList_.ItemTemplate(itemTemplate);
+        licenseList_.ItemContainerStyle(itemContainerStyle);
+        licenseList_.SelectionMode(ListViewSelectionMode::None);
+        licenseList_.IsItemClickEnabled(false);
+        licenseList_.CanDragItems(false);
+        licenseList_.CanReorderItems(false);
+        licenseList_.HorizontalAlignment(HorizontalAlignment::Stretch);
+        licenseList_.VerticalAlignment(VerticalAlignment::Stretch);
+        ScrollViewer::SetHorizontalScrollMode(licenseList_, ScrollMode::Disabled);
+        ScrollViewer::SetHorizontalScrollBarVisibility(licenseList_, ScrollBarVisibility::Disabled);
+        ScrollViewer::SetVerticalScrollMode(licenseList_, ScrollMode::Enabled);
+        ScrollViewer::SetVerticalScrollBarVisibility(licenseList_, ScrollBarVisibility::Auto);
 
-        auto licenseCard = Card(licenseScroller_);
+        auto licenseCard = Card(licenseList_);
         Grid::SetRow(licenseCard, 3);
         page.Children().Append(licenseCard);
 
@@ -433,15 +443,14 @@ namespace winrt::ElMd
             auto const file = index == 0 ? L"LICENSE.txt" : L"THIRD-PARTY-NOTICES.txt";
             auto const path = AssetPath(std::filesystem::path(L"licenses") / file);
             licenseLines_ = ReadUtf8Lines(path);
-            licenseRepeater_.ItemsSource(licenseLines_);
-            licenseScroller_.ChangeView(nullptr, 0.0, nullptr, true);
+            licenseList_.ItemsSource(licenseLines_);
             licenseStatus_.Text({});
             loadedLicenseIndex_ = index;
         }
         catch (std::exception const& error)
         {
             licenseLines_ = nullptr;
-            licenseRepeater_.ItemsSource(nullptr);
+            licenseList_.ItemsSource(nullptr);
             licenseStatus_.Text(LocalizeFormat(
                 L"UnableLoadLicense",
                 { winrt::to_hstring(error.what()) }));

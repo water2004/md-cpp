@@ -58,10 +58,10 @@ namespace winrt::ElMd
         winrt::Microsoft::UI::Xaml::Controls::ListView themeList_;
         winrt::Microsoft::UI::Xaml::Controls::Border themePreview_;
         winrt::Microsoft::UI::Xaml::Controls::ComboBox licenseSelector_;
-        winrt::Microsoft::UI::Xaml::Controls::ScrollViewer licenseScroller_;
-        winrt::Microsoft::UI::Xaml::Controls::ItemsRepeater licenseRepeater_;
+        winrt::Microsoft::UI::Xaml::Controls::ListView licenseList_;
         winrt::Microsoft::UI::Xaml::Controls::TextBlock licenseStatus_;
-        winrt::Windows::Foundation::Collections::IObservableVector<winrt::hstring> licenseLines_{ nullptr };
+        winrt::Windows::Foundation::Collections::IObservableVector<winrt::Windows::Foundation::IInspectable>
+            licenseLines_{ nullptr };
         winrt::Microsoft::UI::Xaml::Controls::Button applyThemeButton_;
         winrt::Microsoft::UI::Xaml::Controls::Button removeThemeButton_;
         winrt::Microsoft::UI::Xaml::Controls::TextBlock generalStatus_;
