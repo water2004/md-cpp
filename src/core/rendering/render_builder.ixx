@@ -280,32 +280,24 @@ struct Builder {
             append_generated_indent(out, block.id, source_offset, desired > existing ? desired - existing : 0);
         };
         const auto code = block_source_content(block.block_source);
-        if (code.empty()) {
-            append_line_indent(block_source_offset_for_content(block.block_source, 0), true);
-            return;
-        }
-        std::size_t line_start = 0;
+        const auto lines = code_presentation_lines(code);
         bool first_line = true;
-        while (line_start < code.size()) {
-            const auto source_start = block_source_offset_for_content(block.block_source, line_start);
+        for (const auto& line : lines) {
+            const auto source_start = block_source_offset_for_content(
+                block.block_source,
+                line.range_with_ending.start);
             append_line_indent(source_start, first_line);
-            auto newline = code.find(U'\n', line_start);
-            auto line_end = newline == std::u32string::npos ? code.size() : newline + 1;
-            const auto source_end = block_source_offset_for_content(block.block_source, line_end);
+            const auto source_end = block_source_offset_for_content(
+                block.block_source,
+                line.range_with_ending.end);
             auto item = InlineRenderItem::plain_text(
-                code.substr(line_start, line_end - line_start),
+                code.substr(
+                    line.range_with_ending.start,
+                    line.range_with_ending.length()),
                 {block.id, {source_start, source_end}});
             item.style.code = true;
             out.push_back(std::move(item));
-            line_start = line_end;
             first_line = false;
-        }
-        if (code.back() == U'\n') {
-            append_generated_indent(
-                out,
-                block.id,
-                block_source_offset_for_content(block.block_source, code.size()),
-                indent_columns + content_padding_columns);
         }
     }
 
@@ -883,8 +875,7 @@ struct Builder {
                 special.language = b.block_source.tree().language;
                 special.code_text = block_source_content(b.block_source);
                 special.code_indented = b.atomic_special().code_indented;
-                std::size_t n = 1; for (char32_t c : special.code_text) if (c == '\n') ++n;
-                special.line_count = n;
+                special.line_count = code_presentation_lines(special.code_text).size();
                 if (!special.content_to_source.empty()) {
                     rb.content_span = {b.id, {special.content_to_source.front(), special.content_to_source.back()}};
                 }

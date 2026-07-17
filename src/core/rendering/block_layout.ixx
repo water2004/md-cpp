@@ -176,21 +176,19 @@ inline std::pair<LayoutBlock, float> layout_code_block(const RenderBlock& rb, fl
     float line_height = font_size * 1.4f;
     const auto& style = rb.block_style;
     float pad = 12.0f * scale;
-    std::vector<SourceRange> lines;
-    std::size_t line_start = 0;
-    while (true) {
-        const auto newline = special.code_text.find(U'\n', line_start);
-        const auto line_end = newline == std::u32string::npos ? special.code_text.size() : newline;
-        lines.push_back({line_start, line_end});
-        if (newline == std::u32string::npos) break;
-        line_start = newline + 1;
-    }
+    const auto lines = code_presentation_lines(special.code_text);
     LayoutBlock lb(rb.id, rb.source_span, {LayoutBlockKind::CodeBlock}, style);
     for (std::size_t i = 0; i < lines.size(); ++i) {
-        const auto text = special.code_text.substr(lines[i].start, lines[i].length());
+        const auto text = special.code_text.substr(
+            lines[i].content_range.start,
+            lines[i].content_range.length());
         const auto source_range = SourceRange{
-            special.content_to_source.empty() ? lines[i].start : special.content_to_source[lines[i].start],
-            special.content_to_source.empty() ? lines[i].end : special.content_to_source[lines[i].end]};
+            special.content_to_source.empty()
+                ? lines[i].content_range.start
+                : special.content_to_source[lines[i].content_range.start],
+            special.content_to_source.empty()
+                ? lines[i].content_range.end
+                : special.content_to_source[lines[i].content_range.end]};
         auto shape = measurer.measure(text, font_size, InlineStyle::plain());
         TextLineLayout ll{{rb.id, source_range}};
         ll.rect = LogicalRect(pad, y + style.margin_top * scale + pad + i * line_height, viewport_width - pad, line_height);

@@ -96,8 +96,16 @@ inline bool horizontal_space(char32_t value) {
 }
 
 inline std::size_t line_end(std::u32string_view source, std::size_t start) {
-    const auto found = source.find(U'\n', start);
-    return found == std::u32string_view::npos ? source.size() : found;
+    while (start < source.size() && source[start] != U'\r' && source[start] != U'\n') ++start;
+    return start;
+}
+
+inline std::size_t line_ending_length(std::u32string_view source, std::size_t at) {
+    if (at >= source.size()) return 0;
+    if (source[at] == U'\r') {
+        return at + 1 < source.size() && source[at + 1] == U'\n' ? 2u : 1u;
+    }
+    return source[at] == U'\n' ? 1u : 0u;
 }
 
 inline void push_token(BlockSourceTree& tree, BlockSourceTokenKind kind, std::size_t start, std::size_t end) {
@@ -133,8 +141,9 @@ inline std::optional<SourceRange> closing_fence(
             while (cursor < end && horizontal_space(source[cursor])) ++cursor;
             if (count >= minimum && cursor == end) return SourceRange{line_start, end};
         }
-        if (end == source.size()) break;
-        line_start = end + 1;
+        const auto ending_length = line_ending_length(source, end);
+        if (ending_length == 0) break;
+        line_start = end + ending_length;
     }
     return std::nullopt;
 }
@@ -173,16 +182,21 @@ inline BlockSourceTree parse_fenced(std::u32string_view source, BlockSourceKind 
         return tree;
     }
 
-    tree.complete_opening = first_end < source.size();
+    const auto opening_line_ending_length = line_ending_length(source, first_end);
+    tree.complete_opening = opening_line_ending_length != 0;
     push_token(tree, BlockSourceTokenKind::OpeningMarker, 0, cursor);
     tree.info_range = SourceRange{cursor, first_end};
     push_token(tree, BlockSourceTokenKind::InfoString, cursor, first_end);
     const auto info = trim_horizontal(source.substr(cursor, first_end - cursor));
     if (!info.empty()) tree.language = cps_to_utf8(info);
     auto content_start = first_end;
-    if (first_end < source.size()) {
-        push_token(tree, BlockSourceTokenKind::LineBreak, first_end, first_end + 1);
-        content_start = first_end + 1;
+    if (opening_line_ending_length != 0) {
+        push_token(
+            tree,
+            BlockSourceTokenKind::LineBreak,
+            first_end,
+            first_end + opening_line_ending_length);
+        content_start = first_end + opening_line_ending_length;
     }
 
     const auto closing = closing_fence(source, content_start, marker, marker_count);
@@ -227,9 +241,14 @@ inline BlockSourceTree parse_math(std::u32string_view source, BlockSourceKind ki
     tree.complete_opening = true;
     push_token(tree, BlockSourceTokenKind::OpeningMarker, 0, cursor);
     auto content_start = cursor;
-    if (cursor < source.size() && source[cursor] == U'\n') {
-        push_token(tree, BlockSourceTokenKind::LineBreak, cursor, cursor + 1);
-        content_start = cursor + 1;
+    const auto opening_line_ending_length = line_ending_length(source, cursor);
+    if (opening_line_ending_length != 0) {
+        push_token(
+            tree,
+            BlockSourceTokenKind::LineBreak,
+            cursor,
+            cursor + opening_line_ending_length);
+        content_start = cursor + opening_line_ending_length;
     }
 
     std::optional<SourceRange> closing;
@@ -283,11 +302,12 @@ inline BlockSourceTree parse_indented(std::u32string_view source) {
                 tree.content_to_source.push_back(offset);
             }
         }
-        if (end < source.size()) {
-            push_token(tree, BlockSourceTokenKind::LineBreak, end, end + 1);
+        const auto ending_length = line_ending_length(source, end);
+        if (ending_length != 0) {
+            push_token(tree, BlockSourceTokenKind::LineBreak, end, end + ending_length);
             tree.content.push_back(U'\n');
             tree.content_to_source.push_back(end);
-            line_start = end + 1;
+            line_start = end + ending_length;
         } else {
             line_start = end;
         }

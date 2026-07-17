@@ -17,6 +17,47 @@ export namespace elmd {
 
 enum class MathDisplayMode { Inline, Block };
 enum class MarkerVisibility { Always, WhenCaretInsideNode, WhenBlockFocused, HiddenButEditable };
+
+struct CodePresentationLine {
+    SourceRange content_range;
+    SourceRange range_with_ending;
+};
+
+// A terminating physical line ending closes the preceding code line; it does
+// not create another visible empty line.  A genuinely empty final code line is
+// represented by a second line ending and therefore remains visible.  Keep
+// both ranges so layout can exclude CR/LF glyphs while recursive flow retains
+// the exact source text and source-offset mapping.
+inline std::vector<CodePresentationLine> code_presentation_lines(std::u32string_view code) {
+    std::vector<CodePresentationLine> lines;
+    if (code.empty()) {
+        lines.push_back({{0, 0}, {0, 0}});
+        return lines;
+    }
+    std::size_t start = 0;
+    while (start < code.size()) {
+        auto content_end = start;
+        while (content_end < code.size()
+            && code[content_end] != U'\r'
+            && code[content_end] != U'\n') {
+            ++content_end;
+        }
+        auto ending_end = content_end;
+        if (ending_end < code.size()) {
+            if (code[ending_end] == U'\r'
+                && ending_end + 1 < code.size()
+                && code[ending_end + 1] == U'\n') {
+                ending_end += 2;
+            } else {
+                ++ending_end;
+            }
+        }
+        lines.push_back({{start, content_end}, {start, ending_end}});
+        start = ending_end;
+    }
+    return lines;
+}
+
 enum class MarkerRole {
     Syntax,
     Heading,
