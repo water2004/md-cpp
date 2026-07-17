@@ -63,9 +63,25 @@ namespace winrt::ElMd
                 if (point.affinity == sourcePosition.affinity) return index;
                 if (!exactSource) exactSource = index;
             }
-            else if (point.affinity == sourcePosition.affinity && !exactGeneratedAffinity)
+            else if (point.affinity == sourcePosition.affinity)
             {
-                exactGeneratedAffinity = index;
+                // A downstream boundary decoration is a generated prefix
+                // (quote/list/callout indentation, bullet, task control, ...).
+                // The source position begins after the complete prefix, not
+                // before its first glyph. Empty content nodes have no Source
+                // mapping to supersede this candidate, which is why forward
+                // cross-block movement previously drew their caret at the
+                // far-left container edge. Upstream decorations are suffixes;
+                // they intentionally keep the first boundary before the run.
+                if (point.kind == EditorDisplayPositionKind::BoundaryDecoration
+                    && sourcePosition.affinity == elmd::TextAffinity::Downstream)
+                {
+                    exactGeneratedAffinity = (std::min)(index + 1, mapping.size() - 1);
+                }
+                else if (!exactGeneratedAffinity)
+                {
+                    exactGeneratedAffinity = index;
+                }
             }
         }
         return exactGeneratedAffinity.value_or(exactSource.value_or(lastInContainer.value_or(0)));
