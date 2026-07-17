@@ -94,6 +94,7 @@
   <data name="StatusPasteFailed" xml:space="preserve"><value>Paste failed: {0}</value></data>
   <data name="General" xml:space="preserve"><value>General</value></data>
   <data name="Themes" xml:space="preserve"><value>Themes</value></data>
+  <data name="Licenses" xml:space="preserve"><value>Licenses</value></data>
   <data name="About" xml:space="preserve"><value>About</value></data>
   <data name="GeneralDescription" xml:space="preserve"><value>Control optional rendering services and editor behavior.</value></data>
   <data name="RenderMath" xml:space="preserve"><value>Render mathematical formulas</value></data>
@@ -110,6 +111,11 @@
   <data name="LanguageRestartDescription" xml:space="preserve"><value>The selected language is used the next time Folia starts.</value></data>
   <data name="LanguageSavedRestart" xml:space="preserve"><value>Language saved. Restart Folia to apply it.</value></data>
   <data name="ThemesDescription" xml:space="preserve"><value>Choose a built-in theme or import a complete JSON profile. Selection only changes the preview until Apply.</value></data>
+  <data name="LicensesDescription" xml:space="preserve"><value>Review the Folia license and notices for bundled third-party software.</value></data>
+  <data name="LicenseDocument" xml:space="preserve"><value>Document</value></data>
+  <data name="FoliaLicense" xml:space="preserve"><value>Folia — MIT License</value></data>
+  <data name="ThirdPartyNotices" xml:space="preserve"><value>Third-party notices</value></data>
+  <data name="UnableLoadLicense" xml:space="preserve"><value>Unable to load the license document: {0}</value></data>
   <data name="Apply" xml:space="preserve"><value>Apply</value></data>
   <data name="Import" xml:space="preserve"><value>Import…</value></data>
   <data name="Remove" xml:space="preserve"><value>Remove</value></data>

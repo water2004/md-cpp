@@ -94,6 +94,7 @@
   <data name="StatusPasteFailed" xml:space="preserve"><value>粘贴失败：{0}</value></data>
   <data name="General" xml:space="preserve"><value>常规</value></data>
   <data name="Themes" xml:space="preserve"><value>主题</value></data>
+  <data name="Licenses" xml:space="preserve"><value>许可证</value></data>
   <data name="About" xml:space="preserve"><value>关于</value></data>
   <data name="GeneralDescription" xml:space="preserve"><value>管理可选渲染服务和编辑器行为。</value></data>
   <data name="RenderMath" xml:space="preserve"><value>渲染数学公式</value></data>
@@ -110,6 +111,11 @@
   <data name="LanguageRestartDescription" xml:space="preserve"><value>折笺将在下次启动时使用所选语言。</value></data>
   <data name="LanguageSavedRestart" xml:space="preserve"><value>语言设置已保存。重启折笺后生效。</value></data>
   <data name="ThemesDescription" xml:space="preserve"><value>选择内置主题或导入完整的 JSON 配置。选择只会更新预览，点击“应用”后才会生效。</value></data>
+  <data name="LicensesDescription" xml:space="preserve"><value>查看折笺的许可证及随应用分发的第三方软件许可声明。</value></data>
+  <data name="LicenseDocument" xml:space="preserve"><value>许可文档</value></data>
+  <data name="FoliaLicense" xml:space="preserve"><value>折笺 — MIT 许可证</value></data>
+  <data name="ThirdPartyNotices" xml:space="preserve"><value>第三方许可声明</value></data>
+  <data name="UnableLoadLicense" xml:space="preserve"><value>无法加载许可文档：{0}</value></data>
   <data name="Apply" xml:space="preserve"><value>应用</value></data>
   <data name="Import" xml:space="preserve"><value>导入…</value></data>
   <data name="Remove" xml:space="preserve"><value>移除</value></data>

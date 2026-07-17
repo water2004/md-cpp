@@ -62,6 +62,17 @@ namespace
         return winrt::Windows::Foundation::Uri(L"file:///" + winrt::hstring(value));
     }
 
+    winrt::hstring ReadUtf8Text(std::filesystem::path const& path)
+    {
+        std::ifstream stream(path, std::ios::binary);
+        if (!stream) throw std::runtime_error("cannot open text asset");
+        std::string source(
+            std::istreambuf_iterator<char>{ stream },
+            std::istreambuf_iterator<char>{});
+        if (source.starts_with("\xEF\xBB\xBF")) source.erase(0, 3);
+        return winrt::to_hstring(source);
+    }
+
     Controls::NavigationViewItem NavigationItem(winrt::hstring const& label, winrt::hstring const& tag, wchar_t const* glyph)
     {
         Controls::NavigationViewItem item;
@@ -106,7 +117,10 @@ namespace winrt::ElMd
     void SettingsView::Build()
     {
         navigation_.AlwaysShowHeader(false);
-        navigation_.CompactPaneLength(0);
+        // Keep the standard icon column even though this pane cannot collapse.
+        // A zero compact width hides the icons and leaves labels against the
+        // selection indicator instead of using WinUI's normal navigation inset.
+        navigation_.CompactPaneLength(48);
         navigation_.IsBackButtonVisible(NavigationViewBackButtonVisible::Collapsed);
         navigation_.IsPaneOpen(true);
         navigation_.IsPaneToggleButtonVisible(false);
@@ -119,13 +133,16 @@ namespace winrt::ElMd
 
         auto general = NavigationItem(Localize(L"General"), L"general", L"\xE713");
         auto themes = NavigationItem(Localize(L"Themes"), L"themes", L"\xE790");
+        auto licenses = NavigationItem(Localize(L"Licenses"), L"licenses", L"\xE8A5");
         auto about = NavigationItem(Localize(L"About"), L"about", L"\xE946");
         navigation_.MenuItems().Append(general);
         navigation_.MenuItems().Append(themes);
+        navigation_.MenuItems().Append(licenses);
         navigation_.MenuItems().Append(about);
 
         generalPage_ = BuildGeneralPage();
         themesPage_ = BuildThemesPage();
+        licensesPage_ = BuildLicensesPage();
         aboutPage_ = BuildAboutPage();
         navigation_.SelectionChanged([this](auto const&, NavigationViewSelectionChangedEventArgs const& args)
         {
@@ -267,6 +284,57 @@ namespace winrt::ElMd
         return page;
     }
 
+    UIElement SettingsView::BuildLicensesPage()
+    {
+        Grid page;
+        page.Margin(Thickness{ 24, 18, 24, 24 });
+        page.RowSpacing(12);
+        for (auto index = 0; index < 5; ++index)
+        {
+            RowDefinition row;
+            row.Height(index == 3
+                ? GridLengthHelper::FromValueAndType(1, GridUnitType::Star)
+                : GridLengthHelper::Auto());
+            page.RowDefinitions().Append(row);
+        }
+
+        auto heading = PageHeading(Localize(L"Licenses"));
+        Grid::SetRow(heading, 0);
+        page.Children().Append(heading);
+
+        auto description = Text(Localize(L"LicensesDescription"));
+        Grid::SetRow(description, 1);
+        page.Children().Append(description);
+
+        licenseSelector_.Header(box_value(Localize(L"LicenseDocument")));
+        licenseSelector_.Items().Append(box_value(Localize(L"FoliaLicense")));
+        licenseSelector_.Items().Append(box_value(Localize(L"ThirdPartyNotices")));
+        licenseSelector_.SelectedIndex(0);
+        licenseSelector_.SelectionChanged([this](auto const&, SelectionChangedEventArgs const&)
+        {
+            LoadSelectedLicense();
+        });
+        Grid::SetRow(licenseSelector_, 2);
+        page.Children().Append(licenseSelector_);
+
+        licenseText_.AcceptsReturn(true);
+        licenseText_.IsReadOnly(true);
+        licenseText_.IsSpellCheckEnabled(false);
+        licenseText_.TextWrapping(TextWrapping::NoWrap);
+        licenseText_.FontFamily(Microsoft::UI::Xaml::Media::FontFamily(L"Consolas"));
+        licenseText_.HorizontalAlignment(HorizontalAlignment::Stretch);
+        licenseText_.VerticalAlignment(VerticalAlignment::Stretch);
+        ScrollViewer::SetHorizontalScrollBarVisibility(licenseText_, ScrollBarVisibility::Auto);
+        ScrollViewer::SetVerticalScrollBarVisibility(licenseText_, ScrollBarVisibility::Auto);
+        Grid::SetRow(licenseText_, 3);
+        page.Children().Append(licenseText_);
+
+        licenseStatus_.TextWrapping(TextWrapping::Wrap);
+        Grid::SetRow(licenseStatus_, 4);
+        page.Children().Append(licenseStatus_);
+        return page;
+    }
+
     UIElement SettingsView::BuildAboutPage()
     {
         auto panel = PagePanel();
@@ -296,7 +364,6 @@ namespace winrt::ElMd
         copy.Children().Append(name);
         copy.Children().Append(Text(LocalizeFormat(L"Version", { L"0.1.0" })));
         copy.Children().Append(Text(Localize(L"AppDescription")));
-        copy.Children().Append(Text(Localize(L"LicenseSummary")));
         Grid::SetColumn(copy, 1);
         identity.Children().Append(copy);
         panel.Children().Append(Card(identity));
@@ -317,8 +384,35 @@ namespace winrt::ElMd
     void SettingsView::Navigate(hstring const& page)
     {
         if (page == L"themes") navigation_.Content(themesPage_);
+        else if (page == L"licenses")
+        {
+            navigation_.Content(licensesPage_);
+            LoadSelectedLicense();
+        }
         else if (page == L"about") navigation_.Content(aboutPage_);
         else navigation_.Content(generalPage_);
+    }
+
+    void SettingsView::LoadSelectedLicense()
+    {
+        auto const index = licenseSelector_.SelectedIndex();
+        if (index < 0 || index > 1 || index == loadedLicenseIndex_) return;
+
+        try
+        {
+            auto const file = index == 0 ? L"LICENSE.txt" : L"THIRD-PARTY-NOTICES.txt";
+            auto const path = AssetPath(std::filesystem::path(L"licenses") / file);
+            licenseText_.Text(ReadUtf8Text(path));
+            licenseStatus_.Text({});
+            loadedLicenseIndex_ = index;
+        }
+        catch (std::exception const& error)
+        {
+            licenseText_.Text({});
+            licenseStatus_.Text(LocalizeFormat(
+                L"UnableLoadLicense",
+                { winrt::to_hstring(error.what()) }));
+        }
     }
 
     void SettingsView::RefreshThemeList()
