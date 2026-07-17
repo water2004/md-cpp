@@ -152,7 +152,7 @@ inline AppliedSourceEdit apply_inline_source_edit(
     const auto before_tree = document.tree;
     const auto removed = before_source.substr(edit.range.start, edit.range.length());
     apply_text_edit(document.source, edit);
-    document.tree = parse_inline(document.source, parse_context);
+    reparse_inline_document(document, parse_context);
 
     inline_source_edit_detail::reconcile_nodes(
         before_tree.nodes, document.tree.nodes, before_source, document.source, edit);

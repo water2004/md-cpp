@@ -46,6 +46,7 @@ inline std::optional<RecordedBlockEdit> split_direct(
         if (parent->kind != BlockKind::Callout) return std::nullopt;
         offset = (std::min)(offset, block->inline_content.source.size());
         auto right_source = block->inline_content.source.substr(offset);
+        const auto syntax_mode = block->inline_content.syntax_mode;
         if (offset == 0) {
             DocumentTreeEdit remove;
             remove.kind = DocumentTreeEditKind::Remove;
@@ -71,7 +72,11 @@ inline std::optional<RecordedBlockEdit> split_direct(
         BlockNode right;
         right.id = allocator.allocate();
         right.kind = BlockKind::Paragraph;
-        right.inline_content = make_inline(std::move(right_source), document, allocator);
+        right.inline_content = make_inline(
+            std::move(right_source),
+            document,
+            allocator,
+            syntax_mode);
         result.target = TextPosition{right.id, 0, TextAffinity::Downstream};
         DocumentTreeEdit insert;
         insert.kind = DocumentTreeEditKind::Insert;
@@ -89,6 +94,7 @@ inline std::optional<RecordedBlockEdit> split_direct(
     if (!text_block(block->kind)) return std::nullopt;
     offset = (std::min)(offset, block->inline_content.source.size());
     auto right_source = block->inline_content.source.substr(offset);
+    const auto syntax_mode = block->inline_content.syntax_mode;
     if (offset < block->inline_content.source.size()) {
         auto edit = edit_inline(
             document,
@@ -103,7 +109,11 @@ inline std::optional<RecordedBlockEdit> split_direct(
     BlockNode right;
     right.id = allocator.allocate();
     right.kind = BlockKind::Paragraph;
-    right.inline_content = make_inline(std::move(right_source), document, allocator);
+    right.inline_content = make_inline(
+        std::move(right_source),
+        document,
+        allocator,
+        syntax_mode);
     result.target = TextPosition{right.id, 0, TextAffinity::Downstream};
     DocumentTreeEdit insert;
     insert.kind = DocumentTreeEditKind::Insert;

@@ -115,12 +115,17 @@ inline InlineParseContext parse_context(const EditorDocument& document, NodeAllo
 }
 
 inline void reparse(InlineDocument& document, const EditorDocument& owner, NodeAllocator& allocator) {
-    document.tree = parse_inline(document.source, parse_context(owner, allocator));
+    reparse_inline_document(document, parse_context(owner, allocator));
 }
 
-inline InlineDocument make_inline(std::u32string source, const EditorDocument& owner, NodeAllocator& allocator) {
+inline InlineDocument make_inline(
+    std::u32string source,
+    const EditorDocument& owner,
+    NodeAllocator& allocator,
+    InlineSyntaxMode syntax_mode = InlineSyntaxMode::Markdown) {
     InlineDocument document;
     document.source = std::move(source);
+    document.syntax_mode = syntax_mode;
     reparse(document, owner, allocator);
     return document;
 }
@@ -159,9 +164,12 @@ inline void assign_missing_ids(BlockNode& block, const EditorDocument& owner, No
     for (auto& child : block.children) assign_missing_ids(child, owner, allocator);
 }
 
-inline BlockNode empty_paragraph(NodeAllocator& allocator, const EditorDocument& owner) {
+inline BlockNode empty_paragraph(
+    NodeAllocator& allocator,
+    const EditorDocument& owner,
+    InlineSyntaxMode syntax_mode = InlineSyntaxMode::Markdown) {
     BlockNode paragraph; paragraph.id = allocator.allocate(); paragraph.kind = BlockKind::Paragraph;
-    paragraph.inline_content = make_inline({}, owner, allocator);
+    paragraph.inline_content = make_inline({}, owner, allocator, syntax_mode);
     return paragraph;
 }
 

@@ -27,13 +27,24 @@ inline InlineCstKind cst_kind(InlineFormat format) {
     return InlineCstKind::Error;
 }
 
-inline std::u32string default_marker(InlineFormat format) {
+inline std::optional<std::pair<std::u32string, std::u32string>> default_markers(
+    InlineFormat format,
+    InlineSyntaxMode syntax_mode) {
+    if (syntax_mode == InlineSyntaxMode::HtmlText) {
+        switch (format) {
+            case InlineFormat::Emphasis: return std::pair{std::u32string{U"<em>"}, std::u32string{U"</em>"}};
+            case InlineFormat::Strong: return std::pair{std::u32string{U"<strong>"}, std::u32string{U"</strong>"}};
+            case InlineFormat::Strikethrough: return std::pair{std::u32string{U"<del>"}, std::u32string{U"</del>"}};
+            case InlineFormat::Code: return std::pair{std::u32string{U"<code>"}, std::u32string{U"</code>"}};
+            case InlineFormat::Math: return std::nullopt;
+        }
+    }
     switch (format) {
-        case InlineFormat::Emphasis: return U"*";
-        case InlineFormat::Strong: return U"**";
-        case InlineFormat::Strikethrough: return U"~~";
-        case InlineFormat::Code: return U"`";
-        case InlineFormat::Math: return U"$";
+        case InlineFormat::Emphasis: return std::pair{std::u32string{U"*"}, std::u32string{U"*"}};
+        case InlineFormat::Strong: return std::pair{std::u32string{U"**"}, std::u32string{U"**"}};
+        case InlineFormat::Strikethrough: return std::pair{std::u32string{U"~~"}, std::u32string{U"~~"}};
+        case InlineFormat::Code: return std::pair{std::u32string{U"`"}, std::u32string{U"`"}};
+        case InlineFormat::Math: return std::pair{std::u32string{U"$"}, std::u32string{U"$"}};
     }
     return {};
 }
@@ -163,16 +174,16 @@ inline FormatSourceChange add_format(
     const InlineDocument& document,
     const TextSelection& selection,
     SourceRange selected,
-    InlineFormat format) {
-    const auto marker = default_marker(format);
-    auto replacement = marker + document.source.substr(selected.start, selected.length()) + marker;
+    const std::pair<std::u32string, std::u32string>& markers) {
+    const auto& [opening, closing] = markers;
+    auto replacement = opening + document.source.substr(selected.start, selected.length()) + closing;
     if (selection.is_caret()) {
         return {
             selected,
             std::move(replacement),
             TextSelection::caret({
                 owner,
-                selected.start + marker.size(),
+                selected.start + opening.size(),
                 TextAffinity::Downstream,
             }),
         };
@@ -183,8 +194,8 @@ inline FormatSourceChange add_format(
         directed_selection(
             selection,
             owner,
-            selected.start + marker.size(),
-            selected.end + marker.size()),
+            selected.start + opening.size(),
+            selected.end + opening.size()),
     };
 }
 
@@ -214,28 +225,33 @@ inline std::optional<DocumentTransaction> document_toggle_inline_format(
             end,
             selection.is_caret());
         if (existing) {
-            return document_inline_format_detail::remove_existing_format(
+            return std::optional{document_inline_format_detail::remove_existing_format(
                 selection.active.container_id,
                 *owner,
                 selection,
                 selected,
-                *existing);
+                *existing)};
         }
-        return document_inline_format_detail::add_format(
+        const auto markers = document_inline_format_detail::default_markers(
+            format,
+            owner->syntax_mode);
+        if (!markers) return std::optional<document_inline_format_detail::FormatSourceChange>{};
+        return std::optional{document_inline_format_detail::add_format(
             selection.active.container_id,
             *owner,
             selection,
             selected,
-            format);
+            *markers)};
     }();
+    if (!change) return std::nullopt;
 
     const auto revision_before = document.revision;
     document_edit_detail::NodeAllocator allocator(document);
     auto applied = document_edit_detail::edit_inline(
         document,
         selection.active.container_id,
-        change.range,
-        std::move(change.replacement),
+        change->range,
+        std::move(change->replacement),
         allocator);
     if (!applied) return std::nullopt;
 
@@ -244,7 +260,7 @@ inline std::optional<DocumentTransaction> document_toggle_inline_format(
         document,
         std::move(*applied),
         selection,
-        change.selection_after,
+        change->selection_after,
         revision_before,
         DocumentTransactionReason::Format);
 }

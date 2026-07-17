@@ -650,11 +650,21 @@ inline std::optional<DocumentTransaction> document_edit_table(
     if (!table || table->kind != BlockKind::Table || table->children.empty()) return std::nullopt;
     document_edit_detail::NodeAllocator allocator(after);
     const auto column_count = table->children.front().children.size();
+    const auto header_rows = table->children.front().table_special().table_header_row
+        ? std::size_t{1}
+        : std::size_t{0};
+    const auto cell_syntax_mode = table->has_html_source()
+        ? InlineSyntaxMode::HtmlText
+        : InlineSyntaxMode::Markdown;
     auto make_cell = [&] {
         BlockNode cell;
         cell.id = allocator.allocate();
         cell.kind = BlockKind::TableCell;
-        cell.inline_content = document_edit_detail::make_inline({}, after, allocator);
+        cell.inline_content = document_edit_detail::make_inline(
+            {},
+            after,
+            allocator,
+            cell_syntax_mode);
         return cell;
     };
     auto make_row = [&] {
@@ -735,22 +745,27 @@ inline std::optional<DocumentTransaction> document_edit_table(
             break;
         }
         case DocumentTableEdit::DeleteRow:
-            if (row_index == 0 || table->children.size() <= 1) return std::nullopt;
+            if (row_index < header_rows || table->children.size() <= 1) return std::nullopt;
             if (!remove_node(table_id, row_index)) return std::nullopt;
             table = find_block(after.root, table_id);
             if (!table) return std::nullopt;
-            target_id = table->children[(std::min)(row_index - 1, table->children.size() - 1)].children[(std::min)(column, column_count - 1)].id;
+            target_id = table->children[
+                row_index == 0
+                    ? 0
+                    : (std::min)(row_index - 1, table->children.size() - 1)]
+                .children[(std::min)(column, column_count - 1)].id;
             break;
         case DocumentTableEdit::MoveRowUp:
-            if (row_index <= 1) return std::nullopt;
+            if (row_index <= header_rows) return std::nullopt;
             if (!move_node(table_id, row_index, row_index - 1)) return std::nullopt;
             break;
         case DocumentTableEdit::MoveRowDown:
-            if (row_index == 0 || row_index + 1 >= table->children.size()) return std::nullopt;
+            if (row_index < header_rows || row_index + 1 >= table->children.size()) return std::nullopt;
             if (!move_node(table_id, row_index, row_index + 1)) return std::nullopt;
             break;
         case DocumentTableEdit::MoveRowTo: {
-            if (row_index == 0 || argument == 0 || argument >= table->children.size()) return std::nullopt;
+            if (row_index < header_rows || argument < header_rows
+                || argument >= table->children.size()) return std::nullopt;
             if (!move_node(table_id, row_index, argument)) return std::nullopt;
             break;
         }

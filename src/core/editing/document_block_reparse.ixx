@@ -26,16 +26,19 @@ inline const BlockNode* fragment_block(const BlockVec& blocks, NodeId id) {
     return nullptr;
 }
 
-inline bool contains_raw_block(const BlockNode& block) {
-    if (block.kind == BlockKind::CodeBlock || block.kind == BlockKind::MathBlock) return true;
+inline bool contains_structural_reclassification(const BlockNode& block) {
+    if (block.kind == BlockKind::CodeBlock || block.kind == BlockKind::MathBlock
+        || block.has_html_source()) {
+        return true;
+    }
     return std::ranges::any_of(block.children, [](const auto& child) {
-        return contains_raw_block(child);
+        return contains_structural_reclassification(child);
     });
 }
 
-inline bool contains_raw_block(const BlockVec& blocks) {
+inline bool contains_structural_reclassification(const BlockVec& blocks) {
     return std::ranges::any_of(blocks, [](const auto& block) {
-        return contains_raw_block(block);
+        return contains_structural_reclassification(block);
     });
 }
 
@@ -117,14 +120,29 @@ inline void assign_fresh_ids(
     NodeId selected_parser_id,
     NodeId preserved_id,
     const EditorDocument& owner,
-    NodeAllocator& allocator) {
+    NodeAllocator& allocator,
+    std::vector<std::pair<NodeId, NodeId>>& remapped_ids) {
     const auto parser_id = block.id;
     block.id = parser_id == selected_parser_id ? preserved_id : allocator.allocate();
+    remapped_ids.emplace_back(parser_id, block.id);
     if (auto* inline_document = editable_inline_document(block)) {
         reparse(*inline_document, owner, allocator);
     }
     for (auto& child : block.children) {
-        assign_fresh_ids(child, selected_parser_id, preserved_id, owner, allocator);
+        assign_fresh_ids(
+            child,
+            selected_parser_id,
+            preserved_id,
+            owner,
+            allocator,
+            remapped_ids);
+    }
+    if (block.has_html_source()) {
+        auto& html = block.ensure_html_special();
+        for (auto& slot : html.content_slots) {
+            const auto mapping = std::ranges::find(remapped_ids, slot.owner_id, &std::pair<NodeId, NodeId>::first);
+            if (mapping != remapped_ids.end()) slot.owner_id = mapping->second;
+        }
     }
 }
 
@@ -144,10 +162,10 @@ inline BlockNode exact_paragraph(
 
 } // namespace block_reparse_detail
 
-// Reclassify an edited raw block when its marker syntax changes. A Paragraph
-// is reconsidered only when its local source already spans physical lines and
-// the block parser finds code/math structure; ordinary per-character typing
-// therefore still uses the Enter input rule and its auto-closing behavior.
+// Reclassify an edited block when its source changes structural meaning. A
+// paragraph is reconsidered only for multiline code/math candidates or for a
+// cheap '<...>' HTML candidate, so ordinary character input remains a
+// one-node inline CST reparse.
 inline std::optional<RecordedBlockEdit> reparse_edited_direct_block(
     EditorDocument& document,
     TextPosition position,
@@ -160,7 +178,10 @@ inline std::optional<RecordedBlockEdit> reparse_edited_direct_block(
         || current->kind == BlockKind::MathBlock;
     const auto is_multiline_paragraph = current->kind == BlockKind::Paragraph
         && current->inline_content.source.find(U'\n') != std::u32string::npos;
-    if (!is_raw && !is_multiline_paragraph) return std::nullopt;
+    const auto is_html_paragraph = current->kind == BlockKind::Paragraph
+        && current->inline_content.source.starts_with(U"<")
+        && current->inline_content.source.find(U'>') != std::u32string::npos;
+    if (!is_raw && !is_multiline_paragraph && !is_html_paragraph) return std::nullopt;
     if (is_raw && source_edit
         && !block_reparse_detail::edit_touches_raw_structure(*current, *source_edit)) {
         return std::nullopt;
@@ -175,7 +196,8 @@ inline std::optional<RecordedBlockEdit> reparse_edited_direct_block(
     if (is_raw && block_reparse_detail::same_raw_projection(*current, parsed.blocks)) {
         return std::nullopt;
     }
-    if (!is_raw && !block_reparse_detail::contains_raw_block(parsed.blocks)) {
+    if (!is_raw
+        && !block_reparse_detail::contains_structural_reclassification(parsed.blocks)) {
         return std::nullopt;
     }
 
@@ -204,12 +226,14 @@ inline std::optional<RecordedBlockEdit> reparse_edited_direct_block(
     } else {
         parsed.blocks.front().separator_before = current->separator_before;
         for (auto& block : parsed.blocks) {
+            std::vector<std::pair<NodeId, NodeId>> remapped_ids;
             block_reparse_detail::assign_fresh_ids(
                 block,
                 target->parser_id,
                 current->id,
                 document,
-                allocator);
+                allocator,
+                remapped_ids);
         }
     }
 
