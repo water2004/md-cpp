@@ -276,7 +276,7 @@ suite source_editor_tests = [] {
     auto initial = editor.source();
     auto model = build_source_render_model(editor);
     std::mt19937 random(0x5eedu);
-    std::u32string alphabet = U"ab*_`$\\&\U0001f642";
+    std::u32string alphabet = U"ab*_`$\\&#=>-[]() 012\U0001f642";
     for (std::size_t step = 0; step < 300; ++step) {
         auto previous_revision = editor.revision();
         switch (random() % 7) {
@@ -313,6 +313,19 @@ suite source_editor_tests = [] {
         auto projected = editor.projected_selection();
         expect(fatal(bool(editor.source_offset_from_position(projected.anchor) == selection.anchor)));
         expect(fatal(bool(editor.source_offset_from_position(projected.active) == selection.active)));
+
+        auto rebuilt = build_source_render_model(editor);
+        expect(fatal(bool(model.outline.content_key == rebuilt.outline.content_key))) << step;
+        auto incremental_headings = model.outline.flat_items();
+        auto rebuilt_headings = rebuilt.outline.flat_items();
+        expect(fatal(bool(incremental_headings.size() == rebuilt_headings.size()))) << step;
+        for (std::size_t index = 0; index < incremental_headings.size(); ++index) {
+            expect(fatal(bool(incremental_headings[index]->id == rebuilt_headings[index]->id))) << step;
+            expect(fatal(bool(incremental_headings[index]->level == rebuilt_headings[index]->level))) << step;
+            expect(fatal(bool(incremental_headings[index]->title_plain_text
+                == rebuilt_headings[index]->title_plain_text))) << step;
+            expect(fatal(bool(incremental_headings[index]->slug == rebuilt_headings[index]->slug))) << step;
+        }
     }
     while (editor.has_undo()) expect(fatal(editor.undo()));
     expect(fatal(bool(editor.source() == initial)));
