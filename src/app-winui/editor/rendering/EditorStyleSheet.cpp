@@ -42,6 +42,7 @@ namespace winrt::ElMd
         sheet.canvasColor = ToD2D(colors.bg);
         sheet.textColor = ToD2D(colors.fg);
         sheet.mutedColor = ToD2D(colors.muted_fg);
+        sheet.lineNumberColor = ToD2D(colors.line_number_fg);
         sheet.accentColor = ToD2D(colors.accent_fg);
         sheet.codeTextColor = ToD2D(colors.code_block_fg);
         sheet.panelColor = ToD2D(colors.code_block_bg);

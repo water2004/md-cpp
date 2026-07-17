@@ -88,7 +88,24 @@ namespace winrt::ElMd
         interactionMap.Clear();
         nonInteractiveRegions.clear();
         auto padding = (std::min)(styleSheet.horizontalPadding, (std::max)(12.0f, resources.surfaceWidthDip * 0.06f));
-        auto documentLeft = padding;
+        auto sourceDocument = !frame.renderModel.blocks.empty()
+            && frame.renderModel.blocks.front().source_mode;
+        auto sourceLineCount = sourceDocument
+            ? (std::max)(std::uint32_t{1}, frame.renderModel.blocks.back().source_line_number)
+            : std::uint32_t{0};
+        auto sourceLineDigits = sourceDocument
+            ? std::to_wstring(sourceLineCount).size()
+            : std::size_t{0};
+        auto desiredSourceGutterWidth = sourceDocument
+            ? (std::max)(40.0f, styleSheet.code.size * 0.64f * static_cast<float>(sourceLineDigits) + 22.0f)
+            : 0.0f;
+        auto availableSourceGutterWidth = (std::max)(
+            0.0f,
+            resources.surfaceWidthDip - padding * 2.0f - 14.0f - 80.0f);
+        auto sourceGutterWidth = (std::min)(desiredSourceGutterWidth, availableSourceGutterWidth);
+        if (sourceGutterWidth < 24.0f) sourceGutterWidth = 0.0f;
+        auto sourceGutterLeft = padding;
+        auto documentLeft = padding + sourceGutterWidth;
         auto documentRight = (std::max)(documentLeft + 1.0f, resources.surfaceWidthDip - padding - 14.0f);
         auto documentWidth = documentRight - documentLeft;
         auto y = styleSheet.verticalPadding - scrollOffset;
@@ -1242,6 +1259,15 @@ namespace winrt::ElMd
         while (viewportEnd < frame.renderModel.blocks.size()
             && preparedDocument->geometry.At(viewportEnd).top <= viewportBottom)
             ++viewportEnd;
+        if (sourceGutterWidth > 0.0f && resources.lineNumberBrush)
+        {
+            auto separatorX = documentLeft - 10.0f;
+            resources.d2dContext->DrawLine(
+                D2D1::Point2F(separatorX, 0.0f),
+                D2D1::Point2F(separatorX, resources.surfaceHeightDip),
+                resources.lineNumberBrush.Get(),
+                1.0f);
+        }
         for (auto blockIndex = viewportBegin; blockIndex < viewportEnd; ++blockIndex)
         {
             auto placement = preparedDocument->geometry.At(blockIndex);
@@ -1297,6 +1323,25 @@ namespace winrt::ElMd
             auto origin = D2D1::Point2F(documentLeft + paddingLeft, top + paddingTop);
             auto rect = D2D1::RectF(documentLeft, top, documentRight, bottom);
 
+            if (sourceGutterWidth > 0.0f
+                && block.source_mode
+                && block.source_line_number != 0
+                && resources.lineNumberFormat
+                && resources.lineNumberBrush)
+            {
+                auto number = std::to_wstring(block.source_line_number);
+                resources.d2dContext->DrawTextW(
+                    number.c_str(),
+                    static_cast<UINT32>(number.size()),
+                    resources.lineNumberFormat.Get(),
+                    D2D1::RectF(
+                        sourceGutterLeft,
+                        origin.y,
+                        documentLeft - 16.0f,
+                        origin.y + styleSheet.code.lineHeight),
+                    resources.lineNumberBrush.Get(),
+                    D2D1_DRAW_TEXT_OPTIONS_CLIP);
+            }
             if (prepared.code || block.block_style.background) resources.d2dContext->FillRectangle(rect, resources.panelBrush.Get());
             drawFlowDecorations(prepared.layout.Get(), origin, block, prepared.display);
             drawSelection(prepared.layout.Get(), origin, prepared.display.displayToSource);

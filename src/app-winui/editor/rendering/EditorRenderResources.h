@@ -38,8 +38,10 @@ namespace winrt::ElMd
         ::Microsoft::WRL::ComPtr<IDWriteTextFormat> heading2Format;
         ::Microsoft::WRL::ComPtr<IDWriteTextFormat> heading3Format;
         ::Microsoft::WRL::ComPtr<IDWriteTextFormat> codeFormat;
+        ::Microsoft::WRL::ComPtr<IDWriteTextFormat> lineNumberFormat;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> textBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> mutedBrush;
+        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> lineNumberBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> accentBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> codeBrush;
         ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> panelBrush;

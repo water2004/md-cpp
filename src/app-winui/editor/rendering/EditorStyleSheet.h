@@ -28,6 +28,7 @@ namespace winrt::ElMd
         D2D1_COLOR_F canvasColor{};
         D2D1_COLOR_F textColor{};
         D2D1_COLOR_F mutedColor{};
+        D2D1_COLOR_F lineNumberColor{};
         D2D1_COLOR_F accentColor{};
         D2D1_COLOR_F codeTextColor{};
         D2D1_COLOR_F panelColor{};

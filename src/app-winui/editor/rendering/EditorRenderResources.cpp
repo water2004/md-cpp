@@ -45,6 +45,7 @@ namespace winrt::ElMd
     {
         textBrush = nullptr;
         mutedBrush = nullptr;
+        lineNumberBrush = nullptr;
         accentBrush = nullptr;
         codeBrush = nullptr;
         panelBrush = nullptr;
@@ -95,6 +96,9 @@ namespace winrt::ElMd
         createFormat(styleSheet.heading2, heading2Format);
         createFormat(styleSheet.heading3, heading3Format);
         createFormat(styleSheet.code, codeFormat);
+        createFormat(styleSheet.code, lineNumberFormat);
+        winrt::check_hresult(lineNumberFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING));
+        winrt::check_hresult(lineNumberFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR));
     }
 
     void EditorRenderResources::InitializeDeviceResources(EditorStyleSheet const& styleSheet)
@@ -238,6 +242,7 @@ namespace winrt::ElMd
         {
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.textColor, textBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.mutedColor, mutedBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.lineNumberColor, lineNumberBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.accentColor, accentBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.codeTextColor, codeBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.panelColor, panelBrush.GetAddressOf()));
