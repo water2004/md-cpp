@@ -173,6 +173,7 @@ inline RenderBlock render_block_base(BlockKind k, NodeId id, std::size_t length,
             case BlockKind::ThematicBreak: return RenderBlockKind::ThematicBreak;
             case BlockKind::LinkDefinition: return RenderBlockKind::Blank;
             case BlockKind::UnsupportedMarkup: return RenderBlockKind::Unsupported;
+            case BlockKind::HtmlContainer: return RenderBlockKind::Text;
             case BlockKind::Extension: return RenderBlockKind::Extension;
         }
         return RenderBlockKind::Text;
@@ -375,6 +376,7 @@ struct Builder {
         auto owner = first_editable_owner(block).value_or(block.id);
         switch (block.kind) {
             case BlockKind::Document:
+            case BlockKind::HtmlContainer:
             case BlockKind::ListItem:
             case BlockKind::TaskListItem: {
                 auto rendered = make_flow_container(block, context, parent_indent_columns);
@@ -712,11 +714,18 @@ struct Builder {
                         target.push_back(std::move(item));
                         break;
                     }
-                    case K::HtmlElement:
+                    case K::HtmlElement: {
+                        auto child_style = style;
+                        if (semantic.html_tag == "u") child_style.underline = true;
+                        if (semantic.html_tag == "kbd" || semantic.html_tag == "samp") {
+                            child_style.code = true;
+                        }
+                        if (semantic.html_tag == "var") child_style.italic = true;
                         append_marker(target, node, delim.opening);
-                        append_nodes(node.children, style, target);
+                        append_nodes(node.children, child_style, target);
                         if (delim.closing) append_marker(target, node, *delim.closing);
                         break;
+                    }
                     case K::Escape: {
                         const auto raw = inline_source_slice(document, node.range);
                         if (!raw.empty()) {
@@ -854,6 +863,12 @@ struct Builder {
             case BK::TaskList:
             case BK::Callout:
             case BK::FootnoteDefinition: {
+                std::vector<InlineRenderItem> flow_items;
+                auto rb = append_flow_block(flow_items, b, FlowContext{0});
+                rb.inline_items = std::move(flow_items);
+                return rb;
+            }
+            case BK::HtmlContainer: {
                 std::vector<InlineRenderItem> flow_items;
                 auto rb = append_flow_block(flow_items, b, FlowContext{0});
                 rb.inline_items = std::move(flow_items);

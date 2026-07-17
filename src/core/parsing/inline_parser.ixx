@@ -102,15 +102,18 @@ struct Parser {
 
     // ---- soft / hard break at a '\n' ----
     // Returns true if a break node was emitted (consuming through the newline).
-    bool parse_break(InlineCstNodes& out, std::size_t& run_start) {
+    bool parse_break(
+        InlineCstNodes& out,
+        std::size_t& run_start,
+        bool markdown_hard_breaks = true) {
         if (peek() != U'\n') return false;
         std::size_t nl = pos;
         // Hard break: two trailing spaces (already in the text run) — detect by
         // looking back into the pending run.
         bool hard = false;
-        if (pos >= 2 && ch(pos - 1) == U' ' && ch(pos - 2) == U' ') {
+        if (markdown_hard_breaks && pos >= 2 && ch(pos - 1) == U' ' && ch(pos - 2) == U' ') {
             hard = true;
-        } else if (pos >= 1 && ch(pos - 1) == U'\\') {
+        } else if (markdown_hard_breaks && pos >= 1 && ch(pos - 1) == U'\\') {
             // backslash line break "\\\n"
             hard = true;
         }
@@ -755,7 +758,10 @@ struct Parser {
     static bool safe_html_container(std::string_view name) {
         return name == "strong" || name == "b" || name == "em" || name == "i"
             || name == "cite" || name == "del" || name == "s" || name == "code"
-            || name == "a" || name == "span";
+            || name == "a" || name == "span" || name == "abbr" || name == "small"
+            || name == "sub" || name == "sup" || name == "mark" || name == "kbd"
+            || name == "q" || name == "time" || name == "u" || name == "var"
+            || name == "samp";
     }
 
     bool parse_html_element(InlineCstNodes& out, std::size_t& run_start) {
@@ -834,6 +840,7 @@ struct Parser {
         node.range = {start, source_end};
         node.ensure_delimiter_ranges() = {{start, source_end}, {start, content_start}, {content_start, content_end}, SourceRange{content_end, source_end}};
         node.children = std::move(children);
+        node.ensure_semantics().html_tag = tag->name;
         if (node.kind == InlineCstKind::Link) {
         auto& semantic = node.ensure_semantics();
         if (const auto found = tag->attributes.find("href"); found != tag->attributes.end() && safe_html_target(found->second, false)) semantic.href = found->second;
@@ -978,8 +985,17 @@ struct Parser {
         InlineCstNodes out;
         std::size_t run_start = 0;
         while (!eof()) {
-            if (parse_break(out, run_start)) continue;
+            if (parse_break(
+                    out,
+                    run_start,
+                    ctx.syntax_mode == InlineSyntaxMode::Markdown)) continue;
             if (peek() == U'\n') { advance(); continue; } // stray newline safety
+            if (ctx.syntax_mode == InlineSyntaxMode::HtmlText) {
+                if (parse_entity(out, run_start)) continue;
+                if (peek() == U'<' && parse_html_element(out, run_start)) continue;
+                advance();
+                continue;
+            }
             // Math precedes escapes because `\(` is a delimiter pair in a
             // math-enabled dialect, not an escaped parenthesis.
             if (peek() == U'$' || (peek() == U'\\' && peek(1) == U'(')) {
@@ -1031,6 +1047,12 @@ struct Parser {
                 run_start = pos;
                 continue;
             }
+            if (ctx.syntax_mode == InlineSyntaxMode::HtmlText) {
+                if (parse_entity(out, run_start)) continue;
+                if (peek() == U'<' && parse_html_element(out, run_start)) continue;
+                advance();
+                continue;
+            }
             if (peek() == U'$' || (peek() == U'\\' && peek(1) == U'(')) { if (parse_math(out, run_start)) continue; }
             if (parse_escape(out, run_start)) continue;
             if (parse_entity(out, run_start)) continue;
@@ -1066,7 +1088,9 @@ inline InlineCstTree parse_inline(std::u32string_view source, const InlineParseC
 }
 
 inline void reparse_inline_document(InlineDocument& document, const InlineParseContext& ctx) {
-    document.tree = parse_inline(document.source, ctx);
+    auto local = ctx;
+    local.syntax_mode = document.syntax_mode;
+    document.tree = parse_inline(document.source, local);
 }
 
 } // namespace elmd

@@ -3,6 +3,7 @@ import std;
 import elmd.core.ast;
 import elmd.core.block_tree;
 import elmd.core.document;
+import elmd.core.document_text;
 import elmd.core.ids;
 import elmd.core.instrumentation;
 import elmd.core.text_edit;
@@ -145,6 +146,235 @@ inline ProjectedText prefix_lines(ProjectedText input, Prefix&& prefix) {
 }
 
 inline ProjectedText serialize_block(const BlockNode& block);
+
+inline const BlockNode* html_slot_owner(const BlockNode& block, NodeId id) {
+    if (block.id == id) return &block;
+    for (const auto& child : block.children) {
+        if (const auto* found = html_slot_owner(child, id)) return found;
+    }
+    return nullptr;
+}
+
+inline std::vector<NodeId> html_editable_owner_order(const BlockNode& block) {
+    std::vector<NodeId> order;
+    auto collect = [&](auto& self, const BlockNode& node) -> void {
+        if (editable_inline_document(node) || editable_raw_block_source(node)) {
+            order.push_back(node.id);
+        }
+        for (const auto& child : node.children) self(self, child);
+    };
+    collect(collect, block);
+    return order;
+}
+
+inline std::vector<NodeId> html_original_owner_order(const BlockHtmlSpecial& html) {
+    auto slots = html.content_slots;
+    std::ranges::sort(slots, [](const auto& left, const auto& right) {
+        if (left.source_range.start != right.source_range.start) {
+            return left.source_range.start < right.source_range.start;
+        }
+        return left.source_range.end < right.source_range.end;
+    });
+    std::vector<NodeId> order;
+    order.reserve(slots.size());
+    for (const auto& slot : slots) order.push_back(slot.owner_id);
+    return order;
+}
+
+inline bool html_structure_is_original(const BlockNode& block) {
+    const auto& html = block.html_special();
+    return html.structure_shape == html_block_structure_shape(block)
+        && html_original_owner_order(html) == html_editable_owner_order(block);
+}
+
+inline std::u32string escape_html_attribute(std::u32string_view value) {
+    std::u32string result;
+    result.reserve(value.size());
+    for (const auto cp : value) {
+        switch (cp) {
+            case U'&': result += U"&amp;"; break;
+            case U'<': result += U"&lt;"; break;
+            case U'>': result += U"&gt;"; break;
+            case U'\"': result += U"&quot;"; break;
+            case U'\'': result += U"&#39;"; break;
+            default: result.push_back(cp); break;
+        }
+    }
+    return result;
+}
+
+inline ProjectedText serialize_html_semantic_block(
+    const BlockNode& block,
+    bool header_cell = false);
+
+inline ProjectedText serialize_html_semantic_children(const BlockNode& block) {
+    ProjectedText result;
+    for (const auto& child : block.children) {
+        result.append(serialize_html_semantic_block(child));
+    }
+    return result;
+}
+
+inline bool html_provenance_matches_kind(
+    const BlockNode& block,
+    std::string_view fallback_tag) {
+    if (!block.has_html_element_provenance()) return false;
+    const auto& tag = block.html_special().root_tag;
+    if (block.kind == BlockKind::HtmlContainer) return true;
+    if (block.kind == BlockKind::Paragraph) {
+        return tag == "p" || tag == "summary" || tag == "dt" || tag == "dd";
+    }
+    return tag == fallback_tag;
+}
+
+inline ProjectedText wrap_html_element(
+    const BlockNode& block,
+    std::string_view fallback_tag,
+    ProjectedText body) {
+    const auto& html = block.html_special();
+    const auto preserve = html_provenance_matches_kind(block, fallback_tag);
+    const auto tag = preserve ? html.root_tag : std::string(fallback_tag);
+    auto result = generated(preserve && !html.opening_marker.empty()
+        ? html.opening_marker
+        : U"<" + utf8_to_cps(tag) + U">");
+    result.append(std::move(body));
+    result.append_generated(preserve && !html.closing_marker.empty()
+        ? html.closing_marker
+        : U"</" + utf8_to_cps(tag) + U">");
+    return result;
+}
+
+inline ProjectedText serialize_html_semantic_block(
+    const BlockNode& block,
+    bool header_cell) {
+    using BK = BlockKind;
+    switch (block.kind) {
+        case BK::Paragraph: {
+            auto content = source_text(block.id, block.inline_content.source);
+            return block.has_html_element_provenance()
+                ? wrap_html_element(block, "p", std::move(content))
+                : content;
+        }
+        case BK::Heading: {
+            const auto level = (std::clamp)(block.text_special().level, std::uint8_t{1}, std::uint8_t{6});
+            return wrap_html_element(
+                block,
+                std::string{"h"} + static_cast<char>('0' + level),
+                source_text(block.id, block.inline_content.source));
+        }
+        case BK::HtmlContainer:
+            return wrap_html_element(block, "div", serialize_html_semantic_children(block));
+        case BK::BlockQuote:
+            return wrap_html_element(block, "blockquote", serialize_html_semantic_children(block));
+        case BK::List:
+        case BK::TaskList:
+            return wrap_html_element(
+                block,
+                block.list_special().ordered ? "ol" : "ul",
+                serialize_html_semantic_children(block));
+        case BK::ListItem:
+        case BK::TaskListItem:
+            return wrap_html_element(block, "li", serialize_html_semantic_children(block));
+        case BK::Table: {
+            ProjectedText rows;
+            for (const auto& row : block.children) {
+                rows.append(serialize_html_semantic_block(row));
+            }
+            return wrap_html_element(block, "table", std::move(rows));
+        }
+        case BK::TableRow: {
+            ProjectedText cells;
+            for (const auto& cell : block.children) {
+                cells.append(serialize_html_semantic_block(
+                    cell,
+                    block.table_special().table_header_row));
+            }
+            return wrap_html_element(block, "tr", std::move(cells));
+        }
+        case BK::TableCell:
+            return wrap_html_element(
+                block,
+                header_cell ? "th" : "td",
+                source_text(block.id, block.inline_content.source));
+        case BK::ThematicBreak: {
+            const auto& html = block.html_special();
+            return generated(!html.opening_marker.empty() ? html.opening_marker : U"<hr>");
+        }
+        case BK::CodeBlock:
+        case BK::MathBlock:
+            return source_text(block.id, block.block_source.source());
+        case BK::Callout:
+        case BK::FootnoteDefinition:
+        case BK::Document:
+            return serialize_html_semantic_children(block);
+        case BK::CalloutTitle:
+            return source_text(block.id, block.inline_content.source);
+        case BK::ImageBlock: {
+            const auto& image = block.image_special();
+            auto value = U"<img src=\"" + escape_html_attribute(utf8_to_cps(image.src)) + U"\"";
+            if (!image.image_alt.empty()) {
+                value += U" alt=\"" + escape_html_attribute(utf8_to_cps(image.image_alt)) + U"\"";
+            }
+            return atomic_text(block.id, value + U">");
+        }
+        case BK::LinkDefinition:
+        case BK::UnsupportedMarkup:
+            return atomic_text(block.id, utf8_to_cps(block.atomic_special().raw));
+        case BK::Toc:
+        case BK::Frontmatter:
+        case BK::Extension:
+            return source_text(block.id, block.inline_content.source);
+    }
+    return {};
+}
+
+inline ProjectedText serialize_html_backed_block(const BlockNode& block) {
+    const auto& html = block.html_special();
+    if (html.source.empty()) return {};
+
+    // The original envelope is authoritative while the semantic structure is
+    // unchanged. Once any recursive tree edit changes shape or owner order,
+    // rebuild through one generic HTML serializer rather than leaving stale
+    // wrappers or applying a block-kind-specific repair.
+    if (!html_structure_is_original(block)) {
+        return serialize_html_semantic_block(block);
+    }
+
+    auto slots = html.content_slots;
+    std::ranges::sort(slots, [](const auto& left, const auto& right) {
+        if (left.source_range.start != right.source_range.start) {
+            return left.source_range.start < right.source_range.start;
+        }
+        return left.source_range.end < right.source_range.end;
+    });
+
+    ProjectedText result;
+    std::size_t cursor = 0;
+    for (const auto& slot : slots) {
+        if (!slot.source_range.valid_for(html.source.size())
+            || slot.source_range.start < cursor) {
+            return generated(html.source);
+        }
+        result.append_generated(html.source.substr(
+            cursor,
+            slot.source_range.start - cursor));
+        const auto* owner = html_slot_owner(block, slot.owner_id);
+        const auto* inline_document = owner ? editable_inline_document(*owner) : nullptr;
+        const auto* raw_source = owner ? editable_raw_block_source(*owner) : nullptr;
+        if (inline_document) {
+            result.append(source_text(owner->id, inline_document->source));
+        } else if (raw_source) {
+            result.append(source_text(owner->id, *raw_source));
+        } else {
+            result.append_generated(html.source.substr(
+                slot.source_range.start,
+                slot.source_range.length()));
+        }
+        cursor = slot.source_range.end;
+    }
+    result.append_generated(html.source.substr(cursor));
+    return result;
+}
 inline ProjectedText serialize_blocks(const BlockVec& blocks);
 inline ProjectedText serialize_blocks_from(const BlockVec& blocks, std::size_t start);
 
@@ -216,6 +446,7 @@ inline ProjectedText serialize_table_row(const BlockNode& row) {
 }
 
 inline ProjectedText serialize_block(const BlockNode& block) {
+    if (block.has_html_source()) return serialize_html_backed_block(block);
     switch (block.kind) {
         case BlockKind::Paragraph:
             return source_text(block.id, block.inline_content.source);
@@ -298,6 +529,8 @@ inline ProjectedText serialize_block(const BlockNode& block) {
         case BlockKind::LinkDefinition:
         case BlockKind::UnsupportedMarkup:
             return atomic_text(block.id, utf8_to_cps(block.atomic_special().raw));
+        case BlockKind::HtmlContainer:
+            return serialize_blocks(block.children);
         case BlockKind::Extension:
             return atomic_text(block.id, U"[ext:" + utf8_to_cps(block.atomic_special().ext_name) + U"]");
         case BlockKind::Document:

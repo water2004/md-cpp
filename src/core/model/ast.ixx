@@ -1,12 +1,14 @@
 // elmd.core.ast — unified Markdown block tree plus block-local inline CST.
 // CommonMark+GFM+math+toc+frontmatter+footnotes+definition_lists+callouts+
-// wiki_links+tables+images, raw_html → UnsupportedMarkup.
+// wiki_links+tables+images and safe recursive HTML semantics.
 export module elmd.core.ast;
 import std;
 import elmd.core.block_source;
 import elmd.core.ids;
 import elmd.core.dialect;
+import elmd.core.text_edit;
 import elmd.core.inline_document;
+import elmd.core.html_cst;
 
 export namespace elmd {
 
@@ -19,7 +21,7 @@ enum class BlockKind {
     Paragraph, Heading, CalloutTitle, BlockQuote, List, TaskList, ListItem, TaskListItem,
     CodeBlock, MathBlock, Table, TableRow, TableCell,
     ImageBlock, Callout, FootnoteDefinition, Toc, Frontmatter,
-    ThematicBreak, LinkDefinition, UnsupportedMarkup, Extension,
+    ThematicBreak, LinkDefinition, UnsupportedMarkup, HtmlContainer, Extension,
 };
 
 inline bool is_editable_block_owner(BlockKind kind) {
@@ -67,7 +69,7 @@ struct BlockAtomicSpecial {
     TocMarkerKind toc_marker = TocMarkerKind::BracketToc; // Toc
     FrontmatterFormat fmt = FrontmatterFormat::Yaml; // Frontmatter
     std::string raw;                    // Frontmatter.raw / UnsupportedMarkup.raw
-    UnsupportedMarkupReason unsup_reason = UnsupportedMarkupReason::RawHtmlDisabled;
+    UnsupportedMarkupReason unsup_reason = UnsupportedMarkupReason::UnsafeHtml;
     std::string ext_name;               // Extension
 };
 
@@ -90,14 +92,59 @@ struct BlockContainerSpecial {
     std::string footnote_label;        // FootnoteDefinition
 };
 
+struct HtmlContentSlot {
+    NodeId owner_id{};
+    SourceRange source_range;
+};
+
+struct HtmlBlockShapeEntry {
+    BlockKind kind = BlockKind::Paragraph;
+    std::size_t depth = 0;
+    std::size_t child_count = 0;
+
+    auto operator<=>(const HtmlBlockShapeEntry&) const = default;
+};
+
+struct BlockHtmlSpecial {
+    std::u32string source;
+    HtmlCstTree tree;
+    std::vector<HtmlContentSlot> content_slots;
+    std::vector<HtmlBlockShapeEntry> structure_shape;
+    std::string root_tag;
+    std::u32string opening_marker;
+    std::u32string closing_marker;
+};
+
+// Rare, independently optional payloads share one indirection so the common
+// BlockNodeSpecial stays compact.  These values may coexist (an HTML-backed
+// table can also carry container or image metadata), so this is deliberately
+// not a variant.
+struct BlockSupplementalSpecial {
+    std::unique_ptr<BlockImageSpecial> image;
+    std::unique_ptr<BlockContainerSpecial> container;
+    std::unique_ptr<BlockHtmlSpecial> html;
+
+    BlockSupplementalSpecial() = default;
+    BlockSupplementalSpecial(BlockSupplementalSpecial const& other)
+        : image(other.image ? std::make_unique<BlockImageSpecial>(*other.image) : nullptr),
+          container(other.container ? std::make_unique<BlockContainerSpecial>(*other.container) : nullptr),
+          html(other.html ? std::make_unique<BlockHtmlSpecial>(*other.html) : nullptr) {}
+    BlockSupplementalSpecial& operator=(BlockSupplementalSpecial const& other) {
+        if (this == &other) return *this;
+        *this = BlockSupplementalSpecial(other);
+        return *this;
+    }
+    BlockSupplementalSpecial(BlockSupplementalSpecial&&) noexcept = default;
+    BlockSupplementalSpecial& operator=(BlockSupplementalSpecial&&) noexcept = default;
+};
+
 struct BlockNodeSpecial {
     std::unique_ptr<BlockTextSpecial> text;
     std::unique_ptr<BlockListSpecial> list;
     std::unique_ptr<BlockItemSpecial> item;
     std::unique_ptr<BlockAtomicSpecial> atomic;
     std::unique_ptr<BlockTableSpecial> table;
-    std::unique_ptr<BlockImageSpecial> image;
-    std::unique_ptr<BlockContainerSpecial> container;
+    std::unique_ptr<BlockSupplementalSpecial> supplemental;
 
     BlockNodeSpecial() = default;
     BlockNodeSpecial(BlockNodeSpecial const& other)
@@ -106,8 +153,9 @@ struct BlockNodeSpecial {
           item(other.item ? std::make_unique<BlockItemSpecial>(*other.item) : nullptr),
           atomic(other.atomic ? std::make_unique<BlockAtomicSpecial>(*other.atomic) : nullptr),
           table(other.table ? std::make_unique<BlockTableSpecial>(*other.table) : nullptr),
-          image(other.image ? std::make_unique<BlockImageSpecial>(*other.image) : nullptr),
-          container(other.container ? std::make_unique<BlockContainerSpecial>(*other.container) : nullptr) {}
+          supplemental(other.supplemental
+              ? std::make_unique<BlockSupplementalSpecial>(*other.supplemental)
+              : nullptr) {}
     BlockNodeSpecial& operator=(BlockNodeSpecial const& other) {
         if (this == &other) return *this;
         *this = BlockNodeSpecial(other);
@@ -211,23 +259,74 @@ struct BlockNode {
     }
     BlockImageSpecial const& image_special() const {
         static const BlockImageSpecial empty{};
-        return payload && payload->image ? *payload->image : empty;
+        return payload && payload->supplemental && payload->supplemental->image
+            ? *payload->supplemental->image
+            : empty;
     }
     BlockImageSpecial& ensure_image_special() {
         auto& special = ensure_special();
-        if (!special.image) special.image = std::make_unique<BlockImageSpecial>();
-        return *special.image;
+        if (!special.supplemental) {
+            special.supplemental = std::make_unique<BlockSupplementalSpecial>();
+        }
+        if (!special.supplemental->image) {
+            special.supplemental->image = std::make_unique<BlockImageSpecial>();
+        }
+        return *special.supplemental->image;
     }
     BlockContainerSpecial const& container_special() const {
         static const BlockContainerSpecial empty{};
-        return payload && payload->container ? *payload->container : empty;
+        return payload && payload->supplemental && payload->supplemental->container
+            ? *payload->supplemental->container
+            : empty;
     }
     BlockContainerSpecial& ensure_container_special() {
         auto& special = ensure_special();
-        if (!special.container) special.container = std::make_unique<BlockContainerSpecial>();
-        return *special.container;
+        if (!special.supplemental) {
+            special.supplemental = std::make_unique<BlockSupplementalSpecial>();
+        }
+        if (!special.supplemental->container) {
+            special.supplemental->container = std::make_unique<BlockContainerSpecial>();
+        }
+        return *special.supplemental->container;
+    }
+
+    BlockHtmlSpecial const& html_special() const {
+        static const BlockHtmlSpecial empty{};
+        return payload && payload->supplemental && payload->supplemental->html
+            ? *payload->supplemental->html
+            : empty;
+    }
+    BlockHtmlSpecial& ensure_html_special() {
+        auto& special = ensure_special();
+        if (!special.supplemental) {
+            special.supplemental = std::make_unique<BlockSupplementalSpecial>();
+        }
+        if (!special.supplemental->html) {
+            special.supplemental->html = std::make_unique<BlockHtmlSpecial>();
+        }
+        return *special.supplemental->html;
+    }
+
+    bool has_html_source() const {
+        return payload && payload->supplemental && payload->supplemental->html
+            && !payload->supplemental->html->source.empty();
+    }
+
+    bool has_html_element_provenance() const {
+        return payload && payload->supplemental && payload->supplemental->html
+            && !payload->supplemental->html->root_tag.empty();
     }
 };
+
+inline std::vector<HtmlBlockShapeEntry> html_block_structure_shape(const BlockNode& root) {
+    std::vector<HtmlBlockShapeEntry> shape;
+    auto collect = [&](auto& self, const BlockNode& block, std::size_t depth) -> void {
+        shape.push_back({block.kind, depth, block.children.size()});
+        for (const auto& child : block.children) self(self, child, depth + 1);
+    };
+    collect(collect, root, 0);
+    return shape;
+}
 
 // Heading sibling helper used in several places.
 inline const InlineDocument& heading_inline_content(const BlockNode& b) { return b.inline_content; }

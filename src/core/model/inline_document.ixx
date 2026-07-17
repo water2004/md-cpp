@@ -26,8 +26,14 @@ struct InlineLinkDef {
     std::optional<std::string> title;
 };
 
+enum class InlineSyntaxMode : std::uint8_t {
+    Markdown,
+    HtmlText,
+};
+
 struct InlineParseContext {
     MarkdownDialect dialect{};
+    InlineSyntaxMode syntax_mode = InlineSyntaxMode::Markdown;
     NodeId next_id{1};
     std::function<NodeId()> allocate_id;
     std::function<std::optional<InlineLinkDef>(const std::string&)> resolve_link_label;
@@ -36,6 +42,7 @@ struct InlineParseContext {
 struct InlineDocument {
     std::u32string source;
     InlineCstTree tree;
+    InlineSyntaxMode syntax_mode = InlineSyntaxMode::Markdown;
 
     std::u32string serialize() const { return source; }
 };

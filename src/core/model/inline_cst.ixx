@@ -83,6 +83,7 @@ struct InlineCstSemantic {
     std::string ext_name;
     std::optional<float> image_width;
     std::optional<float> image_height;
+    std::string html_tag;
 };
 
 struct InlineCstNode {

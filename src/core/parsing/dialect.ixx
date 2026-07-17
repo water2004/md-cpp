@@ -5,16 +5,15 @@ import std;
 export namespace elmd {
 
 enum class MathRenderBackend { Native, SvgRasterized, PlainTextFallback };
-enum class RawHtmlPolicy { DisabledTreatAsText, DisabledWarnAsUnsupported };
 enum class MathDelimiter { InlineDollar, BlockDollar, InlineParen, BlockBracket, FencedMath };
 enum class TocMarkerKind { BracketToc, WikiToc };
 enum class FrontmatterFormat { Yaml, Toml, Json };
 enum class TableAlignment { Left, Center, Right, None };
-enum class UnsupportedMarkupReason { RawHtmlDisabled, UnknownExtension, MalformedSyntax };
+enum class UnsupportedMarkupReason { UnsafeHtml, UnknownExtension, MalformedSyntax };
 
 inline const char* unsupported_reason_message(UnsupportedMarkupReason r) {
     switch (r) {
-        case UnsupportedMarkupReason::RawHtmlDisabled:  return "raw_html_disabled";
+        case UnsupportedMarkupReason::UnsafeHtml:       return "unsafe_html";
         case UnsupportedMarkupReason::UnknownExtension: return "unknown_extension";
         case UnsupportedMarkupReason::MalformedSyntax:  return "malformed_syntax";
     }
@@ -43,7 +42,6 @@ struct MarkdownDialect {
     TableOptions tables{};
     ImageOptions images{};
     DiagramOptions diagrams{};
-    RawHtmlPolicy raw_html = RawHtmlPolicy::DisabledTreatAsText;
 };
 
 inline MarkdownDialect default_dialect() { return MarkdownDialect{}; }

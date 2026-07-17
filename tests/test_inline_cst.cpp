@@ -254,4 +254,26 @@ suite inline_cst_tests = [] {
     expect(inline_forward_delete_range(markdown, 1) == SourceRange{1, 4});
 };
 
+"html_text_mode_keeps_markdown_markers_literal_across_edits"_test = [] {
+    InlineDocument document{
+        U"*literal* <strong>bold</strong> $math$",
+        {},
+        InlineSyntaxMode::HtmlText};
+    reparse_inline_document(document, test_context());
+    expect(is_lossless(document.source));
+    expect(!inline_contains_kind(document, InlineCstKind::Emphasis));
+    expect(!inline_contains_kind(document, InlineCstKind::InlineMath));
+    expect(inline_contains_kind(document, InlineCstKind::Strong));
+
+    const auto inserted = document.source.find(U"literal") + 7;
+    apply_inline_source_edit(
+        NodeId{7},
+        document,
+        TextEdit{NodeId{7}, {inserted, inserted}, U"*"},
+        test_context());
+    expect(is_lossless(document.source));
+    expect(!inline_contains_kind(document, InlineCstKind::Emphasis));
+    expect(inline_contains_kind(document, InlineCstKind::Strong));
+};
+
 }; // suite inline_cst_tests

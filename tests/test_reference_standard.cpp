@@ -92,7 +92,7 @@ suite reference_standard_tests = [] {
     expect(fatal(bool(reference_block_kind(parsed.document.root.children, BlockKind::Table))));
     expect(fatal(bool(reference_block_kind(parsed.document.root.children, BlockKind::UnsupportedMarkup))));
     expect(fatal(bool(std::any_of(parsed.diagnostics.begin(), parsed.diagnostics.end(), [](auto const& diagnostic) {
-        return diagnostic.code && *diagnostic.code == std::string(DIAG_RAW_HTML_DISABLED);
+        return diagnostic.code && *diagnostic.code == std::string(DIAG_UNSAFE_HTML);
     }))));
 };
 

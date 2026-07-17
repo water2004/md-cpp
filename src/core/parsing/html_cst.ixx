@@ -125,6 +125,11 @@ inline bool html_is_block_element(std::string_view name) {
         "hr", "html", "legend", "li", "main", "menu", "nav", "ol", "p",
         "pre", "section", "summary", "table", "tbody", "td", "tfoot", "th",
         "thead", "title", "tr", "ul",
+        // Unsafe elements still need block recognition so they become one
+        // inert, lossless UnsupportedMarkup node rather than slipping through
+        // as inline text at a line start.
+        "script", "style", "iframe", "object", "embed", "input", "button",
+        "textarea", "select", "option", "canvas",
     };
     return names.contains(name);
 }

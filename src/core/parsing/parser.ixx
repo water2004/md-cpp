@@ -35,6 +35,7 @@ import elmd.core.utf;
 import elmd.core.inline_cst;
 import elmd.core.inline_document;
 import elmd.core.inline_parser;
+import elmd.core.html_cst;
 import elmd.core.instrumentation;
 import elmd.core.serializer;
 import elmd.core.text_edit;
@@ -213,12 +214,16 @@ public:
         return context;
     }
 
-    InlineDocument make_inline_document(std::size_t start, std::size_t end) {
+    InlineDocument make_inline_document(
+        std::size_t start,
+        std::size_t end,
+        InlineSyntaxMode syntax_mode = InlineSyntaxMode::Markdown) {
         start = (std::min)(start, cps.size());
         end = (std::min)((std::max)(end, start), cps.size());
         InlineDocument document;
         document.source = cps.substr(start, end - start);
-        document.tree = parse_inline(document.source, inline_parse_context());
+        document.syntax_mode = syntax_mode;
+        reparse_inline_document(document, inline_parse_context());
         return document;
     }
 
@@ -748,6 +753,14 @@ public:
                 if (tag->attributes.contains("title")) block.ensure_image_special().image_title = tag->attributes.at("title");
                 block.ensure_image_special().image_width = dimension("width");
                 block.ensure_image_special().image_height = dimension("height");
+                auto raw = std::u32string(std::u32string_view(cps).substr(
+                    start,
+                    line_end - start));
+                auto& html = block.ensure_html_special();
+                html.source = raw;
+                html.tree = parse_html_cst(raw);
+                html.structure_shape = html_block_structure_shape(block);
+                html.root_tag = "img";
                 push_range(block.id, PhysicalRange(std::size_t(start), std::size_t(pos)), PhysicalRange(std::size_t(start), std::size_t(line_end)));
                 return block;
             }
@@ -780,113 +793,372 @@ public:
         return block;
     }
 
+    static bool html_whitespace_only(std::u32string_view value) {
+        return std::ranges::all_of(value, [](char32_t cp) {
+            return cp == U' ' || cp == U'\t' || cp == U'\r' || cp == U'\n';
+        });
+    }
+
+    static bool html_contains_unsafe(const HtmlCstNode& node) {
+        if (node.kind == HtmlCstKind::Element && html_is_unsafe_element(node.tag_name)) {
+            return true;
+        }
+        return std::ranges::any_of(node.children, [](const auto& child) {
+            return html_contains_unsafe(child);
+        });
+    }
+
+    std::optional<std::u32string> html_attribute_value(
+        const HtmlCstNode& node,
+        std::string_view name,
+        std::size_t source_start) const {
+        const auto found = std::ranges::find_if(node.attributes, [&](const auto& attribute) {
+            return attribute.name == name;
+        });
+        if (found == node.attributes.end() || !found->value_range) return std::nullopt;
+        const auto range = *found->value_range;
+        if (source_start + range.end > cps.size()) return std::nullopt;
+        return std::u32string(std::u32string_view(cps).substr(
+            source_start + range.start,
+            range.length()));
+    }
+
+    void push_html_range(
+        NodeId id,
+        const HtmlCstNode& node,
+        std::size_t source_start) {
+        ParserSourceRange range(
+            id,
+            {source_start + node.range.start, source_start + node.range.end},
+            {source_start + node.content.start, source_start + node.content.end});
+        if (!node.opening.empty()) {
+            range.marker_ranges.push_back({
+                source_start + node.opening.start,
+                source_start + node.opening.end});
+        }
+        if (node.closing) {
+            range.marker_ranges.push_back({
+                source_start + node.closing->start,
+                source_start + node.closing->end});
+        }
+        source_ranges.push_back(std::move(range));
+    }
+
+    void attach_html_element(
+        BlockNode& block,
+        const HtmlCstNode& node,
+        std::size_t source_start) {
+        auto& html = block.ensure_html_special();
+        html.root_tag = node.tag_name;
+        if (node.opening.valid_for(cps.size() - source_start)) {
+            html.opening_marker = cps.substr(
+                source_start + node.opening.start,
+                node.opening.length());
+        }
+        if (node.closing && node.closing->valid_for(cps.size() - source_start)) {
+            html.closing_marker = cps.substr(
+                source_start + node.closing->start,
+                node.closing->length());
+        }
+    }
+
+    BlockNode make_html_inline_block(
+        BlockKind kind,
+        const HtmlCstNode& node,
+        std::size_t source_start,
+        std::vector<HtmlContentSlot>& slots,
+        std::uint8_t heading_level = 0) {
+        BlockNode block;
+        block.id = next_node_id();
+        block.kind = kind;
+        block.inline_content = make_inline_document(
+            source_start + node.content.start,
+            source_start + node.content.end,
+            InlineSyntaxMode::HtmlText);
+        if (heading_level != 0) block.ensure_text_special().level = heading_level;
+        attach_html_element(block, node, source_start);
+        push_html_range(block.id, node, source_start);
+        slots.push_back({block.id, node.content});
+        return block;
+    }
+
+    BlockNode make_html_inline_run(
+        SourceRange range,
+        std::size_t source_start,
+        std::vector<HtmlContentSlot>& slots) {
+        BlockNode block;
+        block.id = next_node_id();
+        block.kind = BlockKind::Paragraph;
+        block.inline_content = make_inline_document(
+            source_start + range.start,
+            source_start + range.end,
+            InlineSyntaxMode::HtmlText);
+        push_range(
+            block.id,
+            {source_start + range.start, source_start + range.end},
+            {source_start + range.start, source_start + range.end});
+        slots.push_back({block.id, range});
+        return block;
+    }
+
+    void collect_html_rows(
+        const HtmlCstNode& node,
+        std::vector<const HtmlCstNode*>& rows,
+        bool root = true) const {
+        for (const auto& child : node.children) {
+            if (child.kind != HtmlCstKind::Element) continue;
+            if (child.tag_name == "tr") {
+                rows.push_back(&child);
+            } else if (child.tag_name != "table" || root) {
+                collect_html_rows(child, rows, false);
+            }
+        }
+    }
+
+    std::optional<BlockNode> make_html_table(
+        const HtmlCstNode& node,
+        std::size_t source_start,
+        std::vector<HtmlContentSlot>& slots) {
+        std::vector<const HtmlCstNode*> html_rows;
+        collect_html_rows(node, html_rows);
+        if (html_rows.empty()) return std::nullopt;
+
+        BlockNode table;
+        table.id = next_node_id();
+        table.kind = BlockKind::Table;
+        std::size_t columns = 0;
+        for (const auto* html_row : html_rows) {
+            BlockNode row;
+            row.id = next_node_id();
+            row.kind = BlockKind::TableRow;
+            bool header = false;
+            for (const auto& html_cell : html_row->children) {
+                if (html_cell.kind != HtmlCstKind::Element
+                    || (html_cell.tag_name != "td" && html_cell.tag_name != "th")) {
+                    continue;
+                }
+                header = header || html_cell.tag_name == "th";
+                row.children.push_back(make_html_inline_block(
+                    BlockKind::TableCell,
+                    html_cell,
+                    source_start,
+                    slots));
+            }
+            if (row.children.empty()) continue;
+            columns = (std::max)(columns, row.children.size());
+            row.ensure_table_special().table_header_row = header;
+            attach_html_element(row, *html_row, source_start);
+            push_html_range(row.id, *html_row, source_start);
+            table.children.push_back(std::move(row));
+        }
+        if (table.children.empty()) return std::nullopt;
+        table.ensure_table_special().table_aligns.assign(columns, TableAlignment::None);
+        attach_html_element(table, node, source_start);
+        push_html_range(table.id, node, source_start);
+        return table;
+    }
+
+    std::vector<BlockNode> make_html_children(
+        const HtmlCstNode& container,
+        std::size_t source_start,
+        std::vector<HtmlContentSlot>& slots) {
+        std::vector<BlockNode> blocks;
+        std::optional<SourceRange> inline_run;
+        auto flush_inline = [&]() {
+            if (!inline_run) return;
+            const auto source = std::u32string_view(cps).substr(
+                source_start + inline_run->start,
+                inline_run->length());
+            if (!html_whitespace_only(source)) {
+                blocks.push_back(make_html_inline_run(*inline_run, source_start, slots));
+            }
+            inline_run.reset();
+        };
+
+        for (const auto& child : container.children) {
+            const auto is_block = child.kind == HtmlCstKind::Element
+                && html_is_block_element(child.tag_name);
+            if (!is_block) {
+                if (!inline_run) inline_run = child.range;
+                else inline_run->end = child.range.end;
+                continue;
+            }
+            flush_inline();
+            if (auto block = make_html_semantic(child, source_start, slots)) {
+                blocks.push_back(std::move(*block));
+            }
+        }
+        flush_inline();
+        return blocks;
+    }
+
+    std::optional<BlockNode> make_html_list(
+        const HtmlCstNode& node,
+        std::size_t source_start,
+        std::vector<HtmlContentSlot>& slots) {
+        BlockNode list;
+        list.id = next_node_id();
+        list.kind = BlockKind::List;
+        list.ensure_list_special().ordered = node.tag_name == "ol";
+        if (auto start = html_attribute_value(node, "start", source_start)) {
+            try {
+                list.ensure_list_special().start = std::stoull(cps_to_utf8(*start));
+            } catch (...) {
+                list.ensure_list_special().start = 1;
+            }
+        }
+        for (const auto& child : node.children) {
+            if (child.kind != HtmlCstKind::Element || child.tag_name != "li") continue;
+            BlockNode item;
+            item.id = next_node_id();
+            item.kind = BlockKind::ListItem;
+            item.children = make_html_children(child, source_start, slots);
+            if (item.children.empty()) {
+                item.children.push_back(make_html_inline_run(
+                    {child.content.start, child.content.start}, source_start, slots));
+            }
+            attach_html_element(item, child, source_start);
+            push_html_range(item.id, child, source_start);
+            list.children.push_back(std::move(item));
+        }
+        if (list.children.empty()) return std::nullopt;
+        attach_html_element(list, node, source_start);
+        push_html_range(list.id, node, source_start);
+        return list;
+    }
+
+    std::optional<BlockNode> make_html_semantic(
+        const HtmlCstNode& node,
+        std::size_t source_start,
+        std::vector<HtmlContentSlot>& slots) {
+        if (node.kind != HtmlCstKind::Element) return std::nullopt;
+        if (node.tag_name == "p" || node.tag_name == "summary"
+            || node.tag_name == "dt" || node.tag_name == "dd") {
+            return make_html_inline_block(BlockKind::Paragraph, node, source_start, slots);
+        }
+        if (node.tag_name.size() == 2 && node.tag_name[0] == 'h'
+            && node.tag_name[1] >= '1' && node.tag_name[1] <= '6') {
+            return make_html_inline_block(
+                BlockKind::Heading,
+                node,
+                source_start,
+                slots,
+                static_cast<std::uint8_t>(node.tag_name[1] - '0'));
+        }
+        if (node.tag_name == "table") return make_html_table(node, source_start, slots);
+        if (node.tag_name == "ul" || node.tag_name == "ol") {
+            return make_html_list(node, source_start, slots);
+        }
+        if (node.tag_name == "blockquote") {
+            BlockNode quote;
+            quote.id = next_node_id();
+            quote.kind = BlockKind::BlockQuote;
+            quote.children = make_html_children(node, source_start, slots);
+            if (quote.children.empty()) {
+                quote.children.push_back(make_html_inline_run(
+                    {node.content.start, node.content.start}, source_start, slots));
+            }
+            attach_html_element(quote, node, source_start);
+            push_html_range(quote.id, node, source_start);
+            return quote;
+        }
+        if (node.tag_name == "hr") {
+            BlockNode rule;
+            rule.id = next_node_id();
+            rule.kind = BlockKind::ThematicBreak;
+            attach_html_element(rule, node, source_start);
+            push_html_range(rule.id, node, source_start);
+            return rule;
+        }
+        if (node.tag_name == "pre") {
+            BlockNode code;
+            code.id = next_node_id();
+            code.kind = BlockKind::CodeBlock;
+            code.block_source = make_block_source(
+                std::u32string(std::u32string_view(cps).substr(
+                    source_start + node.range.start,
+                    node.range.length())),
+                BlockSourceKind::HtmlCode);
+            attach_html_element(code, node, source_start);
+            slots.push_back({code.id, node.range});
+            push_html_range(code.id, node, source_start);
+            return code;
+        }
+
+        BlockNode container;
+        container.id = next_node_id();
+        container.kind = BlockKind::HtmlContainer;
+        container.children = make_html_children(node, source_start, slots);
+        if (container.children.empty()) {
+            container.children.push_back(make_html_inline_run(
+                node.content, source_start, slots));
+        }
+        attach_html_element(container, node, source_start);
+        push_html_range(container.id, node, source_start);
+        return container;
+    }
+
     std::optional<BlockNode> try_parse_raw_html_block() {
-        auto start = pos;
-        auto tag = html_tag_at(start, cps.size());
-        if (!tag || tag->closing) return std::nullopt;
-        static const std::unordered_set<std::string> block_tags{ "div", "table", "pre", "p", "script", "style", "iframe", "object", "embed" };
-        if (!block_tags.contains(tag->name)) return std::nullopt;
-        auto closing = html_closing_tag(tag->name, tag->end, cps.size());
-        if (!closing) return std::nullopt;
-        auto content_start = tag->end;
-        auto content_end = closing->first;
-        auto source_end = closing->second;
-        if (source_end < cps.size() && cps[source_end] == U'\n') ++source_end;
-        auto raw = std::u32string(std::u32string_view(cps).substr(start, source_end - start));
-        static const std::unordered_set<std::string> blocked{ "script", "style", "iframe", "object", "embed" };
-        if (blocked.contains(tag->name)) {
-            pos = source_end;
-            NodeId id = next_node_id();
-            push_range(id, PhysicalRange(std::size_t(start), std::size_t(source_end)), PhysicalRange(std::size_t(start), std::size_t(source_end)));
-            diagnostics.push_back(make_diagnostic(DiagnosticSeverity::Warning, "Unsafe HTML block is shown as text", std::nullopt, DIAG_RAW_HTML_DISABLED));
+        const auto start = pos;
+        auto remainder = std::u32string_view(cps).substr(start);
+        auto scanned = parse_html_cst(remainder);
+        if (scanned.nodes.empty()) return std::nullopt;
+        const auto& first = scanned.nodes.front();
+        if (first.kind != HtmlCstKind::Element
+            || first.range.start != 0
+            || !html_is_block_element(first.tag_name)
+            || first.range.empty()) {
+            return std::nullopt;
+        }
+
+        const auto source_length = first.range.end;
+        auto raw = std::u32string(remainder.substr(0, source_length));
+        auto tree = parse_html_cst(raw);
+        if (tree.nodes.empty()) return std::nullopt;
+        const auto& root = tree.nodes.front();
+
+        if (tree.has_error || root.status != HtmlParseStatus::Complete
+            || html_contains_unsafe(root)) {
+            pos = start + source_length;
+            if (peek1() == U'\n') advance();
             BlockNode block;
-            block.id = id;
+            block.id = next_node_id();
             block.kind = BlockKind::UnsupportedMarkup;
             block.ensure_atomic_special().raw = cps_to_utf8(raw);
-            block.ensure_atomic_special().unsup_reason = UnsupportedMarkupReason::RawHtmlDisabled;
+            block.ensure_atomic_special().unsup_reason = root.status == HtmlParseStatus::Complete
+                ? UnsupportedMarkupReason::UnsafeHtml
+                : UnsupportedMarkupReason::MalformedSyntax;
+            push_range(
+                block.id,
+                {start, start + source_length},
+                {start, start + source_length});
+            diagnostics.push_back(make_diagnostic(
+                DiagnosticSeverity::Warning,
+                html_contains_unsafe(root)
+                    ? "Unsafe HTML block is shown as text"
+                    : "Malformed HTML block is shown as text",
+                std::nullopt,
+                DIAG_UNSAFE_HTML));
             return block;
         }
-        if (tag->name == "pre") {
-            auto code_start = content_start;
-            auto code_end = content_end;
-            if (auto code_tag = html_tag_at(code_start, content_end); code_tag && !code_tag->closing && code_tag->name == "code") {
-                if (auto code_closing = html_closing_tag("code", code_tag->end, content_end)) {
-                    code_start = code_tag->end;
-                    code_end = code_closing->first;
-                }
-            }
-            pos = source_end;
-            NodeId id = next_node_id();
-            ParserSourceRange range(id, PhysicalRange(std::size_t(start), std::size_t(source_end)), PhysicalRange(std::size_t(code_start), std::size_t(code_end)));
-            range.marker_ranges.push_back(PhysicalRange(std::size_t(start), std::size_t(code_start)));
-            range.marker_ranges.push_back(PhysicalRange(std::size_t(code_end), std::size_t(source_end)));
-            source_ranges.push_back(std::move(range));
-            BlockNode block;
-            block.id = id;
-            block.kind = BlockKind::CodeBlock;
-            block.block_source = make_block_source(
-                std::u32string(std::u32string_view(cps).substr(start, source_end - start)),
-                BlockSourceKind::HtmlCode);
-            return block;
+
+        std::vector<HtmlContentSlot> slots;
+        auto block = make_html_semantic(root, start, slots);
+        if (!block) return std::nullopt;
+        // A <pre> block is itself one exact block-local source owner; all
+        // other supported HTML structures retain their wrapper source plus
+        // slots that point at editable semantic descendants.
+        if (block->kind != BlockKind::CodeBlock) {
+            auto root_tag = root.tag_name;
+            auto& html = block->ensure_html_special();
+            html.source = std::move(raw);
+            html.tree = std::move(tree);
+            html.content_slots = std::move(slots);
+            html.structure_shape = html_block_structure_shape(*block);
+            html.root_tag = std::move(root_tag);
         }
-        if (tag->name == "table") {
-            BlockNode block;
-            block.kind = BlockKind::Table;
-            BlockVec rows;
-            std::vector<bool> row_headers;
-            auto cursor = content_start;
-            while (cursor < content_end) {
-                auto row_tag = html_tag_at(cursor, content_end);
-                if (!row_tag || row_tag->closing || row_tag->name != "tr") { ++cursor; continue; }
-                auto row_closing = html_closing_tag("tr", row_tag->end, content_end);
-                if (!row_closing) break;
-                BlockNode row;
-                row.id = next_node_id();
-                row.kind = BlockKind::TableRow;
-                bool row_header = false;
-                auto cell_cursor = row_tag->end;
-                while (cell_cursor < row_closing->first) {
-                    auto cell_tag = html_tag_at(cell_cursor, row_closing->first);
-                    if (!cell_tag || cell_tag->closing || (cell_tag->name != "td" && cell_tag->name != "th")) { ++cell_cursor; continue; }
-                    auto cell_closing = html_closing_tag(cell_tag->name, cell_tag->end, row_closing->first);
-                    if (!cell_closing) break;
-                    row_header = row_header || cell_tag->name == "th";
-                    BlockNode cell;
-                    cell.id = next_node_id();
-                    cell.kind = BlockKind::TableCell;
-                    cell.inline_content = make_inline_document(cell_tag->end, cell_closing->first);
-                    push_range(cell.id, PhysicalRange(std::size_t(cell_tag->start), std::size_t(cell_closing->second)), PhysicalRange(std::size_t(cell_tag->end), std::size_t(cell_closing->first)));
-                    row.children.push_back(std::move(cell));
-                    cell_cursor = cell_closing->second;
-                }
-                push_range(row.id, PhysicalRange(std::size_t(row_tag->start), std::size_t(row_closing->second)), PhysicalRange(std::size_t(row_tag->end), std::size_t(row_closing->first)));
-                row.ensure_table_special().table_header_row = row_header;
-                if (!row.children.empty()) { rows.push_back(std::move(row)); row_headers.push_back(row_header); }
-                cursor = row_closing->second;
-            }
-            if (rows.empty()) return std::nullopt;
-            block.id = next_node_id();
-            block.children = std::move(rows);
-            block.ensure_table_special().table_aligns.resize(block.children.front().children.size(), TableAlignment::None);
-            ParserSourceRange range(block.id, PhysicalRange(std::size_t(start), std::size_t(source_end)), PhysicalRange(std::size_t(content_start), std::size_t(content_end)));
-            range.marker_ranges.push_back(PhysicalRange(std::size_t(start), std::size_t(content_start)));
-            range.marker_ranges.push_back(PhysicalRange(std::size_t(content_end), std::size_t(source_end)));
-            source_ranges.push_back(std::move(range));
-            pos = source_end;
-            return block;
-        }
-        pos = source_end;
-        NodeId id = next_node_id();
-        ParserSourceRange range(id, PhysicalRange(std::size_t(start), std::size_t(source_end)), PhysicalRange(std::size_t(content_start), std::size_t(content_end)));
-        range.marker_ranges.push_back(PhysicalRange(std::size_t(start), std::size_t(content_start)));
-        range.marker_ranges.push_back(PhysicalRange(std::size_t(content_end), std::size_t(source_end)));
-        source_ranges.push_back(std::move(range));
-        BlockNode block;
-        block.id = id;
-        block.kind = BlockKind::Paragraph;
-        block.inline_content = make_inline_document(content_start, content_end);
-        block.ensure_text_special().opening_marker = std::u32string(std::u32string_view(cps).substr(start, content_start - start));
-        block.ensure_text_special().closing_marker = std::u32string(std::u32string_view(cps).substr(content_end, source_end - content_end));
+        pos = start + source_length;
+        if (peek1() == U'\n') advance();
         return block;
     }
 

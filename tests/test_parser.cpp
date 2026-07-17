@@ -578,6 +578,18 @@ suite parser_tests = [] {
         expect(fatal(bool(image->image_special().image_alt == "alt")));
         expect(fatal(bool(image->image_special().image_title == std::optional<std::string>{"Title"})));
     }
+
+    const std::string html_source =
+        "<IMG data-x='1' src=\"image.png\" alt='alt' width='320' height=180>";
+    const auto html = parse_text(2, html_source);
+    const auto* html_image = first_block(html.document.root.children, BlockKind::ImageBlock);
+    expect(fatal(html_image != nullptr));
+    if (html_image) {
+        expect(fatal(html_image->has_html_source()));
+        expect(fatal(html_image->image_special().src == "image.png"));
+        expect(fatal(html_image->image_special().image_width == std::optional<float>{320.0f}));
+    }
+    expect(fatal(serialize_markdown(html.document) == html_source));
 };
 
 "save_reload_is_character_exact_for_unchanged_content"_test = [] {
@@ -592,6 +604,97 @@ suite parser_tests = [] {
     expect(fatal(bool(saved == utf8_to_cps(source))));
     const auto second = parse_text(2, cps_to_utf8(saved));
     expect(fatal(bool(serialize_markdown_cps(second.document) == saved)));
+};
+
+"safe_html_table_is_recursive_semantic_and_character_exact"_test = [] {
+    const std::string source =
+        "<table data-name='寄存器'><tbody>"
+        "<tr><td>寄存器</td><td>位宽/bit</td><td>助记符</td><td>汇编用法</td><td>类型</td></tr>"
+        "<tr><td>0</td><td>32</td><td>%A0</td><td>临时寄存器 0</td><td>通用寄存器</td></tr>"
+        "</tbody></table>";
+    const auto parsed = parse_text(1, source);
+    expect(fatal(parsed.document.root.children.size() == 1u));
+    if (parsed.document.root.children.empty()) return;
+    const auto& table = parsed.document.root.children.front();
+    expect(fatal(table.kind == BlockKind::Table));
+    expect(fatal(table.has_html_source()));
+    expect(fatal(table.html_special().root_tag == "table"));
+    expect(fatal(table.children.size() == 2u));
+    expect(fatal(table.children.front().children.size() == 5u));
+    expect(fatal(table.children.back().children.size() == 5u));
+    expect(fatal(table.children.back().children[2].inline_content.source == U"%A0"));
+    expect(fatal(serialize_markdown(parsed.document) == source));
+
+    const auto reloaded = parse_text(2, serialize_markdown(parsed.document));
+    expect(fatal(serialize_markdown(reloaded.document) == source));
+};
+
+"safe_html_containers_map_recursively_without_losing_wrappers"_test = [] {
+    const std::string source =
+        "<DIV class='box'><h2>Title</h2><blockquote><p>x <strong>y</strong></p>"
+        "<ol start='3'><li>a</li><li><code>b</code></li></ol></blockquote></DIV>";
+    const auto parsed = parse_text(1, source);
+    expect(fatal(parsed.document.root.children.size() == 1u));
+    if (parsed.document.root.children.empty()) return;
+    const auto& container = parsed.document.root.children.front();
+    expect(fatal(container.kind == BlockKind::HtmlContainer));
+    expect(fatal(container.has_html_source()));
+    expect(fatal(first_block(container.children, BlockKind::Heading) != nullptr));
+    expect(fatal(first_block(container.children, BlockKind::BlockQuote) != nullptr));
+    const auto* list = first_block(container.children, BlockKind::List);
+    expect(fatal(list != nullptr));
+    if (list) {
+        expect(fatal(list->list_special().ordered));
+        expect(fatal(list->list_special().start == 3u));
+    }
+    expect(fatal(serialize_markdown(parsed.document) == source));
+};
+
+"block_html_text_uses_html_not_markdown_inline_rules"_test = [] {
+    const std::string source =
+        "<div><p>*literal* $also literal$ <strong>bold</strong> "
+        "<mark>marked</mark></p></div>";
+    const auto parsed = parse_text(1, source);
+    expect(fatal(parsed.document.root.children.size() == 1u));
+    if (parsed.document.root.children.empty()) return;
+    const auto* paragraph = first_block(
+        parsed.document.root.children.front().children,
+        BlockKind::Paragraph);
+    expect(fatal(paragraph != nullptr));
+    if (!paragraph) return;
+    expect(paragraph->inline_content.syntax_mode == InlineSyntaxMode::HtmlText);
+    expect(!inline_contains_kind(paragraph->inline_content, InlineCstKind::Emphasis));
+    expect(!inline_contains_kind(paragraph->inline_content, InlineCstKind::InlineMath));
+    expect(inline_contains_kind(paragraph->inline_content, InlineCstKind::Strong));
+    expect(inline_contains_kind(paragraph->inline_content, InlineCstKind::HtmlElement));
+    expect(fatal(serialize_markdown(parsed.document) == source));
+};
+
+"unsafe_script_html_remains_inert_and_lossless"_test = [] {
+    const std::string source = "<script>alert(1)</script>";
+    const auto parsed = parse_text(1, source);
+    expect(fatal(parsed.document.root.children.size() == 1u));
+    if (parsed.document.root.children.empty()) return;
+    expect(fatal(parsed.document.root.children.front().kind == BlockKind::UnsupportedMarkup));
+    expect(fatal(serialize_markdown(parsed.document) == source));
+};
+
+"nested_unsafe_html_remains_inert_and_lossless"_test = [] {
+    const std::string source = "<div><iframe src='x'></iframe></div>";
+    const auto parsed = parse_text(1, source);
+    expect(fatal(parsed.document.root.children.size() == 1u));
+    if (parsed.document.root.children.empty()) return;
+    expect(fatal(parsed.document.root.children.front().kind == BlockKind::UnsupportedMarkup));
+    expect(fatal(serialize_markdown(parsed.document) == source));
+};
+
+"malformed_html_remains_inert_and_lossless"_test = [] {
+    const std::string source = "<table><tr><td>value</tr>";
+    const auto parsed = parse_text(1, source);
+    expect(fatal(parsed.document.root.children.size() == 1u));
+    if (parsed.document.root.children.empty()) return;
+    expect(fatal(parsed.document.root.children.front().kind == BlockKind::UnsupportedMarkup));
+    expect(fatal(serialize_markdown(parsed.document) == source));
 };
 
 "direct_block_separators_round_trip_exactly"_test = [] {
