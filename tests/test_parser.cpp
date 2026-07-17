@@ -736,6 +736,85 @@ suite parser_tests = [] {
     for (const auto& row : table->children) for (const auto& cell : row.children) expect_lossless(cell.inline_content);
 };
 
+"block_line_endings_keep_pipe_tables_and_fenced_code_structurally_equivalent"_test = [] {
+    const auto source_with = [](std::string_view eol) {
+        std::string source;
+        const auto line = [&](std::string_view text) {
+            source.append(text);
+            source.append(eol);
+        };
+        line("# API");
+        line("");
+        line("## Routes");
+        line("");
+        line("| Group | Prefix | Action |");
+        line("| --- | --- | --- |");
+        line("| session | `/login` | migrate |");
+        line("| profile | `/me` | preserve |");
+        line("");
+        line("## Example");
+        line("");
+        line("```text");
+        line("/v1");
+        line("```");
+        line("");
+        line("## Tail");
+        source.append("outside");
+        return source;
+    };
+
+    for (const auto eol : {std::string_view{"\n"}, std::string_view{"\r\n"}, std::string_view{"\r"}}) {
+        const auto source = source_with(eol);
+        const auto parsed = parse_text(1, source);
+        const std::vector expected_kinds{
+            BlockKind::Heading,
+            BlockKind::Heading,
+            BlockKind::Table,
+            BlockKind::Heading,
+            BlockKind::CodeBlock,
+            BlockKind::Heading,
+            BlockKind::Paragraph,
+        };
+        std::vector<BlockKind> actual_kinds;
+        for (const auto& block : parsed.document.root.children) actual_kinds.push_back(block.kind);
+        expect(bool(actual_kinds.size() == expected_kinds.size()))
+            << "top-level block count for line ending size: " << eol.size();
+        if (actual_kinds.size() != expected_kinds.size()) continue;
+        for (std::size_t index = 0; index < expected_kinds.size(); ++index) {
+            expect(bool(actual_kinds[index] == expected_kinds[index]))
+                << "top-level block kind at index " << index
+                << " for line ending size: " << eol.size();
+        }
+        expect(bool(serialize_markdown(parsed.document) == source))
+            << "exact save for line ending size: " << eol.size();
+
+        const auto* table = first_block(parsed.document.root.children, BlockKind::Table);
+        expect(fatal(bool(table != nullptr))) << "line ending size: " << eol.size();
+        if (table) {
+            expect(fatal(bool(table->children.size() == 3u))) << "line ending size: " << eol.size();
+            expect(fatal(bool(std::ranges::all_of(table->children, [](const auto& row) {
+                return row.children.size() == 3u;
+            }))));
+        }
+        const auto* code = first_block(parsed.document.root.children, BlockKind::CodeBlock);
+        expect(fatal(bool(code != nullptr))) << "line ending size: " << eol.size();
+        if (code) {
+            expect(fatal(bool(block_source_tokens_partition(code->block_source))));
+            expect(fatal(bool(flatten_block_source_tokens(code->block_source) == code->block_source.source())));
+        }
+    }
+
+    const std::string mixed_line_endings =
+        "| A | B |\r\n"
+        "| --- | --- |\n"
+        "| one | two |\r"
+        "| three | four |";
+    const auto mixed = parse_text(1, mixed_line_endings);
+    expect(fatal(bool(mixed.document.root.children.size() == 1u)));
+    expect(fatal(bool(mixed.document.root.children.front().kind == BlockKind::Table)));
+    expect(fatal(bool(serialize_markdown(mixed.document) == mixed_line_endings)));
+};
+
 "empty_nested_containers_get_editable_paragraphs"_test = [] {
     const auto list = parse_text(1, "- ");
     expect(fatal(bool(list.document.root.children.front().kind == BlockKind::List)));

@@ -56,4 +56,28 @@ suite outline_tests = [] {
     expect(fatal(bool(none == nullptr)));
 };
 
+"rendered_outline_keeps_headings_after_crlf_tables_and_fences"_test = [] {
+    const std::string source =
+        "# API\r\n\r\n"
+        "## Routes\r\n\r\n"
+        "| Group | Prefix |\r\n"
+        "| --- | --- |\r\n"
+        "| session | `/login` |\r\n\r\n"
+        "## Example\r\n\r\n"
+        "```text\r\n"
+        "/v1\r\n"
+        "```\r\n\r\n"
+        "## Tail\r\n"
+        "outside";
+    const auto parsed = parse_text(1, source);
+    const auto flat = parsed.outline.flat_items();
+    expect(fatal(bool(flat.size() == 4u)));
+    if (flat.size() != 4u) return;
+    expect(fatal(bool(flat[0]->title_plain_text == "API")));
+    expect(fatal(bool(flat[1]->title_plain_text == "Routes")));
+    expect(fatal(bool(flat[2]->title_plain_text == "Example")));
+    expect(fatal(bool(flat[3]->title_plain_text == "Tail")));
+    expect(fatal(bool(flat[0]->children.size() == 3u)));
+};
+
 }; // suite outline_tests
