@@ -132,8 +132,16 @@ inline void append_inline_visible_text(
             case K::Strong:
             case K::Strikethrough:
             case K::Link:
-            case K::HtmlElement:
                 append_inline_visible_text(document, node.children, output);
+                break;
+            case K::HtmlElement:
+                if (node.semantics().html_tag == "img") {
+                    output += utf8_to_cps(node.semantics().alt);
+                } else if (node.semantics().html_tag == "br") {
+                    output.push_back(U'\n');
+                } else {
+                    append_inline_visible_text(document, node.children, output);
+                }
                 break;
             case K::Image:
                 output += utf8_to_cps(node.semantics().alt);

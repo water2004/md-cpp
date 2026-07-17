@@ -85,6 +85,10 @@ struct InlineCstSemantic {
     std::optional<ImageDimension> image_width;
     std::optional<ImageDimension> image_height;
     std::string html_tag;
+    // HTML is a lossless embedded syntax island.  The exact attribute
+    // spelling remains in InlineDocument.source; this case-folded projection
+    // is used only by safe rendering and interaction policy.
+    std::unordered_map<std::string, std::string> html_attributes;
 };
 
 struct InlineCstNode {

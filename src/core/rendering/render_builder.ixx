@@ -726,12 +726,61 @@ struct Builder {
                         break;
                     }
                     case K::HtmlElement: {
+                        if (semantic.html_tag == "img") {
+                            InlineRenderItem item;
+                            item.kind = InlineRenderItem::Kind::Image;
+                            item.id = node.id;
+                            item.source_span = source_span(node.range);
+                            item.style = style;
+                            item.style.link = false;
+                            auto& special = item.ensure_special().ensure_semantic();
+                            special.src = semantic.href;
+                            special.alt = semantic.alt;
+                            special.title = semantic.title;
+                            special.image_width = semantic.image_width;
+                            special.image_height = semantic.image_height;
+                            target.push_back(std::move(item));
+                            break;
+                        }
+                        if (semantic.html_tag == "br") {
+                            append_text(U"\n", node.range, style);
+                            break;
+                        }
+                        if (semantic.html_tag == "a") {
+                            InlineRenderItem item;
+                            item.kind = InlineRenderItem::Kind::Link;
+                            item.id = node.id;
+                            item.source_span = source_span(node.range);
+                            auto& special = item.ensure_special().ensure_semantic();
+                            special.href = semantic.href;
+                            special.title = semantic.title;
+                            auto child_style = style;
+                            child_style.link = true;
+                            append_marker(special.children, node, delim.opening);
+                            append_nodes(node.children, child_style, special.children);
+                            if (delim.closing) append_marker(special.children, node, *delim.closing);
+                            target.push_back(std::move(item));
+                            break;
+                        }
                         auto child_style = style;
-                        if (semantic.html_tag == "u") child_style.underline = true;
-                        if (semantic.html_tag == "kbd" || semantic.html_tag == "samp") {
+                        if (semantic.html_tag == "strong" || semantic.html_tag == "b") {
+                            child_style.bold = true;
+                        }
+                        if (semantic.html_tag == "em" || semantic.html_tag == "i"
+                            || semantic.html_tag == "cite" || semantic.html_tag == "var") {
+                            child_style.italic = true;
+                        }
+                        if (semantic.html_tag == "del" || semantic.html_tag == "s"
+                            || semantic.html_tag == "strike") {
+                            child_style.strikethrough = true;
+                        }
+                        if (semantic.html_tag == "u" || semantic.html_tag == "ins") {
+                            child_style.underline = true;
+                        }
+                        if (semantic.html_tag == "code" || semantic.html_tag == "kbd"
+                            || semantic.html_tag == "samp" || semantic.html_tag == "tt") {
                             child_style.code = true;
                         }
-                        if (semantic.html_tag == "var") child_style.italic = true;
                         append_marker(target, node, delim.opening);
                         append_nodes(node.children, child_style, target);
                         if (delim.closing) append_marker(target, node, *delim.closing);

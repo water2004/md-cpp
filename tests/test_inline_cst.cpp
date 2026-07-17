@@ -50,6 +50,26 @@ const InlineCstNode* first_node(const InlineCstTree& tree, InlineCstKind kind) {
     return find(tree.nodes);
 }
 
+const InlineCstNode* first_html_node(
+    const InlineCstNodes& nodes,
+    std::string_view tag) {
+    for (const auto& node : nodes) {
+        if (node.kind == InlineCstKind::HtmlElement
+            && node.semantics().html_tag == tag) {
+            return &node;
+        }
+        if (const auto* nested = first_html_node(node.children, tag)) return nested;
+    }
+    return nullptr;
+}
+
+bool contains_kind(const InlineCstNodes& nodes, InlineCstKind kind) {
+    for (const auto& node : nodes) {
+        if (node.kind == kind || contains_kind(node.children, kind)) return true;
+    }
+    return false;
+}
+
 } // namespace
 
 suite inline_cst_tests = [] {
@@ -86,7 +106,7 @@ suite inline_cst_tests = [] {
     const auto source = std::u32string{U"p**<br>abcq"};
     auto document = InlineDocument{source, parse_inline(source, test_context())};
     const auto* incomplete = first_node(document.tree, InlineCstKind::Incomplete);
-    const auto* hard_break = first_node(document.tree, InlineCstKind::HardBreak);
+    const auto* hard_break = first_html_node(document.tree.nodes, "br");
     expect(fatal(bool(incomplete != nullptr)));
     expect(fatal(bool(hard_break != nullptr)));
     if (!hard_break) return;
@@ -322,7 +342,8 @@ suite inline_cst_tests = [] {
     expect(is_lossless(document.source));
     expect(!inline_contains_kind(document, InlineCstKind::Emphasis));
     expect(!inline_contains_kind(document, InlineCstKind::InlineMath));
-    expect(inline_contains_kind(document, InlineCstKind::Strong));
+    expect(!inline_contains_kind(document, InlineCstKind::Strong));
+    expect(first_html_node(document.tree.nodes, "strong") != nullptr);
 
     const auto inserted = document.source.find(U"literal") + 7;
     apply_inline_source_edit(
@@ -332,7 +353,46 @@ suite inline_cst_tests = [] {
         test_context());
     expect(is_lossless(document.source));
     expect(!inline_contains_kind(document, InlineCstKind::Emphasis));
-    expect(inline_contains_kind(document, InlineCstKind::Strong));
+    expect(!inline_contains_kind(document, InlineCstKind::Strong));
+    expect(first_html_node(document.tree.nodes, "strong") != nullptr);
+};
+
+"inline_html_is_a_recursive_lossless_syntax_island"_test = [] {
+    const auto source = std::u32string{
+        U"**outside** <span STYLE=\"color:#f00\" onclick=\"ignored()\">"
+        U"**literal** $literal$ <strong>bold <em>*still literal*</em></strong>"
+        U"</span> *outside*"};
+    const auto tree = parse_inline(source, test_context());
+    expect(is_lossless(source));
+
+    const auto* span = first_html_node(tree.nodes, "span");
+    expect(fatal(bool(span != nullptr)));
+    if (!span) return;
+    expect(!contains_kind(span->children, InlineCstKind::Strong));
+    expect(!contains_kind(span->children, InlineCstKind::Emphasis));
+    expect(!contains_kind(span->children, InlineCstKind::InlineMath));
+    expect(first_html_node(span->children, "strong") != nullptr);
+    expect(first_html_node(span->children, "em") != nullptr);
+    expect(span->semantics().html_attributes.contains("style"));
+    expect(!span->semantics().html_attributes.contains("onclick"));
+    expect(first_node(tree, InlineCstKind::Strong) != nullptr);
+    expect(first_node(tree, InlineCstKind::Emphasis) != nullptr);
+};
+
+"html_void_elements_remain_html_cst_nodes"_test = [] {
+    const auto source = std::u32string{U"a<br><img src=\"x.svg\" alt=\"logo\">b"};
+    const auto tree = parse_inline(source, test_context());
+    expect(is_lossless(source));
+    const auto* br = first_html_node(tree.nodes, "br");
+    const auto* image = first_html_node(tree.nodes, "img");
+    expect(fatal(bool(br != nullptr)));
+    expect(fatal(bool(image != nullptr)));
+    expect(first_node(tree, InlineCstKind::HardBreak) == nullptr);
+    expect(first_node(tree, InlineCstKind::Image) == nullptr);
+    if (image) {
+        expect(image->semantics().href == "x.svg");
+        expect(image->semantics().alt == "logo");
+    }
 };
 
 }; // suite inline_cst_tests

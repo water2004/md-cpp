@@ -15,6 +15,17 @@ static bool reference_inline_kind(InlineDocument const& document, InlineCstKind 
     return inline_contains_kind(document, kind);
 }
 
+static bool reference_inline_html_tag(
+    InlineCstNodes const& nodes,
+    std::string_view tag) {
+    for (auto const& node : nodes) {
+        if (node.kind == InlineCstKind::HtmlElement
+            && node.semantics().html_tag == tag) return true;
+        if (reference_inline_html_tag(node.children, tag)) return true;
+    }
+    return false;
+}
+
 static bool reference_block_kind(BlockVec const& nodes, BlockKind kind) {
     for (auto const& node : nodes) {
         if (node.kind == kind) return true;
@@ -81,12 +92,17 @@ suite reference_standard_tests = [] {
     });
     expect(fatal(bool(paragraph != parsed.document.root.children.end())));
     if (paragraph != parsed.document.root.children.end()) {
-        expect(fatal(bool(reference_inline_kind(paragraph->inline_content, InlineCstKind::Strong))));
-        expect(fatal(bool(reference_inline_kind(paragraph->inline_content, InlineCstKind::Emphasis))));
-        expect(fatal(bool(reference_inline_kind(paragraph->inline_content, InlineCstKind::Strikethrough))));
-        expect(fatal(bool(reference_inline_kind(paragraph->inline_content, InlineCstKind::Link))));
-        expect(fatal(bool(reference_inline_kind(paragraph->inline_content, InlineCstKind::Image))));
-        expect(fatal(bool(reference_inline_kind(paragraph->inline_content, InlineCstKind::HardBreak))));
+        expect(fatal(bool(!reference_inline_kind(paragraph->inline_content, InlineCstKind::Strong))));
+        expect(fatal(bool(!reference_inline_kind(paragraph->inline_content, InlineCstKind::Emphasis))));
+        expect(fatal(bool(!reference_inline_kind(paragraph->inline_content, InlineCstKind::Strikethrough))));
+        expect(fatal(bool(!reference_inline_kind(paragraph->inline_content, InlineCstKind::Link))));
+        expect(fatal(bool(!reference_inline_kind(paragraph->inline_content, InlineCstKind::Image))));
+        expect(fatal(bool(!reference_inline_kind(paragraph->inline_content, InlineCstKind::HardBreak))));
+        for (auto tag : {"span", "cite", "del", "a", "img", "br"}) {
+            expect(fatal(bool(reference_inline_html_tag(
+                paragraph->inline_content.tree.nodes,
+                tag))));
+        }
     }
     expect(fatal(bool(reference_block_kind(parsed.document.root.children, BlockKind::CodeBlock))));
     expect(fatal(bool(reference_block_kind(parsed.document.root.children, BlockKind::Table))));

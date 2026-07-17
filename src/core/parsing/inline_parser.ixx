@@ -761,9 +761,10 @@ struct Parser {
                     value = cps_to_utf8(src.substr(value_start, cursor - value_start));
                 }
             }
-            // Event handlers and CSS never enter derived semantic state. The
-            // exact spelling remains preserved by the CST source ranges.
-            if (!attribute.starts_with("on") && attribute != "style") {
+            // Event handlers never enter derived presentation state.  Safe
+            // CSS declarations are filtered later by the HTML presentation
+            // projector; exact spelling remains preserved by source ranges.
+            if (!attribute.starts_with("on")) {
                 tag.attributes[std::move(attribute)] = std::move(value);
             }
         }
@@ -812,7 +813,8 @@ struct Parser {
 
     static bool safe_html_container(std::string_view name) {
         return name == "strong" || name == "b" || name == "em" || name == "i"
-            || name == "cite" || name == "del" || name == "s" || name == "code"
+            || name == "cite" || name == "del" || name == "s" || name == "strike"
+            || name == "ins" || name == "code" || name == "tt"
             || name == "a" || name == "span" || name == "abbr" || name == "small"
             || name == "sub" || name == "sup" || name == "mark" || name == "kbd"
             || name == "q" || name == "time" || name == "u" || name == "var"
@@ -827,29 +829,22 @@ struct Parser {
         if (tag->name != "img" && tag->name != "br" && !safe_html_container(tag->name)) return false;
 
         flush_text_to(out, run_start, start);
-        if (tag->name == "img") {
+        if (tag->name == "img" || tag->name == "br") {
             InlineCstNode node;
             node.id = next_id();
-            node.kind = InlineCstKind::Image;
+            node.kind = InlineCstKind::HtmlElement;
             node.range = {start, tag->end};
             node.ensure_delimiter_ranges() = {{start, tag->end}, {start, tag->end}, {tag->end, tag->end}, std::nullopt};
             auto& semantic = node.ensure_semantics();
-            if (const auto found = tag->attributes.find("src"); found != tag->attributes.end() && safe_html_target(found->second, true)) semantic.href = found->second;
-            if (const auto found = tag->attributes.find("alt"); found != tag->attributes.end()) semantic.alt = found->second;
-            if (const auto found = tag->attributes.find("title"); found != tag->attributes.end()) semantic.title = found->second;
-            semantic.image_width = html_dimension(*tag, "width");
-            semantic.image_height = html_dimension(*tag, "height");
-            pos = tag->end;
-            out.push_back(std::move(node));
-            run_start = pos;
-            return true;
-        }
-        if (tag->name == "br") {
-            InlineCstNode node;
-            node.id = next_id();
-            node.kind = InlineCstKind::HardBreak;
-            node.range = {start, tag->end};
-            node.ensure_delimiter_ranges() = {{start, tag->end}, {start, tag->end}, {tag->end, tag->end}, std::nullopt};
+            semantic.html_tag = tag->name;
+            semantic.html_attributes = tag->attributes;
+            if (tag->name == "img") {
+                if (const auto found = tag->attributes.find("src"); found != tag->attributes.end() && safe_html_target(found->second, true)) semantic.href = found->second;
+                if (const auto found = tag->attributes.find("alt"); found != tag->attributes.end()) semantic.alt = found->second;
+                if (const auto found = tag->attributes.find("title"); found != tag->attributes.end()) semantic.title = found->second;
+                semantic.image_width = html_dimension(*tag, "width");
+                semantic.image_height = html_dimension(*tag, "height");
+            }
             pos = tag->end;
             out.push_back(std::move(node));
             run_start = pos;
@@ -876,30 +871,26 @@ struct Parser {
         const auto content_end = closing->first;
         const auto source_end = closing->second;
         InlineCstNodes children;
-        if (tag->name != "code") {
-            Parser inner{src, ctx};
-            inner.counter = counter;
-            inner.pos = content_start;
-            children = inner.parse_until(content_end);
-            counter = inner.counter;
-        }
+        auto html_context = ctx;
+        html_context.syntax_mode = InlineSyntaxMode::HtmlText;
+        Parser inner{src, html_context};
+        inner.counter = counter;
+        inner.pos = content_start;
+        children = inner.parse_until(content_end);
+        counter = inner.counter;
 
         InlineCstNode node;
         node.id = next_id();
-        if (tag->name == "strong" || tag->name == "b") node.kind = InlineCstKind::Strong;
-        else if (tag->name == "em" || tag->name == "i" || tag->name == "cite") node.kind = InlineCstKind::Emphasis;
-        else if (tag->name == "del" || tag->name == "s") node.kind = InlineCstKind::Strikethrough;
-        else if (tag->name == "code") node.kind = InlineCstKind::CodeSpan;
-        else if (tag->name == "a") node.kind = InlineCstKind::Link;
-        else node.kind = InlineCstKind::HtmlElement;
+        node.kind = InlineCstKind::HtmlElement;
         node.range = {start, source_end};
         node.ensure_delimiter_ranges() = {{start, source_end}, {start, content_start}, {content_start, content_end}, SourceRange{content_end, source_end}};
         node.children = std::move(children);
-        node.ensure_semantics().html_tag = tag->name;
-        if (node.kind == InlineCstKind::Link) {
         auto& semantic = node.ensure_semantics();
-        if (const auto found = tag->attributes.find("href"); found != tag->attributes.end() && safe_html_target(found->second, false)) semantic.href = found->second;
-        if (const auto found = tag->attributes.find("title"); found != tag->attributes.end()) semantic.title = found->second;
+        semantic.html_tag = tag->name;
+        semantic.html_attributes = tag->attributes;
+        if (tag->name == "a") {
+            if (const auto found = tag->attributes.find("href"); found != tag->attributes.end() && safe_html_target(found->second, false)) semantic.href = found->second;
+            if (const auto found = tag->attributes.find("title"); found != tag->attributes.end()) semantic.title = found->second;
         }
         pos = source_end;
         out.push_back(std::move(node));

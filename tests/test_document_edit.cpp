@@ -228,6 +228,15 @@ const BlockNode& first_editable(const EditorDocument& document) {
     return *found;
 }
 
+bool contains_html_tag(const InlineCstNodes& nodes, std::string_view tag) {
+    for (auto const& node : nodes) {
+        if (node.kind == InlineCstKind::HtmlElement
+            && node.semantics().html_tag == tag) return true;
+        if (contains_html_tag(node.children, tag)) return true;
+    }
+    return false;
+}
+
 TextSelection caret(const BlockNode& node, std::size_t offset = 0) {
     return TextSelection::caret(TextPosition{node.id, offset, TextAffinity::Downstream});
 }
@@ -531,7 +540,8 @@ suite document_edit_tests = [] {
         == "<p><strong>alpha</strong></p>"));
     const auto& updated = first_editable(strong->after);
     expect(fatal(updated.inline_content.syntax_mode == InlineSyntaxMode::HtmlText));
-    expect(fatal(inline_contains_kind(updated.inline_content, InlineCstKind::Strong)));
+    expect(fatal(!inline_contains_kind(updated.inline_content, InlineCstKind::Strong)));
+    expect(fatal(contains_html_tag(updated.inline_content.tree.nodes, "strong")));
     expect_document_valid(strong->after);
 
     auto heading_document = parse_document("<p class='old'>title</p>");
@@ -1080,7 +1090,7 @@ suite document_edit_tests = [] {
     if (cell_break) {
         auto const& edited = cell_break->after.root.children.front().children.front().children.front().inline_content;
         expect(fatal(bool(edited.source == U"a<br>b")));
-        expect(fatal(bool(inline_contains_kind(edited, InlineCstKind::HardBreak))));
+        expect(fatal(bool(contains_html_tag(edited.tree.nodes, "br"))));
         expect(fatal(bool(serialize_markdown(cell_break->after).find("a<br>b") != std::string::npos)));
 
         auto second_break = test_edit::document_enter(cell_break->after, cell_break->selection_after);

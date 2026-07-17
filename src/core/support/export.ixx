@@ -153,11 +153,35 @@ inline std::string inline_nodes_to_html(
                 break;
             }
             case K::HtmlElement: {
-                const auto& tag = node.semantics().html_tag;
-                static constexpr std::array<std::string_view, 11> allowed{
-                    "abbr", "small", "sub", "sup", "mark", "kbd",
-                    "q", "time", "u", "var", "samp"};
+                const auto& semantic = node.semantics();
+                const auto& tag = semantic.html_tag;
+                if (tag == "br") {
+                    html += "<br>\n";
+                    break;
+                }
+                if (tag == "img") {
+                    const auto title = semantic.title
+                        ? " title=\"" + escape_text(*semantic.title) + "\""
+                        : std::string{};
+                    html += "<img src=\"" + escape_text(sanitized_target(semantic.href, true))
+                        + "\" alt=\"" + escape_text(semantic.alt) + "\"" + title
+                        + image_dimension_attributes(semantic.image_width, semantic.image_height)
+                        + " />";
+                    break;
+                }
                 const auto content = inline_nodes_to_html(document, node.children, policy);
+                if (tag == "a") {
+                    const auto title = semantic.title
+                        ? " title=\"" + escape_text(*semantic.title) + "\""
+                        : std::string{};
+                    html += "<a href=\"" + escape_text(sanitized_target(semantic.href, false))
+                        + "\"" + title + ">" + content + "</a>";
+                    break;
+                }
+                static constexpr std::array<std::string_view, 25> allowed{
+                    "strong", "b", "em", "i", "cite", "del", "s", "strike",
+                    "ins", "code", "tt", "span", "abbr", "small", "sub", "sup",
+                    "mark", "kbd", "q", "time", "u", "var", "samp", "a", "img"};
                 if (std::ranges::find(allowed, tag) != allowed.end()) {
                     html += "<" + tag + ">" + content + "</" + tag + ">";
                 } else {

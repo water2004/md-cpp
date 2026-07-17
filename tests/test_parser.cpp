@@ -947,7 +947,10 @@ suite parser_tests = [] {
     expect(fatal(paragraph.kind == BlockKind::Paragraph));
     const auto image = std::ranges::find_if(
         paragraph.inline_content.tree.nodes,
-        [](auto const& node) { return node.kind == InlineCstKind::Image; });
+        [](auto const& node) {
+            return node.kind == InlineCstKind::HtmlElement
+                && node.semantics().html_tag == "img";
+        });
     expect(fatal(image != paragraph.inline_content.tree.nodes.end()));
     if (image != paragraph.inline_content.tree.nodes.end()) {
         expect(fatal(image->semantics().image_width
@@ -1045,7 +1048,7 @@ suite parser_tests = [] {
     expect(paragraph->inline_content.syntax_mode == InlineSyntaxMode::HtmlText);
     expect(!inline_contains_kind(paragraph->inline_content, InlineCstKind::Emphasis));
     expect(!inline_contains_kind(paragraph->inline_content, InlineCstKind::InlineMath));
-    expect(inline_contains_kind(paragraph->inline_content, InlineCstKind::Strong));
+    expect(!inline_contains_kind(paragraph->inline_content, InlineCstKind::Strong));
     expect(inline_contains_kind(paragraph->inline_content, InlineCstKind::HtmlElement));
     expect(fatal(serialize_markdown(parsed.document) == source));
 };

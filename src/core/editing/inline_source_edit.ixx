@@ -17,7 +17,10 @@ inline std::optional<SourceRange> adjacent_hard_break(
     bool backward) {
     for (const auto& node : nodes) {
         if (auto nested = adjacent_hard_break(node.children, offset, backward)) return nested;
-        if (node.kind != InlineCstKind::HardBreak) continue;
+        const auto semantic_break = node.kind == InlineCstKind::HardBreak
+            || (node.kind == InlineCstKind::HtmlElement
+                && node.semantics().html_tag == "br");
+        if (!semantic_break) continue;
         const bool adjacent = backward
             ? node.range.start < offset && offset <= node.range.end
             : node.range.start <= offset && offset < node.range.end;
