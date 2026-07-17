@@ -144,9 +144,19 @@ inline std::string inline_nodes_to_html(
                     + image_dimension_attributes(semantic.image_width, semantic.image_height) + " />";
                 break;
             }
-            case K::HtmlElement:
-                html += inline_nodes_to_html(document, node.children, policy);
+            case K::HtmlElement: {
+                const auto& tag = node.semantics().html_tag;
+                static constexpr std::array<std::string_view, 11> allowed{
+                    "abbr", "small", "sub", "sup", "mark", "kbd",
+                    "q", "time", "u", "var", "samp"};
+                const auto content = inline_nodes_to_html(document, node.children, policy);
+                if (std::ranges::find(allowed, tag) != allowed.end()) {
+                    html += "<" + tag + ">" + content + "</" + tag + ">";
+                } else {
+                    html += content;
+                }
                 break;
+            }
             case K::Autolink:
                 html += "<a href=\"" + escape_text(sanitized_target(node.semantics().href, false)) + "\">"
                     + escape_text(cps_to_utf8(inline_source_slice(document, node.delimiter_ranges().content))) + "</a>";
@@ -234,22 +244,18 @@ inline std::string block_to_html(const BlockNode& b, ExportRawHtmlPolicy pol) {
             return "<div class=\"math-block\">" + escape_raw_html(cps_to_utf8(block_source_content(b.block_source))) + "</div>\n";
         case BK::Table: {
             if (b.children.empty()) return "<table></table>\n";
-            std::string html = "<table>\n<thead><tr>";
-            for (const auto& c : b.children.front().children) {
-                std::string s = inline_document_to_html(c.inline_content, pol);
-                html += "<th>" + s + "</th>";
-            }
-            html += "</tr></thead>\n<tbody>\n";
-            for (std::size_t index = 1; index < b.children.size(); ++index) {
-                const auto& row = b.children[index];
+            std::string html = "<table>\n";
+            for (const auto& row : b.children) {
+                const auto cell_tag = row.table_special().table_header_row ? "th" : "td";
                 html += "<tr>";
                 for (const auto& c : row.children) {
                     std::string s = inline_document_to_html(c.inline_content, pol);
-                    html += "<td>" + s + "</td>";
+                    html += "<" + std::string(cell_tag) + ">" + s
+                        + "</" + std::string(cell_tag) + ">";
                 }
                 html += "</tr>\n";
             }
-            html += "</tbody>\n</table>\n";
+            html += "</table>\n";
             return html;
         }
         case BK::ThematicBreak: return "<hr>\n";
@@ -282,6 +288,8 @@ inline std::string block_to_html(const BlockNode& b, ExportRawHtmlPolicy pol) {
         }
         case BK::Extension:
             return "<div class=\"extension\">" + escape_text(b.atomic_special().ext_name) + "</div>\n";
+        case BK::HtmlContainer:
+            return blocks_to_html(b.children, pol);
         case BK::Document:
         case BK::ListItem:
         case BK::TaskListItem:

@@ -40,6 +40,22 @@ suite export_tests = [] {
     expect(fatal(bool(html.find("<div>hello</div>\n") == std::string::npos)));
 };
 
+"test_export_html_uses_safe_semantics_for_recursive_html"_test = [] {
+    auto out = parse_text(1,
+        "<div onclick='evil()'><h2>Title</h2><p>safe <strong>text</strong> <mark>marked</mark></p></div>\n\n"
+        "<table><tr><td>A</td><td>B</td></tr></table>\n");
+    ExportOptions opts;
+    auto res = export_html("", out.document, opts);
+    expect(fatal(bool(res.ok)));
+    const auto& html = res.value.content;
+    expect(fatal(bool(html.find("onclick") == std::string::npos)));
+    expect(fatal(bool(html.find("<h2") != std::string::npos)));
+    expect(fatal(bool(html.find("<strong>text</strong>") != std::string::npos)));
+    expect(fatal(bool(html.find("<mark>marked</mark>") != std::string::npos)));
+    expect(fatal(bool(html.find("<td>A</td><td>B</td>") != std::string::npos)));
+    expect(fatal(bool(html.find("<th>A</th>") == std::string::npos)));
+};
+
 "test_export_markdown_serializes_document"_test = [] {
     std::string src = "# Title\n\nHello *world*.\n";
     auto out = parse_text(1, src);
