@@ -32,6 +32,10 @@
     </filter>
   </defs>
 
+  <!-- Keep one source scale for every rasterized shell asset. The slight
+       enlargement uses the existing transparent edge as trim allowance,
+       while leaving the page shape and fold geometry unchanged. -->
+  <g transform="translate(-10.24 -10.24) scale(1.04)">
   <g filter="url(#paperShadow)">
     <path
       d="M128 56
@@ -78,4 +82,5 @@
         stroke="#D3D8E4"
         stroke-width="12"
         stroke-linecap="round"/>
+  </g>
 </svg>
