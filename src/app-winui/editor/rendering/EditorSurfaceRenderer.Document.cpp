@@ -1354,6 +1354,12 @@ namespace winrt::ElMd
             }
             if (prepared.code || block.block_style.background) resources.d2dContext->FillRectangle(rect, resources.panelBrush.Get());
             drawFlowDecorations(prepared.layout.Get(), origin, block, prepared.display);
+            DrawInlinePresentationBackgrounds(
+                resources,
+                styleSheet,
+                prepared.layout.Get(),
+                origin,
+                prepared.display.ranges);
             drawSelection(prepared.layout.Get(), origin, prepared.display.displayToSource);
             if (prepared.layout)
                 resources.d2dContext->DrawTextLayout(

@@ -1,6 +1,7 @@
 #include "pch.h"
 
 import elmd.core.render_model;
+import elmd.core.theme;
 import elmd.core.types;
 import elmd.core.utf;
 
@@ -181,6 +182,106 @@ namespace winrt::ElMd
             }
             return level;
         }
+
+        D2D1_COLOR_F ToD2D(elmd::Color color)
+        {
+            constexpr auto scale = 1.0f / 255.0f;
+            return D2D1::ColorF(
+                color.r * scale,
+                color.g * scale,
+                color.b * scale,
+                color.a * scale);
+        }
+
+        float BaseFontSize(elmd::InlineStyle const& style, EditorStyleSheet const& styleSheet)
+        {
+            if (style.heading_level)
+            {
+                switch (*style.heading_level)
+                {
+                    case 1: return styleSheet.heading1.size;
+                    case 2: return styleSheet.heading2.size;
+                    case 3: return styleSheet.heading3.size;
+                    case 4: return styleSheet.body.size * 1.15f;
+                    default: return styleSheet.body.size;
+                }
+            }
+            return style.code ? styleSheet.code.size : styleSheet.body.size;
+        }
+
+        float BaseLineHeight(elmd::InlineStyle const& style, EditorStyleSheet const& styleSheet)
+        {
+            if (style.heading_level)
+            {
+                switch (*style.heading_level)
+                {
+                    case 1: return styleSheet.heading1.lineHeight;
+                    case 2: return styleSheet.heading2.lineHeight;
+                    case 3: return styleSheet.heading3.lineHeight;
+                    default: return styleSheet.body.lineHeight;
+                }
+            }
+            return style.code ? styleSheet.code.lineHeight : styleSheet.body.lineHeight;
+        }
+    }
+
+    void DrawInlinePresentationBackgrounds(
+        EditorRenderResources& resources,
+        EditorStyleSheet const& styleSheet,
+        IDWriteTextLayout* layout,
+        D2D1_POINT_2F origin,
+        std::vector<InlineStyleRange> const& ranges)
+    {
+        if (!layout || !resources.d2dContext) return;
+        ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush;
+        for (auto const& range : ranges)
+        {
+            auto const& presentation = range.style.presentation;
+            if (range.length == 0 || !presentation
+                || (!presentation->background && !presentation->highlight)) continue;
+
+            const auto color = presentation->background
+                ? ToD2D(*presentation->background)
+                : styleSheet.calloutWarningBackgroundColor;
+            if (!brush)
+            {
+                if (FAILED(resources.d2dContext->CreateSolidColorBrush(
+                        color,
+                        brush.GetAddressOf()))) return;
+            }
+            else brush->SetColor(color);
+
+            UINT32 count = 0;
+            auto result = layout->HitTestTextRange(
+                range.start,
+                range.length,
+                origin.x,
+                origin.y,
+                nullptr,
+                0,
+                &count);
+            if (result != E_NOT_SUFFICIENT_BUFFER || count == 0) continue;
+            std::vector<DWRITE_HIT_TEST_METRICS> metrics(count);
+            if (FAILED(layout->HitTestTextRange(
+                    range.start,
+                    range.length,
+                    origin.x,
+                    origin.y,
+                    metrics.data(),
+                    count,
+                    &count))) continue;
+            for (UINT32 index = 0; index < count; ++index)
+            {
+                auto const& metric = metrics[index];
+                resources.d2dContext->FillRectangle(
+                    D2D1::RectF(
+                        metric.left,
+                        metric.top,
+                        metric.left + metric.width,
+                        metric.top + metric.height),
+                    brush.Get());
+            }
+        }
     }
 
     ::Microsoft::WRL::ComPtr<IDWriteTextLayout> EditorTextLayoutEngine::CreateFlow(
@@ -306,12 +407,13 @@ namespace winrt::ElMd
     void EditorTextLayoutEngine::ApplyStyles(IDWriteTextLayout* layout, std::vector<InlineStyleRange> const& ranges) const
     {
         if (!layout) return;
+        bool requiresDefaultLineSpacing = false;
         for (auto const& range : ranges)
         {
             DWRITE_TEXT_RANGE textRange{ range.start, range.length };
             if (range.style.bold) layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, textRange);
             if (range.style.italic) layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, textRange);
-            if (range.style.link) layout->SetUnderline(true, textRange);
+            if (range.style.link || range.style.underline) layout->SetUnderline(true, textRange);
             if (range.style.strikethrough) layout->SetStrikethrough(true, textRange);
             if (range.style.code)
             {
@@ -353,7 +455,64 @@ namespace winrt::ElMd
             {
                 layout->SetDrawingEffect(resources.syntaxBrushes[syntaxIndex].Get(), textRange);
             }
+            if (auto const& presentation = range.style.presentation)
+            {
+                if (presentation->font_family)
+                {
+                    auto family = winrt::to_hstring(*presentation->font_family);
+                    layout->SetFontFamilyName(family.c_str(), textRange);
+                }
+                if (presentation->font_weight)
+                {
+                    layout->SetFontWeight(
+                        static_cast<DWRITE_FONT_WEIGHT>(*presentation->font_weight),
+                        textRange);
+                }
+                if (presentation->font_italic)
+                {
+                    layout->SetFontStyle(
+                        *presentation->font_italic
+                            ? DWRITE_FONT_STYLE_ITALIC
+                            : DWRITE_FONT_STYLE_NORMAL,
+                        textRange);
+                }
+                const auto fontSize = presentation->absolute_font_size.value_or(
+                    BaseFontSize(range.style, styleSheet) * presentation->relative_font_scale);
+                if (presentation->absolute_font_size
+                    || std::abs(presentation->relative_font_scale - 1.0f) > 0.001f)
+                {
+                    layout->SetFontSize(std::clamp(fontSize, 6.0f, 144.0f), textRange);
+                    requiresDefaultLineSpacing = requiresDefaultLineSpacing
+                        || fontSize > BaseLineHeight(range.style, styleSheet);
+                }
+                if (presentation->foreground)
+                {
+                    ::Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush;
+                    if (SUCCEEDED(resources.d2dContext->CreateSolidColorBrush(
+                            ToD2D(*presentation->foreground),
+                            brush.GetAddressOf())))
+                    {
+                        layout->SetDrawingEffect(brush.Get(), textRange);
+                    }
+                }
+                if (presentation->baseline != elmd::InlineBaseline::Normal)
+                {
+                    ::Microsoft::WRL::ComPtr<IDWriteTypography> typography;
+                    if (SUCCEEDED(resources.dwriteFactory->CreateTypography(typography.GetAddressOf())))
+                    {
+                        DWRITE_FONT_FEATURE feature{
+                            presentation->baseline == elmd::InlineBaseline::Superscript
+                                ? DWRITE_FONT_FEATURE_TAG_SUPERSCRIPT
+                                : DWRITE_FONT_FEATURE_TAG_SUBSCRIPT,
+                            1};
+                        if (SUCCEEDED(typography->AddFontFeature(feature)))
+                            layout->SetTypography(typography.Get(), textRange);
+                    }
+                }
+            }
         }
+        if (requiresDefaultLineSpacing)
+            layout->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_DEFAULT, 0.0f, 0.0f);
     }
 
     float EditorTextLayoutEngine::MeasureHeight(IDWriteTextLayout* layout, float fallbackHeight) const

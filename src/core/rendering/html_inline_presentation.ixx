@@ -228,11 +228,24 @@ inline InlineStyle apply_html_inline_presentation(
         return *presentation;
     };
 
-    if (tag == "strong" || tag == "b") inherited.bold = true;
-    else if (tag == "em" || tag == "i" || tag == "cite" || tag == "var") inherited.italic = true;
+    if (tag == "strong" || tag == "b") {
+        inherited.bold = true;
+        if (inherited.presentation) {
+            auto& style = ensure_presentation();
+            style.font_weight = (std::max)(
+                std::uint16_t{700},
+                style.font_weight.value_or(std::uint16_t{400}));
+        }
+    } else if (tag == "em" || tag == "i" || tag == "cite" || tag == "var") {
+        inherited.italic = true;
+        if (inherited.presentation) ensure_presentation().font_italic = true;
+    }
     else if (tag == "del" || tag == "s" || tag == "strike") inherited.strikethrough = true;
     else if (tag == "u" || tag == "ins") inherited.underline = true;
-    else if (tag == "code" || tag == "kbd" || tag == "samp" || tag == "tt") inherited.code = true;
+    else if (tag == "code" || tag == "kbd" || tag == "samp" || tag == "tt") {
+        inherited.code = true;
+        if (inherited.presentation) ensure_presentation().font_family.reset();
+    }
     else if (tag == "small") scale_font(ensure_presentation(), 0.83f);
     else if (tag == "sub") {
         auto& style = ensure_presentation();
@@ -269,13 +282,13 @@ inline InlineStyle apply_html_inline_presentation(
             } else if (property == "font-weight") {
                 if (lower_value == "normal") {
                     inherited.bold = false;
-                    ensure_presentation().font_weight = 400;
+                    ensure_presentation().font_weight = std::uint16_t{400};
                 } else if (lower_value == "bold" || lower_value == "bolder") {
                     inherited.bold = true;
-                    ensure_presentation().font_weight = 700;
+                    ensure_presentation().font_weight = std::uint16_t{700};
                 } else if (lower_value == "lighter") {
                     inherited.bold = false;
-                    ensure_presentation().font_weight = 300;
+                    ensure_presentation().font_weight = std::uint16_t{300};
                 } else {
                     std::uint16_t weight = 0;
                     const auto parsed = std::from_chars(
@@ -287,8 +300,13 @@ inline InlineStyle apply_html_inline_presentation(
                     }
                 }
             } else if (property == "font-style") {
-                if (lower_value == "normal") inherited.italic = false;
-                else if (lower_value == "italic" || lower_value == "oblique") inherited.italic = true;
+                if (lower_value == "normal") {
+                    inherited.italic = false;
+                    ensure_presentation().font_italic = false;
+                } else if (lower_value == "italic" || lower_value == "oblique") {
+                    inherited.italic = true;
+                    ensure_presentation().font_italic = true;
+                }
             } else if (property == "text-decoration" || property == "text-decoration-line") {
                 if (lower_value == "none") {
                     inherited.underline = false;

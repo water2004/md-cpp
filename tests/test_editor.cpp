@@ -111,6 +111,46 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.selection() == after_selection)));
 };
 
+"inline_html_edit_undo_redo_preserves_the_syntax_island_exactly"_test = [] {
+    constexpr std::string_view source =
+        "before <span style=\"color:#123456\"><strong>*literal*</strong></span> after";
+    Editor editor{std::string(source)};
+    const auto literal = source.find("literal");
+    expect(fatal(bool(literal != std::string_view::npos)));
+    if (literal == std::string_view::npos) return;
+
+    const auto before = caret(first_text(editor), literal + 3u);
+    editor.set_selection(before);
+    reset_core_operation_counters();
+    expect(bool(editor.execute_document_insert_text(
+        editor.selection(), U"X").has_value())) << "insert";
+    const auto counters = read_core_operation_counters();
+    expect(bool(counters.full_document_parses == 0u)) << "no full parse";
+    expect(bool(counters.full_document_serializations == 0u)) << "no full serialize";
+    const auto edited = std::string(source.substr(0, literal + 3u))
+        + "X"
+        + std::string(source.substr(literal + 3u));
+    expect(bool(editor.markdown_utf8() == edited)) << "edited source";
+    expect(bool(inline_contains_kind(
+        first_text(editor).inline_content,
+        InlineCstKind::HtmlElement))) << "html element";
+    expect(bool(!inline_contains_kind(
+        first_text(editor).inline_content,
+        InlineCstKind::Emphasis))) << "markdown disabled inside html";
+    expect(bool(flatten_tokens(
+        first_text(editor).inline_content.tree,
+        first_text(editor).inline_content.source)
+        == first_text(editor).inline_content.source)) << "lossless flatten";
+    const auto after = editor.selection();
+
+    expect(bool(editor.undo())) << "undo";
+    expect(bool(editor.markdown_utf8() == source)) << "undo source";
+    expect(bool(editor.selection() == before)) << "undo selection";
+    expect(bool(editor.redo())) << "redo";
+    expect(bool(editor.markdown_utf8() == edited)) << "redo source";
+    expect(bool(editor.selection() == after)) << "redo selection";
+};
+
 "ordinary_block_separators_preserve_selection_source_and_history_exactly"_test = [] {
     struct Case {
         std::string source;

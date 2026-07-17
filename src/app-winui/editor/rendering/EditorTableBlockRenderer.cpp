@@ -189,6 +189,12 @@ namespace winrt::ElMd
         {
             auto& cell = visualTable.cells[cellIndex];
             auto const& display = prepared.displays[cellIndex];
+            DrawInlinePresentationBackgrounds(
+                resources,
+                styleSheet,
+                cell.layout.Get(),
+                cell.textOrigin,
+                display.ranges);
             if (!selection.is_caret() && selection.anchor.container_id == cell.sourceSpan.container_id
                 && selection.active.container_id == cell.sourceSpan.container_id)
             {

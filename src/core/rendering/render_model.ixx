@@ -110,6 +110,7 @@ struct InlinePresentationStyle {
     std::optional<float> absolute_font_size;
     float relative_font_scale = 1.0f;
     std::optional<std::uint16_t> font_weight;
+    std::optional<bool> font_italic;
     InlineBaseline baseline = InlineBaseline::Normal;
     bool highlight = false;
 };

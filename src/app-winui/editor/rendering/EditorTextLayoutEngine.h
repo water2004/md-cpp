@@ -8,6 +8,13 @@ namespace winrt::ElMd
     struct InlineStyleRange;
     struct DisplayInlineText;
 
+    void DrawInlinePresentationBackgrounds(
+        EditorRenderResources& resources,
+        EditorStyleSheet const& styleSheet,
+        IDWriteTextLayout* layout,
+        D2D1_POINT_2F origin,
+        std::vector<InlineStyleRange> const& ranges);
+
     struct EditorTextLayoutEngine
     {
         EditorTextLayoutEngine(EditorRenderResources& resources, EditorStyleSheet const& styleSheet);

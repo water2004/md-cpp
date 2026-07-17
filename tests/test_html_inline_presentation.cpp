@@ -45,6 +45,7 @@ suite html_inline_presentation_tests = [] {
     expect(style.presentation->font_family == std::optional<std::string>{"Segoe UI"});
     expect(std::fabs(style.presentation->relative_font_scale - 1.5f) < 0.001f);
     expect(style.presentation->font_weight == std::optional<std::uint16_t>{650});
+    expect(style.presentation->font_italic == std::optional<bool>{true});
 
     const std::unordered_map<std::string, std::string> inner_attributes{{
         "style",
@@ -60,6 +61,7 @@ suite html_inline_presentation_tests = [] {
         expect(inner.presentation->absolute_font_size == std::optional<float>{20.0f});
         expect(inner.presentation->relative_font_scale == 1.0f);
         expect(inner.presentation->font_weight == std::optional<std::uint16_t>{400});
+        expect(inner.presentation->font_italic == std::optional<bool>{false});
         expect(inner.presentation->baseline == InlineBaseline::Superscript);
         expect(inner.presentation->foreground == style.presentation->foreground);
     }
@@ -90,6 +92,32 @@ suite html_inline_presentation_tests = [] {
     expect(style.presentation->relative_font_scale < 0.70f);
     expect(style.presentation->baseline == InlineBaseline::Subscript);
     expect(style.presentation->highlight);
+};
+
+"child_semantic_tags_override_inherited_css_defaults"_test = [] {
+    const std::unordered_map<std::string, std::string> normal_attributes{{
+        "style",
+        "font-weight:normal; font-style:normal; font-family:serif"}};
+    const std::unordered_map<std::string, std::string> empty;
+    const auto outer = apply_html_inline_presentation(
+        InlineStyle::plain(), "span", normal_attributes);
+
+    const auto strong = apply_html_inline_presentation(outer, "strong", empty);
+    expect(strong.bold);
+    expect(fatal(bool(strong.presentation != nullptr)));
+    if (strong.presentation)
+        expect(strong.presentation->font_weight == std::optional<std::uint16_t>{700});
+
+    const auto emphasis = apply_html_inline_presentation(outer, "em", empty);
+    expect(emphasis.italic);
+    expect(fatal(bool(emphasis.presentation != nullptr)));
+    if (emphasis.presentation)
+        expect(emphasis.presentation->font_italic == std::optional<bool>{true});
+
+    const auto code = apply_html_inline_presentation(outer, "code", empty);
+    expect(code.code);
+    expect(fatal(bool(code.presentation != nullptr)));
+    if (code.presentation) expect(!code.presentation->font_family.has_value());
 };
 
 };
