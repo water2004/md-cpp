@@ -244,19 +244,9 @@ namespace winrt::ElMd
         displayPos = (std::clamp)(displayPos, static_cast<std::size_t>(line.displayStart), static_cast<std::size_t>(line.displayEnd));
         UINT32 hitPos = static_cast<UINT32>(displayPos);
         BOOL trailing = FALSE;
-        if (displayPos == line.displayEnd && displayPos > line.displayStart)
-        {
-            // DirectWrite treats textPosition == text length as the boundary
-            // after the layout.  For a downstream caret at the end of a
-            // one-line block that can produce a synthetic next visual line at
-            // x == 0.  The caret still belongs to this visual line, so express
-            // the same boundary as the trailing edge of its final glyph.
-            // Wrapped/newline boundaries already select the downstream
-            // EditorVisualLine in LineIndexFor and therefore arrive at that
-            // line's displayStart instead of here.
-            --hitPos;
-            trailing = TRUE;
-        }
+        if (displayPos == line.displayEnd
+            && position.affinity == elmd::TextAffinity::Upstream
+            && displayPos > line.displayStart) { --hitPos; trailing = TRUE; }
         FLOAT x = 0.0f, y = 0.0f;
         DWRITE_HIT_TEST_METRICS metrics{};
         if (FAILED(layout->HitTestTextPosition(hitPos, trailing, &x, &y, &metrics))) return std::nullopt;
