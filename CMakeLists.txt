@@ -136,16 +136,16 @@ set(BOOST_UT_ENABLE_INSTALL OFF CACHE BOOL "Do not install vendored Boost.UT" FO
 add_subdirectory(third_party/ut EXCLUDE_FROM_ALL)
 
 enable_testing()
-add_executable(elmd_tests)
-target_compile_features(elmd_tests PRIVATE cxx_std_23)
-set_target_properties(elmd_tests PROPERTIES
+add_executable(FoliaTests)
+target_compile_features(FoliaTests PRIVATE cxx_std_23)
+set_target_properties(FoliaTests PROPERTIES
     CXX_MODULE_STD ON
     CXX_SCAN_FOR_MODULES ON)
 file(GLOB ELMD_TEST_SRC CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp)
-target_sources(elmd_tests PRIVATE
+target_sources(FoliaTests PRIVATE
     ${ELMD_TEST_SRC})
-target_link_libraries(elmd_tests PRIVATE elmd_core Boost::ut_module)
+target_link_libraries(FoliaTests PRIVATE elmd_core Boost::ut_module)
 # Boost.UT parses positional test-name patterns and CLI options. For example,
-# `elmd_tests.exe "*name*"` filters by name; `-t` lists tags.
-add_test(NAME elmd_tests COMMAND elmd_tests)
+# `FoliaTests.exe "*name*"` filters by name; `-t` lists tags.
+add_test(NAME FoliaTests COMMAND FoliaTests)

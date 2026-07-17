@@ -6,4 +6,4 @@ for /f "usebackq delims=" %%I in (`"%VSWHERE%" -latest -products * -requires Mic
 if not defined VSINSTALL exit /b 1
 call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat" >nul
 cd /d "%ROOT%"
-cmake --build "%ROOT%\build\core" --target elmd_tests 2>&1
+cmake --build "%ROOT%\build\core" --target FoliaTests 2>&1

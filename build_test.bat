@@ -8,7 +8,7 @@ call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat" >nul
 cd /d "%ROOT%"
 cmake -Wno-dev -G Ninja -S "%ROOT%" -B "%ROOT%\build\core"
 if errorlevel 1 exit /b %errorlevel%
-cmake --build "%ROOT%\build\core" --target elmd_tests
+cmake --build "%ROOT%\build\core" --target FoliaTests
 if errorlevel 1 exit /b %errorlevel%
-"%ROOT%\build\core\elmd_tests.exe" %*
+"%ROOT%\build\core\FoliaTests.exe" %*
 exit /b %errorlevel%

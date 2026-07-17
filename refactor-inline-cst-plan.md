@@ -34,7 +34,7 @@
 全部阶段已按依赖完成。`document_edit.ixx` 现为薄 facade，具体职责拆分到 `document_edit_support.ixx`、`document_source_edit.ixx` 与 `document_structure_edit.ixx`。
 
 ## 环境约束
-- 核心构建+测试: `cmd /c build_test.bat 2>&1` (vcvars64 + ninja + elmd_tests)
+- 核心构建+测试: `cmd /c build_test.bat 2>&1` (vcvars64 + ninja + FoliaTests)
 - WinUI 应用层: `setup.ps1` 恢复依赖后，以 MSBuild Debug x64 构建验证
 - 提交纪律: 小批量分步 commit，不一次性 dump
 
@@ -42,9 +42,9 @@
 
 - 2026-07-12 基线提交 ecadd1b (AGENTS.md 新纲领)
 - 2026-07-12 测试框架迁移到仓库 fork 的 Boost.UT C++23 module (`third_party/ut`):
-  - CMake: `cmake_minimum_required(VERSION 4.0)`、`file(GLOB)` 收集 `tests/*.cpp`，`elmd_tests` 链接 `Boost::ut_module`
+  - CMake: `cmake_minimum_required(VERSION 4.0)`、`file(GLOB)` 收集 `tests/*.cpp`，`FoliaTests` 链接 `Boost::ut_module`
   - `tests/elmd_test.hpp` 使用 `import boost.ut;`；测试 TU 不再 `import std;`
-  - `tests/main.cpp` 将 `argc`/`argv` 传给 `boost::ut::cfg<>.run()`；测试名过滤使用位置参数（例如 `elmd_tests.exe "*name*"`），`-t` 用于列出标签
+  - `tests/main.cpp` 将 `argc`/`argv` 传给 `boost::ut::cfg<>.run()`；测试名过滤使用位置参数（例如 `FoliaTests.exe "*name*"`），`-t` 用于列出标签
   - fork 包含 MSVC module linkage 与命令行初始化修复；不得退回 `<boost/ut.hpp>` header-only 路径
   - 删除旧的 `tests/test_framework.h`
   - 验证: 全部核心测试套件在 module 路径下编译并通过
