@@ -139,6 +139,8 @@ namespace winrt::ElMd
             resources,
             renderCache,
             styleSheet,
+            svgNormalizer,
+            svgPainter,
             frame.baseDirectory,
             !printMode);
         auto drawMath = [&](MathJaxSvgFragment const& fragment, D2D1_POINT_2F origin, D2D1_COLOR_F) {
@@ -610,7 +612,7 @@ namespace winrt::ElMd
                 auto height = special.image_height.value_or(0.0f);
                 if ((width <= 0.0f || height <= 0.0f) && !special.src.empty())
                 {
-                    if (auto dimensions = renderCache.ProbeGifDimensions(frame.baseDirectory, special.src))
+                    if (auto dimensions = renderCache.ProbeImageDimensions(resources, frame.baseDirectory, special.src))
                     {
                         width = special.image_width.value_or(dimensions->width);
                         height = special.image_height.value_or(dimensions->height);
@@ -632,7 +634,7 @@ namespace winrt::ElMd
                 : level == 2 ? styleSheet.heading2
                 : styleSheet.heading3;
             for (auto const& source : special.inline_image_sources)
-                renderCache.ProbeGifDimensions(frame.baseDirectory, source);
+                renderCache.ProbeImageDimensions(resources, frame.baseDirectory, source);
             auto averageAdvance = (std::max)(1.0f, font.size * 0.72f);
             auto charactersPerLine = (std::max)(
                 std::size_t{1},
@@ -815,6 +817,7 @@ namespace winrt::ElMd
                 {
                     for (auto const& span : block.special().table_cell_spans) addOwner(span.container_id);
                     prepared.pendingMath = prepared.table->pendingMath;
+                    prepared.pendingImage = prepared.table->pendingImage;
                     prepared.height = prepared.table->height;
                     prepared.valid = true;
                     return prepared;
@@ -878,6 +881,9 @@ namespace winrt::ElMd
                         candidateDisplay.imageOverlays,
                         contentWidth,
                         requestEmbedded);
+                    prepared.pendingImage = std::ranges::any_of(
+                        prepared.images,
+                        [](auto const& image) { return image.pending; });
                 });
             prepared.mathPreviews.reserve(prepared.display.mathPreviews.size());
             for (auto const& preview : prepared.display.mathPreviews)
@@ -1156,7 +1162,8 @@ namespace winrt::ElMd
                 && prepared.embeddedGeneration != embeddedGeneration;
             auto refreshForImages = prepared.containsImage
                 && prepared.embeddedRequested
-                && prepared.remoteImageGeneration != remoteImageGeneration;
+                && (prepared.remoteImageGeneration != remoteImageGeneration
+                    || (prepared.pendingImage && prepared.embeddedGeneration != embeddedGeneration));
             auto enteredEmbeddedBand = !prepared.embeddedRequested
                 && (prepared.containsMath || prepared.containsImage);
             if (!refreshForMath && !refreshForImages && !enteredEmbeddedBand) continue;

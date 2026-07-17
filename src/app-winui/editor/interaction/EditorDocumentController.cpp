@@ -568,7 +568,23 @@ namespace winrt::ElMd
         {
             if (!Active(state, generation) || !state->windowHandle) co_return;
             auto picker = winrt::Windows::Storage::Pickers::FileOpenPicker();
-            for (auto extension : { L".png", L".jpg", L".jpeg", L".gif", L".webp", L".bmp" }) picker.FileTypeFilter().Append(extension);
+            for (auto extension : {
+                L".svg",
+                L".png",
+                L".jpg",
+                L".jpeg",
+                L".gif",
+                L".bmp",
+                L".tif",
+                L".tiff",
+                L".ico",
+                L".webp",
+                L".heic",
+                L".heif",
+                L".avif",
+                L".jxr",
+                L".wdp",
+            }) picker.FileTypeFilter().Append(extension);
             auto initializeWithWindow = picker.as<IInitializeWithWindow>();
             winrt::check_hresult(initializeWithWindow->Initialize(state->windowHandle()));
             auto file = co_await picker.PickSingleFileAsync();

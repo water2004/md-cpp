@@ -2,6 +2,7 @@
 #include "editor/rendering/EditorRenderCache.h"
 #include "media/EditorGifDecoder.h"
 
+import elmd.core.image_metadata;
 import elmd.core.render_model;
 import elmd.core.types;
 
@@ -9,6 +10,35 @@ import elmd.core.types;
 
 namespace
 {
+    using ImageDimensions = winrt::ElMd::EditorRenderCache::ImageDimensions;
+
+    constexpr std::size_t MaximumEncodedImageBytes = 16u * 1024u * 1024u;
+    constexpr std::size_t RemoteMetadataBytes = 64u * 1024u;
+
+    std::optional<ImageDimensions> ValidDimensions(std::uint32_t width, std::uint32_t height)
+    {
+        if (width == 0 || height == 0
+            || static_cast<std::uint64_t>(width) * height > 16ull * 1024ull * 1024ull)
+            return std::nullopt;
+        return ImageDimensions{static_cast<float>(width), static_cast<float>(height)};
+    }
+
+    bool AsciiEqualsIgnoreCase(char left, char right)
+    {
+        if (left >= 'A' && left <= 'Z') left = static_cast<char>(left - 'A' + 'a');
+        if (right >= 'A' && right <= 'Z') right = static_cast<char>(right - 'A' + 'a');
+        return left == right;
+    }
+
+    bool AsciiEndsWithIgnoreCase(std::string_view value, std::string_view suffix)
+    {
+        if (value.size() < suffix.size()) return false;
+        return std::ranges::equal(
+            value.substr(value.size() - suffix.size()),
+            suffix,
+            AsciiEqualsIgnoreCase);
+    }
+
     bool HasGifMagic(std::vector<std::uint8_t> const& bytes)
     {
         if (bytes.size() < 6) return false;
@@ -22,46 +52,96 @@ namespace
         return _wcsicmp(extension.c_str(), L".gif") == 0;
     }
 
-    std::optional<winrt::ElMd::EditorRenderCache::ImageDimensions> GifDimensionsFromHeader(
+    bool HasGifMagic(std::filesystem::path const& path)
+    {
+        std::array<std::uint8_t, 6> header{};
+        std::ifstream stream(path, std::ios::binary);
+        if (!stream) return false;
+        stream.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(header.size()));
+        if (stream.gcount() != static_cast<std::streamsize>(header.size())) return false;
+        auto signature = std::string_view(reinterpret_cast<char const*>(header.data()), header.size());
+        return signature == "GIF87a" || signature == "GIF89a";
+    }
+
+    std::optional<ImageDimensions> ImageDimensionsFromHeader(
         std::uint8_t const* bytes,
         std::size_t size)
     {
-        if (!bytes || size < 10) return std::nullopt;
-        auto signature = std::string_view(reinterpret_cast<char const*>(bytes), 6);
-        if (signature != "GIF87a" && signature != "GIF89a") return std::nullopt;
-        auto width = static_cast<UINT>(bytes[6]) | (static_cast<UINT>(bytes[7]) << 8);
-        auto height = static_cast<UINT>(bytes[8]) | (static_cast<UINT>(bytes[9]) << 8);
-        if (width == 0 || height == 0
-            || static_cast<std::uint64_t>(width) * height > 16ull * 1024ull * 1024ull)
-            return std::nullopt;
-        return winrt::ElMd::EditorRenderCache::ImageDimensions{
-            static_cast<float>(width),
-            static_cast<float>(height),
+        if (!bytes) return std::nullopt;
+        auto metadata = elmd::probe_encoded_image_metadata(std::span(bytes, size));
+        if (!metadata) return std::nullopt;
+        return ImageDimensions{
+            static_cast<float>(metadata->width),
+            static_cast<float>(metadata->height),
         };
     }
 
-    std::optional<winrt::ElMd::EditorRenderCache::ImageDimensions> GifDimensionsFromBase64(
-        std::string_view source)
+    std::optional<std::vector<std::uint8_t>> DecodeImageDataUri(std::string_view source)
     {
-        static constexpr std::string_view alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        std::array<std::uint8_t, 10> header{};
-        auto count = std::size_t{0};
-        std::uint32_t accumulator = 0;
-        unsigned bits = 0;
-        for (auto ch : source)
+        if (!source.starts_with("data:image/")) return std::nullopt;
+        auto comma = source.find(',');
+        if (comma == std::string_view::npos) return std::nullopt;
+        auto metadata = source.substr(0, comma);
+        if (metadata.find(";base64") != std::string_view::npos)
+            return winrt::ElMd::DecodeBase64(source.substr(comma + 1));
+        std::vector<std::uint8_t> decoded;
+        decoded.reserve((std::min)(source.size() - comma - 1, MaximumEncodedImageBytes));
+        auto payload = source.substr(comma + 1);
+        auto hex = [](char value) -> int
         {
-            if (ch == '=') break;
-            if (ch == '\r' || ch == '\n' || ch == ' ' || ch == '\t') continue;
-            auto position = alphabet.find(ch);
-            if (position == std::string_view::npos) return std::nullopt;
-            accumulator = (accumulator << 6) | static_cast<std::uint32_t>(position);
-            bits += 6;
-            if (bits < 8) continue;
-            bits -= 8;
-            header[count++] = static_cast<std::uint8_t>((accumulator >> bits) & 0xff);
-            if (count == header.size()) break;
+            if (value >= '0' && value <= '9') return value - '0';
+            if (value >= 'a' && value <= 'f') return value - 'a' + 10;
+            if (value >= 'A' && value <= 'F') return value - 'A' + 10;
+            return -1;
+        };
+        for (std::size_t index = 0; index < payload.size(); ++index)
+        {
+            if (decoded.size() >= MaximumEncodedImageBytes) return std::nullopt;
+            if (payload[index] == '%' && index + 2 < payload.size())
+            {
+                auto high = hex(payload[index + 1]);
+                auto low = hex(payload[index + 2]);
+                if (high < 0 || low < 0) return std::nullopt;
+                decoded.push_back(static_cast<std::uint8_t>((high << 4) | low));
+                index += 2;
+            }
+            else
+            {
+                decoded.push_back(static_cast<std::uint8_t>(payload[index]));
+            }
         }
-        return GifDimensionsFromHeader(header.data(), count);
+        return decoded;
+    }
+
+    bool LooksLikeSvg(std::span<std::uint8_t const> bytes)
+    {
+        auto limit = (std::min)(bytes.size(), std::size_t{8192});
+        auto text = std::string_view(reinterpret_cast<char const*>(bytes.data()), limit);
+        if (text.starts_with("\xef\xbb\xbf")) text.remove_prefix(3);
+        while (!text.empty() && (text.front() == ' ' || text.front() == '\t'
+            || text.front() == '\r' || text.front() == '\n')) text.remove_prefix(1);
+        if (text.empty() || text.front() != '<' || text.find('\0') != std::string_view::npos) return false;
+        for (std::size_t index = 0; index + 4 <= text.size(); ++index)
+        {
+            if (text[index] == '<'
+                && AsciiEqualsIgnoreCase(text[index + 1], 's')
+                && AsciiEqualsIgnoreCase(text[index + 2], 'v')
+                && AsciiEqualsIgnoreCase(text[index + 3], 'g'))
+            {
+                auto boundary = index + 4 == text.size() ? ' ' : text[index + 4];
+                return boundary == ' ' || boundary == '\t' || boundary == '\r'
+                    || boundary == '\n' || boundary == '>' || boundary == '/';
+            }
+        }
+        return false;
+    }
+
+    bool HasSvgHint(std::string_view source)
+    {
+        if (source.starts_with("data:image/svg+xml")) return true;
+        auto end = source.find_first_of("?#");
+        auto path = source.substr(0, end);
+        return AsciiEndsWithIgnoreCase(path, ".svg");
     }
 
     std::optional<std::wstring> RasterImageKey(
@@ -88,27 +168,74 @@ namespace
         if (error) absolute = path.lexically_normal();
         return absolute.wstring();
     }
+
+    std::optional<ImageDimensions> ProbeWicDimensions(
+        IWICImagingFactory* factory,
+        std::filesystem::path const& path)
+    {
+        if (!factory || path.empty()) return std::nullopt;
+        ::Microsoft::WRL::ComPtr<IWICBitmapDecoder> decoder;
+        if (FAILED(factory->CreateDecoderFromFilename(
+                path.c_str(),
+                nullptr,
+                GENERIC_READ,
+                WICDecodeMetadataCacheOnDemand,
+                decoder.GetAddressOf()))) return std::nullopt;
+        ::Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> frame;
+        UINT width = 0;
+        UINT height = 0;
+        if (FAILED(decoder->GetFrame(0, frame.GetAddressOf())) || !frame
+            || FAILED(frame->GetSize(&width, &height))) return std::nullopt;
+        return ValidDimensions(width, height);
+    }
+
+    std::optional<ImageDimensions> ProbeWicDimensions(
+        IWICImagingFactory* factory,
+        std::vector<std::uint8_t> const& bytes)
+    {
+        if (!factory || bytes.empty() || bytes.size() > (std::numeric_limits<DWORD>::max)())
+            return std::nullopt;
+        ::Microsoft::WRL::ComPtr<IWICStream> stream;
+        ::Microsoft::WRL::ComPtr<IWICBitmapDecoder> decoder;
+        if (FAILED(factory->CreateStream(stream.GetAddressOf()))
+            || FAILED(stream->InitializeFromMemory(
+                const_cast<std::uint8_t*>(bytes.data()),
+                static_cast<DWORD>(bytes.size())))
+            || FAILED(factory->CreateDecoderFromStream(
+                stream.Get(),
+                nullptr,
+                WICDecodeMetadataCacheOnDemand,
+                decoder.GetAddressOf()))) return std::nullopt;
+        ::Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> frame;
+        UINT width = 0;
+        UINT height = 0;
+        if (FAILED(decoder->GetFrame(0, frame.GetAddressOf())) || !frame
+            || FAILED(frame->GetSize(&width, &height))) return std::nullopt;
+        return ValidDimensions(width, height);
+    }
 }
 namespace winrt::ElMd
 {
-    std::optional<EditorRenderCache::ImageDimensions> EditorRenderCache::ProbeGifDimensions(
+    std::optional<EditorRenderCache::ImageDimensions> EditorRenderCache::ProbeImageDimensions(
+        EditorRenderResources const& resources,
         std::wstring const& baseDirectory,
         std::string_view source)
     {
         auto key = RasterImageKey(baseDirectory, source);
         if (!key) return std::nullopt;
-        if (auto found = gifDimensions.find(*key); found != gifDimensions.end()) return found->second;
-        if (gifDimensionMisses.contains(*key)) return std::nullopt;
-        if (auto found = rasterImages.find(*key); found != rasterImages.end() && found->second.animation)
+        if (auto found = imageDimensions.find(*key); found != imageDimensions.end()) return found->second;
+        if (imageDimensionMisses.contains(*key)) return std::nullopt;
+        if (auto found = rasterImages.find(*key); found != rasterImages.end())
             return ImageDimensions{found->second.width, found->second.height};
 
         std::optional<ImageDimensions> dimensions;
         if (source.starts_with("data:image/"))
         {
-            auto comma = source.find(',');
-            if (comma != std::string_view::npos
-                && source.substr(0, comma).find(";base64") != std::string_view::npos)
-                dimensions = GifDimensionsFromBase64(source.substr(comma + 1));
+            if (auto bytes = DecodeImageDataUri(source))
+            {
+                dimensions = ImageDimensionsFromHeader(bytes->data(), bytes->size());
+                if (!dimensions) dimensions = ProbeWicDimensions(resources.wicFactory.Get(), *bytes);
+            }
         }
         else if (source.starts_with("https://") || source.starts_with("http://"))
         {
@@ -118,20 +245,17 @@ namespace winrt::ElMd
                 if (auto found = remoteState->dimensions.find(remoteSource); found != remoteState->dimensions.end())
                     dimensions = found->second;
                 else if (auto dataFound = remoteState->data.find(remoteSource); dataFound != remoteState->data.end())
-                    dimensions = GifDimensionsFromHeader(dataFound->second.data(), dataFound->second.size());
+                {
+                    dimensions = ImageDimensionsFromHeader(dataFound->second.data(), dataFound->second.size());
+                    if (!dimensions)
+                        dimensions = ProbeWicDimensions(resources.wicFactory.Get(), dataFound->second);
+                }
             }
-            if (!dimensions) QueueRemoteGifDimensions(std::move(remoteSource));
+            if (!dimensions) QueueRemoteImageDimensions(std::move(remoteSource));
         }
         else
         {
-            auto path = std::filesystem::path(*key);
-            std::array<std::uint8_t, 10> header{};
-            std::ifstream stream(path, std::ios::binary);
-            if (stream)
-            {
-                stream.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(header.size()));
-                dimensions = GifDimensionsFromHeader(header.data(), static_cast<std::size_t>(stream.gcount()));
-            }
+            dimensions = ProbeWicDimensions(resources.wicFactory.Get(), std::filesystem::path(*key));
         }
         if (!dimensions)
         {
@@ -139,20 +263,79 @@ namespace winrt::ElMd
             // must remain probeable after the range request completes.
             if (!source.starts_with("https://") && !source.starts_with("http://"))
             {
-                if (gifDimensionMisses.size() >= 2048) gifDimensionMisses.clear();
-                gifDimensionMisses.insert(*key);
+                if (imageDimensionMisses.size() >= 2048) imageDimensionMisses.clear();
+                imageDimensionMisses.insert(*key);
             }
             return std::nullopt;
         }
         constexpr std::size_t dimensionLimit = 1024;
-        while (gifDimensionOrder.size() >= dimensionLimit)
+        while (imageDimensionOrder.size() >= dimensionLimit)
         {
-            gifDimensions.erase(gifDimensionOrder.front());
-            gifDimensionOrder.pop_front();
+            imageDimensions.erase(imageDimensionOrder.front());
+            imageDimensionOrder.pop_front();
         }
-        gifDimensionOrder.push_back(*key);
-        gifDimensions.emplace(*key, *dimensions);
+        imageDimensionOrder.push_back(*key);
+        imageDimensions.emplace(*key, *dimensions);
         return dimensions;
+    }
+
+    EditorRenderCache::SvgSource EditorRenderCache::LoadSvgSource(
+        std::wstring const& baseDirectory,
+        std::string_view source,
+        bool loadContent)
+    {
+        SvgSource result;
+        result.candidate = HasSvgHint(source);
+        if (!loadContent) return result;
+        auto key = RasterImageKey(baseDirectory, source);
+        if (!key) return result;
+
+        std::vector<std::uint8_t> bytes;
+        if (source.starts_with("data:image/"))
+        {
+            auto decoded = DecodeImageDataUri(source);
+            if (!decoded) return result;
+            bytes = std::move(*decoded);
+        }
+        else if (source.starts_with("https://") || source.starts_with("http://"))
+        {
+            auto remoteSource = std::string(source);
+            auto failed = false;
+            {
+                std::scoped_lock lock(remoteState->mutex);
+                if (auto found = remoteState->data.find(remoteSource); found != remoteState->data.end())
+                    bytes = found->second;
+                failed = remoteState->failed.contains(remoteSource);
+            }
+            if (bytes.empty())
+            {
+                if (!failed)
+                {
+                    QueueRemoteImage(std::move(remoteSource));
+                    result.pending = true;
+                }
+                return result;
+            }
+        }
+        else
+        {
+            auto path = std::filesystem::path(*key);
+            std::ifstream stream(path, std::ios::binary | std::ios::ate);
+            if (!stream) return result;
+            auto length = stream.tellg();
+            if (length <= 0 || static_cast<std::uint64_t>(length) > MaximumEncodedImageBytes)
+                return result;
+            bytes.resize(static_cast<std::size_t>(length));
+            stream.seekg(0);
+            stream.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+            if (stream.gcount() != static_cast<std::streamsize>(bytes.size())) return result;
+        }
+
+        auto svg = LooksLikeSvg(bytes);
+        result.candidate = result.candidate || svg;
+        if (result.candidate)
+            result.source.emplace(reinterpret_cast<char const*>(bytes.data()), bytes.size());
+        return result;
     }
 
     ID2D1Bitmap1* EditorRenderCache::CurrentBitmap(
@@ -205,7 +388,7 @@ namespace winrt::ElMd
         animationPumpActive = false;
     }
 
-    void EditorRenderCache::QueueRemoteGifDimensions(std::string source)
+    void EditorRenderCache::QueueRemoteImageDimensions(std::string source)
     {
         auto state = remoteState;
         {
@@ -261,7 +444,7 @@ namespace winrt::ElMd
                 winrt::Windows::Web::Http::HttpMethod::Get(),
                 winrt::Windows::Foundation::Uri(winrt::to_hstring(source)),
             };
-            request.Headers().TryAppendWithoutValidation(L"Range", L"bytes=0-9");
+            request.Headers().TryAppendWithoutValidation(L"Range", L"bytes=0-65535");
             auto operation = client.SendRequestAsync(
                 request,
                 winrt::Windows::Web::Http::HttpCompletionOption::ResponseHeadersRead);
@@ -292,7 +475,7 @@ namespace winrt::ElMd
                         {
                             auto reader = winrt::Windows::Storage::Streams::DataReader{streamAsync.GetResults()};
                             reader.InputStreamOptions(winrt::Windows::Storage::Streams::InputStreamOptions::Partial);
-                            auto loadOperation = reader.LoadAsync(10);
+                            auto loadOperation = reader.LoadAsync(static_cast<UINT32>(RemoteMetadataBytes));
                             loadOperation.Completed([response, reader, publish](auto const& loadAsync, winrt::Windows::Foundation::AsyncStatus loadStatus) mutable
                             {
                                 if (loadStatus != winrt::Windows::Foundation::AsyncStatus::Completed)
@@ -302,10 +485,12 @@ namespace winrt::ElMd
                                 }
                                 try
                                 {
-                                    auto count = (std::min)(loadAsync.GetResults(), 10u);
-                                    std::array<std::uint8_t, 10> header{};
-                                    reader.ReadBytes(winrt::array_view<std::uint8_t>(header.data(), header.data() + count));
-                                    publish(GifDimensionsFromHeader(header.data(), count));
+                                    auto count = (std::min)(
+                                        static_cast<std::size_t>(loadAsync.GetResults()),
+                                        RemoteMetadataBytes);
+                                    std::vector<std::uint8_t> header(count);
+                                    reader.ReadBytes(winrt::array_view<std::uint8_t>(header));
+                                    publish(ImageDimensionsFromHeader(header.data(), header.size()));
                                 }
                                 catch (...)
                                 {
@@ -440,11 +625,9 @@ namespace winrt::ElMd
         }
         else if (data)
         {
-            auto comma = source.find(',');
-            if (comma == std::string_view::npos || source.substr(0, comma).find(";base64") == std::string_view::npos) return std::nullopt;
             if (auto found = rasterImages.find(key); found != rasterImages.end()) return found->second;
             if (rasterImageFailures.contains(key)) return std::nullopt;
-            auto decoded = DecodeBase64(source.substr(comma + 1));
+            auto decoded = DecodeImageDataUri(source);
             if (!decoded || decoded->empty()) return std::nullopt;
             encoded = std::move(*decoded);
         }
@@ -472,10 +655,10 @@ namespace winrt::ElMd
         std::shared_ptr<GifInitialFrame const> gifInitial;
         auto gifCandidate = !encoded.empty()
             ? HasGifMagic(encoded)
-            : HasGifExtension(path) || ProbeGifDimensions(baseDirectory, source).has_value();
+            : HasGifExtension(path) || HasGifMagic(path);
         if (gifCandidate)
         {
-            gifDimensionMisses.erase(key);
+            imageDimensionMisses.erase(key);
             auto pending = pendingGifImages.find(key);
             if (pending == pendingGifImages.end())
             {
@@ -615,20 +798,18 @@ namespace winrt::ElMd
             rasterImageOrder.push_back(key);
             rasterImages.emplace(key, image);
         }
-        if (gifCandidate)
+        imageDimensionMisses.erase(key);
+        if (!imageDimensions.contains(key))
         {
-            if (!gifDimensions.contains(key))
+            constexpr std::size_t dimensionLimit = 1024;
+            while (imageDimensionOrder.size() >= dimensionLimit)
             {
-                constexpr std::size_t dimensionLimit = 1024;
-                while (gifDimensionOrder.size() >= dimensionLimit)
-                {
-                    gifDimensions.erase(gifDimensionOrder.front());
-                    gifDimensionOrder.pop_front();
-                }
-                gifDimensionOrder.push_back(key);
+                imageDimensions.erase(imageDimensionOrder.front());
+                imageDimensionOrder.pop_front();
             }
-            gifDimensions.insert_or_assign(key, ImageDimensions{image.width, image.height});
+            imageDimensionOrder.push_back(key);
         }
+        imageDimensions.insert_or_assign(key, ImageDimensions{image.width, image.height});
         return image;
     }
 

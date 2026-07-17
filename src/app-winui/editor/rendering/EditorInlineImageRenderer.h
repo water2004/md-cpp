@@ -4,6 +4,8 @@
 #include "editor/rendering/EditorRenderCache.h"
 #include "editor/rendering/EditorRenderResources.h"
 #include "editor/rendering/EditorStyleSheet.h"
+#include "editor/rendering/EditorSvgPainter.h"
+#include "media/SvgNormalizer.h"
 
 namespace winrt::ElMd
 {
@@ -13,6 +15,7 @@ namespace winrt::ElMd
         {
             std::uint32_t displayStart = 0;
             std::optional<EditorRenderCache::RasterImage> image;
+            std::optional<NormalizedSvg> svg;
             std::string source;
             std::wstring alt;
             std::wstring caption;
@@ -24,12 +27,17 @@ namespace winrt::ElMd
             float captionHeight = 0.0f;
             float advance = 0.0f;
             bool block = false;
+            bool pending = false;
+
+            bool Loaded() const { return image.has_value() || svg.has_value(); }
         };
 
         EditorInlineImageRenderer(
             EditorRenderResources& resources,
             EditorRenderCache& cache,
             EditorStyleSheet const& styleSheet,
+            SvgNormalizer& svgNormalizer,
+            EditorSvgPainter& svgPainter,
             std::wstring const& baseDirectory,
             bool animate = true);
         std::vector<ImageDraw> Resolve(IDWriteTextLayout* layout, std::vector<DisplayInlineText::ImageOverlay> const& overlays, float availableWidth, bool loadContent = true) const;
@@ -40,6 +48,8 @@ namespace winrt::ElMd
         EditorRenderResources& resources;
         EditorRenderCache& cache;
         EditorStyleSheet const& styleSheet;
+        SvgNormalizer& svgNormalizer;
+        EditorSvgPainter& svgPainter;
         std::wstring const& baseDirectory;
         bool animate = true;
     };

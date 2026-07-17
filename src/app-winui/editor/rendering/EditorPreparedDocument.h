@@ -35,6 +35,7 @@ namespace winrt::ElMd
             bool containsImage = false;
             bool embeddedRequested = false;
             bool pendingMath = false;
+            bool pendingImage = false;
             bool valid = false;
             std::uint64_t embeddedGeneration = 0;
             std::uint64_t remoteImageGeneration = 0;
@@ -52,6 +53,7 @@ namespace winrt::ElMd
                 auto retainedCode = code;
                 auto retainedContainsMath = containsMath;
                 auto retainedContainsImage = containsImage;
+                auto retainedPendingImage = pendingImage;
                 *this = {};
                 height = measuredHeight;
                 sourceId = retainedSourceId;
@@ -61,6 +63,7 @@ namespace winrt::ElMd
                 code = retainedCode;
                 containsMath = retainedContainsMath;
                 containsImage = retainedContainsImage;
+                pendingImage = retainedPendingImage;
             }
         };
 

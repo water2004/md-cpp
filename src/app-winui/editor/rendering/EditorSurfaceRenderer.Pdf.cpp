@@ -195,7 +195,7 @@ namespace winrt::ElMd
             {
                 if (std::ranges::any_of(
                         block.images,
-                        [](auto const& image) { return !image.image.has_value(); }))
+                        [](auto const& image) { return !image.Loaded(); }))
                     return true;
                 return block.table && std::ranges::any_of(
                     block.table->imageDraws,
@@ -203,7 +203,7 @@ namespace winrt::ElMd
                     {
                         return std::ranges::any_of(
                             images,
-                            [](auto const& image) { return !image.image.has_value(); });
+                            [](auto const& image) { return !image.Loaded(); });
                     });
             };
 
@@ -224,6 +224,7 @@ namespace winrt::ElMd
                     ready = false;
                 }
                 else if (block.pendingMath
+                    || block.pendingImage
                     || (imagesPending && block.containsImage && imageStillLoading(block)))
                 {
                     pendingBlocks.push_back(windowEnd);

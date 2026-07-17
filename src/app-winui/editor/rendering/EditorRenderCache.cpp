@@ -76,6 +76,9 @@ namespace winrt::ElMd
     {
         if (!pendingGifImages.empty()) return true;
         std::scoped_lock lock(remoteState->mutex);
-        return !remoteState->pending.empty() || !remoteState->dimensionPending.empty();
+        // Metadata probes refine layout but are never required to paint an
+        // image. PDF export must wait only for actual image content/decoding;
+        // otherwise an unrelated off-page range request can stall a page.
+        return !remoteState->pending.empty();
     }
 }

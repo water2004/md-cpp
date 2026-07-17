@@ -35,7 +35,9 @@ the user did not change.
 - **Native editing** — WYSIWYG and monospaced source modes, outline navigation,
   transactional history, and semantic copy/paste are implemented in native C++.
 - **Rich rendering** — MathJax, Mermaid, Tree-sitter syntax highlighting,
-  animated GIFs, images, tables, footnotes, callouts, and recursively nested blocks.
+  native SVG, animated GIFs, Windows image codecs (PNG, JPEG, BMP, TIFF, ICO,
+  and installed WebP/HEIF codecs), tables, footnotes, callouts, and recursively
+  nested blocks.
 - **Focused reading** — configurable themes, English and Chinese interfaces,
   a borderless WinUI shell, and native Windows PDF export.
 - **Clear boundaries** — the C++23 modules core remains platform independent;

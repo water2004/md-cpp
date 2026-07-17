@@ -11,11 +11,15 @@ namespace winrt::ElMd
         EditorRenderResources& resources,
         EditorRenderCache& cache,
         EditorStyleSheet const& styleSheet,
+        SvgNormalizer& svgNormalizer,
+        EditorSvgPainter& svgPainter,
         std::wstring const& baseDirectory,
         bool animate)
         : resources(resources),
           cache(cache),
           styleSheet(styleSheet),
+          svgNormalizer(svgNormalizer),
+          svgPainter(svgPainter),
           baseDirectory(baseDirectory),
           animate(animate)
     {
@@ -33,12 +37,39 @@ namespace winrt::ElMd
             draw.displayStart = overlay.displayStart;
             draw.block = overlay.block;
             draw.source = overlay.source;
-            if (loadContent)
+            auto svgSource = cache.LoadSvgSource(baseDirectory, overlay.source, loadContent);
+            if (svgSource.candidate)
+            {
+                if (svgSource.source)
+                {
+                    auto normalized = svgNormalizer.GetOrQueue(
+                        *svgSource.source,
+                        styleSheet.body.size,
+                        loadContent);
+                    if (normalized)
+                    {
+                        if (*normalized) draw.svg = std::move(*normalized);
+                    }
+                    else if (loadContent)
+                    {
+                        draw.pending = true;
+                    }
+                }
+                else
+                {
+                    draw.pending = svgSource.pending;
+                }
+            }
+            else if (loadContent)
+            {
                 draw.image = cache.LoadRasterImage(resources, baseDirectory, overlay.source);
+            }
             draw.alt = winrt::to_hstring(overlay.alt.empty() ? std::string("image") : overlay.alt).c_str();
-            auto dimensions = draw.image
-                ? std::optional(EditorRenderCache::ImageDimensions{draw.image->width, draw.image->height})
-                : cache.ProbeGifDimensions(baseDirectory, overlay.source);
+            auto dimensions = draw.svg
+                ? std::optional(EditorRenderCache::ImageDimensions{draw.svg->width, draw.svg->height})
+                : draw.image
+                    ? std::optional(EditorRenderCache::ImageDimensions{draw.image->width, draw.image->height})
+                    : cache.ProbeImageDimensions(resources, baseDirectory, overlay.source);
             if (dimensions)
             {
                 draw.width = overlay.width.value_or(dimensions->width);
@@ -133,7 +164,23 @@ namespace winrt::ElMd
             if (image.block && image.advance > image.width)
                 imageLeft += (image.advance - image.width) * 0.5f;
             auto rect = D2D1::RectF(imageLeft, origin.y + lineTop, imageLeft + image.width, origin.y + lineTop + image.imageHeight);
-            if (image.image)
+            if (image.svg)
+            {
+                if (!svgPainter.Draw(
+                        image.svg->id,
+                        *image.svg->svg,
+                        image.width,
+                        image.imageHeight,
+                        D2D1::Point2F(rect.left, rect.top)))
+                    resources.d2dContext->DrawTextW(
+                        image.alt.c_str(),
+                        static_cast<UINT32>(image.alt.size()),
+                        resources.textFormat.Get(),
+                        rect,
+                        resources.mutedBrush.Get(),
+                        D2D1_DRAW_TEXT_OPTIONS_CLIP);
+            }
+            else if (image.image)
             {
                 std::chrono::milliseconds untilNextFrame{0};
                 auto bitmap = cache.CurrentBitmap(*image.image, untilNextFrame);

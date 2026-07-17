@@ -109,6 +109,9 @@ namespace winrt::ElMd
                     display.imageOverlays,
                     (std::max)(1.0f, columnWidth - 20.0f),
                     requestEmbedded);
+                prepared.pendingImage = prepared.pendingImage || std::ranges::any_of(
+                    images,
+                    [](auto const& image) { return image.pending; });
                 EditorVisualTableCell cell;
                 cell.sourceSpan = sourceSpan;
                 cell.row = row;

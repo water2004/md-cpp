@@ -34,6 +34,7 @@ namespace winrt::ElMd
             std::vector<float> textHeights;
             float height = 0.0f;
             bool pendingMath = false;
+            bool pendingImage = false;
         };
 
         static std::optional<PreparedTable> Prepare(

@@ -26,6 +26,13 @@ namespace winrt::ElMd
             float height = 0.0f;
         };
 
+        struct SvgSource
+        {
+            std::optional<std::string> source;
+            bool candidate = false;
+            bool pending = false;
+        };
+
         ~EditorRenderCache();
 
         void Attach(winrt::Microsoft::UI::Dispatching::DispatcherQueue const& dispatcher, std::function<void()> invalidate);
@@ -35,7 +42,8 @@ namespace winrt::ElMd
         void ClearDeviceResources();
         bool HasPendingImages() const;
         std::uint64_t RemoteImageGeneration() const;
-        std::optional<ImageDimensions> ProbeGifDimensions(std::wstring const& baseDirectory, std::string_view source);
+        std::optional<ImageDimensions> ProbeImageDimensions(EditorRenderResources const& resources, std::wstring const& baseDirectory, std::string_view source);
+        SvgSource LoadSvgSource(std::wstring const& baseDirectory, std::string_view source, bool loadContent = true);
         std::optional<RasterImage> LoadRasterImage(EditorRenderResources const& resources, std::wstring const& baseDirectory, std::string_view source);
         void ReleaseGifImage(std::wstring const& baseDirectory, std::string_view source);
         ID2D1Bitmap1* CurrentBitmap(RasterImage const& image, std::chrono::milliseconds& untilNextFrame) const;
@@ -84,16 +92,16 @@ namespace winrt::ElMd
         };
 
         void QueueRemoteImage(std::string source);
-        void QueueRemoteGifDimensions(std::string source);
+        void QueueRemoteImageDimensions(std::string source);
         void StopAnimationPump();
 
         std::unordered_map<std::uint64_t, CachedTextLayout> textLayouts;
         std::deque<std::uint64_t> textLayoutOrder;
         std::size_t textLayoutBytes = 0;
         std::unordered_map<std::wstring, RasterImage> rasterImages;
-        std::unordered_map<std::wstring, ImageDimensions> gifDimensions;
-        std::deque<std::wstring> gifDimensionOrder;
-        std::unordered_set<std::wstring> gifDimensionMisses;
+        std::unordered_map<std::wstring, ImageDimensions> imageDimensions;
+        std::deque<std::wstring> imageDimensionOrder;
+        std::unordered_set<std::wstring> imageDimensionMisses;
         std::unordered_map<std::wstring, PendingGifImage> pendingGifImages;
         std::unordered_set<std::wstring> rasterImageFailures;
         std::deque<std::wstring> rasterImageOrder;
