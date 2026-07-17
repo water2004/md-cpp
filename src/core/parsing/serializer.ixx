@@ -481,18 +481,29 @@ inline ProjectedText serialize_block(const BlockNode& block) {
         case BlockKind::Table: {
             auto const& special = block.table_special();
             if (block.children.empty()) return {};
+            const auto preserved_line_endings =
+                special.table_internal_line_endings.size() == block.children.size();
+            const auto line_ending = [&](std::size_t index) -> std::u32string_view {
+                if (preserved_line_endings) return special.table_internal_line_endings[index];
+                return U"\n";
+            };
             auto result = serialize_table_row(block.children.front());
-            result.append_generated(U"\n|");
-            for (std::size_t index = 0; index < block.children.front().children.size(); ++index) {
-                const auto alignment = index < special.table_aligns.size()
-                    ? special.table_aligns[index] : TableAlignment::None;
-                if (alignment == TableAlignment::Left) result.append_generated(U" :--- |");
-                else if (alignment == TableAlignment::Center) result.append_generated(U" :---: |");
-                else if (alignment == TableAlignment::Right) result.append_generated(U" ---: |");
-                else result.append_generated(U" --- |");
+            result.append_generated(std::u32string(line_ending(0)));
+            if (!special.table_separator_source.empty()) {
+                result.append_generated(special.table_separator_source);
+            } else {
+                result.append_generated(U"|");
+                for (std::size_t index = 0; index < block.children.front().children.size(); ++index) {
+                    const auto alignment = index < special.table_aligns.size()
+                        ? special.table_aligns[index] : TableAlignment::None;
+                    if (alignment == TableAlignment::Left) result.append_generated(U" :--- |");
+                    else if (alignment == TableAlignment::Center) result.append_generated(U" :---: |");
+                    else if (alignment == TableAlignment::Right) result.append_generated(U" ---: |");
+                    else result.append_generated(U" --- |");
+                }
             }
             for (std::size_t index = 1; index < block.children.size(); ++index) {
-                result.append_generated(U"\n");
+                result.append_generated(std::u32string(line_ending(index)));
                 result.append(serialize_table_row(block.children[index]));
             }
             return result;

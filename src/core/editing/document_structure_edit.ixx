@@ -884,6 +884,17 @@ inline std::optional<DocumentTransaction> document_edit_table(
             break;
         }
     }
+    if (changed) {
+        table = find_block(after.root, table_id);
+        if (!table) return std::nullopt;
+        auto& table_special = table->ensure_table_special();
+        if (!table_special.table_separator_source.empty()
+            || !table_special.table_internal_line_endings.empty()) {
+            table_special.table_separator_source.clear();
+            table_special.table_internal_line_endings.clear();
+            payload_changed = true;
+        }
+    }
     if (payload_changed) {
         table = find_block(after.root, table_id);
         if (!table) return std::nullopt;

@@ -155,8 +155,7 @@ public:
     }
 
     std::optional<LinkDefinition> link_definition_at(std::size_t start) const {
-        std::size_t line_end = start;
-        while (line_end < cps.size() && cps[line_end] != U'\n') ++line_end;
+        const auto line_end = line_content_end(start);
         std::size_t cursor = start;
         std::size_t spaces = 0;
         while (cursor < line_end && cps[cursor] == U' ' && spaces < 4) { ++cursor; ++spaces; }
@@ -198,7 +197,7 @@ public:
         definition.href = cps_to_utf8(href);
         definition.title = std::move(title);
         definition.source_start = start;
-        definition.source_end = line_end < cps.size() ? line_end + 1 : line_end;
+        definition.source_end = next_line_start(line_end);
         return definition;
     }
 
@@ -234,8 +233,8 @@ public:
                 link_definitions.try_emplace(definition->label, *definition);
                 link_definitions_by_start.emplace(line_start, *definition);
             }
-            while (line_start < cps.size() && cps[line_start] != U'\n') ++line_start;
-            if (line_start < cps.size()) ++line_start;
+            line_start = line_content_end(line_start);
+            line_start += line_ending_length(line_start);
         }
     }
 
@@ -252,7 +251,7 @@ public:
         std::transform(tag.name.begin(), tag.name.end(), tag.name.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
         while (cursor < limit) {
             while (cursor < limit && (cps[cursor] == U' ' || cps[cursor] == U'\t')) ++cursor;
-            if (cursor >= limit || cps[cursor] == U'\n') return std::nullopt;
+            if (cursor >= limit || is_line_ending_character(cps[cursor])) return std::nullopt;
             if (cps[cursor] == U'>') { tag.end = cursor + 1; return tag; }
             if (cps[cursor] == U'/' && cursor + 1 < limit && cps[cursor + 1] == U'>') {
                 tag.self_closing = true;
@@ -273,7 +272,8 @@ public:
                 if (cps[cursor] == U'"' || cps[cursor] == U'\'') {
                     auto quote = cps[cursor++];
                     auto value_start = cursor;
-                    while (cursor < limit && cps[cursor] != quote && cps[cursor] != U'\n') ++cursor;
+                    while (cursor < limit && cps[cursor] != quote
+                        && !is_line_ending_character(cps[cursor])) ++cursor;
                     if (cursor >= limit || cps[cursor] != quote) return std::nullopt;
                     value = cps_to_utf8(std::u32string_view(cps).substr(value_start, cursor - value_start));
                     ++cursor;
@@ -343,7 +343,8 @@ public:
     std::optional<std::pair<std::u32string, std::size_t>> html_entity_at(std::size_t at, std::size_t limit) const {
         if (at >= limit || cps[at] != U'&') return std::nullopt;
         auto end = at + 1;
-        while (end < limit && end - at <= 12 && cps[end] != U';' && cps[end] != U'\n') ++end;
+        while (end < limit && end - at <= 12 && cps[end] != U';'
+            && !is_line_ending_character(cps[end])) ++end;
         if (end >= limit || cps[end] != U';') return std::nullopt;
         auto entity = cps_to_utf8(std::u32string_view(cps).substr(at + 1, end - at - 1));
         if (entity == "amp") return std::pair{std::u32string(1, U'&'), end + 1};
@@ -397,8 +398,17 @@ public:
         advance_n(length);
         return true;
     }
+    std::size_t next_line_start(std::size_t line_end) const {
+        return line_end + line_ending_length(line_end);
+    }
+    bool is_line_start_at(std::size_t at) const {
+        if (at == 0) return true;
+        if (cps[at - 1] == U'\n') return true;
+        return cps[at - 1] == U'\r'
+            && (at >= cps.size() || cps[at] != U'\n');
+    }
     bool peek_line_start() const {
-        return pos == 0 || cps[pos - 1] == U'\n' || cps[pos - 1] == U'\r';
+        return is_line_start_at(pos);
     }
     bool is_blank_line() const {
         std::size_t i = pos;
@@ -780,8 +790,7 @@ public:
 
     std::optional<BlockNode> try_parse_image_block() {
         const auto start = pos;
-        auto line_end = pos;
-        while (line_end < cps.size() && cps[line_end] != U'\n') ++line_end;
+        const auto line_end = line_content_end(pos);
         if (line_end == start) return std::nullopt;
 
         if (peek1() == U'<') {
@@ -804,7 +813,7 @@ public:
                     }
                 };
                 pos = line_end;
-                if (peek1() == U'\n') advance();
+                consume_line_ending();
                 BlockNode block;
                 block.id = next_node_id();
                 block.kind = BlockKind::ImageBlock;
@@ -841,7 +850,7 @@ public:
         if (!image || image->status != ParseStatus::Complete) return std::nullopt;
 
         pos = line_end;
-        if (peek1() == U'\n') advance();
+        consume_line_ending();
         BlockNode block;
         block.id = next_node_id();
         block.kind = BlockKind::ImageBlock;
@@ -1180,7 +1189,7 @@ public:
         if (tree.has_error || root.status != HtmlParseStatus::Complete
             || html_contains_unsafe(root)) {
             pos = start + source_length;
-            if (peek1() == U'\n') advance();
+            consume_line_ending();
             BlockNode block;
             block.id = next_node_id();
             block.kind = BlockKind::UnsupportedMarkup;
@@ -1218,7 +1227,7 @@ public:
             html.root_tag = std::move(root_tag);
         }
         pos = start + source_length;
-        if (peek1() == U'\n') advance();
+        consume_line_ending();
         return block;
     }
 
@@ -1228,7 +1237,10 @@ public:
         const auto save = pos;
         advance_n(2);
         std::u32string label;
-        while (!eof() && peek1() != ']' && peek1() != '\n') { label.push_back(peek1()); advance(); }
+        while (!eof() && peek1() != ']' && !is_line_ending_character(peek1())) {
+            label.push_back(peek1());
+            advance();
+        }
         if (peek1() != ']') { pos = save; return std::nullopt; }
         advance();
         if (peek1() != ':') { pos = save; return std::nullopt; }
@@ -1245,8 +1257,7 @@ public:
         auto inspect_line = [&](std::size_t line_start) {
             BodyLine line;
             line.start = line_start;
-            line.end = line_start;
-            while (line.end < cps.size() && cps[line.end] != U'\n') ++line.end;
+            line.end = line_content_end(line_start);
             line.blank = true;
             for (auto cursor = line.start; cursor < line.end; ++cursor) {
                 if (cps[cursor] != U' ' && cps[cursor] != U'\t') {
@@ -1275,16 +1286,15 @@ public:
             return !line.blank && line.content_start > line.start;
         };
 
-        auto first_line_end = content_start;
-        while (first_line_end < cps.size() && cps[first_line_end] != U'\n') ++first_line_end;
+        const auto first_line_end = line_content_end(content_start);
         std::vector<BodyLine> continuation_lines;
-        auto source_end = first_line_end < cps.size() ? first_line_end + 1 : first_line_end;
+        auto source_end = next_line_start(first_line_end);
         auto cursor = source_end;
         while (cursor < cps.size()) {
             auto line = inspect_line(cursor);
             if (is_continuation(line)) {
                 continuation_lines.push_back(line);
-                source_end = line.end < cps.size() ? line.end + 1 : line.end;
+                source_end = next_line_start(line.end);
                 cursor = source_end;
                 continue;
             }
@@ -1296,7 +1306,7 @@ public:
                 auto blank = inspect_line(lookahead);
                 if (!blank.blank) break;
                 pending_blank_lines.push_back(blank);
-                lookahead = blank.end < cps.size() ? blank.end + 1 : blank.end;
+                lookahead = next_line_start(blank.end);
                 if (lookahead == blank.end) break;
             }
             if (lookahead >= cps.size()) break;
@@ -1305,7 +1315,7 @@ public:
             continuation_lines.insert(
                 continuation_lines.end(), pending_blank_lines.begin(), pending_blank_lines.end());
             continuation_lines.push_back(next);
-            source_end = next.end < cps.size() ? next.end + 1 : next.end;
+            source_end = next_line_start(next.end);
             cursor = source_end;
         }
 
@@ -1397,8 +1407,7 @@ public:
         bool first_line = true;
         while (pos < cps.size()) {
             auto line_start = pos;
-            auto line_end = line_start;
-            while (line_end < cps.size() && cps[line_end] != U'\n') ++line_end;
+            const auto line_end = line_content_end(line_start);
             auto indent_end = indentation_end(line_start);
             if (!indent_end) {
                 bool blank = true;
@@ -1406,21 +1415,21 @@ public:
                     if (cps[cursor] != U' ' && cps[cursor] != U'\t') { blank = false; break; }
                 }
                 if (!blank) break;
-                auto next = line_end < cps.size() ? line_end + 1 : line_end;
+                auto next = line_end + line_ending_length(line_end);
                 while (next < cps.size()) {
-                    auto next_end = next;
-                    while (next_end < cps.size() && cps[next_end] != U'\n') ++next_end;
+                    const auto next_end = line_content_end(next);
                     bool next_blank = true;
                     for (auto cursor = next; cursor < next_end; ++cursor) {
                         if (cps[cursor] != U' ' && cps[cursor] != U'\t') { next_blank = false; break; }
                     }
                     if (!next_blank) break;
-                    next = next_end < cps.size() ? next_end + 1 : next_end;
+                    next = next_end + line_ending_length(next_end);
                 }
                 if (next >= cps.size() || !indentation_end(next)) break;
                 markers.push_back(PhysicalRange(std::size_t(line_start), std::size_t(line_end)));
                 text.push_back(U'\n');
-                pos = line_end < cps.size() ? line_end + 1 : line_end;
+                pos = line_end;
+                consume_line_ending();
                 content_end = line_end;
                 continue;
             }
@@ -1430,7 +1439,8 @@ public:
             text.append(cps.begin() + *indent_end, cps.begin() + line_end);
             content_end = line_end;
             if (line_end < cps.size()) text.push_back(U'\n');
-            pos = line_end < cps.size() ? line_end + 1 : line_end;
+            pos = line_end;
+            consume_line_ending();
         }
         NodeId id = next_node_id();
         ParserSourceRange range(id, PhysicalRange(std::size_t(start), std::size_t(pos)), PhysicalRange(std::size_t(content_start), std::size_t(content_end)));
@@ -1453,7 +1463,7 @@ public:
         if (count < 3) { pos = start; return std::nullopt; }
         auto [info_line, info_length] = rest_of_line();
         advance_n(info_length);
-        if (peek1() == '\n') advance();
+        consume_line_ending();
         std::size_t content_start = pos;
         std::size_t content_end = pos;
         auto info_utf8 = cps_to_utf8(info_line);
@@ -1469,20 +1479,21 @@ public:
             std::size_t fence_count = scan - line_start;
             std::size_t marker_end = scan;
             while (marker_end < cps.size() && (cps[marker_end] == U' ' || cps[marker_end] == U'\t')) ++marker_end;
-            if (fence_count >= count && (marker_end == cps.size() || cps[marker_end] == U'\n')) {
+            if (fence_count >= count
+                && (marker_end == cps.size() || is_line_ending_character(cps[marker_end]))) {
                 content_end = line_start;
                 closing_marker = PhysicalRange(std::size_t(line_start), std::size_t(marker_end));
                 pos = marker_end;
-                if (peek1() == U'\n') advance();
+                consume_line_ending();
                 break;
             }
-            while (!eof() && peek1() != U'\n') {
+            while (!eof() && !is_line_ending_character(peek1())) {
                 text.push_back(peek1());
                 advance();
             }
-            if (peek1() == U'\n') {
+            if (is_line_ending_character(peek1())) {
                 text.push_back(U'\n');
-                advance();
+                consume_line_ending();
             }
             content_end = pos;
         }
@@ -1515,7 +1526,7 @@ public:
         bool bracket = peek1() == '\\' && peek2() == '[' && input->dialect.math.block_bracket;
         if (!dollar && !bracket) return std::nullopt;
         advance_n(2);
-        if (peek1() == '\n') advance();
+        consume_line_ending();
         const auto content_start = pos;
         std::u32string tex;
         while (!eof()) {
@@ -1524,7 +1535,7 @@ public:
                 const auto closing_start = pos;
                 advance_n(2);
                 const auto closing_end = pos;
-                if (peek1() == '\n') advance();
+                consume_line_ending();
                 NodeId id = next_node_id();
                 ParserSourceRange range(
                     id,
@@ -1571,20 +1582,34 @@ public:
         };
         auto [header_line, _] = rest_of_line();
         if (header_line.find(U'|') == std::u32string::npos) return fail();
+        const auto header_end = save + header_line.size();
+        std::vector<std::u32string> physical_line_endings;
+        physical_line_endings.emplace_back(std::u32string_view(cps).substr(
+            header_end,
+            next_line_start(header_end) - header_end));
         auto header_row = parse_table_row();
         if (!header_row) return fail();
+        const auto separator_start = pos;
         auto [separator_line, separator_length] = rest_of_line();
         auto alignments = parse_table_separator(separator_line);
         if (!alignments || alignments->size() != header_row->children.size()) return fail();
         advance_n(separator_length);
-        if (peek1() == U'\n') advance();
+        const auto separator_end = separator_start + separator_length;
+        physical_line_endings.emplace_back(std::u32string_view(cps).substr(
+            separator_end,
+            next_line_start(separator_end) - separator_end));
+        consume_line_ending();
         BlockVec rows;
         while (!eof()) {
             std::size_t row_start = pos;
             auto [line, row_length] = rest_of_line();
             if (line.find(U'|') == std::u32string::npos) break;
+            const auto row_end = row_start + row_length;
             auto row = parse_table_row(header_row->children.size());
             if (!row) break;
+            physical_line_endings.emplace_back(std::u32string_view(cps).substr(
+                row_end,
+                next_line_start(row_end) - row_end));
             while (row->children.size() < header_row->children.size()) {
                 BlockNode cell;
                 cell.id = next_node_id();
@@ -1602,7 +1627,11 @@ public:
         header_row->ensure_table_special().table_header_row = true;
         b.children.push_back(std::move(*header_row));
         b.children.insert(b.children.end(), std::make_move_iterator(rows.begin()), std::make_move_iterator(rows.end()));
-        b.ensure_table_special().table_aligns = std::move(*alignments);
+        auto& table = b.ensure_table_special();
+        table.table_aligns = std::move(*alignments);
+        table.table_separator_source = std::move(separator_line);
+        physical_line_endings.resize(b.children.size());
+        table.table_internal_line_endings = std::move(physical_line_endings);
         return b;
     }
 
@@ -1653,7 +1682,7 @@ public:
             cells.push_back(std::move(cell));
         }
         advance_n(length);
-        if (peek1() == U'\n') advance();
+        consume_line_ending();
         NodeId row_id = next_node_id();
         push_range(row_id, PhysicalRange(std::size_t(row_start), cur()), PhysicalRange(std::size_t(row_start), std::size_t(row_start + length)));
         BlockNode r; r.id = row_id; r.kind = BlockKind::TableRow; r.children = std::move(cells);
@@ -1698,7 +1727,7 @@ public:
             std::u32string text;
         };
         auto inspect = [&](std::size_t at) -> std::optional<Marker> {
-            if (at >= cps.size() || (at > 0 && cps[at - 1] != U'\n')) return std::nullopt;
+            if (at >= cps.size() || !is_line_start_at(at)) return std::nullopt;
             Marker marker;
             marker.start = at;
             std::size_t cursor = at;
@@ -1727,9 +1756,9 @@ public:
                 if (cursor < cps.size() && cps[cursor] == U' ') ++cursor;
             }
             marker.content_start = cursor;
-            while (cursor < cps.size() && cps[cursor] != U'\n') ++cursor;
+            cursor = line_content_end(cursor);
             marker.content_end = cursor;
-            marker.source_end = cursor < cps.size() && cps[cursor] == U'\n' ? cursor + 1 : cursor;
+            marker.source_end = next_line_start(cursor);
             marker.text = std::u32string(cps.begin() + marker.start, cps.begin() + marker.content_start);
             return marker;
         };
@@ -1755,8 +1784,7 @@ public:
             std::optional<std::size_t> trailing_blank_start;
             while (item_end < cps.size()) {
                 auto line_start = item_end;
-                auto line_end = line_start;
-                while (line_end < cps.size() && cps[line_end] != U'\n') ++line_end;
+                const auto line_end = line_content_end(line_start);
                 bool blank = true;
                 std::size_t indentation = 0;
                 for (auto cursor = line_start; cursor < line_end; ++cursor) {
@@ -1788,7 +1816,7 @@ public:
                 } else {
                     trailing_blank_start.reset();
                 }
-                item_end = line_end < cps.size() ? line_end + 1 : line_end;
+                item_end = next_line_start(line_end);
             }
 
             std::u32string inner;
@@ -1805,8 +1833,7 @@ public:
             auto line_start = marker->source_end;
             auto content_indent = marker->content_start - marker->start;
             while (line_start < item_end) {
-                auto line_end = line_start;
-                while (line_end < item_end && cps[line_end] != U'\n') ++line_end;
+                const auto line_end = (std::min)(line_content_end(line_start), item_end);
                 offset_map.push_back(line_start > 0 ? line_start - 1 : line_start);
                 inner.push_back(U'\n');
                 inner_end_source = line_start;
@@ -1814,7 +1841,7 @@ public:
                 std::size_t removed = 0;
                 while (content < line_end && removed < content_indent && (cps[content] == U' ' || cps[content] == U'\t')) { ++content; ++removed; }
                 append_range(content, line_end);
-                line_start = line_end < item_end ? line_end + 1 : line_end;
+                line_start = line_end < item_end ? next_line_start(line_end) : line_end;
             }
             offset_map.push_back(inner_end_source);
             ParseInput nested_input(input->revision, cps_to_utf8(inner), input->dialect);
@@ -1877,20 +1904,20 @@ public:
             advance();
             if (peek1() == U' ') advance();
             auto line_content_start = pos;
-            last_line_empty = peek1() == U'\n' || eof();
+            last_line_empty = is_line_ending_character(peek1()) || eof();
             if (first) content_start = line_content_start;
             first = false;
             marker_ranges.push_back(PhysicalRange(std::size_t(marker_start), std::size_t(line_content_start)));
-            while (!eof() && peek1() != U'\n') {
+            while (!eof() && !is_line_ending_character(peek1())) {
                 offset_map.push_back(pos);
                 inner.push_back(peek1());
                 advance();
             }
             content_end = pos;
-            if (peek1() == U'\n') {
+            if (is_line_ending_character(peek1())) {
                 offset_map.push_back(pos);
                 inner.push_back(U'\n');
-                advance();
+                consume_line_ending();
             }
             if (!(pos < cps.size() && peek_line_start() && peek1() == U'>')) break;
         }
@@ -2010,7 +2037,7 @@ public:
         std::size_t line_end = start;
         if (!line_is_thematic_break(start, &line_end)) return std::nullopt;
         pos = line_end;
-        if (peek1() == '\n') advance();
+        consume_line_ending();
         NodeId id = next_node_id();
         push_range(id, PhysicalRange(std::size_t(start), std::size_t(line_end)), PhysicalRange(std::size_t(start), std::size_t(line_end)));
         BlockNode b; b.id = id; b.kind = BlockKind::ThematicBreak;
@@ -2028,7 +2055,7 @@ public:
         TocMarkerKind mk = TocMarkerKind::BracketToc;
         if (peek1()=='[' && peek2()=='T') { advance_n(5); mk = TocMarkerKind::BracketToc; }
         else { advance_n(7); mk = TocMarkerKind::WikiToc; }
-        if (peek1() == '\n') advance();
+        consume_line_ending();
         NodeId id = next_node_id();
         push_range(id, PhysicalRange(std::size_t(start), cur()), PhysicalRange(std::size_t(start), cur()));
         BlockNode b; b.id = id; b.kind = BlockKind::Toc; b.ensure_atomic_special().toc_marker = mk;

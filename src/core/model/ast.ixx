@@ -75,6 +75,11 @@ struct BlockAtomicSpecial {
 
 struct BlockTableSpecial {
     std::vector<TableAlignment> table_aligns;
+    // Exact block syntax that is not owned by TableCell inline sources.
+    // One internal line ending joins each logical table line to the next;
+    // the final row's ending remains ordinary sibling separator metadata.
+    std::u32string table_separator_source;
+    std::vector<std::u32string> table_internal_line_endings;
     bool table_header_row = false;      // TableRow
 };
 
