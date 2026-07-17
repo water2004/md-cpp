@@ -13,9 +13,15 @@ namespace winrt::ElMd
     {
         std::uint64_t id = 0;
         std::shared_ptr<std::string const> svg;
+        float width = 0.0f;
+        float height = 0.0f;
         std::string error;
 
-        explicit operator bool() const { return id != 0 && error.empty() && svg && !svg->empty(); }
+        explicit operator bool() const
+        {
+            return id != 0 && error.empty() && svg && !svg->empty()
+                && width > 0.0f && height > 0.0f;
+        }
     };
 
     class SvgNormalizer

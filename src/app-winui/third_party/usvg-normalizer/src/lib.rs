@@ -71,13 +71,23 @@ pub extern "C" fn elmd_svg_normalize(
     font_size: f32,
     output: *mut *mut u8,
     output_len: *mut usize,
+    width: *mut f32,
+    height: *mut f32,
 ) -> i32 {
-    if normalizer.is_null() || input.is_null() || output.is_null() || output_len.is_null() {
+    if normalizer.is_null()
+        || input.is_null()
+        || output.is_null()
+        || output_len.is_null()
+        || width.is_null()
+        || height.is_null()
+    {
         return -1;
     }
     unsafe {
         *output = ptr::null_mut();
         *output_len = 0;
+        *width = 0.0;
+        *height = 0.0;
     }
     catch_unwind(AssertUnwindSafe(|| {
         let source = unsafe { std::slice::from_raw_parts(input, input_len) };
@@ -85,6 +95,11 @@ pub extern "C" fn elmd_svg_normalize(
         let options = normalizer.options(source, font_size);
         match usvg::Tree::from_data(source, &options) {
             Ok(tree) => {
+                let size = tree.size();
+                unsafe {
+                    *width = size.width();
+                    *height = size.height();
+                }
                 write_output(
                     tree.to_string(&usvg::WriteOptions::default()),
                     output,
@@ -180,5 +195,38 @@ pub extern "C" fn elmd_svg_buffer_destroy(data: *mut u8, len: usize) {
     unsafe {
         let slice = ptr::slice_from_raw_parts_mut(data, len);
         drop(Box::from_raw(slice));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn svg_normalization_reports_intrinsic_dimensions() {
+        let source = br#"<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><rect width="120" height="80"/></svg>"#;
+        let normalizer = elmd_svg_normalizer_create();
+        assert!(!normalizer.is_null());
+        let mut output = ptr::null_mut();
+        let mut output_len = 0;
+        let mut width = 0.0;
+        let mut height = 0.0;
+        let status = elmd_svg_normalize(
+            normalizer,
+            source.as_ptr(),
+            source.len(),
+            16.0,
+            &mut output,
+            &mut output_len,
+            &mut width,
+            &mut height,
+        );
+        assert_eq!(status, 0);
+        assert!(!output.is_null());
+        assert!(output_len > 0);
+        assert_eq!(width, 120.0);
+        assert_eq!(height, 80.0);
+        elmd_svg_buffer_destroy(output, output_len);
+        elmd_svg_normalizer_destroy(normalizer);
     }
 }

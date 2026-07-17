@@ -52,7 +52,15 @@ namespace
             }
             std::uint8_t* output = nullptr;
             std::size_t outputLength = 0;
-            auto status = normalize(context, reinterpret_cast<std::uint8_t const*>(source.data()), source.size(), fontSize, &output, &outputLength);
+            auto status = normalize(
+                context,
+                reinterpret_cast<std::uint8_t const*>(source.data()),
+                source.size(),
+                fontSize,
+                &output,
+                &outputLength,
+                &result.width,
+                &result.height);
             std::string value;
             if (output && outputLength > 0) value.assign(reinterpret_cast<char const*>(output), outputLength);
             if (output) freeBuffer(output, outputLength);
@@ -64,7 +72,7 @@ namespace
     private:
         using Create = void* (*)();
         using Destroy = void (*)(void*);
-        using Normalize = std::int32_t (*)(void*, std::uint8_t const*, std::size_t, float, std::uint8_t**, std::size_t*);
+        using Normalize = std::int32_t (*)(void*, std::uint8_t const*, std::size_t, float, std::uint8_t**, std::size_t*, float*, float*);
         using FreeBuffer = void (*)(std::uint8_t*, std::size_t);
 
         HMODULE module = nullptr;
