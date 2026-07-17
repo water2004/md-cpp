@@ -168,6 +168,19 @@ namespace winrt::ElMd
             }
             return std::nullopt;
         }
+
+        std::optional<std::uint8_t> HomogeneousHeadingLevel(std::vector<InlineStyleRange> const& ranges)
+        {
+            std::optional<std::uint8_t> level;
+            for (auto const& range : ranges)
+            {
+                if (range.length == 0) continue;
+                if (!range.style.heading_level) return std::nullopt;
+                if (!level) level = *range.style.heading_level;
+                else if (*level != *range.style.heading_level) return std::nullopt;
+            }
+            return level;
+        }
     }
 
     ::Microsoft::WRL::ComPtr<IDWriteTextLayout> EditorTextLayoutEngine::CreateFlow(
@@ -261,10 +274,9 @@ namespace winrt::ElMd
     IDWriteTextFormat* EditorTextLayoutEngine::FormatFor(bool code, std::vector<InlineStyleRange> const& ranges) const
     {
         if (code) return resources.codeFormat.Get();
-        for (auto const& range : ranges)
+        if (auto const level = HomogeneousHeadingLevel(ranges))
         {
-            if (!range.style.heading_level) continue;
-            switch (*range.style.heading_level)
+            switch (*level)
             {
                 case 1: return resources.heading1Format.Get();
                 case 2: return resources.heading2Format.Get();
@@ -278,10 +290,9 @@ namespace winrt::ElMd
     float EditorTextLayoutEngine::LineHeightFor(bool code, std::vector<InlineStyleRange> const& ranges) const
     {
         if (code) return styleSheet.code.lineHeight;
-        for (auto const& range : ranges)
+        if (auto const level = HomogeneousHeadingLevel(ranges))
         {
-            if (!range.style.heading_level) continue;
-            switch (*range.style.heading_level)
+            switch (*level)
             {
                 case 1: return styleSheet.heading1.lineHeight;
                 case 2: return styleSheet.heading2.lineHeight;
@@ -311,13 +322,23 @@ namespace winrt::ElMd
             if (range.style.heading_level)
             {
                 auto level = *range.style.heading_level;
-                auto size = level == 1 ? styleSheet.heading1.size
-                    : level == 2 ? styleSheet.heading2.size
-                    : level == 3 ? styleSheet.heading3.size
+                auto const* heading = level == 1 ? &styleSheet.heading1
+                    : level == 2 ? &styleSheet.heading2
+                    : level == 3 ? &styleSheet.heading3
+                    : nullptr;
+                auto size = heading ? heading->size
                     : level == 4 ? styleSheet.body.size * 1.15f
                     : styleSheet.body.size;
+                if (heading && !range.style.code)
+                    layout->SetFontFamilyName(heading->family.c_str(), textRange);
                 layout->SetFontSize(size, textRange);
-                layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, textRange);
+                auto weight = heading ? heading->weight : DWRITE_FONT_WEIGHT_SEMI_BOLD;
+                if (range.style.bold && weight < DWRITE_FONT_WEIGHT_SEMI_BOLD)
+                    weight = DWRITE_FONT_WEIGHT_SEMI_BOLD;
+                layout->SetFontWeight(weight, textRange);
+                auto fontStyle = heading ? heading->style : styleSheet.body.style;
+                if (range.style.italic) fontStyle = DWRITE_FONT_STYLE_ITALIC;
+                layout->SetFontStyle(fontStyle, textRange);
             }
             if (range.marker && !range.style.heading_level) layout->SetFontSize(styleSheet.body.size * 0.82f, textRange);
             if (range.footnoteControl)

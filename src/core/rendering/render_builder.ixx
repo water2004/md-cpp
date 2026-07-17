@@ -1067,12 +1067,23 @@ inline void update_render_geometry_hints(RenderBlock& block) {
     std::uint64_t characters = 0;
     std::uint64_t line_breaks = 0;
     std::vector<std::string> image_sources;
+    std::optional<std::uint8_t> homogeneous_heading_level;
+    bool saw_visible_text = false;
+    bool mixed_heading_styles = false;
     auto visit = [&](auto& self, std::vector<InlineRenderItem> const& items) -> void {
         for (auto const& item : items) {
-            if (block.text_heading_level == 0 && item.style.heading_level)
-                block.text_heading_level = *item.style.heading_level;
             auto const& text = item.special().display_text.empty()
                 ? item.text : item.special().display_text;
+            if (!text.empty()) {
+                saw_visible_text = true;
+                if (!item.style.heading_level) {
+                    mixed_heading_styles = true;
+                } else if (!homogeneous_heading_level) {
+                    homogeneous_heading_level = *item.style.heading_level;
+                } else if (*homogeneous_heading_level != *item.style.heading_level) {
+                    mixed_heading_styles = true;
+                }
+            }
             characters += text.size();
             line_breaks += static_cast<std::uint64_t>(std::ranges::count(text, U'\n'));
             if (item.kind == InlineRenderItem::Kind::Image && !item.special().semantic().src.empty()) {
@@ -1082,6 +1093,11 @@ inline void update_render_geometry_hints(RenderBlock& block) {
         }
     };
     visit(visit, block.inline_items);
+    if (saw_visible_text) {
+        block.text_heading_level = homogeneous_heading_level && !mixed_heading_styles
+            ? *homogeneous_heading_level
+            : 0;
+    }
     block.estimated_characters = static_cast<std::uint32_t>((std::min)(
         characters,
         static_cast<std::uint64_t>((std::numeric_limits<std::uint32_t>::max)())));

@@ -573,6 +573,37 @@ suite render_layout_tests = [] {
     for (auto const& range : m.blocks[0].special().table_cell_spans) expect(fatal(bool(range.source_range.end >= range.source_range.start)));
 };
 
+"mixed_list_flow_does_not_promote_plain_text_to_nested_heading_style"_test = [] {
+    auto model = build_model("1. item\n   ## nested heading\n   body\n");
+    expect(fatal(bool(model.blocks.size() == 1u)));
+    if (model.blocks.empty()) return;
+    auto const& list = model.blocks.front();
+    expect(fatal(bool(list.text_heading_level == 0u)));
+    expect(fatal(bool(std::ranges::any_of(list.inline_items, [](auto const& item) {
+        return item.style.heading_level && *item.style.heading_level == 2u;
+    }))));
+    expect(fatal(bool(std::ranges::any_of(list.inline_items, [](auto const& item) {
+        auto const& text = item.special().display_text.empty() ? item.text : item.special().display_text;
+        return !text.empty() && !item.style.heading_level;
+    }))));
+};
+
+"identifier_underscores_stay_plain_and_following_heading_stays_top_level"_test = [] {
+    auto model = build_model(
+        "## 3.1 gtsi\n\n"
+        "1. 位选通 0x1_fffff_ffff 共33bit\n"
+        "   trig_out(FS17);\n"
+        "## 3.2 next\n");
+    expect(fatal(bool(model.blocks.size() == 3u)));
+    if (model.blocks.size() != 3) return;
+    expect(fatal(bool(model.blocks[0].text_heading_level == 2u)));
+    expect(fatal(bool(model.blocks[1].text_heading_level == 0u)));
+    expect(fatal(bool(model.blocks[2].text_heading_level == 2u)));
+    expect(fatal(bool(std::ranges::none_of(model.blocks[1].inline_items, [](auto const& item) {
+        return item.style.bold || item.style.italic || item.style.heading_level.has_value();
+    }))));
+};
+
 "register_html_table_reaches_native_table_render_model"_test = [] {
     const std::string source =
         "<table><tr><td>寄存器</td><td>位宽/bit</td><td>助记符</td><td>汇编用法</td><td>类型</td></tr>"
