@@ -512,27 +512,22 @@ public:
             if (peek1() == '\n') advance();
             blank_ranges.emplace_back(start, cur());
         }
-        const auto separator = !eof() && !blocks.empty()
-            && !(blocks.back().kind == BlockKind::Paragraph && blocks.back().inline_content.source.empty());
-        for (std::size_t index = separator ? 1u : 0u; index < blank_ranges.size(); ++index) {
+        for (std::size_t index = 0; index < blank_ranges.size(); ++index) {
             BlockNode paragraph;
             paragraph.id = next_node_id();
             paragraph.kind = BlockKind::Paragraph;
-            const auto source_end = blocks.empty()
-                ? blank_ranges[index].first
-                : blank_ranges[index].second;
             if (!blocks.empty() && preceding_source_end) {
                 paragraph.separator_before = std::u32string(
                     std::u32string_view(cps).substr(
                         *preceding_source_end,
-                        source_end - *preceding_source_end));
+                        blank_ranges[index].first - *preceding_source_end));
             }
             push_range(
                 paragraph.id,
                 PhysicalRange(blank_ranges[index].first, blank_ranges[index].second),
                 PhysicalRange(blank_ranges[index].first, blank_ranges[index].first));
             blocks.push_back(std::move(paragraph));
-            preceding_source_end = source_end;
+            preceding_source_end = blank_ranges[index].first;
         }
     }
 

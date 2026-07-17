@@ -591,7 +591,10 @@ inline std::u32string serialize_markdown_fragment(const BlockVec& blocks) {
 inline SerializedMarkdownProjection serialize_markdown_projection(const EditorDocument& document) {
     record_full_document_serialization();
     auto projected = serializer_detail::serialize_blocks(document.root.children);
-    if (document.trailing_newline && (projected.text.empty() || projected.text.back() != U'\n')) {
+    const auto trailing_empty_paragraph = !document.root.children.empty()
+        && serializer_detail::is_empty_paragraph(document.root.children.back());
+    if (document.trailing_newline
+        && (projected.text.empty() || projected.text.back() != U'\n' || trailing_empty_paragraph)) {
         projected.append_generated(U"\n");
     }
     return serializer_detail::finish(std::move(projected));

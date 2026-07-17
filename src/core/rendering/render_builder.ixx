@@ -601,7 +601,8 @@ struct Builder {
     std::vector<InlineRenderItem> build_inline_document(
         const InlineDocument& document,
         NodeId owner_id,
-        const InlineStyle& base) {
+        const InlineStyle& base,
+        bool preserve_soft_breaks = false) {
         std::vector<InlineRenderItem> output;
         auto source_span = [&](SourceRange range) {
             return TextSpan{owner_id, range};
@@ -738,7 +739,7 @@ struct Builder {
                         append_text(decode_inline_entity(inline_source_slice(document, node.range)), node.range, style);
                         break;
                     case K::SoftBreak:
-                        append_text(U" ", node.range, style);
+                        append_text(preserve_soft_breaks ? U"\n" : U" ", node.range, style);
                         break;
                     case K::HardBreak:
                         append_text(U"\n", node.range, style);
@@ -847,7 +848,7 @@ struct Builder {
                     rb.inline_items.push_back(std::move(marker));
                 };
                 append_heading_marker(b.text_special().opening_marker, 0, TextAffinity::Downstream);
-                auto items = build_inline_document(b.inline_content, b.id, s);
+                auto items = build_inline_document(b.inline_content, b.id, s, true);
                 for (auto& it : items) rb.inline_items.push_back(std::move(it));
                 append_heading_marker(
                     b.text_special().closing_marker,

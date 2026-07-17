@@ -569,8 +569,8 @@ inline std::optional<TextPosition> paste_parsed_blocks(
         merged_first = true;
     }
 
-    if (!blocks.empty()) {
-        blocks.front().separator_before = !merged_first && head_was_empty
+    if (!blocks.empty() && !merged_first) {
+        blocks.front().separator_before = head_was_empty
             ? head_separator
             : std::nullopt;
     }
