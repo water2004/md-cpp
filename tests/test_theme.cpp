@@ -17,6 +17,8 @@ suite theme_tests = [] {
     expect(dark.typography.body.size > 0.0_f);
     expect(dark.typography.code.family != dark.typography.body.family);
     expect(dark.colors.bg != light.colors.bg);
+    expect(dark.colors.line_number_bg != dark.colors.bg);
+    expect(light.colors.line_number_bg != light.colors.bg);
     expect(dark.colors.syntax.size() == 11_u);
     expect(dark.layout.document_horizontal_padding > 0.0_f);
 };

@@ -46,6 +46,7 @@ namespace winrt::ElMd
         textBrush = nullptr;
         mutedBrush = nullptr;
         lineNumberBrush = nullptr;
+        lineNumberBackgroundBrush = nullptr;
         accentBrush = nullptr;
         codeBrush = nullptr;
         panelBrush = nullptr;
@@ -243,6 +244,7 @@ namespace winrt::ElMd
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.textColor, textBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.mutedColor, mutedBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.lineNumberColor, lineNumberBrush.GetAddressOf()));
+            winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.lineNumberBackgroundColor, lineNumberBackgroundBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.accentColor, accentBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.codeTextColor, codeBrush.GetAddressOf()));
             winrt::check_hresult(d2dContext->CreateSolidColorBrush(styleSheet.panelColor, panelBrush.GetAddressOf()));

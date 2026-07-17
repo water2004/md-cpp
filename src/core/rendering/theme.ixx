@@ -49,7 +49,7 @@ struct ThemeColors {
     Color callout_important_bg, callout_important_border;
     Color callout_caution_bg, callout_caution_border;
     Color frontmatter_bg, frontmatter_fg;
-    Color table_border, table_header_bg, line_number_fg;
+    Color table_border, table_header_bg, line_number_fg, line_number_bg;
     Color strikethrough_fg, unsupported_bg, unsupported_fg;
     Color shell_bg, shell_layer_bg, shell_border, shell_fg, shell_muted_fg, shell_accent;
     std::array<Color, 11> syntax{};
@@ -162,6 +162,7 @@ inline ThemeProfile dark_profile() {
     t.callout_caution_bg = Color(58, 27, 31); t.callout_caution_border = Color(248, 113, 113);
     t.frontmatter_bg = t.code_block_bg; t.frontmatter_fg = t.muted_fg;
     t.table_border = Color(74, 82, 100); t.table_header_bg = Color(31, 35, 43); t.line_number_fg = t.muted_fg;
+    t.line_number_bg = Color(25, 28, 35);
     t.strikethrough_fg = t.muted_fg; t.unsupported_bg = Color(55, 43, 14); t.unsupported_fg = Color(251, 191, 36);
     t.shell_bg = t.bg; t.shell_layer_bg = Color(25, 28, 35); t.shell_border = Color(52, 58, 70);
     t.shell_fg = t.fg; t.shell_muted_fg = t.muted_fg; t.shell_accent = t.accent_fg;
@@ -194,6 +195,7 @@ inline ThemeProfile light_profile() {
     t.callout_caution_bg = Color(255, 235, 235); t.callout_caution_border = Color(220, 38, 38);
     t.frontmatter_bg = t.code_block_bg; t.frontmatter_fg = t.muted_fg;
     t.table_border = Color(174, 181, 193); t.table_header_bg = Color(235, 237, 241); t.line_number_fg = t.muted_fg;
+    t.line_number_bg = Color(245, 246, 248);
     t.strikethrough_fg = t.muted_fg; t.unsupported_bg = Color(255, 246, 221); t.unsupported_fg = Color(150, 100, 20);
     t.shell_bg = t.bg; t.shell_layer_bg = Color(245, 246, 248); t.shell_border = Color(215, 219, 226);
     t.shell_fg = t.fg; t.shell_muted_fg = t.muted_fg; t.shell_accent = t.accent_fg;
@@ -216,8 +218,9 @@ inline ThemeProfile high_contrast_profile() {
     t.blockquote_border = t.accent_fg; t.blockquote_bg = Color(20, 30, 40); t.nested_quote_bg = Color(10, 15, 20);
     t.link_fg = t.accent_fg; t.image_border = t.fg;
     t.selection_bg = Color(255, 255, 0); t.selection_fg = Color(0, 0, 0); t.caret_fg = t.fg; t.marker_fg = t.muted_fg;
+    t.line_number_fg = t.muted_fg;
     t.math_bg = Color(30, 30, 30); t.math_fg = t.fg;
-    t.table_border = t.fg; t.table_header_bg = Color(60, 60, 60);
+    t.table_border = t.fg; t.table_header_bg = Color(60, 60, 60); t.line_number_bg = Color(20, 20, 20);
     t.shell_bg = t.bg; t.shell_layer_bg = Color(20, 20, 20); t.shell_border = t.fg;
     t.shell_fg = t.fg; t.shell_muted_fg = t.muted_fg; t.shell_accent = t.accent_fg;
     return profile;

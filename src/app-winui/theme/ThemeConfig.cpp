@@ -124,6 +124,9 @@ namespace
             {L"shellMutedForeground", &elmd::ThemeColors::shell_muted_fg}, {L"shellAccent", &elmd::ThemeColors::shell_accent},
         };
         for (auto const& field : fields) colors.*field.value = ParseColor(object.GetNamedString(field.name));
+        colors.line_number_bg = object.HasKey(L"lineNumberBackground")
+            ? ParseColor(object.GetNamedString(L"lineNumberBackground"))
+            : colors.shell_layer_bg;
 
         auto syntax = object.GetNamedArray(L"syntax");
         if (syntax.Size() != colors.syntax.size()) throw std::runtime_error("theme syntax palette must contain 11 colors");

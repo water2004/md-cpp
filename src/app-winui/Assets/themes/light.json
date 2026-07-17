@@ -50,6 +50,7 @@
     "tableBorder": "#AEB5C1",
     "tableHeaderBackground": "#EBEDF1",
     "lineNumber": "#6B7485",
+    "lineNumberBackground": "#F5F6F8",
     "strikethrough": "#6B7485",
     "unsupportedBackground": "#FFF6DD",
     "unsupportedForeground": "#966414",

@@ -97,15 +97,15 @@ namespace winrt::ElMd
             ? std::to_wstring(sourceLineCount).size()
             : std::size_t{0};
         auto desiredSourceGutterWidth = sourceDocument
-            ? (std::max)(40.0f, styleSheet.code.size * 0.64f * static_cast<float>(sourceLineDigits) + 22.0f)
+            ? (std::max)(24.0f, styleSheet.code.size * 0.64f * static_cast<float>(sourceLineDigits) + 12.0f)
             : 0.0f;
         auto availableSourceGutterWidth = (std::max)(
             0.0f,
-            resources.surfaceWidthDip - padding * 2.0f - 14.0f - 80.0f);
+            resources.surfaceWidthDip - padding - 14.0f - 80.0f - 8.0f);
         auto sourceGutterWidth = (std::min)(desiredSourceGutterWidth, availableSourceGutterWidth);
-        if (sourceGutterWidth < 24.0f) sourceGutterWidth = 0.0f;
-        auto sourceGutterLeft = padding;
-        auto documentLeft = padding + sourceGutterWidth;
+        if (sourceGutterWidth < 20.0f) sourceGutterWidth = 0.0f;
+        auto sourceGutterLeft = 4.0f;
+        auto documentLeft = sourceGutterWidth > 0.0f ? sourceGutterWidth + 8.0f : padding;
         auto documentRight = (std::max)(documentLeft + 1.0f, resources.surfaceWidthDip - padding - 14.0f);
         auto documentWidth = documentRight - documentLeft;
         auto y = styleSheet.verticalPadding - scrollOffset;
@@ -1259,14 +1259,11 @@ namespace winrt::ElMd
         while (viewportEnd < frame.renderModel.blocks.size()
             && preparedDocument->geometry.At(viewportEnd).top <= viewportBottom)
             ++viewportEnd;
-        if (sourceGutterWidth > 0.0f && resources.lineNumberBrush)
+        if (sourceGutterWidth > 0.0f && resources.lineNumberBackgroundBrush)
         {
-            auto separatorX = documentLeft - 10.0f;
-            resources.d2dContext->DrawLine(
-                D2D1::Point2F(separatorX, 0.0f),
-                D2D1::Point2F(separatorX, resources.surfaceHeightDip),
-                resources.lineNumberBrush.Get(),
-                1.0f);
+            resources.d2dContext->FillRectangle(
+                D2D1::RectF(0.0f, 0.0f, sourceGutterWidth, resources.surfaceHeightDip),
+                resources.lineNumberBackgroundBrush.Get());
         }
         for (auto blockIndex = viewportBegin; blockIndex < viewportEnd; ++blockIndex)
         {
@@ -1337,7 +1334,7 @@ namespace winrt::ElMd
                     D2D1::RectF(
                         sourceGutterLeft,
                         origin.y,
-                        documentLeft - 16.0f,
+                        sourceGutterWidth - 5.0f,
                         origin.y + styleSheet.code.lineHeight),
                     resources.lineNumberBrush.Get(),
                     D2D1_DRAW_TEXT_OPTIONS_CLIP);

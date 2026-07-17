@@ -26,7 +26,7 @@
     "calloutImportantBackground": "#28003C", "calloutImportantBorder": "#FF00FF",
     "calloutCautionBackground": "#3C0000", "calloutCautionBorder": "#FF0000",
     "frontmatterBackground": "#14141E", "frontmatterForeground": "#FFFFFF",
-    "tableBorder": "#FFFFFF", "tableHeaderBackground": "#3C3C3C", "lineNumber": "#DCDCDC",
+    "tableBorder": "#FFFFFF", "tableHeaderBackground": "#3C3C3C", "lineNumber": "#DCDCDC", "lineNumberBackground": "#141414",
     "strikethrough": "#FFFFFF", "unsupportedBackground": "#3C2800", "unsupportedForeground": "#FFC800",
     "shellBackground": "#000000", "shellLayerBackground": "#141414", "shellBorder": "#FFFFFF",
     "shellForeground": "#FFFFFF", "shellMutedForeground": "#DCDCDC", "shellAccent": "#00FFFF",
