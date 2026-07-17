@@ -57,6 +57,15 @@ inline std::optional<TextPosition> source_position_for_serialized_offset(
             }
         }
     }
+    // Generated Markdown (block markers and separators) has no block-local
+    // source offset of its own.  Resolve positions inside it at the semantic
+    // boundary selected by affinity instead of always jumping to the
+    // following owner.  In particular, the blank physical line represented
+    // by a two-newline block separator is metadata on the following block,
+    // not an otherwise-empty editable paragraph.
+    if (affinity == TextAffinity::Upstream) {
+        return preceding ? preceding : following;
+    }
     return following ? following : preceding;
 }
 

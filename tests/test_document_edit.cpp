@@ -279,9 +279,10 @@ suite document_edit_tests = [] {
 
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
+    expect(fatal(bool(document.root.children.size() == 2u)));
+    if (document.root.children.size() != 2u) return;
     expect(document.root.children[0].inline_content.source == U"alXpha");
-    expect(document.root.children[1].inline_content.source.empty());
-    expect(document.root.children[2].inline_content.source == U"beta");
+    expect(document.root.children[1].inline_content.source == U"beta");
     expect(transaction->revision_before == revision_before);
     expect(transaction->revision_after == document.revision);
     expect(transaction->revision_after == revision_before + 1);
@@ -320,7 +321,7 @@ suite document_edit_tests = [] {
 
     expect(!apply_document_operation(document, DocumentOperation{move}, true));
     expect(serialize_markdown(document) == before);
-    expect(document.root.children.size() == 3u);
+    expect(document.root.children.size() == 2u);
     expect_document_valid(document);
 
     move.other_parent_id = document.root.id;
@@ -328,7 +329,7 @@ suite document_edit_tests = [] {
     move.moved_id = NodeId{999999};
     expect(!apply_document_operation(document, DocumentOperation{move}, true));
     expect(serialize_markdown(document) == before);
-    expect(document.root.children.size() == 3u);
+    expect(document.root.children.size() == 2u);
     expect_document_valid(document);
 };
 
@@ -1005,7 +1006,7 @@ suite document_edit_tests = [] {
     expect(fatal(bool(inserted->operations.size() == 2u)));
     expect(fatal(bool(std::holds_alternative<DocumentTextOperation>(inserted->operations[0]))));
     expect(fatal(bool(std::holds_alternative<DocumentTreeEdit>(inserted->operations[1]))));
-    expect(fatal(bool(inserted->after.root.children.size() == 4u)));
+    expect(fatal(bool(inserted->after.root.children.size() == 3u)));
     expect(fatal(bool(inserted->after.root.children[0].inline_content.source == U"body[^2][^1]")));
     const auto& definition = inserted->after.root.children.back();
     expect(fatal(bool(definition.kind == BlockKind::FootnoteDefinition)));
@@ -1165,7 +1166,7 @@ suite document_edit_tests = [] {
 };
 
 "enter_on_middle_empty_callout_line_splits_without_copying_the_title"_test = [] {
-    auto document = parse_document("> [!IMPORTANT] title\n> first\n>\n> last");
+    auto document = parse_document("> [!IMPORTANT] title\n> first\n>\n>\n> last");
     auto const& callout = document.root.children.front();
     expect(fatal(bool(callout.kind == BlockKind::Callout)));
     expect(fatal(bool(callout.children.size() == 4u)));
@@ -1192,11 +1193,9 @@ suite document_edit_tests = [] {
 
 "enter_on_trailing_empty_footnote_line_exits_the_definition"_test = [] {
     auto document = parse_document("body[^1]\n\n[^1]: first");
-    expect(fatal(bool(document.root.children.size() == 3u)));
-    if (document.root.children.size() != 3u) return;
-    expect(fatal(bool(document.root.children[1].kind == BlockKind::Paragraph)));
-    expect(fatal(bool(document.root.children[1].inline_content.source.empty())));
-    auto const& definition = document.root.children[2];
+    expect(fatal(bool(document.root.children.size() == 2u)));
+    if (document.root.children.size() != 2u) return;
+    auto const& definition = document.root.children[1];
     expect(fatal(bool(definition.kind == BlockKind::FootnoteDefinition)));
     expect(fatal(bool(definition.children.size() == 1u)));
     if (definition.children.size() != 1u) return;
@@ -1221,12 +1220,13 @@ suite document_edit_tests = [] {
     expect(fatal(bool(exited.has_value())));
     if (!exited) return;
 
-    expect(fatal(bool(exited->after.root.children.size() == 4u)));
-    expect(fatal(bool(exited->after.root.children[2].kind == BlockKind::FootnoteDefinition)));
-    expect(fatal(bool(exited->after.root.children[2].children.size() == 1u)));
-    expect(fatal(bool(exited->after.root.children[3].kind == BlockKind::Paragraph)));
-    expect(fatal(bool(exited->after.root.children[3].inline_content.source.empty())));
-    expect(fatal(bool(exited->selection_after.active.container_id == exited->after.root.children[3].id)));
+    expect(fatal(bool(exited->after.root.children.size() == 3u)));
+    if (exited->after.root.children.size() != 3u) return;
+    expect(fatal(bool(exited->after.root.children[1].kind == BlockKind::FootnoteDefinition)));
+    expect(fatal(bool(exited->after.root.children[1].children.size() == 1u)));
+    expect(fatal(bool(exited->after.root.children[2].kind == BlockKind::Paragraph)));
+    expect(fatal(bool(exited->after.root.children[2].inline_content.source.empty())));
+    expect(fatal(bool(exited->selection_after.active.container_id == exited->after.root.children[2].id)));
     expect(fatal(bool(find_block(exited->after.root, empty_id) == nullptr)));
     expect_document_valid(exited->after);
 };
@@ -1269,7 +1269,7 @@ suite document_edit_tests = [] {
 };
 
 "backspace_and_delete_remove_an_explicit_blank_line"_test = [] {
-    auto document = parse_document("alpha\n\nbeta");
+    auto document = parse_document("alpha\n\n\nbeta");
     expect(fatal(bool(document.root.children.size() == 3u)));
     if (document.root.children.size() != 3u) return;
     const auto blank_id = document.root.children[1].id;
@@ -1534,19 +1534,14 @@ suite document_edit_tests = [] {
     auto const& list = list_document.root.children.front();
     expect(fatal(bool(list.kind == BlockKind::List)));
     expect(fatal(bool(list.children.size() == 1u)));
-    expect(fatal(bool(list.children.front().children.size() == 3u)));
+    expect(fatal(bool(list.children.front().children.size() == 2u)));
     if (list.kind == BlockKind::List && list.children.size() == 1u
-        && list.children.front().children.size() == 3u) {
+        && list.children.front().children.size() == 2u) {
         const auto first_id = list.children.front().children.front().id;
         const auto second_id = list.children.front().children.back().id;
-        auto removed_blank = test_edit::document_delete_backward(
+        auto joined = test_edit::document_delete_backward(
             list_document,
             TextSelection::caret({second_id, 0, TextAffinity::Downstream}));
-        expect(fatal(bool(removed_blank.has_value())));
-        if (!removed_blank) return;
-        auto joined = test_edit::document_delete_backward(
-            removed_blank->after,
-            removed_blank->selection_after);
         expect(fatal(bool(joined.has_value())));
         if (joined) {
             auto const& updated_list = joined->after.root.children.front();
@@ -1562,7 +1557,7 @@ suite document_edit_tests = [] {
 };
 
 "backspace_removes_blank_paragraph_after_structural_block"_test = [] {
-    auto quote_document = parse_document("> quoted\n\nnext");
+    auto quote_document = parse_document("> quoted\n\n\nnext");
     expect(fatal(bool(quote_document.root.children.size() == 3u)));
     if (quote_document.root.children.size() == 3u) {
         auto const blank_id = quote_document.root.children[1].id;
@@ -1578,7 +1573,7 @@ suite document_edit_tests = [] {
         }
     }
 
-    auto code_document = parse_document("```cpp\ncode\n```\n\nnext");
+    auto code_document = parse_document("```cpp\ncode\n```\n\n\nnext");
     expect(fatal(bool(code_document.root.children.size() == 3u)));
     if (code_document.root.children.size() == 3u) {
         auto const blank_id = code_document.root.children[1].id;
@@ -1597,7 +1592,7 @@ suite document_edit_tests = [] {
 };
 
 "delete_removes_blank_paragraph_before_structural_block"_test = [] {
-    auto document = parse_document("first\n\n> quoted");
+    auto document = parse_document("first\n\n\n> quoted");
     expect(fatal(bool(document.root.children.size() == 3u)));
     if (document.root.children.size() != 3u) return;
     auto const blank_id = document.root.children[1].id;
@@ -1613,7 +1608,7 @@ suite document_edit_tests = [] {
 };
 
 "blank_paragraph_navigation_includes_atomic_blocks"_test = [] {
-    auto after_image = parse_document("![alt](image.png)\n\nnext");
+    auto after_image = parse_document("![alt](image.png)\n\n\nnext");
     expect(fatal(bool((after_image.root.children.size()) == (3u))));
     if (after_image.root.children.size() == 3u) {
         auto const image_id = after_image.root.children[0].id;
@@ -1628,7 +1623,7 @@ suite document_edit_tests = [] {
         }
     }
 
-    auto before_break = parse_document("first\n\n---");
+    auto before_break = parse_document("first\n\n\n---");
     expect(fatal(bool((before_break.root.children.size()) == (3u))));
     if (before_break.root.children.size() == 3u) {
         auto const blank_id = before_break.root.children[1].id;
@@ -1661,11 +1656,11 @@ suite document_edit_tests = [] {
 
 "cross_block_selection_deletes_structure_and_merges_sources"_test = [] {
     auto document = parse_document("alpha\n\nbeta\n\ngamma");
-    expect(fatal(bool(document.root.children.size() == 5u)));
-    if (document.root.children.size() != 5u) return;
+    expect(fatal(bool(document.root.children.size() == 3u)));
+    if (document.root.children.size() != 3u) return;
     TextSelection selection{
         {document.root.children[0].id, 2, TextAffinity::Downstream},
-        {document.root.children[4].id, 3, TextAffinity::Downstream}};
+        {document.root.children[2].id, 3, TextAffinity::Downstream}};
     auto transaction = test_edit::document_delete_selection(document, selection);
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
@@ -1693,12 +1688,12 @@ suite document_edit_tests = [] {
         U"X\n\nY");
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
-    expect(fatal(bool(transaction->after.root.children.size() == 3u)));
+    expect(fatal(bool(transaction->after.root.children.size() == 2u)));
+    if (transaction->after.root.children.size() != 2u) return;
     expect(fatal(bool(transaction->after.root.children[0].inline_content.source == U"aX")));
-    expect(fatal(bool(transaction->after.root.children[1].inline_content.source.empty())));
-    expect(fatal(bool(transaction->after.root.children[2].inline_content.source == U"Yb")));
+    expect(fatal(bool(transaction->after.root.children[1].inline_content.source == U"Yb")));
     expect(fatal(bool(transaction->selection_after.active.container_id
-        == transaction->after.root.children[2].id)));
+        == transaction->after.root.children[1].id)));
     expect(fatal(bool(transaction->selection_after.active.source_offset == 1u)));
     expect_document_valid(transaction->after);
 };

@@ -111,6 +111,58 @@ suite editor_tests = [] {
     expect(fatal(bool(editor.selection() == after_selection)));
 };
 
+"ordinary_block_separators_preserve_selection_source_and_history_exactly"_test = [] {
+    struct Case {
+        std::string source;
+        std::string edited;
+        BlockKind first_kind;
+    };
+    const std::vector<Case> cases{
+        {"first\n\nsecond", "first\n\nsXecond", BlockKind::Paragraph},
+        {"# first\n\nsecond", "# first\n\nsXecond", BlockKind::Heading},
+        {"first\r\n\r\nsecond", "first\r\n\r\nsXecond", BlockKind::Paragraph},
+        {"# first\r\n\r\nsecond", "# first\r\n\r\nsXecond", BlockKind::Heading},
+    };
+
+    for (const auto& entry : cases) {
+        Editor editor(entry.source);
+        expect(fatal(bool(editor.document().root.children.size() == 2u))) << entry.source;
+        if (editor.document().root.children.size() != 2u) continue;
+        const auto& first = editor.document().root.children[0];
+        const auto& second = editor.document().root.children[1];
+        expect(fatal(bool(first.kind == entry.first_kind))) << entry.source;
+        expect(fatal(bool(second.kind == BlockKind::Paragraph))) << entry.source;
+        expect(fatal(bool(first.inline_content.source == U"first"))) << entry.source;
+        expect(fatal(bool(second.inline_content.source == U"second"))) << entry.source;
+
+        const auto before = TextSelection::caret(
+            {second.id, 1u, TextAffinity::Downstream});
+        editor.set_selection(before);
+        expect(fatal(bool(editor.execute_document_insert_text(
+            editor.selection(), U"X").has_value()))) << entry.source;
+        expect(fatal(bool(editor.markdown_utf8() == entry.edited))) << entry.source;
+        expect(fatal(bool(editor.document().root.children.size() == 2u))) << entry.source;
+        expect(fatal(bool(*editor.editable_source(second.id) == U"sXecond"))) << entry.source;
+        const auto after = editor.selection();
+        expect(fatal(bool(after.active.container_id == second.id))) << entry.source;
+        expect(fatal(bool(after.active.source_offset == 2u))) << entry.source;
+
+        Editor reloaded(editor.markdown_utf8());
+        expect(fatal(bool(reloaded.document().root.children.size() == 2u))) << entry.source;
+        if (reloaded.document().root.children.size() == 2u) {
+            expect(fatal(bool(reloaded.document().root.children[1].inline_content.source
+                == U"sXecond"))) << entry.source;
+        }
+
+        expect(fatal(bool(editor.undo()))) << entry.source;
+        expect(fatal(bool(editor.markdown_utf8() == entry.source))) << entry.source;
+        expect(fatal(bool(editor.selection() == before))) << entry.source;
+        expect(fatal(bool(editor.redo()))) << entry.source;
+        expect(fatal(bool(editor.markdown_utf8() == entry.edited))) << entry.source;
+        expect(fatal(bool(editor.selection() == after))) << entry.source;
+    }
+};
+
 "editor_reports_local_text_changes_and_structural_fallbacks"_test = [] {
     Editor editor("abc");
     editor.set_selection(caret(first_text(editor), 1));
@@ -382,12 +434,11 @@ suite editor_tests = [] {
     }
 
     Editor editor(markdown);
-    expect(fatal(bool(editor.document().root.children.size() == block_count * 2u - 1u)));
-    auto const& previous = editor.document().root.children[editor.document().root.children.size() - 3u];
-    auto const& blank = editor.document().root.children[editor.document().root.children.size() - 2u];
+    expect(fatal(bool(editor.document().root.children.size() == block_count)));
+    if (editor.document().root.children.size() != block_count) return;
+    auto const& previous = editor.document().root.children[block_count - 2u];
     auto const& last = editor.document().root.children.back();
     const auto previous_id = previous.id;
-    const auto blank_id = blank.id;
     const auto last_id = last.id;
     const auto previous_size = previous.inline_content.source.size();
     editor.set_selection(caret(last, 0));
@@ -395,22 +446,8 @@ suite editor_tests = [] {
     reset_core_operation_counters();
     expect(fatal(editor.execute_command(Command{.kind = CommandKind::MoveLeft})));
     auto counters = read_core_operation_counters();
-    expect(fatal(bool(editor.selection().active.container_id == blank_id)));
-    expect(fatal(bool(editor.selection().active.source_offset == 0u)));
-    expect(fatal(bool(counters.full_document_text_projections == 0u)));
-    expect(fatal(bool(counters.full_document_block_index_scans == 0u)));
-
-    expect(fatal(editor.execute_command(Command{.kind = CommandKind::MoveLeft})));
     expect(fatal(bool(editor.selection().active.container_id == previous_id)));
     expect(fatal(bool(editor.selection().active.source_offset == previous_size)));
-
-    reset_core_operation_counters();
-    expect(fatal(editor.execute_command(Command{.kind = CommandKind::MoveRight})));
-    counters = read_core_operation_counters();
-    expect(fatal(bool(editor.selection().active.container_id == blank_id)));
-    expect(fatal(bool(editor.selection().active.source_offset == 0u)));
-    expect(fatal(bool(counters.full_document_text_projections == 0u)));
-    expect(fatal(bool(counters.full_document_block_index_scans == 0u)));
 
     reset_core_operation_counters();
     expect(fatal(editor.execute_command(Command{.kind = CommandKind::MoveRight})));
@@ -543,7 +580,7 @@ suite editor_tests = [] {
         editor.outline(),
         editor.symbols(),
         default_theme_profile());
-    expect(fatal(bool(render_model.blocks.size() == 3u)));
+    expect(fatal(bool(render_model.blocks.size() == 2u)));
 
     const auto owner = first_text(editor).id;
     editor.set_selection(TextSelection::caret({owner, 2, TextAffinity::Downstream}));
@@ -579,7 +616,7 @@ suite editor_tests = [] {
     expect(fatal(bool(render_model.incremental_update)));
     expect(fatal(bool(render_model.changed_block_indices == std::vector<std::size_t>{0})));
     expect(fatal(bool(render_model.rebuilt_block_count == 1u)));
-    expect(fatal(bool(render_model.reused_block_count == 2u)));
+    expect(fatal(bool(render_model.reused_block_count == 1u)));
     auto full = build_render_model(
         editor.document(),
         editor.outline(),
@@ -600,7 +637,7 @@ suite editor_tests = [] {
     expect(fatal(bool(render_model.incremental_update)));
     expect(fatal(bool(render_model.changed_block_indices == std::vector<std::size_t>{0})));
     expect(fatal(bool(render_model.rebuilt_block_count == 1u)));
-    expect(fatal(bool(render_model.reused_block_count == 2u)));
+    expect(fatal(bool(render_model.reused_block_count == 1u)));
 };
 
 "tree_moves_keep_render_invalidation_local_to_their_stable_top_level"_test = [] {
@@ -641,7 +678,7 @@ suite editor_tests = [] {
     expect(fatal(bool(model.incremental_update)));
     expect(fatal(bool(model.changed_block_indices == std::vector<std::size_t>{0})));
     expect(fatal(bool(model.rebuilt_block_count == 1u)));
-    expect(fatal(bool(model.reused_block_count == 2u)));
+    expect(fatal(bool(model.reused_block_count == 1u)));
 };
 
 "externally_assembled_documents_calibrate_node_ids_once"_test = [] {
@@ -838,9 +875,8 @@ suite editor_tests = [] {
     expect(fatal(bool(target.execute_document_paste_text(
         target.selection(), fragment).has_value())));
     expect(fatal(bool(target.markdown_cps() == fragment)));
-    expect(fatal(bool(target.document().root.children.size() == 3u)));
-    expect(fatal(bool(target.document().root.children[1].kind == BlockKind::Paragraph)));
-    expect(fatal(bool(target.document().root.children[1].inline_content.source.empty())));
+    expect(fatal(bool(target.document().root.children.size() == 2u)));
+    if (target.document().root.children.size() != 2u) return;
     expect(fatal(bool(target.document().root.children.back().kind == BlockKind::List)));
     expect(fatal(bool(validate_document(target.document()).empty())));
 
@@ -863,9 +899,11 @@ suite editor_tests = [] {
 
 "paste_over_cross_block_selection_is_one_exact_history_transaction"_test = [] {
     Editor editor("alpha\n\nbeta\n\ngamma");
+    expect(fatal(bool(editor.document().root.children.size() == 3u)));
+    if (editor.document().root.children.size() != 3u) return;
     const auto before = TextSelection{
         {editor.document().root.children[0].id, 2, TextAffinity::Downstream},
-        {editor.document().root.children[4].id, 3, TextAffinity::Upstream}};
+        {editor.document().root.children[2].id, 3, TextAffinity::Upstream}};
     editor.set_selection(before);
     expect(fatal(bool(editor.execute_document_paste_text(
         editor.selection(), U"> q\n>\n> - x").has_value())));
@@ -983,9 +1021,7 @@ suite editor_tests = [] {
     expect(fatal(bool(moved_counters.full_tree_transaction_diffs == 0u)));
     const auto& moved_list = with_nested_block.document().root.children.front();
     expect(fatal(bool(moved_list.children.size() == 2u)));
-    expect(fatal(bool(moved_list.children.back().children.size() == 3u)));
-    expect(fatal(bool(moved_list.children.back().children[1].kind == BlockKind::Paragraph)));
-    expect(fatal(bool(moved_list.children.back().children[1].inline_content.source.empty())));
+    expect(fatal(bool(moved_list.children.back().children.size() == 2u)));
     expect(fatal(bool(moved_list.children.back().children.back().kind == BlockKind::BlockQuote)));
     const auto nested_after_markdown = with_nested_block.markdown_utf8();
     const auto nested_after = with_nested_block.selection();
@@ -1049,7 +1085,7 @@ suite editor_tests = [] {
         }
     }
 
-    Editor quote("> one\n>\n> two");
+    Editor quote("> one\n>\n>\n> two");
     auto* initial_quote = find_block(quote.document().root, quote.document().root.children.front().id);
     expect(fatal(bool(initial_quote != nullptr)));
     expect(fatal(bool(initial_quote && initial_quote->children.size() == 3u)));
@@ -1430,7 +1466,7 @@ suite editor_tests = [] {
     }
 };
 
-"typed_list_markers_preserve_explicit_blank_between_lists"_test = [] {
+"typed_list_markers_coalesce_adjacent_lists_with_reversible_moves"_test = [] {
     const std::vector<std::string> cases{
         "- before\n\nafter",
         "before\n\n- after",
@@ -1455,13 +1491,10 @@ suite editor_tests = [] {
         if (!transaction) continue;
         const auto counters = read_core_operation_counters();
         expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << markdown;
-        expect(fatal(bool(editor.document().root.children.size() == 3u))) << markdown;
+        expect(fatal(bool(editor.document().root.children.size() == 1u))) << markdown;
+        if (editor.document().root.children.size() != 1u) continue;
         expect(fatal(bool(editor.document().root.children.front().kind == BlockKind::List))) << markdown;
-        expect(fatal(bool(editor.document().root.children.front().children.size() == 1u))) << markdown;
-        expect(fatal(bool(editor.document().root.children[1].kind == BlockKind::Paragraph))) << markdown;
-        expect(fatal(bool(editor.document().root.children[1].inline_content.source.empty()))) << markdown;
-        expect(fatal(bool(editor.document().root.children.back().kind == BlockKind::List))) << markdown;
-        expect(fatal(bool(editor.document().root.children.back().children.size() == 1u))) << markdown;
+        expect(fatal(bool(editor.document().root.children.front().children.size() == 2u))) << markdown;
         const auto after_markdown = editor.markdown_utf8();
         const auto after_selection = editor.selection();
         expect(fatal(bool(editor.undo()))) << markdown;
@@ -2328,11 +2361,11 @@ suite editor_tests = [] {
     editor.set_selection({
         {first, 2, TextAffinity::Downstream},
         {second, 1, TextAffinity::Upstream}});
-    expect(fatal(bool(editor.selected_text_cps() == U"e\n\nt")));
+    expect(fatal(bool(editor.selected_text_cps() == U"e\nt")));
     editor.set_selection({
         {second, 1, TextAffinity::Upstream},
         {first, 2, TextAffinity::Downstream}});
-    expect(fatal(bool(editor.selected_text_cps() == U"e\n\nt")));
+    expect(fatal(bool(editor.selected_text_cps() == U"e\nt")));
 
     Editor marked("**one**");
     const auto marked_id = first_text(marked).id;
@@ -2345,7 +2378,7 @@ suite editor_tests = [] {
 };
 
 "heading_adjacent_blank_line_delete_undo_and_redo_are_exact"_test = [] {
-    Editor editor("# title\n\n## next");
+    Editor editor("# title\n\n\n## next");
     expect(fatal(bool(editor.document().root.children.size() == 3u)));
     if (editor.document().root.children.size() != 3u) return;
     const auto title_id = editor.document().root.children.front().id;
@@ -2361,7 +2394,7 @@ suite editor_tests = [] {
     const auto after = editor.selection();
 
     expect(fatal(editor.undo()));
-    expect(fatal(bool(editor.markdown_utf8() == "# title\n\n## next")));
+    expect(fatal(bool(editor.markdown_utf8() == "# title\n\n\n## next")));
     expect(fatal(bool(editor.selection() == before)));
     expect(fatal(editor.redo()));
     expect(fatal(bool(editor.markdown_utf8() == "# title\n## next")));

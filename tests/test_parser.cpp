@@ -139,9 +139,10 @@ suite parser_tests = [] {
 
 "headings_preserve_source_and_outline_data"_test = [] {
     const auto parsed = parse_text(1, "# *Hello*\n\nSetext\n------\n");
-    expect(fatal(bool(parsed.document.root.children.size() == 3u)));
+    expect(fatal(bool(parsed.document.root.children.size() == 2u)));
+    if (parsed.document.root.children.size() != 2u) return;
     const auto& atx = parsed.document.root.children[0];
-    const auto& setext = parsed.document.root.children[2];
+    const auto& setext = parsed.document.root.children[1];
     expect(fatal(bool(atx.kind == BlockKind::Heading)));
     expect(fatal(bool(atx.text_special().level == 1u)));
     expect(fatal(bool(atx.inline_content.source == U"*Hello*")));
@@ -166,24 +167,24 @@ suite parser_tests = [] {
     expect(fatal(bool(parsed.document.root.children.back().inline_content.source == U"second")));
     expect(fatal(bool(serialize_markdown(parsed.document) == "# first\nsecond")));
 
-    const auto blank = parse_text(2, "# first\n\nsecond");
-    expect(fatal(bool(blank.document.root.children.size() == 3u)));
-    if (blank.document.root.children.size() == 3u) {
-        expect(fatal(bool(blank.document.root.children[0].kind == BlockKind::Heading)));
-        expect(fatal(bool(blank.document.root.children[1].kind == BlockKind::Paragraph)));
-        expect(fatal(bool(blank.document.root.children[1].inline_content.source.empty())));
-        expect(fatal(bool(blank.document.root.children[2].kind == BlockKind::Paragraph)));
-        expect(fatal(bool(serialize_markdown(blank.document) == "# first\n\nsecond")));
+    const auto separated = parse_text(2, "# first\n\nsecond");
+    expect(fatal(bool(separated.document.root.children.size() == 2u)));
+    if (separated.document.root.children.size() == 2u) {
+        expect(fatal(bool(separated.document.root.children[0].kind == BlockKind::Heading)));
+        expect(fatal(bool(separated.document.root.children[1].kind == BlockKind::Paragraph)));
+        expect(fatal(bool(separated.document.root.children[1].inline_content.source == U"second")));
+        expect(fatal(bool(serialize_markdown(separated.document) == "# first\n\nsecond")));
 
-        const auto projection = serialize_markdown_projection(blank.document);
-        const auto blank_line_offset = projection.text.find(U"\n\n") + 1u;
+        const auto projection = serialize_markdown_projection(separated.document);
+        expect(fatal(bool(projection.source_maps.size() == 2u)));
+        const auto separator_offset = projection.text.find(U"\n\n") + 1u;
         const auto restored = source_position_for_serialized_offset(
             projection,
-            blank_line_offset,
+            separator_offset,
             TextAffinity::Downstream);
         expect(fatal(bool(restored.has_value())));
         if (restored) {
-            expect(fatal(bool(restored->container_id == blank.document.root.children[1].id)));
+            expect(fatal(bool(restored->container_id == separated.document.root.children[1].id)));
             expect(fatal(bool(restored->source_offset == 0u)));
         }
     }
@@ -200,32 +201,31 @@ suite parser_tests = [] {
     }
 };
 
-"crlf_heading_boundaries_keep_blank_block_identity_and_exact_source"_test = [] {
+"crlf_heading_boundaries_keep_separator_lossless_without_a_phantom_block"_test = [] {
     const std::string source = "# first\r\n\r\n## second\r\n";
     const auto parsed = parse_text(1, source);
-    expect(bool(parsed.document.root.children.size() == 3u))
+    expect(bool(parsed.document.root.children.size() == 2u))
         << "CRLF root block count: " << parsed.document.root.children.size();
-    if (parsed.document.root.children.size() != 3u) return;
+    if (parsed.document.root.children.size() != 2u) return;
     expect(fatal(bool(parsed.document.root.children[0].kind == BlockKind::Heading)));
     expect(fatal(bool(parsed.document.root.children[0].inline_content.source == U"first")));
-    expect(fatal(bool(parsed.document.root.children[1].kind == BlockKind::Paragraph)));
-    expect(fatal(bool(parsed.document.root.children[1].inline_content.source.empty())));
-    expect(fatal(bool(parsed.document.root.children[2].kind == BlockKind::Heading)));
-    expect(fatal(bool(parsed.document.root.children[2].inline_content.source == U"second")));
+    expect(fatal(bool(parsed.document.root.children[1].kind == BlockKind::Heading)));
+    expect(fatal(bool(parsed.document.root.children[1].inline_content.source == U"second")));
     expect(fatal(bool(serialize_markdown(parsed.document) == source)));
 
     const auto projection = serialize_markdown_projection(parsed.document);
-    const auto blank_line_offset = projection.text.find(U"\r\n\r\n") + 2u;
+    expect(fatal(bool(projection.source_maps.size() == 2u)));
+    const auto separator_offset = projection.text.find(U"\r\n\r\n") + 2u;
     const auto restored = source_position_for_serialized_offset(
         projection,
-        blank_line_offset,
+        separator_offset,
         TextAffinity::Downstream);
     expect(fatal(bool(restored.has_value())));
     if (restored)
         expect(fatal(bool(restored->container_id == parsed.document.root.children[1].id)));
 };
 
-"blank_lines_have_editable_block_identity_at_document_boundaries"_test = [] {
+"only_blank_lines_beyond_the_required_block_separator_have_block_identity"_test = [] {
     struct Case {
         std::string source;
         std::size_t block_count;
@@ -233,10 +233,25 @@ suite parser_tests = [] {
     };
     const std::vector<Case> cases{
         {"\n# first", 2u, 1u},
+        {"\r\n# first", 2u, 1u},
         {"# first\n", 1u, 0u},
+        {"# first\r\n", 1u, 0u},
         {"# first\n\n", 2u, 1u},
-        {"# first\n\n\nsecond", 4u, 2u},
+        {"# first\r\n\r\n", 2u, 1u},
+        {"first\n\nsecond", 2u, 0u},
+        {"first\r\n\r\nsecond", 2u, 0u},
+        {"# first\n\nsecond", 2u, 0u},
+        {"# first\r\n\r\nsecond", 2u, 0u},
+        {"first\n\n\nsecond", 3u, 1u},
+        {"first\r\n\r\n\r\nsecond", 3u, 1u},
+        {"# first\n\n\nsecond", 3u, 1u},
+        {"# first\r\n\r\n\r\nsecond", 3u, 1u},
+        {"first\n\n\n\nsecond", 4u, 2u},
+        {"first\r\n\r\n\r\n\r\nsecond", 4u, 2u},
+        {"# first\n\n\n\nsecond", 4u, 2u},
+        {"# first\r\n\r\n\r\n\r\nsecond", 4u, 2u},
         {"\n\n# first\n\n", 4u, 3u},
+        {"\r\n\r\n# first\r\n\r\n", 4u, 3u},
     };
     for (auto const& entry : cases) {
         const auto parsed = parse_text(1, entry.source);
@@ -255,6 +270,58 @@ suite parser_tests = [] {
         expect(fatal(bool(reparsed.document.root.children.size() == entry.block_count)))
             << entry.source;
         expect(fatal(bool(serialize_markdown(reparsed.document) == entry.source))) << entry.source;
+    }
+};
+
+"ordinary_block_separators_project_to_the_neighboring_content_blocks"_test = [] {
+    struct Case {
+        std::string source;
+        BlockKind first_kind;
+        BlockKind second_kind;
+        std::u32string separator;
+    };
+    const std::vector<Case> cases{
+        {"first\n\nsecond", BlockKind::Paragraph, BlockKind::Paragraph, U"\n\n"},
+        {"# first\n\nsecond", BlockKind::Heading, BlockKind::Paragraph, U"\n\n"},
+        {"first\n\n# second", BlockKind::Paragraph, BlockKind::Heading, U"\n\n"},
+        {"first\r\n\r\nsecond", BlockKind::Paragraph, BlockKind::Paragraph, U"\r\n\r\n"},
+        {"# first\r\n\r\nsecond", BlockKind::Heading, BlockKind::Paragraph, U"\r\n\r\n"},
+        {"first\r\n\r\n# second", BlockKind::Paragraph, BlockKind::Heading, U"\r\n\r\n"},
+    };
+
+    for (const auto& entry : cases) {
+        const auto parsed = parse_text(1, entry.source);
+        expect(fatal(bool(parsed.document.root.children.size() == 2u))) << entry.source;
+        if (parsed.document.root.children.size() != 2u) continue;
+        const auto& first = parsed.document.root.children[0];
+        const auto& second = parsed.document.root.children[1];
+        expect(fatal(bool(first.kind == entry.first_kind))) << entry.source;
+        expect(fatal(bool(second.kind == entry.second_kind))) << entry.source;
+        expect(fatal(bool(first.inline_content.source == U"first"))) << entry.source;
+        expect(fatal(bool(second.inline_content.source == U"second"))) << entry.source;
+
+        const auto projection = serialize_markdown_projection(parsed.document);
+        expect(fatal(bool(projection.text == utf8_to_cps(entry.source)))) << entry.source;
+        expect(fatal(bool(projection.source_maps.size() == 2u))) << entry.source;
+        const auto separator_start = projection.text.find(entry.separator);
+        expect(fatal(bool(separator_start != std::u32string::npos))) << entry.source;
+        if (separator_start == std::u32string::npos) continue;
+        const auto inside_separator = separator_start + entry.separator.size() / 2u;
+        const auto restored = source_position_for_serialized_offset(
+            projection,
+            inside_separator,
+            TextAffinity::Downstream);
+        expect(fatal(bool(restored.has_value()))) << entry.source;
+        if (restored) {
+            expect(fatal(bool(restored->container_id == second.id))) << entry.source;
+            expect(fatal(bool(restored->source_offset == 0u))) << entry.source;
+        }
+
+        const auto saved = serialize_markdown(parsed.document);
+        expect(fatal(bool(saved == entry.source))) << entry.source;
+        const auto reloaded = parse_text(2, saved);
+        expect(fatal(bool(reloaded.document.root.children.size() == 2u))) << entry.source;
+        expect(fatal(bool(serialize_markdown(reloaded.document) == entry.source))) << entry.source;
     }
 };
 
@@ -423,15 +490,11 @@ suite parser_tests = [] {
     expect(fatal(bool(footnote != nullptr)));
     const auto* callout = first_block(parsed.document.root.children, BlockKind::Callout);
     expect(fatal(bool(callout != nullptr)));
-    expect(fatal(bool(parsed.document.root.children.size() == 5u)));
-    if (parsed.document.root.children.size() == 5u) {
+    expect(fatal(bool(parsed.document.root.children.size() == 3u)));
+    if (parsed.document.root.children.size() == 3u) {
         expect(fatal(bool(parsed.document.root.children[0].kind == BlockKind::BlockQuote)));
-        expect(fatal(bool(parsed.document.root.children[1].kind == BlockKind::Paragraph
-            && parsed.document.root.children[1].inline_content.source.empty())));
-        expect(fatal(bool(parsed.document.root.children[2].kind == BlockKind::FootnoteDefinition)));
-        expect(fatal(bool(parsed.document.root.children[3].kind == BlockKind::Paragraph
-            && parsed.document.root.children[3].inline_content.source.empty())));
-        expect(fatal(bool(parsed.document.root.children[4].kind == BlockKind::Callout)));
+        expect(fatal(bool(parsed.document.root.children[1].kind == BlockKind::FootnoteDefinition)));
+        expect(fatal(bool(parsed.document.root.children[2].kind == BlockKind::Callout)));
     }
     if (callout) {
         const auto* title = callout_title_block(*callout);
@@ -463,15 +526,13 @@ suite parser_tests = [] {
     const auto& footnote = *footnote_at;
     expect(fatal(bool(footnote.kind == BlockKind::FootnoteDefinition)));
     expect(fatal(bool(footnote.container_special().footnote_label == "n")));
-    expect(fatal(bool(footnote.children.size() == 3u)));
-    if (footnote.children.size() == 3u) {
+    expect(fatal(bool(footnote.children.size() == 2u)));
+    if (footnote.children.size() == 2u) {
         expect(fatal(bool(footnote.children[0].kind == BlockKind::Paragraph)));
         expect(fatal(bool(footnote.children[0].inline_content.source == U"first\ncontinuation")));
         expect_lossless(footnote.children[0].inline_content);
-        expect(fatal(bool(footnote.children[1].kind == BlockKind::Paragraph)));
-        expect(fatal(bool(footnote.children[1].inline_content.source.empty())));
-        expect(fatal(bool(footnote.children[2].kind == BlockKind::List)));
-        expect(fatal(bool(first_block(footnote.children[2].children, BlockKind::List) != nullptr)));
+        expect(fatal(bool(footnote.children[1].kind == BlockKind::List)));
+        expect(fatal(bool(first_block(footnote.children[1].children, BlockKind::List) != nullptr)));
     }
     expect(fatal(bool(serialize_markdown(parsed.document) == source)));
 };

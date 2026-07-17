@@ -527,7 +527,20 @@ public:
             consume_line_ending();
             blank_ranges.emplace_back(start, cur());
         }
-        for (std::size_t index = 0; index < blank_ranges.size(); ++index) {
+        // A blank physical line between two non-empty blocks is Markdown's
+        // block separator, not a third editable block.  Keep its exact bytes
+        // in the following block's separator_before.  Additional blank lines
+        // are genuine editable empty paragraphs.  At document boundaries no
+        // following/preceding content absorbs a separator, so every physical
+        // blank line keeps block identity.
+        const auto first_editable_blank = !eof()
+            && !blocks.empty()
+            && preceding_source_end
+            && !(blocks.back().kind == BlockKind::Paragraph
+                && blocks.back().inline_content.source.empty())
+            ? 1u
+            : 0u;
+        for (std::size_t index = first_editable_blank; index < blank_ranges.size(); ++index) {
             BlockNode paragraph;
             paragraph.id = next_node_id();
             paragraph.kind = BlockKind::Paragraph;

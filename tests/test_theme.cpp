@@ -31,11 +31,12 @@ suite theme_tests = [] {
     custom.layout.code_padding_horizontal = 23.0f;
 
     auto model = build_render_model(parsed.document, parsed.outline, parsed.symbols, custom);
-    expect(model.blocks.size() == 5_u);
+    expect(model.blocks.size() == 3_u);
+    if (model.blocks.size() != 3u) return;
     expect(model.blocks[0].block_style.margin_top == 71.0_f);
-    expect(model.blocks[2].block_style.margin_bottom == 19.0_f);
-    expect(model.blocks[4].block_style.padding_left == 23.0_f);
-    expect(model.blocks[4].block_style.padding_right == 23.0_f);
+    expect(model.blocks[1].block_style.margin_bottom == 19.0_f);
+    expect(model.blocks[2].block_style.padding_left == 23.0_f);
+    expect(model.blocks[2].block_style.padding_right == 23.0_f);
 };
 
 "math styles consume the selected theme"_test = [] {

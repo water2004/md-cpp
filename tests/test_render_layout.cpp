@@ -594,13 +594,12 @@ suite render_layout_tests = [] {
         "1. 位选通 0x1_fffff_ffff 共33bit\n"
         "   trig_out(FS17);\n"
         "## 3.2 next\n");
-    expect(fatal(bool(model.blocks.size() == 4u)));
-    if (model.blocks.size() != 4) return;
+    expect(fatal(bool(model.blocks.size() == 3u)));
+    if (model.blocks.size() != 3) return;
     expect(fatal(bool(model.blocks[0].text_heading_level == 2u)));
-    expect(fatal(bool(model.blocks[1].kind == RenderBlockKind::Blank)));
-    expect(fatal(bool(model.blocks[2].text_heading_level == 0u)));
-    expect(fatal(bool(model.blocks[3].text_heading_level == 2u)));
-    expect(fatal(bool(std::ranges::none_of(model.blocks[2].inline_items, [](auto const& item) {
+    expect(fatal(bool(model.blocks[1].text_heading_level == 0u)));
+    expect(fatal(bool(model.blocks[2].text_heading_level == 2u)));
+    expect(fatal(bool(std::ranges::none_of(model.blocks[1].inline_items, [](auto const& item) {
         return item.style.bold || item.style.italic || item.style.heading_level.has_value();
     }))));
 };
@@ -1192,18 +1191,16 @@ suite render_layout_tests = [] {
     auto repeated = build_model("alpha\n\nbeta\n");
     auto changed = build_model("alpha\n\ngamma\n");
 
-    expect(fatal(bool(first.blocks.size() == 3u)));
+    expect(fatal(bool(first.blocks.size() == 2u)));
     expect(fatal(bool(repeated.blocks.size() == first.blocks.size())));
     expect(fatal(bool(changed.blocks.size() == first.blocks.size())));
-    if (first.blocks.size() != 3 || repeated.blocks.size() != 3 || changed.blocks.size() != 3) return;
+    if (first.blocks.size() != 2 || repeated.blocks.size() != 2 || changed.blocks.size() != 2) return;
 
     expect(fatal(bool(first.blocks[0].presentation_key != 0u)));
     expect(fatal(bool(first.blocks[0].presentation_key == repeated.blocks[0].presentation_key)));
     expect(fatal(bool(first.blocks[1].presentation_key == repeated.blocks[1].presentation_key)));
-    expect(fatal(bool(first.blocks[2].presentation_key == repeated.blocks[2].presentation_key)));
     expect(fatal(bool(first.blocks[0].presentation_key == changed.blocks[0].presentation_key)));
-    expect(fatal(bool(first.blocks[1].presentation_key == changed.blocks[1].presentation_key)));
-    expect(fatal(bool(first.blocks[2].presentation_key != changed.blocks[2].presentation_key)));
+    expect(fatal(bool(first.blocks[1].presentation_key != changed.blocks[1].presentation_key)));
 };
 
 "render_model_presentation_keys_cover_nested_content"_test = [] {
@@ -1262,7 +1259,7 @@ suite render_layout_tests = [] {
     expect(fatal(bool(incremental.editable_top_level == full.editable_top_level)));
     expect(fatal(bool(incremental.rebuilt_block_count == 1u)));
     expect(fatal(incremental.incremental_update));
-    expect(fatal(bool(incremental.changed_block_indices == std::vector<std::size_t>{4u})));
+    expect(fatal(bool(incremental.changed_block_indices == std::vector<std::size_t>{2u})));
     expect(fatal(bool(incremental_counters.render_source_key_derivations == 1u)));
     expect(fatal(bool(incremental.reused_block_count + incremental.rebuilt_block_count
         == incremental.blocks.size())));
@@ -1299,33 +1296,35 @@ suite render_layout_tests = [] {
         parsed.document,
         parsed.symbols,
         default_theme_profile(),
-        2,
-        7);
+        1,
+        4);
     expect(fatal(bool(model.materialized_block_indices
-        == std::unordered_set<std::size_t>{2u, 3u, 4u, 5u, 6u})));
+        == std::unordered_set<std::size_t>{1u, 2u, 3u})));
     expect(fatal(bool(!model.blocks[0].materialized)));
-    for (auto index : {2u, 3u, 4u, 5u, 6u}) {
+    expect(fatal(bool(model.blocks.size() >= 4u)));
+    if (model.blocks.size() < 4u) return;
+    for (auto index : {1u, 2u, 3u}) {
         expect(fatal(model.blocks[index].materialized));
         expect(fatal(bool(model.blocks[index].source_key != 0u)));
     }
-    expect(fatal(bool(!model.blocks[2].inline_items.empty())));
-    expect(fatal(bool(!model.blocks[2].child_blocks.empty())));
-    expect(fatal(bool(!model.blocks[4].special().table_cells.empty())));
-    expect(fatal(bool(!model.blocks[6].special().code_text.empty())));
+    expect(fatal(bool(!model.blocks[1].inline_items.empty())));
+    expect(fatal(bool(!model.blocks[1].child_blocks.empty())));
+    expect(fatal(bool(!model.blocks[2].special().table_cells.empty())));
+    expect(fatal(bool(!model.blocks[3].special().code_text.empty())));
 
-    auto retained_key = model.blocks[4].presentation_key;
+    auto retained_key = model.blocks[2].presentation_key;
     release_render_model_blocks_outside(
         model,
         parsed.document,
         default_theme_profile(),
-        4,
-        5);
+        2,
+        3);
     expect(fatal(bool(model.materialized_block_indices
-        == std::unordered_set<std::size_t>{4u})));
-    expect(fatal(bool(!model.blocks[2].materialized && model.blocks[2].inline_items.empty())));
-    expect(fatal(model.blocks[4].materialized));
-    expect(fatal(bool(model.blocks[4].presentation_key == retained_key)));
-    expect(fatal(bool(!model.blocks[6].materialized && model.blocks[6].special().code_text.empty())));
+        == std::unordered_set<std::size_t>{2u})));
+    expect(fatal(bool(!model.blocks[1].materialized && model.blocks[1].inline_items.empty())));
+    expect(fatal(model.blocks[2].materialized));
+    expect(fatal(bool(model.blocks[2].presentation_key == retained_key)));
+    expect(fatal(bool(!model.blocks[3].materialized && model.blocks[3].special().code_text.empty())));
 };
 
 "generated_container_prefixes_anchor_carets_to_the_source_boundary"_test = [] {
@@ -1427,7 +1426,7 @@ suite render_layout_tests = [] {
 
 "trailing_blockquote_hard_break_ends_at_inline_source_boundary"_test = [] {
     auto m = build_model("> alpha  \n> \n\nafter");
-    expect(fatal(bool((m.blocks.size()) == (3u))));
+    expect(fatal(bool((m.blocks.size()) == (2u))));
     expect(fatal(bool(!m.blocks[0].child_blocks.empty())));
     if (!m.blocks[0].child_blocks.empty()) {
         auto const& items = m.blocks[0].child_blocks.front().inline_items;
@@ -1495,20 +1494,19 @@ suite render_layout_tests = [] {
     expect(fatal(bool((trailing.blocks.size()) == (1u))));
 
     auto between = build_model("Hello\n\nWorld");
-    expect(fatal(bool((between.blocks.size()) == (3u))));
-    expect(fatal(bool(between.blocks[1].kind == RenderBlockKind::Blank)));
+    expect(fatal(bool((between.blocks.size()) == (2u))));
 
     auto empty_after_break = build_model("Hello\n\n");
     expect(fatal(bool((empty_after_break.blocks.size()) == (2u))));
     expect(fatal(bool(empty_after_break.blocks[1].kind == RenderBlockKind::Blank)));
     expect(fatal(bool(empty_after_break.blocks[1].content_span.source_range.empty())));
 
-    auto two_blanks_between = build_model("Hello\n\n\nWorld");
-    expect(fatal(bool((two_blanks_between.blocks.size()) == (4u))));
-    expect(fatal(bool(two_blanks_between.blocks[0].kind == RenderBlockKind::Text)));
-    expect(fatal(bool(two_blanks_between.blocks[1].kind == RenderBlockKind::Blank)));
-    expect(fatal(bool(two_blanks_between.blocks[2].kind == RenderBlockKind::Blank)));
-    expect(fatal(bool(two_blanks_between.blocks[3].kind == RenderBlockKind::Text)));
+    auto one_blank_between = build_model("Hello\n\n\nWorld");
+    expect(fatal(bool((one_blank_between.blocks.size()) == (3u))));
+    if (one_blank_between.blocks.size() != 3u) return;
+    expect(fatal(bool(one_blank_between.blocks[0].kind == RenderBlockKind::Text)));
+    expect(fatal(bool(one_blank_between.blocks[1].kind == RenderBlockKind::Blank)));
+    expect(fatal(bool(one_blank_between.blocks[2].kind == RenderBlockKind::Text)));
 };
 
 "layout_blank_block_has_one_caret_line"_test = [] {
@@ -1875,7 +1873,7 @@ suite render_layout_tests = [] {
     expect(fatal(bool(definition_at != model.blocks.end())));
     if (definition_at == model.blocks.end()) return;
     auto const& definition = *definition_at;
-    expect(fatal(bool(definition.child_blocks.size() == 3u)));
+    expect(fatal(bool(definition.child_blocks.size() == 2u)));
 
     std::u32string visible;
     for (auto const& item : definition.inline_items) {
