@@ -815,6 +815,24 @@ suite parser_tests = [] {
     expect(fatal(bool(serialize_markdown(mixed.document) == mixed_line_endings)));
 };
 
+"fenced_block_source_classifies_physical_line_endings_without_polluting_content"_test = [] {
+    for (const auto& source : {
+        std::string{"```cpp\nvalue\n```"},
+        std::string{"```cpp\r\nvalue\r\n```"},
+        std::string{"```cpp\rvalue\r```"},
+    }) {
+        const auto parsed = parse_text(1, source);
+        expect(fatal(bool(parsed.document.root.children.size() == 1u)));
+        if (parsed.document.root.children.empty()) continue;
+        const auto& block = parsed.document.root.children.front();
+        expect(fatal(bool(block.kind == BlockKind::CodeBlock)));
+        expect(fatal(bool(block.block_source.tree().language == std::optional<std::string>{"cpp"})));
+        expect(fatal(bool(block_source_tokens_partition(block.block_source))));
+        expect(fatal(bool(flatten_block_source_tokens(block.block_source) == block.block_source.source())));
+        expect(fatal(bool(serialize_markdown(parsed.document) == source)));
+    }
+};
+
 "empty_nested_containers_get_editable_paragraphs"_test = [] {
     const auto list = parse_text(1, "- ");
     expect(fatal(bool(list.document.root.children.front().kind == BlockKind::List)));

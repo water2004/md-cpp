@@ -285,7 +285,52 @@ suite render_layout_tests = [] {
     expect(fatal(bool(!m.blocks.empty())));
     expect(fatal(bool(m.blocks[0].kind == RenderBlockKind::Code)));
     expect(fatal(bool(m.blocks[0].special().language && *m.blocks[0].special().language == "rust")));
-    expect(fatal(bool(m.blocks[0].special().line_count >= 1)));
+    expect(fatal(bool(m.blocks[0].special().line_count == 1u)));
+};
+
+"code_block_terminal_endings_do_not_create_phantom_visual_lines"_test = [] {
+    struct Case {
+        std::string source;
+        std::size_t expected_lines;
+        std::u32string expected_last_line;
+    };
+    const std::vector<Case> cases{
+        {"```cpp\nvalue\n```", 1u, U"value"},
+        {"```cpp\nvalue\n\n```", 2u, U""},
+        {"```cpp\r\nvalue\r\n```", 1u, U"value"},
+        {"```cpp\r\nvalue\r\n\r\n```", 2u, U""},
+        {"```cpp\rvalue\r```", 1u, U"value"},
+        {"```cpp\n```", 1u, U""},
+        {"```cpp\nvalue", 1u, U"value"},
+    };
+    StubMeasurer measurer(6.0f);
+    for (const auto& item : cases) {
+        const auto model = build_model(item.source);
+        expect(fatal(bool(model.blocks.size() == 1u)));
+        if (model.blocks.empty()) continue;
+        const auto& code = model.blocks.front();
+        expect(fatal(bool(code.kind == RenderBlockKind::Code)));
+        expect(fatal(bool(code.special().language == std::optional<std::string>{"cpp"})));
+        expect(fatal(bool(code.special().line_count == item.expected_lines)));
+        const auto layout = layout_blocks(
+            model.blocks,
+            800.0f,
+            1.0f,
+            measurer,
+            std::nullopt,
+            LogicalPoint(0, 0),
+            Outline::empty(1));
+        expect(fatal(bool(layout.blocks.size() == 1u)));
+        if (layout.blocks.empty()) continue;
+        expect(fatal(bool(layout.blocks.front().children.size() == item.expected_lines)));
+        if (!layout.blocks.front().children.empty()) {
+            const auto& line = layout.blocks.front().children.back().line;
+            expect(fatal(bool(line.runs.size() == 1u)));
+            if (!line.runs.empty()) {
+                expect(fatal(bool(line.runs.front().text == item.expected_last_line)));
+            }
+        }
+    }
 };
 
 "builds_indented_code_block_with_local_code_source"_test = [] {
@@ -934,7 +979,7 @@ suite render_layout_tests = [] {
         }
     }
     expect(fatal(bool(flattened_code == U"int x;\n")));
-    expect(fatal(bool((code_indents) == (2u))));
+    expect(fatal(bool((code_indents) == (1u))));
 };
 
 "unified_flow_composes_task_callout_footnote_quote_code_and_blank"_test = [] {
@@ -1672,11 +1717,10 @@ suite render_layout_tests = [] {
     expect(fatal(bool(code_tree.blocks.size() == 1u)));
     if (!code_tree.blocks.empty()) {
         auto const& lines = code_tree.blocks.front().children;
-        expect(fatal(bool(lines.size() == 3u)));
-        if (lines.size() == 3u) {
+        expect(fatal(bool(lines.size() == 2u)));
+        if (lines.size() == 2u) {
             expect(fatal(bool(lines[0].line.source_span.source_range == SourceRange{7, 10})));
             expect(fatal(bool(lines[1].line.source_span.source_range == SourceRange{11, 14})));
-            expect(fatal(bool(lines[2].line.source_span.source_range == SourceRange{15, 15})));
             auto hit = hit_test_layout_tree(
                 code_tree,
                 LogicalPoint(20.0f, lines[1].line.rect.y + 1.0f));
