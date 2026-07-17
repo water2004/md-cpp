@@ -254,6 +254,44 @@ suite inline_cst_tests = [] {
     expect(inline_forward_delete_range(markdown, 1) == SourceRange{1, 4});
 };
 
+"underscore delimiters respect CommonMark word boundaries"_test = [] {
+    const std::vector<std::u32string> literal_sources{
+        U"0x1_fffff_ffff",
+        U"trig_out",
+        U"a_b_c",
+        U"foo_",
+        U"foo__",
+        U"0x1_fffff_ffff and trig_out across\nsoft lines",
+    };
+    for (auto const& source : literal_sources) {
+        const auto tree = parse_inline(source, test_context());
+        expect(first_node(tree, InlineCstKind::Emphasis) == nullptr)
+            << "source=" << cps_to_utf8(source);
+        expect(first_node(tree, InlineCstKind::Strong) == nullptr)
+            << "source=" << cps_to_utf8(source);
+        expect(is_lossless(source));
+    }
+
+    const std::vector<std::pair<std::u32string, InlineCstKind>> formatted_sources{
+        {U"_word_", InlineCstKind::Emphasis},
+        {U"__word__", InlineCstKind::Strong},
+        {U"a _word_ b", InlineCstKind::Emphasis},
+        {U"(_word_)", InlineCstKind::Emphasis},
+    };
+    for (auto const& [source, kind] : formatted_sources) {
+        const auto tree = parse_inline(source, test_context());
+        expect(first_node(tree, kind) != nullptr)
+            << "source=" << cps_to_utf8(source);
+        expect(is_lossless(source));
+    }
+
+    for (auto const& source : {std::u32string{U"_"}, std::u32string{U"__"}}) {
+        const auto tree = parse_inline(source, test_context());
+        expect(first_node(tree, InlineCstKind::Incomplete) != nullptr);
+        expect(is_lossless(source));
+    }
+};
+
 "html_text_mode_keeps_markdown_markers_literal_across_edits"_test = [] {
     InlineDocument document{
         U"*literal* <strong>bold</strong> $math$",

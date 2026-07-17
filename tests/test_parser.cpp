@@ -719,6 +719,47 @@ suite parser_tests = [] {
     }
 };
 
+"peer block markers terminate list items without a blank separator"_test = [] {
+    struct Case {
+        std::string source;
+        BlockKind following_kind;
+    };
+    const std::vector<Case> cases{
+        {"1. item\n## next\n", BlockKind::Heading},
+        {"- item\n> quote\n", BlockKind::BlockQuote},
+        {"1. item\n```cpp\nvalue\n```\n", BlockKind::CodeBlock},
+        {"- item\n$$\nx + y\n$$\n", BlockKind::MathBlock},
+    };
+    for (auto const& value : cases) {
+        const auto parsed = parse_text(1, value.source);
+        expect(fatal(parsed.document.root.children.size() == 2u)) << value.source;
+        if (parsed.document.root.children.size() != 2) continue;
+        expect(parsed.document.root.children[0].kind == BlockKind::List) << value.source;
+        expect(parsed.document.root.children[1].kind == value.following_kind) << value.source;
+        expect(fatal(serialize_markdown(parsed.document) == value.source)) << value.source;
+    }
+};
+
+"list boundary detection preserves lazy text and genuinely nested blocks"_test = [] {
+    const std::string lazy_source = "1. item\ncontinuation\n";
+    const auto lazy = parse_text(1, lazy_source);
+    expect(lazy.document.root.children.size() == 1u)
+        << "lazy top-level blocks=" << lazy.document.root.children.size();
+    if (!lazy.document.root.children.empty()) {
+        expect(lazy.document.root.children.front().kind == BlockKind::List);
+        expect(first_block(lazy.document.root.children.front().children, BlockKind::Heading) == nullptr);
+    }
+
+    const std::string nested_source = "1. item\n   ## nested\n   body\n";
+    const auto nested = parse_text(1, nested_source);
+    expect(nested.document.root.children.size() == 1u)
+        << "nested top-level blocks=" << nested.document.root.children.size();
+    if (!nested.document.root.children.empty()) {
+        expect(nested.document.root.children.front().kind == BlockKind::List);
+        expect(first_block(nested.document.root.children.front().children, BlockKind::Heading) != nullptr);
+    }
+};
+
 "serialized_projection_maps_repeated_nested_sources_without_text_search"_test = [] {
     const std::vector<std::string> sources{
         "> same\n>\n> same",

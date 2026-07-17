@@ -49,6 +49,54 @@ struct Parser {
         return (c >= U'!' && c <= U'/') || (c >= U':' && c <= U'@') || (c >= U'[' && c <= U'`') || (c >= U'{' && c <= U'~');
     }
 
+    static bool delimiter_punct(char32_t c) {
+        // CommonMark defines delimiter flanking in terms of Unicode
+        // punctuation. Cover ASCII plus the Unicode punctuation blocks used by
+        // ordinary prose; this deliberately does not classify letters or
+        // numbers from any script as punctuation.
+        return ascii_punct(c)
+            || (c >= 0x2000 && c <= 0x206F)
+            || (c >= 0x2E00 && c <= 0x2E7F)
+            || (c >= 0x3000 && c <= 0x303F)
+            || (c >= 0xFE10 && c <= 0xFE1F)
+            || (c >= 0xFE30 && c <= 0xFE4F)
+            || (c >= 0xFF01 && c <= 0xFF65);
+    }
+
+    struct DelimiterFlanking {
+        bool left = false;
+        bool right = false;
+        bool previous_punctuation = false;
+        bool next_punctuation = false;
+    };
+
+    DelimiterFlanking delimiter_flanking(std::size_t at, std::size_t length) const {
+        const auto previous_boundary = at == 0;
+        const auto next_boundary = at + length >= limit;
+        const auto previous = previous_boundary ? char32_t{} : ch(at - 1);
+        const auto next = next_boundary ? char32_t{} : ch(at + length);
+        const auto previous_whitespace = previous_boundary || is_cp_white(previous);
+        const auto next_whitespace = next_boundary || is_cp_white(next);
+        const auto previous_punctuation = !previous_boundary && delimiter_punct(previous);
+        const auto next_punctuation = !next_boundary && delimiter_punct(next);
+        return {
+            .left = !next_whitespace && (!next_punctuation || previous_whitespace || previous_punctuation),
+            .right = !previous_whitespace && (!previous_punctuation || next_whitespace || next_punctuation),
+            .previous_punctuation = previous_punctuation,
+            .next_punctuation = next_punctuation,
+        };
+    }
+
+    bool underscore_can_open(std::size_t at, std::size_t length) const {
+        const auto flanking = delimiter_flanking(at, length);
+        return flanking.left && (!flanking.right || flanking.previous_punctuation);
+    }
+
+    bool underscore_can_close(std::size_t at, std::size_t length) const {
+        const auto flanking = delimiter_flanking(at, length);
+        return flanking.right && (!flanking.left || flanking.next_punctuation);
+    }
+
     // Match a literal substring at `pos`; return true and advance if matched.
     bool match(std::u32string_view lit) {
         if (pos + lit.size() > limit) return false;
@@ -205,9 +253,14 @@ struct Parser {
     // remainder of the line (still lossless — every char accounted for).
     bool parse_delimited(InlineCstNodes& out, std::size_t& run_start, std::u32string_view opener, InlineCstKind kind) {
         if (!starts_with(pos, opener)) return false;
-        // left-flanking / right-flanking sanity: opener must not be followed by
-        // whitespace; for `_` also not followed by another `_`.
+        const auto underscore = !opener.empty() && opener.front() == U'_';
+        // Other delimiters retain their existing editable/incomplete behavior;
+        // underscore runs use CommonMark's stricter left/right-flanking rules
+        // so identifier characters such as `trig_out` remain literal.
         std::size_t after = pos + opener.size();
+        if (underscore && after < limit && !underscore_can_open(pos, opener.size())) return false;
+        if (underscore && after >= limit && pos > 0
+            && !is_cp_white(ch(pos - 1)) && !delimiter_punct(ch(pos - 1))) return false;
         if (after >= limit) {
             const auto start = pos;
             flush_text_to(out, run_start, start);
@@ -224,7 +277,6 @@ struct Parser {
         }
         char32_t next = ch(after);
         if (next == U' ' || next == U'\n' || next == U'\t') return false;
-        if (opener == U"_" && next == U'_') return false;
         if (opener == U"~~" && ch(after) == U' ') return false;
 
         std::size_t start = pos;
@@ -293,7 +345,8 @@ struct Parser {
                 if (i == 0) return i;
                 char32_t prev = ch(i - 1);
                 if (prev == U' ' || prev == U'\n' || prev == U'\t') continue;
-                if (opener == U"_" && i + opener.size() < limit && ch(i + opener.size()) == U'_') continue;
+                if (!opener.empty() && opener.front() == U'_'
+                    && !underscore_can_close(i, opener.size())) continue;
                 return i;
             }
         }

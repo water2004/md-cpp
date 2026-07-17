@@ -389,13 +389,15 @@ public:
         }
         return true;
     }
-    bool line_starts_fenced_code() const {
-        if (!peek_line_start()) return false;
-        std::size_t i = pos;
-        auto marker = peek1();
+    bool line_starts_fenced_code(std::size_t at) const {
+        std::size_t i = at;
+        auto marker = ch_at(at);
         if (marker != U'`' && marker != U'~') return false;
         while (i < cps.size() && cps[i] == marker) ++i;
-        return i - pos >= 3;
+        return i - at >= 3;
+    }
+    bool line_starts_fenced_code() const {
+        return peek_line_start() && line_starts_fenced_code(pos);
     }
     bool line_is_thematic_break(std::size_t start, std::size_t* end = nullptr) const {
         std::size_t line_end = start;
@@ -436,9 +438,9 @@ public:
         if (count == 0 || cursor != line_end) return std::nullopt;
         return SetextUnderline{static_cast<std::uint8_t>(marker == U'=' ? 1 : 2), line_end};
     }
-    bool line_starts_block_html() const {
-        if (!peek_line_start() || peek1() != U'<') return false;
-        auto cursor = pos + 1;
+    bool line_starts_block_html(std::size_t at) const {
+        if (ch_at(at) != U'<') return false;
+        auto cursor = at + 1;
         if (cursor >= cps.size() || cps[cursor] == U'/') return false;
         const auto name_start = cursor;
         while (cursor < cps.size()
@@ -460,25 +462,32 @@ public:
         });
         return html_is_block_element(name);
     }
-    bool line_starts_interrupting_block() const {
-        if (!peek_line_start()) return false;
-        if (setext_underline_at(pos)) return true;
-        if (line_is_thematic_break(pos)) return true;
-        if (line_starts_block_html()) return true;
-        if (peek1() == U'>' || line_starts_fenced_code()) return true;
-        if (peek1() == U'#') {
-            std::size_t cursor = pos;
-            while (cursor < cps.size() && cps[cursor] == U'#' && cursor - pos < 6) ++cursor;
+    bool line_starts_block_html() const {
+        return peek_line_start() && line_starts_block_html(pos);
+    }
+    bool line_starts_interrupting_block(std::size_t at) const {
+        if (setext_underline_at(at)) return true;
+        if (line_is_thematic_break(at)) return true;
+        if (line_starts_block_html(at)) return true;
+        if (ch_at(at) == U'>' || line_starts_fenced_code(at)) return true;
+        if (ch_at(at) == U'#') {
+            std::size_t cursor = at;
+            while (cursor < cps.size() && cps[cursor] == U'#' && cursor - at < 6) ++cursor;
             if (cursor < cps.size() && cps[cursor] == U' ') return true;
         }
-        if ((peek1() == U'$' && peek2() == U'$') || (peek1() == U'\\' && peek2() == U'[')) return true;
-        if ((peek1() == U'-' || peek1() == U'+' || peek1() == U'*') && peek2() == U' ') return true;
-        if (is_ascii_digit_(peek1())) {
-            std::size_t cursor = pos;
+        if ((ch_at(at) == U'$' && ch_at(at + 1) == U'$')
+            || (ch_at(at) == U'\\' && ch_at(at + 1) == U'[')) return true;
+        if ((ch_at(at) == U'-' || ch_at(at) == U'+' || ch_at(at) == U'*')
+            && ch_at(at + 1) == U' ') return true;
+        if (is_ascii_digit_(ch_at(at))) {
+            std::size_t cursor = at;
             while (cursor < cps.size() && is_ascii_digit_(cps[cursor])) ++cursor;
             if (cursor + 1 < cps.size() && (cps[cursor] == U'.' || cps[cursor] == U')') && cps[cursor + 1] == U' ') return true;
         }
         return false;
+    }
+    bool line_starts_interrupting_block() const {
+        return peek_line_start() && line_starts_interrupting_block(pos);
     }
     // read current line up to \n (not consumed). Implementation note: READ-ONLY.
     std::pair<std::u32string, std::size_t> rest_of_line() const {
@@ -1736,6 +1745,15 @@ public:
                     // item. Leave it for parse_blocks so separator_before can
                     // preserve the exact number of blank lines.
                     item_end = trailing_blank_start.value_or(item_end);
+                    break;
+                }
+                if (!blank && indentation <= first->indent
+                    && line_starts_interrupting_block(line_start + indentation)) {
+                    // Lazy paragraph continuations may remain unindented, but
+                    // an explicit peer-level block marker ends the item even
+                    // without a separating blank line. Otherwise the nested
+                    // parse would incorrectly absorb the following heading,
+                    // quote, fence, list, math or HTML block into this item.
                     break;
                 }
                 previous_blank = blank;
