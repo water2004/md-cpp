@@ -6,6 +6,7 @@ import folia.platform.editor_viewport_plan;
 
 #include "editor/rendering/EditorDocumentBlockPreparer.h"
 #include "editor/rendering/EditorInlineImageRenderer.h"
+#include "editor/rendering/EditorPreparedDocumentCache.h"
 #include "editor/rendering/EditorPreparedDocument.h"
 #include "editor/rendering/EditorRenderResources.h"
 #include "editor/rendering/EditorStyleSheet.h"
@@ -47,17 +48,14 @@ namespace winrt::Folia
         EditorDocumentPreparationResult Prepare();
 
     private:
-        void ReconcileCache();
-        void InitializeGeometry();
         void PrepareViewport();
         void RefreshEmbeddedContent();
         void ReleaseOutsideRetention();
         bool RequestEmbeddedAt(float documentTop) const;
-        std::optional<std::size_t> FindOwnerBlock(folia::NodeId owner) const;
 
+        EditorPreparedDocumentCache cache;
         detail::EditorRenderFrame const& frame;
         EditorRenderResources& resources;
-        EditorStyleSheet const& styleSheet;
         EditorInlineImageRenderer& inlineImages;
         MathJaxRenderer& mathJax;
         SvgNormalizer& svgNormalizer;
