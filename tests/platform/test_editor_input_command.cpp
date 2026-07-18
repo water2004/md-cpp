@@ -41,34 +41,12 @@ suite editor_input_command_tests = [] {
         == EditorInputActionKind::TabBackward);
 };
 
-"control gestures distinguish formatting clipboard and table structure"_test = [] {
-    auto bold = TranslateEditorKeyGesture({
-        .key = EditorKey::B,
-        .control = true,
-    });
-    expect(bold.command.kind == CommandKind::ToggleStrong);
-    expect(TranslateEditorKeyGesture({.key = EditorKey::C, .control = true}).kind
-        == EditorInputActionKind::Copy);
-
-    auto insertRow = TranslateEditorKeyGesture({
-        .key = EditorKey::Up,
-        .control = true,
-    });
-    expect(insertRow.command.kind == CommandKind::InsertTableRowAbove);
-    auto moveRow = TranslateEditorKeyGesture({
-        .key = EditorKey::Up,
-        .control = true,
-        .alt = true,
-    });
-    expect(moveRow.command.kind == CommandKind::MoveTableRowUp);
-};
-
 "unknown and control-modified unsupported keys are not consumed"_test = [] {
     expect(!TranslateEditorKeyGesture({
         .key = static_cast<EditorKey>(0xffffu),
     }).Handled());
     expect(!TranslateEditorKeyGesture({
-        .key = EditorKey::Enter,
+        .key = EditorKey::B,
         .control = true,
     }).Handled());
 };

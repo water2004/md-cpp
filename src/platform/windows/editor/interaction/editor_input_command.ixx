@@ -12,6 +12,10 @@ export namespace folia::platform::editor
         Back = 8,
         Tab = 9,
         Enter = 13,
+        Escape = 27,
+        Space = 32,
+        PageUp = 33,
+        PageDown = 34,
         End = 35,
         Home = 36,
         Left = 37,
@@ -19,21 +23,54 @@ export namespace folia::platform::editor
         Right = 39,
         Down = 40,
         DeleteKey = 46,
+        Number0 = 48,
         Number1 = 49,
         Number2 = 50,
+        Number3 = 51,
+        Number4 = 52,
+        Number5 = 53,
+        Number6 = 54,
         Number7 = 55,
         Number8 = 56,
         Number9 = 57,
         A = 65,
         B = 66,
         C = 67,
+        D = 68,
+        E = 69,
+        F = 70,
+        G = 71,
+        H = 72,
         I = 73,
+        J = 74,
+        K = 75,
+        L = 76,
+        M = 77,
+        N = 78,
+        O = 79,
+        P = 80,
         Q = 81,
+        R = 82,
+        S = 83,
         T = 84,
+        U = 85,
         V = 86,
+        W = 87,
         X = 88,
         Y = 89,
         Z = 90,
+        F1 = 112,
+        F2 = 113,
+        F3 = 114,
+        F4 = 115,
+        F5 = 116,
+        F6 = 117,
+        F7 = 118,
+        F8 = 119,
+        F9 = 120,
+        F10 = 121,
+        F11 = 122,
+        F12 = 123,
     };
 
     struct EditorKeyGesture
@@ -42,6 +79,8 @@ export namespace folia::platform::editor
         bool control = false;
         bool shift = false;
         bool alt = false;
+
+        bool operator==(EditorKeyGesture const&) const = default;
     };
 
     enum class EditorInputActionKind
@@ -79,97 +118,10 @@ export namespace folia::platform::editor
         };
         auto command = folia::Command{};
 
-        if (gesture.control)
-        {
-            switch (gesture.key)
-            {
-                case EditorKey::Up:
-                    command.kind = gesture.alt
-                        ? folia::CommandKind::MoveTableRowUp
-                        : folia::CommandKind::InsertTableRowAbove;
-                    break;
-                case EditorKey::Down:
-                    command.kind = gesture.alt
-                        ? folia::CommandKind::MoveTableRowDown
-                        : folia::CommandKind::InsertTableRowBelow;
-                    break;
-                case EditorKey::Left:
-                    command.kind = gesture.alt
-                        ? folia::CommandKind::MoveTableColumnLeft
-                        : folia::CommandKind::InsertTableColumnLeft;
-                    break;
-                case EditorKey::Right:
-                    command.kind = gesture.alt
-                        ? folia::CommandKind::MoveTableColumnRight
-                        : folia::CommandKind::InsertTableColumnRight;
-                    break;
-                case EditorKey::Back:
-                    command.kind = folia::CommandKind::DeleteTableRow;
-                    break;
-                case EditorKey::DeleteKey:
-                    command.kind = folia::CommandKind::DeleteTableColumn;
-                    break;
-                case EditorKey::Home:
-                    command.kind = folia::CommandKind::MoveDocumentStart;
-                    command.extend_selection = gesture.shift;
-                    break;
-                case EditorKey::End:
-                    command.kind = folia::CommandKind::MoveDocumentEnd;
-                    command.extend_selection = gesture.shift;
-                    break;
-                case EditorKey::Number1:
-                    command.kind = folia::CommandKind::SetHeading;
-                    command.level = 1;
-                    break;
-                case EditorKey::Number2:
-                    command.kind = folia::CommandKind::SetHeading;
-                    command.level = 2;
-                    break;
-                case EditorKey::Number7:
-                    command.kind = folia::CommandKind::ToggleOrderedList;
-                    break;
-                case EditorKey::Number8:
-                    command.kind = folia::CommandKind::ToggleUnorderedList;
-                    break;
-                case EditorKey::Number9:
-                    command.kind = folia::CommandKind::ToggleTaskList;
-                    break;
-                case EditorKey::B:
-                    command.kind = folia::CommandKind::ToggleStrong;
-                    break;
-                case EditorKey::I:
-                    command.kind = folia::CommandKind::ToggleEmphasis;
-                    break;
-                case EditorKey::Q:
-                    command.kind = folia::CommandKind::ToggleBlockQuote;
-                    break;
-                case EditorKey::T:
-                    command.kind = folia::CommandKind::InsertTable;
-                    command.rows = 2;
-                    command.cols = 3;
-                    break;
-                case EditorKey::Z:
-                    command.kind = gesture.shift
-                        ? folia::CommandKind::Redo
-                        : folia::CommandKind::Undo;
-                    break;
-                case EditorKey::Y:
-                    command.kind = folia::CommandKind::Redo;
-                    break;
-                case EditorKey::A:
-                    command.kind = folia::CommandKind::SelectAll;
-                    break;
-                case EditorKey::C:
-                    return {.kind = EditorInputActionKind::Copy};
-                case EditorKey::X:
-                    return {.kind = EditorInputActionKind::Cut};
-                case EditorKey::V:
-                    return {.kind = EditorInputActionKind::Paste};
-                default:
-                    return {};
-            }
-            return execute(std::move(command));
-        }
+        // Configurable shortcuts are resolved by editor_shortcuts. Keeping a
+        // second Ctrl/Alt mapping here would make an unset binding fire its
+        // legacy action and violate the single command-mapping model.
+        if (gesture.control || gesture.alt) return {};
 
         switch (gesture.key)
         {
