@@ -66,4 +66,28 @@ suite editor_shortcut_settings_tests = [] {
     expect(model.Bindings().size() == 1_u);
 };
 
+"built in shortcut reset restores defaults atomically"_test = [] {
+    auto defaults = default_editor_shortcuts();
+    auto open = std::ranges::find(defaults, std::string{"file.open"},
+        &EditorShortcutBinding::id);
+    expect(fatal(open != defaults.end()));
+    if (open == defaults.end()) return;
+
+    ShortcutSettingsModel model(defaults);
+    expect(fatal(bool(model.SetGesture(0, std::nullopt))));
+    expect(fatal(bool(model.SetScope(0, EditorShortcutScope::Math))));
+    expect(fatal(bool(model.ResetBuiltIn(0, *open))));
+    expect(model.Bindings()[0].gesture == open->gesture);
+    expect(model.Bindings()[0].scope == open->scope);
+
+    auto conflicting = defaults;
+    conflicting[1].gesture = open->gesture;
+    ShortcutSettingsModel conflictModel(std::move(conflicting));
+    expect(fatal(bool(conflictModel.SetGesture(0, std::nullopt))));
+    auto before = conflictModel.Bindings()[0];
+    auto result = conflictModel.ResetBuiltIn(0, *open);
+    expect(result.error == ShortcutSettingsError::Conflict);
+    expect(conflictModel.Bindings()[0] == before);
+};
+
 };

@@ -21,6 +21,70 @@ struct SnippetExpansionContext {
     std::optional<std::u32string_view> selected_text;
 };
 
+enum class SnippetLiteralError {
+    None,
+    DanglingEscape,
+    UnknownEscape,
+};
+
+struct DecodedSnippetLiteral {
+    std::u32string value;
+    SnippetLiteralError error = SnippetLiteralError::None;
+    std::optional<std::size_t> error_offset;
+
+    constexpr explicit operator bool() const {
+        return error == SnippetLiteralError::None;
+    }
+};
+
+// Settings edit snippet source as one unambiguous line. This representation is
+// deliberately separate from snippet syntax: backslashes and control
+// characters are escaped here, then $1/${1:default}/$0 are interpreted only
+// after this literal has been decoded.
+inline std::u32string encode_snippet_literal(std::u32string_view source) {
+    std::u32string result;
+    result.reserve(source.size());
+    for (auto value : source) {
+        switch (value) {
+            case U'\\': result.append(U"\\\\"); break;
+            case U'\n': result.append(U"\\n"); break;
+            case U'\r': result.append(U"\\r"); break;
+            case U'\t': result.append(U"\\t"); break;
+            default: result.push_back(value); break;
+        }
+    }
+    return result;
+}
+
+inline DecodedSnippetLiteral decode_snippet_literal(std::u32string_view literal) {
+    DecodedSnippetLiteral result;
+    result.value.reserve(literal.size());
+    for (std::size_t cursor = 0; cursor < literal.size(); ++cursor) {
+        auto value = literal[cursor];
+        if (value != U'\\') {
+            result.value.push_back(value);
+            continue;
+        }
+        if (cursor + 1 >= literal.size()) {
+            result.error = SnippetLiteralError::DanglingEscape;
+            result.error_offset = cursor;
+            return result;
+        }
+        auto escaped = literal[++cursor];
+        switch (escaped) {
+            case U'\\': result.value.push_back(U'\\'); break;
+            case U'n': result.value.push_back(U'\n'); break;
+            case U'r': result.value.push_back(U'\r'); break;
+            case U't': result.value.push_back(U'\t'); break;
+            default:
+                result.error = SnippetLiteralError::UnknownEscape;
+                result.error_offset = cursor - 1;
+                return result;
+        }
+    }
+    return result;
+}
+
 namespace snippet_detail {
 
 struct IndexedStop {

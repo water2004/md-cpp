@@ -10,6 +10,7 @@ enum class ShortcutSettingsError {
     OutOfRange,
     Conflict,
     NotSnippet,
+    NotBuiltIn,
     EmptyName,
     EmptyTemplate,
     DuplicateId,
@@ -124,6 +125,27 @@ public:
         if (bindings_[index].action_kind != EditorShortcutActionKind::InsertSnippet)
             return {ShortcutSettingsError::NotSnippet};
         bindings_.erase(bindings_.begin() + static_cast<std::ptrdiff_t>(index));
+        return {};
+    }
+
+    ShortcutSettingsResult ResetBuiltIn(
+        std::size_t index,
+        EditorShortcutBinding const& default_binding) {
+        if (index >= bindings_.size()) return {ShortcutSettingsError::OutOfRange};
+        auto& binding = bindings_[index];
+        if (binding.action_kind != EditorShortcutActionKind::BuiltIn
+            || default_binding.action_kind != EditorShortcutActionKind::BuiltIn
+            || binding.id != default_binding.id) {
+            return {ShortcutSettingsError::NotBuiltIn};
+        }
+        if (default_binding.gesture) {
+            if (auto conflict = find_editor_shortcut_conflict(
+                bindings_, *default_binding.gesture, default_binding.scope, index)) {
+                return {ShortcutSettingsError::Conflict, conflict};
+            }
+        }
+        binding.scope = default_binding.scope;
+        binding.gesture = default_binding.gesture;
         return {};
     }
 

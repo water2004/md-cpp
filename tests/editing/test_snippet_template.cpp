@@ -7,6 +7,31 @@ using namespace folia;
 
 suite snippet_template_tests = [] {
 
+"single line snippet literals round trip latex and multiline source exactly"_test = [] {
+    auto source = U"\\begin{matrix}\n\t${1:a & b} \\\\n${2:c & d}\n\\end{matrix}$0";
+    auto literal = encode_snippet_literal(source);
+    expect(encode_snippet_literal(U"\\frac\n") == U"\\\\frac\\n");
+    expect(literal.starts_with(U"\\\\begin{matrix}\\n\\t"));
+    expect(std::ranges::find(literal, U'\n') == literal.end());
+    auto decoded = decode_snippet_literal(literal);
+    expect(fatal(bool(decoded)));
+    expect(decoded.value == source);
+};
+
+"snippet literal decoding rejects ambiguous and dangling escapes"_test = [] {
+    auto unknown = decode_snippet_literal(U"\\frac");
+    expect(!unknown);
+    expect(unknown.error == SnippetLiteralError::UnknownEscape);
+    expect(fatal(bool(unknown.error_offset)));
+    if (unknown.error_offset) expect(*unknown.error_offset == 0_u);
+
+    auto dangling = decode_snippet_literal(U"text\\");
+    expect(!dangling);
+    expect(dangling.error == SnippetLiteralError::DanglingEscape);
+    expect(fatal(bool(dangling.error_offset)));
+    if (dangling.error_offset) expect(*dangling.error_offset == 4_u);
+};
+
 "snippet placeholders produce ordered zero-width tab stops"_test = [] {
     auto parsed = parse_snippet_template(U"\\frac{$2}{$1}$0");
     expect(parsed.text == U"\\frac{}{}");
