@@ -20,7 +20,7 @@ namespace winrt::Folia
     {
         std::filesystem::path path;
         std::wstring title;
-        std::unique_ptr<PreparedDocument> prepared;
+        std::unique_ptr<EditorPreparedDocument> prepared;
         EditorInteractionMap interaction;
         std::vector<D2D1_RECT_F> nonInteractive;
         float totalHeight = 0.0f;
@@ -188,7 +188,7 @@ namespace winrt::Folia
             };
             updateEstimatedTotal();
 
-            auto imageStillLoading = [](PreparedDocument::Block const& block)
+            auto imageStillLoading = [](EditorPreparedDocument::Block const& block)
             {
                 if (std::ranges::any_of(
                         block.images,

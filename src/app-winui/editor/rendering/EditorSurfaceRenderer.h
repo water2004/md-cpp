@@ -25,6 +25,8 @@ namespace winrt::Folia
     using folia::platform::editor::EditorVisualTable;
     using folia::platform::editor::EditorVisualTableCell;
 
+    struct EditorPreparedDocument;
+
     struct EditorSurfaceRenderer
     {
         EditorSurfaceRenderer();
@@ -87,7 +89,6 @@ namespace winrt::Folia
         bool ScrollToPosition(folia::TextPosition position);
 
     private:
-        struct PreparedDocument;
         struct PdfExportState;
 
         void DrawDocument(detail::EditorRenderFrame const& frame);
@@ -121,7 +122,7 @@ namespace winrt::Folia
         EditorStyleSheet styleSheet = CreateEditorStyleSheet(themeProfile);
         EditorInteractionMap interactionMap;
         std::vector<D2D1_RECT_F> nonInteractiveRegions;
-        std::unique_ptr<PreparedDocument> preparedDocument;
+        std::unique_ptr<EditorPreparedDocument> preparedDocument;
         std::shared_ptr<PdfExportState> pdfExportState;
         std::uint64_t embeddedGeneration = 0;
         std::optional<D2D1_POINT_2F> pointerPosition;

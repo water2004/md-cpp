@@ -2,7 +2,6 @@
 
 import folia.platform.editor_geometry;
 
-#include "editor/rendering/EditorSurfaceRenderer.h"
 #include "editor/rendering/EditorContentPreparation.h"
 #include "editor/rendering/EditorInlineImageRenderer.h"
 #include "editor/rendering/EditorTableBlockRenderer.h"
@@ -11,7 +10,7 @@ namespace winrt::Folia
 {
     using folia::platform::editor::EditorBlockGeometryIndex;
 
-    struct EditorSurfaceRenderer::PreparedDocument
+    struct EditorPreparedDocument
     {
         struct MathPreview
         {
