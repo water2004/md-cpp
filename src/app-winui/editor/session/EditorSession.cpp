@@ -538,6 +538,19 @@ namespace winrt::Folia
         return EditorShortcutScope::Global;
     }
 
+    std::optional<folia::LatexCommandPrefix> EditorSession::LatexCommandPrefixAtCaret() const
+    {
+        if (core_->sourceEditor) return std::nullopt;
+        auto selection = core_->editor.selection();
+        if (selection.anchor != selection.active) return std::nullopt;
+        if (folia::document_content_context_at(core_->editor.document(), selection.active)
+            != folia::DocumentContentContext::Math)
+            return std::nullopt;
+        auto source = core_->editor.editable_source(selection.active.container_id);
+        if (!source) return std::nullopt;
+        return folia::latex_command_prefix_at(*source, selection.active.source_offset);
+    }
+
     folia::RenderModel const& EditorSession::RenderModel() const
     {
         return core_->renderModel;

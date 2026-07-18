@@ -249,6 +249,68 @@
                         UseLayoutRounding="False"/>
                 </Grid>
             </NavigationView>
+            <Canvas
+                x:Name="EditorOverlay"
+                IsHitTestVisible="False"
+                Canvas.ZIndex="20">
+                <Border
+                    x:Name="LatexSuggestionPopup"
+                    Width="430"
+                    MaxHeight="330"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="10"
+                    Visibility="Collapsed">
+                    <Border.Shadow>
+                        <ThemeShadow/>
+                    </Border.Shadow>
+                    <Grid RowDefinitions="Auto,*,Auto">
+                        <Grid
+                            Padding="12,9"
+                            Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                            ColumnDefinitions="Auto,*,Auto">
+                            <TextBlock
+                                VerticalAlignment="Center"
+                                FontFamily="Cambria Math"
+                                FontSize="18"
+                                FontWeight="SemiBold"
+                                Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                Text="∑"/>
+                            <TextBlock
+                                Grid.Column="1"
+                                Margin="9,0,0,0"
+                                VerticalAlignment="Center"
+                                FontWeight="SemiBold"
+                                Text="LaTeX"/>
+                            <TextBlock
+                                x:Name="LatexSuggestionPrefix"
+                                Grid.Column="2"
+                                VerticalAlignment="Center"
+                                FontFamily="{ThemeResource FoliaMonoFontFamily}"
+                                Foreground="{ThemeResource FoliaShellMutedForegroundBrush}"
+                                Text="\"/>
+                        </Grid>
+                        <ListView
+                            x:Name="LatexSuggestionList"
+                            Grid.Row="1"
+                            MaxHeight="250"
+                            HorizontalContentAlignment="Stretch"
+                            SelectionMode="Single"
+                            SingleSelectionFollowsFocus="False"/>
+                        <Border
+                            Grid.Row="2"
+                            Padding="12,6"
+                            Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                            <TextBlock
+                                x:Name="LatexSuggestionHint"
+                                FontSize="11"
+                                Foreground="{ThemeResource FoliaShellMutedForegroundBrush}"
+                                Text="↑↓  Navigate     Tab / Enter  Insert     Esc  Close"/>
+                        </Border>
+                    </Grid>
+                </Border>
+            </Canvas>
             <Grid x:Name="SettingsViewHost" Visibility="Collapsed"/>
         </Grid>
 

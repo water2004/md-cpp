@@ -227,6 +227,7 @@
   <data name="LatexCommandAdded" xml:space="preserve"><value>自定义命令已添加</value></data>
   <data name="LatexCommandRemoved" xml:space="preserve"><value>自定义命令已移除</value></data>
   <data name="LatexUsageReset" xml:space="preserve"><value>LaTeX 命令的近期使用情况已重置</value></data>
+  <data name="LatexSuggestionHint" xml:space="preserve"><value>↑↓  选择     Tab / Enter  插入     Esc  关闭</value></data>
   <data name="LatexDescriptionFrac" xml:space="preserve"><value>分数</value></data>
   <data name="LatexDescriptionDfrac" xml:space="preserve"><value>行间样式分数</value></data>
   <data name="LatexDescriptionSqrt" xml:space="preserve"><value>平方根</value></data>

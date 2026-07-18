@@ -148,6 +148,7 @@
     <ClInclude Include="settings\SettingsView.h" />
     <ClInclude Include="settings\SettingsViewSupport.h" />
     <ClInclude Include="settings\LatexCommandCatalog.h" />
+    <ClInclude Include="editor\interaction\EditorLatexCompletionController.h" />
     <ClInclude Include="theme\ThemeConfig.h" />
     <ClInclude Include="theme\ThemeCatalog.h" />
     <ClInclude Include="editor\session\EditorSession.h" />
@@ -334,6 +335,9 @@
     <ClCompile Include="..\platform\windows\editor\interaction\editor_snippet_session.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\platform\windows\editor\interaction\editor_latex_completion_session.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\platform\windows\editor\interaction\editor_selection_drag_model.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
@@ -492,6 +496,7 @@
     <ClCompile Include="editor\interaction\EditorTextInputController.cpp" />
     <ClCompile Include="editor\interaction\EditorPointerController.cpp" />
     <ClCompile Include="editor\interaction\EditorKeyboardController.cpp" />
+    <ClCompile Include="editor\interaction\EditorLatexCompletionController.cpp" />
     <ClCompile Include="editor\interaction\EditorDocumentController.cpp" />
     <ClCompile Include="export\EditorPdfPrintJob.cpp" />
     <ClCompile Include="editor\interaction\EditorSidebarController.cpp" />

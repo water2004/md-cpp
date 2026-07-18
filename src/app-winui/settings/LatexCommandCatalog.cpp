@@ -206,6 +206,14 @@ namespace winrt::Folia
         return SaveUserState();
     }
 
+    std::vector<folia::LatexCompletionCandidate> LatexCommandCatalog::Query(
+        std::u32string_view prefix,
+        std::size_t limit) const
+    {
+        return folia::query_latex_commands(
+            commands_, prefix, usage_, NowSeconds(), limit);
+    }
+
     void LatexCommandCatalog::RecordUsage(std::string_view id)
     {
         auto found = std::ranges::find(commands_, id, &folia::LatexCommandDefinition::id);

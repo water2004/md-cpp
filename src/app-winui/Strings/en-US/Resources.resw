@@ -227,6 +227,7 @@
   <data name="LatexCommandAdded" xml:space="preserve"><value>Custom command added</value></data>
   <data name="LatexCommandRemoved" xml:space="preserve"><value>Custom command removed</value></data>
   <data name="LatexUsageReset" xml:space="preserve"><value>Recent LaTeX command usage was reset</value></data>
+  <data name="LatexSuggestionHint" xml:space="preserve"><value>↑↓  Navigate     Tab / Enter  Insert     Esc  Close</value></data>
   <data name="LatexDescriptionFrac" xml:space="preserve"><value>Fraction</value></data>
   <data name="LatexDescriptionDfrac" xml:space="preserve"><value>Display-style fraction</value></data>
   <data name="LatexDescriptionSqrt" xml:space="preserve"><value>Square root</value></data>

@@ -33,6 +33,10 @@ namespace winrt::Folia
         bool Character(char16_t character);
         bool Key(winrt::Windows::System::VirtualKey key);
         bool InsertNewline();
+        bool InsertSnippetReplacing(
+            folia::NodeId container,
+            folia::SourceRange replacement,
+            std::u32string_view source);
         void ResetCaretGoal();
         void CancelSnippetSession();
 

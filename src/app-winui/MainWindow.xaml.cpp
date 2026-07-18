@@ -73,6 +73,8 @@ namespace winrt::Folia::implementation
         UpdateDocumentInfo();
         if (!loadedSettings.diagnostic.empty()) SetStatus(loadedSettings.diagnostic);
         else if (!themeCatalog->Diagnostics().empty()) SetStatus(themeCatalog->Diagnostics().front());
+        else if (!latexCommandCatalog->Diagnostics().empty())
+            SetStatus(latexCommandCatalog->Diagnostics().front());
     }
 
     void MainWindow::LocalizeShell()
@@ -142,6 +144,7 @@ namespace winrt::Folia::implementation
         tooltip(FindPreviousButton(), L"PreviousMatch");
         tooltip(FindNextButton(), L"NextMatch");
         tooltip(CloseFindButton(), L"Close");
+        LatexSuggestionHint().Text(Localize(L"LatexSuggestionHint"));
         SetStatus(Localize(L"Ready"));
     }
 
@@ -316,6 +319,7 @@ namespace winrt::Folia::implementation
 
     void MainWindow::HandlePointerWheel(Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
     {
+        latexCompletionController.Cancel();
         auto delta = args.GetCurrentPoint(EditorSurface()).Properties().MouseWheelDelta();
         auto scrollDelta = static_cast<float>(-delta);
         if (args.Pointer().PointerDeviceType() == Microsoft::UI::Input::PointerDeviceType::Touchpad)

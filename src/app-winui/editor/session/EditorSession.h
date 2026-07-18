@@ -6,6 +6,7 @@ import folia.core.editor;
 import folia.core.command;
 import folia.core.render_model;
 import folia.core.search;
+import folia.core.latex_completion;
 import folia.core.source_editor;
 import folia.core.theme;
 import folia.platform.editor_shortcuts;
@@ -92,6 +93,7 @@ namespace winrt::Folia
         std::optional<EditorDocumentInteraction> InteractionAt(folia::TextPosition position) const;
         folia::TextSelection Selection() const;
         folia::platform::editor::EditorShortcutScope ShortcutScope() const;
+        std::optional<folia::LatexCommandPrefix> LatexCommandPrefixAtCaret() const;
         folia::RenderModel const& RenderModel() const;
         folia::RenderModel BuildPrintRenderModel() const;
         std::optional<folia::TextPosition> FootnoteDefinitionTarget(std::string_view label) const;

@@ -25,6 +25,7 @@ namespace winrt::Folia::implementation
             },
             [this]
             {
+                latexCompletionController.Cancel();
                 UpdateSourceModeUi();
                 UpdateDocumentInfo();
                 sidebarController.Refresh();
@@ -56,6 +57,21 @@ namespace winrt::Folia::implementation
             },
             appSettings.shortcutBindings,
             [this] { RenderEditorSurface(); });
+        latexCompletionController.Attach(
+            editorSession,
+            editorRenderer,
+            EditorSurface(),
+            EditorOverlay(),
+            LatexSuggestionPopup(),
+            LatexSuggestionPrefix(),
+            LatexSuggestionList(),
+            latexCommandCatalog,
+            [this](folia::NodeId container, folia::SourceRange replacement, std::u32string_view snippet)
+            {
+                return keyboardController.InsertSnippetReplacing(
+                    container, replacement, snippet);
+            });
+        latexCompletionController.SetEnabled(appSettings.latexSuggestionsEnabled);
         pointerController.Attach(
             editorSession,
             editorRenderer,
@@ -70,6 +86,7 @@ namespace winrt::Folia::implementation
             {
                 keyboardController.ResetCaretGoal();
                 keyboardController.CancelSnippetSession();
+                latexCompletionController.Cancel();
             });
     }
 
@@ -82,6 +99,7 @@ namespace winrt::Folia::implementation
             documentController.Detach();
             sidebarController.Detach();
             pointerController.Detach();
+            latexCompletionController.Detach();
             keyboardController.Detach();
             textInputController.Detach();
             scrollController.Detach();
@@ -120,19 +138,35 @@ namespace winrt::Folia::implementation
         EditorSurface().IsTabStop(true);
         EditorSurface().CharacterReceived([this](auto const&, Microsoft::UI::Xaml::Input::CharacterReceivedRoutedEventArgs const& args)
         {
-            args.Handled(keyboardController.Character(args.Character()));
+            auto handled = keyboardController.Character(args.Character());
+            if (handled) latexCompletionController.Refresh();
+            args.Handled(handled);
         });
 
         EditorSurface().KeyDown([this](auto const&, Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args)
         {
-            args.Handled(keyboardController.Key(args.Key()));
+            if (latexCompletionController.HandleKey(args.Key()))
+            {
+                args.Handled(true);
+                return;
+            }
+            auto handled = keyboardController.Key(args.Key());
+            if (handled) latexCompletionController.Refresh();
+            args.Handled(handled);
         });
 
         auto enterAccelerator = Microsoft::UI::Xaml::Input::KeyboardAccelerator();
         enterAccelerator.Key(winrt::Windows::System::VirtualKey::Enter);
         enterAccelerator.Invoked([this](auto const&, Microsoft::UI::Xaml::Input::KeyboardAcceleratorInvokedEventArgs const& args)
         {
-            args.Handled(keyboardController.InsertNewline());
+            if (latexCompletionController.AcceptSelected())
+            {
+                args.Handled(true);
+                return;
+            }
+            auto handled = keyboardController.InsertNewline();
+            if (handled) latexCompletionController.Refresh();
+            args.Handled(handled);
         });
         EditorSurface().KeyboardAccelerators().Append(enterAccelerator);
 
@@ -140,6 +174,12 @@ namespace winrt::Folia::implementation
         escapeAccelerator.Key(winrt::Windows::System::VirtualKey::Escape);
         escapeAccelerator.Invoked([this](auto const&, auto const& args)
         {
+            if (latexCompletionController.Active())
+            {
+                latexCompletionController.Cancel();
+                args.Handled(true);
+                return;
+            }
             if (FindReplaceBar().Visibility() != Microsoft::UI::Xaml::Visibility::Visible) return;
             HideFindBar();
             args.Handled(true);

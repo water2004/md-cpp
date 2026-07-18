@@ -34,9 +34,13 @@ namespace winrt::Folia::implementation
         auto mathChanged = appSettings.mathRenderingEnabled != settings.mathRenderingEnabled;
         auto themeChanged = appSettings.themeId != settings.themeId;
         auto shortcutsChanged = appSettings.shortcutBindings != settings.shortcutBindings;
+        auto latexSuggestionsChanged =
+            appSettings.latexSuggestionsEnabled != settings.latexSuggestionsEnabled;
         appSettings = settings;
         if (shortcutsChanged) keyboardController.SetShortcuts(appSettings.shortcutBindings);
         if (mathChanged) editorRenderer.SetMathRenderingEnabled(appSettings.mathRenderingEnabled);
+        if (latexSuggestionsChanged)
+            latexCompletionController.SetEnabled(appSettings.latexSuggestionsEnabled);
         if (themeChanged) UpdateTheme();
         else if (mathChanged) RenderEditorSurface();
         return std::nullopt;
@@ -56,6 +60,7 @@ namespace winrt::Folia::implementation
         }
 
         settingsMode = enabled;
+        latexCompletionController.Cancel();
         SettingsButton().IsChecked(enabled);
         SetDocumentCommandsVisible(!enabled);
         if (enabled)
