@@ -8,7 +8,6 @@ struct CoreOperationCounters {
     std::uint64_t full_document_parses = 0;
     std::uint64_t full_document_serializations = 0;
     std::uint64_t full_tree_transaction_diffs = 0;
-    std::uint64_t full_document_node_id_scans = 0;
     std::uint64_t full_document_symbol_derivations = 0;
     std::uint64_t full_document_outline_derivations = 0;
     std::uint64_t local_symbol_derivations = 0;
@@ -26,7 +25,6 @@ inline CoreOperationCounters read_core_operation_counters() { return core_operat
 inline void record_full_document_parse() { ++core_operation_counters.full_document_parses; }
 inline void record_full_document_serialization() { ++core_operation_counters.full_document_serializations; }
 inline void record_full_tree_transaction_diff() { ++core_operation_counters.full_tree_transaction_diffs; }
-inline void record_full_document_node_id_scan() { ++core_operation_counters.full_document_node_id_scans; }
 inline void record_full_document_symbol_derivation() {
     ++core_operation_counters.full_document_symbol_derivations;
 }

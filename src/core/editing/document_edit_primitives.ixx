@@ -101,9 +101,7 @@ inline std::optional<TextPosition> last_editable_position(const BlockNode& block
 
 struct NodeAllocator {
     EditorDocument* document = nullptr;
-    explicit NodeAllocator(EditorDocument& owner) : document(&owner) {
-        ensure_document_node_id_cursor(owner);
-    }
+    explicit NodeAllocator(EditorDocument& owner) : document(&owner) {}
     NodeId allocate() { return allocate_document_node_id(*document); }
 };
 

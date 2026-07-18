@@ -5,7 +5,6 @@ import folia.core.ast;
 import folia.core.block_source;
 import folia.core.block_tree;
 import folia.core.document;
-import folia.core.document_ids;
 import folia.core.document_text;
 import folia.core.inline_parser;
 import folia.core.serializer;
@@ -204,11 +203,6 @@ inline std::optional<std::u32string> document_selected_markdown(
     BlockVec selected;
     selected.reserve(document.root.children.size());
     auto next_copy_id = document.next_node_id;
-    if (next_copy_id == 0) {
-        std::uint64_t maximum = 0;
-        document_id_detail::scan_block_ids(document.root, maximum);
-        next_copy_id = maximum + 1;
-    }
     for (const auto& block : document.root.children) {
         if (auto copy = document_copy_detail::slice_block(
                 block,

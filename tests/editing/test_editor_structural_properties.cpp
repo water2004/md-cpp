@@ -52,7 +52,6 @@ void expect_no_global_edit_work(CoreOperationCounters counters, std::size_t labe
     expect(fatal(bool(counters.full_document_parses == 0u))) << label << " full parse";
     expect(fatal(bool(counters.full_document_serializations == 0u))) << label << " full serialize";
     expect(fatal(bool(counters.full_tree_transaction_diffs == 0u))) << label << " full tree diff";
-    expect(fatal(bool(counters.full_document_node_id_scans == 0u))) << label << " node id scan";
 }
 
 } // namespace

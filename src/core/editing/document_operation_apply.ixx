@@ -136,7 +136,6 @@ inline bool apply_text_edit(
     if (block && editable_inline_document(*block)) {
         auto* owner = editable_inline_document(*block);
         if (!edit.range.valid_for(owner->source.size())) return false;
-        ensure_document_node_id_cursor(document);
         InlineParseContext context;
         context.dialect = document.dialect;
         context.allocate_id = [&document] { return allocate_document_node_id(document); };

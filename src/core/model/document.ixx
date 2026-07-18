@@ -22,9 +22,10 @@ struct BlockLocator {
 struct EditorDocument {
     std::uint64_t revision = 1;
     // Monotonic identity source for every block, inline CST node, and inline
-    // token owned by this document. Zero is reserved for externally assembled
-    // documents that need one lazy calibration before their first edit.
-    std::uint64_t next_node_id = 0;
+    // token owned by this document. The default root owns id 1, so 2 is the
+    // first unassigned identity; imported subtrees must reserve their ids
+    // explicitly before insertion.
+    std::uint64_t next_node_id = 2;
     MarkdownDialect dialect = default_dialect();
     BlockNode root = [] {
         BlockNode node;

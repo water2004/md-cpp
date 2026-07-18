@@ -275,7 +275,6 @@ suite editor_history_tests = [] {
     expect(fatal(bool(edit.full_document_parses == 0u)));
     expect(fatal(bool(edit.full_document_serializations == 0u)));
     expect(fatal(bool(edit.full_tree_transaction_diffs == 0u)));
-    expect(fatal(bool(edit.full_document_node_id_scans == 0u)));
     expect(fatal(bool(edit.full_document_block_index_scans == 0u)));
     expect(fatal(bool(edit.full_document_symbol_derivations == 0u)));
     expect(fatal(bool(edit.full_document_outline_derivations == 0u)));
@@ -288,7 +287,6 @@ suite editor_history_tests = [] {
     expect(fatal(bool(undo.full_document_parses == 0u)));
     expect(fatal(bool(undo.full_document_serializations == 0u)));
     expect(fatal(bool(undo.full_tree_transaction_diffs == 0u)));
-    expect(fatal(bool(undo.full_document_node_id_scans == 0u)));
     expect(fatal(bool(undo.full_document_block_index_scans == 0u)));
     expect(fatal(bool(undo.full_document_symbol_derivations == 0u)));
     expect(fatal(bool(undo.full_document_outline_derivations == 0u)));
@@ -356,20 +354,17 @@ suite editor_history_tests = [] {
     expect(fatal(editor.execute_command(Command::InsertText(U"X"))));
     const auto edited_cursor = editor.document().next_node_id;
     expect(fatal(bool(edited_cursor > parsed_cursor)));
-    expect(fatal(bool(read_core_operation_counters().full_document_node_id_scans == 0u)));
     expect(fatal(bool(read_core_operation_counters().full_document_block_index_scans == 0u)));
 
     reset_core_operation_counters();
     expect(fatal(editor.undo()));
     const auto undone_cursor = editor.document().next_node_id;
     expect(fatal(bool(undone_cursor > edited_cursor)));
-    expect(fatal(bool(read_core_operation_counters().full_document_node_id_scans == 0u)));
     expect(fatal(bool(read_core_operation_counters().full_document_block_index_scans == 0u)));
 
     reset_core_operation_counters();
     expect(fatal(editor.redo()));
     expect(fatal(bool(editor.document().next_node_id > undone_cursor)));
-    expect(fatal(bool(read_core_operation_counters().full_document_node_id_scans == 0u)));
     expect(fatal(bool(read_core_operation_counters().full_document_block_index_scans == 0u)));
 };
 
@@ -670,21 +665,28 @@ suite editor_history_tests = [] {
     expect(fatal(bool(model.reused_block_count == 1u)));
 };
 
-"externally_assembled_documents_calibrate_node_ids_once"_test = [] {
-    EditorDocument document;
-    document.root.id = NodeId{41};
-    BlockNode paragraph;
+"externally_imported_blocks_reserve_node_ids_explicitly"_test = [] {
+    Editor donor("external");
+    BlockNode paragraph = donor.document().root.children.front();
     paragraph.id = NodeId{99};
-    InlineCstNode inline_node;
-    inline_node.id = NodeId{149};
-    paragraph.inline_content.tree.nodes.push_back(inline_node);
-    document.root.children.push_back(paragraph);
+    expect(fatal(bool(!paragraph.inline_content.tree.nodes.empty())));
+    if (paragraph.inline_content.tree.nodes.empty()) return;
+    paragraph.inline_content.tree.nodes.front().id = NodeId{149};
 
-    reset_core_operation_counters();
+    EditorDocument invalid = EditorDocument::empty(1);
+    invalid.root.children.clear();
+    invalid.root.children.push_back(paragraph);
+    expect(fatal(bool(!validate_document(invalid).empty())));
+
+    EditorDocument document = EditorDocument::empty(1);
+    document.root.children.clear();
+    reserve_document_node_ids(document, paragraph);
+    document.root.children.push_back(paragraph);
+    rebuild_document_block_index(document);
+
     expect(fatal(bool(allocate_document_node_id(document) == NodeId{150})));
     expect(fatal(bool(allocate_document_node_id(document) == NodeId{151})));
-    const auto counters = read_core_operation_counters();
-    expect(fatal(bool(counters.full_document_node_id_scans == 1u)));
+    expect(fatal(bool(validate_document(document).empty())));
 };
 
 }; // suite editor_history_tests

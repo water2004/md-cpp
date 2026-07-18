@@ -5,7 +5,6 @@ import folia.core.ast;
 import folia.core.document;
 import folia.core.ids;
 import folia.core.inline_cst;
-import folia.core.instrumentation;
 
 export namespace folia {
 
@@ -26,19 +25,10 @@ inline void scan_block_ids(const BlockNode& block, std::uint64_t& maximum) {
 
 } // namespace document_id_detail
 
-// Parsed and editor-created documents initialize the cursor eagerly. This
-// compatibility boundary is only for externally assembled documents, and its
-// instrumentation makes an accidental normal-edit fallback test-visible.
-inline void ensure_document_node_id_cursor(EditorDocument& document) {
-    if (document.next_node_id != 0) return;
-    record_full_document_node_id_scan();
-    std::uint64_t maximum = 0;
-    document_id_detail::scan_block_ids(document.root, maximum);
-    document.next_node_id = maximum + 1;
-}
-
 inline NodeId allocate_document_node_id(EditorDocument& document) {
-    ensure_document_node_id_cursor(document);
+    if (document.next_node_id == 0) {
+        throw std::logic_error("document node id cursor is not initialized");
+    }
     return NodeId{document.next_node_id++};
 }
 
@@ -46,7 +36,9 @@ inline NodeId allocate_document_node_id(EditorDocument& document) {
 // their existing identities, but reserve the occupied range before assigning
 // IDs to missing descendants.
 inline void reserve_document_node_ids(EditorDocument& document, const BlockNode& block) {
-    ensure_document_node_id_cursor(document);
+    if (document.next_node_id == 0) {
+        throw std::logic_error("document node id cursor is not initialized");
+    }
     auto maximum = document.next_node_id - 1;
     document_id_detail::scan_block_ids(block, maximum);
     document.next_node_id = (std::max)(document.next_node_id, maximum + 1);

@@ -35,6 +35,14 @@ inline std::vector<DocumentInvariantError> validate_document(const EditorDocumen
         BlockKind::Document,
         ids,
         errors);
+    const auto maximum_id = ids.empty()
+        ? std::uint64_t{0}
+        : *std::ranges::max_element(ids);
+    if (document.next_node_id == 0 || document.next_node_id <= maximum_id) {
+        errors.push_back({
+            {},
+            "document node id cursor does not follow every owned node id"});
+    }
     return errors;
 }
 
