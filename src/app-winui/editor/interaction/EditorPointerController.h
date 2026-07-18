@@ -9,6 +9,7 @@
 namespace winrt::Folia
 {
     using folia::platform::editor::EditorTableAction;
+    using folia::platform::editor::EditorTableActionKind;
     using folia::platform::editor::EditorVisualFootnoteHit;
 
     struct EditorPointerController

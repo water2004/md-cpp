@@ -17,9 +17,6 @@ import folia.core.render_model;
 
 namespace winrt::Folia
 {
-    using folia::platform::editor::BuildEditorViewportPlan;
-    using folia::platform::editor::EditorViewportPolicy;
-
     void EditorSurfaceRenderer::DrawDocument(detail::EditorRenderFrame const& frame)
     {
         interactionMap.Clear();

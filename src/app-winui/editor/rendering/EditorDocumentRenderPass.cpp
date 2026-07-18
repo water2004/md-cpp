@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "editor/rendering/EditorDocumentRenderPass.h"
+#include "editor/interaction/EditorTableInteraction.h"
 
 namespace winrt::Folia
 {

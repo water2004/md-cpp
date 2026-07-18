@@ -4,7 +4,6 @@ import folia.core.render_model;
 import folia.core.text_edit;
 import folia.platform.editor_interaction;
 
-#include "editor/interaction/EditorTableInteraction.h"
 #include "editor/rendering/EditorDocumentPainter.h"
 #include "editor/rendering/EditorEmbeddedDraw.h"
 #include "editor/rendering/EditorInlineImageRenderer.h"
@@ -15,6 +14,7 @@ import folia.platform.editor_interaction;
 
 namespace winrt::Folia
 {
+    using folia::platform::editor::EditorTableAction;
     using folia::platform::editor::EditorVisualBlock;
     using folia::platform::editor::EditorVisualLine;
 

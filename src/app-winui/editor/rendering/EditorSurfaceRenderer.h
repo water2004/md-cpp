@@ -11,7 +11,6 @@ import folia.platform.editor_scroll_state;
 #include "editor/rendering/EditorStyleSheet.h"
 #include "editor/rendering/EditorRenderCache.h"
 #include "editor/rendering/EditorRenderResources.h"
-#include "editor/interaction/EditorTableInteraction.h"
 #include "export/EditorPdfExportTypes.h"
 
 namespace winrt::Folia
