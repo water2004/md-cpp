@@ -19,6 +19,6 @@ Build notes:
 
 - Build `Folia.vcxproj` through the root `build_app.ps1` script so Windows App SDK XAML/IDL/C++WinRT generation runs through the NuGet targets and all output stays below `build/app-winui`.
 - NuGet packages are restored into `packages/` by running `powershell -ExecutionPolicy Bypass -File setup.ps1` from the repository root.
-- Keep CMake for `elmd_core`, `elmd_platform`, and tests; do not configure `-DFOLIA_BUILD_WINUI=ON`.
+- Keep CMake for `folia_core`, `folia_platform`, and tests; do not configure `-DFOLIA_BUILD_WINUI=ON`.
 - The editor area is a `SwapChainPanel`; the WinUI rendering layer consumes the core `RenderModel` and maps DirectWrite positions to block-local `TextPosition` values.
 - Do not replace this with WebView2, RichEditBox, TextBox, RichTextBlock, or an HTML renderer.

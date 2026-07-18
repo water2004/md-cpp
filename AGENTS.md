@@ -4,7 +4,7 @@
 
 - Use C++23 modules and `import std;`.
 - Core tests: `cmd /c build_test.bat 2>&1`.
-- Core-only builds may target `elmd_core` with CMake.
+- Core-only builds may target `folia_core` with CMake.
 - Restore WinUI/NuGet and native SVG dependencies with `powershell -ExecutionPolicy Bypass -File .\setup.ps1` before building the WinUI app.
 - Keep generated output in ignored build directories; do not commit build products or restored packages.
 
