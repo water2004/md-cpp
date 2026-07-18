@@ -1,19 +1,10 @@
 #include "pch.h"
 #include "editor/interaction/EditorSelectionDrag.h"
 
+import elmd.platform.editor_selection_drag_model;
+
 namespace winrt::ElMd
 {
-    namespace
-    {
-        float AutoScrollVelocity(float y, float viewportHeight)
-        {
-            if (viewportHeight <= 0.0f || (y >= 0.0f && y <= viewportHeight)) return 0.0f;
-            auto distance = y < 0.0f ? -y : y - viewportHeight;
-            auto speed = (std::min)(2400.0f, 80.0f + 8.0f * distance + 0.02f * distance * distance);
-            return y < 0.0f ? -speed : speed;
-        }
-    }
-
     void EditorSelectionDrag::Attach(
         EditorSession& valueSession,
         EditorSurfaceRenderer& valueRenderer,
@@ -82,9 +73,15 @@ namespace winrt::ElMd
     {
         if (!active || !session || !renderer) return false;
         auto viewportHeight = renderer->ViewportHeight();
+        auto width = surface ? static_cast<float>(surface.ActualWidth()) : 0.0f;
+        auto projection = elmd::platform::editor::ProjectEditorSelectionPointer(
+            x,
+            y,
+            width,
+            viewportHeight);
         if (updateAutoScroll)
         {
-            auto velocity = AutoScrollVelocity(y, viewportHeight);
+            auto velocity = projection.autoScrollVelocity;
             if (velocity != 0.0f && scroll)
             {
                 autoScrolling = true;
@@ -99,12 +96,7 @@ namespace winrt::ElMd
             }
         }
 
-        auto width = surface ? static_cast<float>(surface.ActualWidth()) : 0.0f;
-        auto hitX = width > 0.0f ? (std::clamp)(x, 0.0f, width) : x;
-        auto hitY = viewportHeight > 0.0f
-            ? (std::clamp)(y, 0.0f, (std::max)(0.0f, viewportHeight - 0.5f))
-            : y;
-        auto hit = renderer->HitTest(hitX, hitY);
+        auto hit = renderer->HitTest(projection.hitX, projection.hitY);
         if (!hit) return false;
         auto selection = session->Selection();
         if (selection.anchor == anchor && selection.active == *hit) return false;

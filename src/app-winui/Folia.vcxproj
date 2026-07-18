@@ -307,6 +307,9 @@
     <ClCompile Include="..\platform\windows\editor\interaction\editor_input_command.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\platform\windows\editor\interaction\editor_selection_drag_model.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\platform\windows\editor\interaction\editor_scroll_state.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
