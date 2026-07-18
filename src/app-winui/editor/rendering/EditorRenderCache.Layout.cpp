@@ -38,21 +38,58 @@ namespace winrt::Folia
     ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> EditorRenderCache::FindSvgDocument(
         std::uint64_t renderId)
     {
-        return svgDocuments.Find(renderId);
-    }
-
-    bool EditorRenderCache::QueueSvgDocument(
-        std::uint64_t renderId,
-        std::string const& source,
-        float width,
-        float height,
-        bool highPriority)
-    {
-        return svgDocuments.Queue(renderId, source, width, height, highPriority);
+        if (auto found = svgDocuments.find(renderId); found != svgDocuments.end())
+        {
+            svgDocumentOrder.splice(svgDocumentOrder.end(), svgDocumentOrder, found->second.order);
+            return found->second.document;
+        }
+        return {};
     }
 
     ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> EditorRenderCache::FindOrCreateSvgDocument(ID2D1DeviceContext5* context, std::uint64_t renderId, std::string const& source, float width, float height)
     {
-        return svgDocuments.FindOrCreate(context, renderId, source, width, height);
+        if (!context || renderId == 0 || source.empty() || width <= 0.0f || height <= 0.0f) return {};
+        if (auto document = FindSvgDocument(renderId)) return document;
+        auto allocation = GlobalAlloc(GMEM_MOVEABLE, source.size());
+        if (!allocation) return {};
+        auto bytes = static_cast<char*>(GlobalLock(allocation));
+        if (!bytes)
+        {
+            GlobalFree(allocation);
+            return {};
+        }
+        std::memcpy(bytes, source.data(), source.size());
+        GlobalUnlock(allocation);
+        ::Microsoft::WRL::ComPtr<IStream> stream;
+        if (FAILED(CreateStreamOnHGlobal(allocation, TRUE, stream.GetAddressOf())) || !stream)
+        {
+            GlobalFree(allocation);
+            return {};
+        }
+        ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> document;
+        if (FAILED(context->CreateSvgDocument(stream.Get(), D2D1::SizeF(width, height), document.GetAddressOf())) || !document) return {};
+        constexpr std::size_t budget = 24 * 1024 * 1024;
+        constexpr std::size_t limit = 512;
+        auto resourceCost = (std::max)(std::size_t{16 * 1024}, source.size() * 8);
+        while (!svgDocumentOrder.empty() && (svgDocumentBytes + resourceCost > budget || svgDocuments.size() >= limit))
+        {
+            auto oldest = std::move(svgDocumentOrder.front());
+            svgDocumentOrder.pop_front();
+            auto found = svgDocuments.find(oldest);
+            if (found == svgDocuments.end()) continue;
+            svgDocumentBytes -= found->second.bytes;
+            svgDocuments.erase(found);
+        }
+        if (resourceCost <= budget)
+        {
+            svgDocumentBytes += resourceCost;
+            svgDocumentOrder.push_back(renderId);
+            svgDocuments.emplace(renderId, CachedSvgDocument{
+                document,
+                resourceCost,
+                std::prev(svgDocumentOrder.end()),
+            });
+        }
+        return document;
     }
 }

@@ -372,9 +372,6 @@
     <ClCompile Include="editor\rendering\EditorRenderCache.Layout.cpp">
       <Filter>Editor\Rendering</Filter>
     </ClCompile>
-    <ClCompile Include="editor\rendering\EditorSvgDocumentCache.cpp">
-      <Filter>Editor\Rendering</Filter>
-    </ClCompile>
     <ClCompile Include="editor\rendering\EditorSvgPainter.cpp">
       <Filter>Editor\Rendering</Filter>
     </ClCompile>
@@ -522,9 +519,6 @@
       <Filter>Media Services</Filter>
     </ClInclude>
     <ClInclude Include="editor\rendering\EditorRenderCache.h">
-      <Filter>Editor\Rendering</Filter>
-    </ClInclude>
-    <ClInclude Include="editor\rendering\EditorSvgDocumentCache.h">
       <Filter>Editor\Rendering</Filter>
     </ClInclude>
     <ClInclude Include="editor\rendering\EditorSvgPainter.h">

@@ -14,26 +14,6 @@ namespace winrt::Folia
         return static_cast<bool>(context);
     }
 
-    bool EditorSvgPainter::Prepared(std::uint64_t renderId) const
-    {
-        return renderId != 0 && static_cast<bool>(cache.FindSvgDocument(renderId));
-    }
-
-    bool EditorSvgPainter::Queue(
-        std::uint64_t renderId,
-        std::string const& source,
-        float intrinsicWidth,
-        float intrinsicHeight,
-        bool highPriority) const
-    {
-        return cache.QueueSvgDocument(
-            renderId,
-            source,
-            intrinsicWidth,
-            intrinsicHeight,
-            highPriority);
-    }
-
     bool EditorSvgPainter::PaintDocument(
         ID2D1SvgDocument* document,
         float width,
@@ -59,26 +39,6 @@ namespace winrt::Folia
         context->DrawSvgDocument(document);
         context->SetTransform(transform);
         return true;
-    }
-
-    bool EditorSvgPainter::DrawCached(
-        std::uint64_t renderId,
-        float width,
-        float height,
-        D2D1_POINT_2F origin,
-        float intrinsicWidth,
-        float intrinsicHeight) const
-    {
-        if (intrinsicWidth <= 0.0f) intrinsicWidth = width;
-        if (intrinsicHeight <= 0.0f) intrinsicHeight = height;
-        auto document = cache.FindSvgDocument(renderId);
-        return PaintDocument(
-            document.Get(),
-            width,
-            height,
-            origin,
-            intrinsicWidth,
-            intrinsicHeight);
     }
 
     bool EditorSvgPainter::Draw(

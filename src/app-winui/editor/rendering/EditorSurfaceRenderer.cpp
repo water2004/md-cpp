@@ -84,9 +84,6 @@ namespace winrt::Folia
     {
         if (resources.Ready()) return;
         resources.Initialize(panel, styleSheet);
-        ::Microsoft::WRL::ComPtr<ID2D1DeviceContext5> svgContext;
-        resources.d2dContext.As(&svgContext);
-        renderCache.ConfigureSvgContext(svgContext.Get());
         auto dispatcher = panel.DispatcherQueue();
         renderCache.Attach(dispatcher, [this] { Invalidate(); });
         auto completion = [this, dispatcher]
@@ -114,9 +111,6 @@ namespace winrt::Folia
             styleSheet,
             pageWidth - pageMargin * 2.0f,
             pageHeight - pageMargin * 2.0f);
-        ::Microsoft::WRL::ComPtr<ID2D1DeviceContext5> svgContext;
-        resources.d2dContext.As(&svgContext);
-        renderCache.ConfigureSvgContext(svgContext.Get());
         winrt::Microsoft::UI::Dispatching::DispatcherQueue noDispatcher{nullptr};
         renderCache.Attach(noDispatcher, {});
     }

@@ -9,20 +9,6 @@ namespace winrt::Folia
     {
         EditorSvgPainter(EditorRenderResources& resources, EditorRenderCache& cache);
         bool Supported() const noexcept;
-        bool Prepared(std::uint64_t renderId) const;
-        bool Queue(
-            std::uint64_t renderId,
-            std::string const& source,
-            float intrinsicWidth,
-            float intrinsicHeight,
-            bool highPriority) const;
-        bool DrawCached(
-            std::uint64_t renderId,
-            float width,
-            float height,
-            D2D1_POINT_2F origin,
-            float intrinsicWidth = 0.0f,
-            float intrinsicHeight = 0.0f) const;
         bool Draw(
             std::uint64_t renderId,
             std::string const& source,

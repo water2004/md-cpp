@@ -16,7 +16,6 @@ namespace winrt::Folia
         EditorRenderResources& valueResources,
         EditorStyleSheet const& valueStyleSheet,
         EditorInlineImageRenderer& valueInlineImages,
-        EditorSvgPainter& valueSvgPainter,
         EditorDocumentBlockPreparer& valueBlockPreparer,
         folia::platform::editor::EditorScrollState& valueScrollState,
         std::unique_ptr<EditorPreparedDocument>& valuePreparedDocument,
@@ -31,7 +30,6 @@ namespace winrt::Folia
           resources(valueResources),
           styleSheet(valueStyleSheet),
           inlineImages(valueInlineImages),
-          svgPainter(valueSvgPainter),
           blockPreparer(valueBlockPreparer),
           scrollState(valueScrollState),
           preparedDocument(valuePreparedDocument),
@@ -480,70 +478,6 @@ namespace winrt::Folia
         invalidateRequested = invalidateRequested || workRemaining;
     }
 
-    void EditorDocumentPreparationPass::WarmMathDocuments()
-    {
-        if (printMode || !svgPainter.Supported()) return;
-
-        // SVG parsing and device-resource creation run on the cache worker.
-        // The presentation thread only feeds a bounded, viewport-prioritized
-        // queue; each completed document requests a paced repaint.
-        constexpr std::size_t maximumNewRequests = 64;
-        auto newRequests = std::size_t{0};
-        auto queueDisplay = [&](DisplayInlineText const& display, bool highPriority)
-        {
-            for (auto const& overlay : display.mathOverlays)
-            {
-                auto const& fragment = overlay.fragment;
-                if (fragment.renderId == 0 || !fragment.svg || fragment.svg->empty()
-                    || fragment.width <= 0.0f || fragment.height <= 0.0f) continue;
-                if (svgPainter.Prepared(fragment.renderId)) continue;
-                if (newRequests >= maximumNewRequests) return false;
-                if (svgPainter.Queue(
-                        fragment.renderId,
-                        *fragment.svg,
-                        fragment.width,
-                        fragment.height,
-                        highPriority))
-                    ++newRequests;
-            }
-            return true;
-        };
-        auto queueBlock = [&](EditorPreparedDocument::Block const& block, bool highPriority)
-        {
-            if (!queueDisplay(block.display, highPriority)) return false;
-            for (auto const& preview : block.mathPreviews)
-                if (!queueDisplay(preview.display, highPriority)) return false;
-            if (!block.table) return true;
-            for (auto const& display : block.table->displays)
-                if (!queueDisplay(display, highPriority)) return false;
-            for (auto const& cellPreviews : block.table->mathPreviews)
-                for (auto const& preview : cellPreviews)
-                    if (!queueDisplay(preview.display, highPriority)) return false;
-            return true;
-        };
-        auto queueRange = [&](folia::platform::editor::EditorIndexRange range, bool highPriority)
-        {
-            for (auto index = range.begin; index < range.end; ++index)
-            {
-                if (index >= preparedDocument->blocks.size()) break;
-                auto const& block = preparedDocument->blocks[index];
-                if (!block.valid || !block.containsMath) continue;
-                if (!queueBlock(block, highPriority)) return false;
-            }
-            return true;
-        };
-
-        auto viewportPlan = BuildEditorViewportPlan(
-            preparedDocument->geometry,
-            scrollOffset,
-            resources.surfaceHeightDip,
-            false,
-            scrollingForward,
-            viewportPolicy);
-        if (queueRange(viewportPlan.visible, true))
-            queueRange(viewportPlan.prefetch, false);
-    }
-
     void EditorDocumentPreparationPass::ReleaseOutsideRetention()
     {
         auto retentionPlan = BuildEditorViewportPlan(
@@ -579,7 +513,6 @@ namespace winrt::Folia
         if (!preparedDocument->geometry.Initialized()) InitializeGeometry();
         PrepareViewport();
         RefreshEmbeddedContent();
-        WarmMathDocuments();
         ReleaseOutsideRetention();
 
         auto paintPlan = BuildEditorViewportPlan(

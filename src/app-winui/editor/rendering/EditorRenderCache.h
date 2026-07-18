@@ -3,7 +3,6 @@
 #include <list>
 
 #include "editor/rendering/EditorRenderResources.h"
-#include "editor/rendering/EditorSvgDocumentCache.h"
 
 namespace winrt::Folia
 {
@@ -41,7 +40,6 @@ namespace winrt::Folia
         void ClearTextLayouts();
         void ClearSvgDocuments();
         void ClearDeviceResources();
-        void ConfigureSvgContext(ID2D1DeviceContext5* context);
         bool HasPendingImages() const;
         std::uint64_t RemoteImageGeneration() const;
         std::optional<ImageDimensions> ProbeImageDimensions(EditorRenderResources const& resources, std::wstring const& baseDirectory, std::string_view source);
@@ -53,15 +51,16 @@ namespace winrt::Folia
         ::Microsoft::WRL::ComPtr<IDWriteTextLayout> FindTextLayout(std::uint64_t key);
         void StoreTextLayout(std::uint64_t key, ::Microsoft::WRL::ComPtr<IDWriteTextLayout> const& layout, std::size_t bytes);
         ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> FindSvgDocument(std::uint64_t renderId);
-        bool QueueSvgDocument(
-            std::uint64_t renderId,
-            std::string const& source,
-            float width,
-            float height,
-            bool highPriority);
         ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> FindOrCreateSvgDocument(ID2D1DeviceContext5* context, std::uint64_t renderId, std::string const& source, float width, float height);
 
     private:
+        struct CachedSvgDocument
+        {
+            ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> document;
+            std::size_t bytes = 0;
+            std::list<std::uint64_t>::iterator order;
+        };
+
         struct CachedTextLayout
         {
             ::Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
@@ -108,7 +107,9 @@ namespace winrt::Folia
         std::unordered_set<std::wstring> rasterImageFailures;
         std::deque<std::wstring> rasterImageOrder;
         std::size_t rasterImageBytes = 0;
-        EditorSvgDocumentCache svgDocuments;
+        std::unordered_map<std::uint64_t, CachedSvgDocument> svgDocuments;
+        std::list<std::uint64_t> svgDocumentOrder;
+        std::size_t svgDocumentBytes = 0;
         std::shared_ptr<RemoteState> remoteState = std::make_shared<RemoteState>();
         winrt::event_token animationRenderingToken{};
         std::optional<std::chrono::steady_clock::time_point> animationDeadline;

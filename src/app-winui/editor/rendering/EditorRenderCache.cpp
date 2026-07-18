@@ -11,20 +11,17 @@ namespace winrt::Folia
 
     void EditorRenderCache::Attach(winrt::Microsoft::UI::Dispatching::DispatcherQueue const& dispatcher, std::function<void()> invalidate)
     {
-        auto svgInvalidate = invalidate;
         {
             std::scoped_lock lock(remoteState->mutex);
             remoteState->dispatcher = dispatcher;
             remoteState->invalidate = std::move(invalidate);
             remoteState->active = true;
         }
-        svgDocuments.Attach(dispatcher, std::move(svgInvalidate));
     }
 
     void EditorRenderCache::Detach()
     {
         StopAnimationPump();
-        svgDocuments.Detach();
         {
             std::scoped_lock lock(remoteState->mutex);
             remoteState->active = false;
@@ -53,12 +50,9 @@ namespace winrt::Folia
 
     void EditorRenderCache::ClearSvgDocuments()
     {
-        svgDocuments.Clear();
-    }
-
-    void EditorRenderCache::ConfigureSvgContext(ID2D1DeviceContext5* context)
-    {
-        svgDocuments.Configure(context);
+        svgDocuments.clear();
+        svgDocumentOrder.clear();
+        svgDocumentBytes = 0;
     }
 
     void EditorRenderCache::ClearDeviceResources()

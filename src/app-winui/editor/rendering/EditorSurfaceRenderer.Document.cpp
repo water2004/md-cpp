@@ -60,25 +60,12 @@ namespace winrt::Folia
             !printMode);
         auto drawMath = [&](MathJaxSvgFragment const& fragment, D2D1_POINT_2F origin, D2D1_COLOR_F) {
             if (!fragment.svg) return false;
-            if (printMode)
-                return svgPainter.Draw(
-                    fragment.renderId,
-                    *fragment.svg,
-                    fragment.width,
-                    fragment.height,
-                    origin);
-            if (svgPainter.DrawCached(
-                    fragment.renderId,
-                    fragment.width,
-                    fragment.height,
-                    origin)) return true;
-            svgPainter.Queue(
+            return svgPainter.Draw(
                 fragment.renderId,
                 *fragment.svg,
                 fragment.width,
                 fragment.height,
-                true);
-            return false;
+                origin);
         };
         auto drawMathFallback = [&](folia::TextSpan, D2D1_POINT_2F origin) {
             auto label = Localize(L"Formula");
@@ -134,7 +121,6 @@ namespace winrt::Folia
             resources,
             styleSheet,
             inlineImages,
-            svgPainter,
             blockPreparer,
             scrollState,
             preparedDocument,
