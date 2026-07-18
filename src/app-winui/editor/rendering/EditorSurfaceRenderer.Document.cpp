@@ -891,6 +891,26 @@ namespace winrt::ElMd
                         prepared.images,
                         [](auto const& image) { return image.pending; });
                 });
+            if (prepared.layout && !block.source_mode && block.block_style.text_alignment)
+            {
+                auto alignment = DWRITE_TEXT_ALIGNMENT_LEADING;
+                switch (*block.block_style.text_alignment)
+                {
+                    case elmd::TextAlignment::Start:
+                        alignment = DWRITE_TEXT_ALIGNMENT_LEADING;
+                        break;
+                    case elmd::TextAlignment::Center:
+                        alignment = DWRITE_TEXT_ALIGNMENT_CENTER;
+                        break;
+                    case elmd::TextAlignment::End:
+                        alignment = DWRITE_TEXT_ALIGNMENT_TRAILING;
+                        break;
+                    case elmd::TextAlignment::Justify:
+                        alignment = DWRITE_TEXT_ALIGNMENT_JUSTIFIED;
+                        break;
+                }
+                prepared.layout->SetTextAlignment(alignment);
+            }
             prepared.mathPreviews.reserve(prepared.display.mathPreviews.size());
             for (auto const& preview : prepared.display.mathPreviews)
             {

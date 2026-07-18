@@ -135,6 +135,7 @@ struct BlockStyle {
     float padding_top = 0, padding_bottom = 0, padding_left = 0, padding_right = 0;
     std::optional<Color> background;
     std::optional<BorderSide> border_left, border_right, border_top, border_bottom;
+    std::optional<TextAlignment> text_alignment;
 
     static BlockStyle paragraph(ThemeLayout const& theme = default_theme_profile().layout) {
         BlockStyle s; s.margin_bottom = theme.paragraph_margin_bottom; return s;

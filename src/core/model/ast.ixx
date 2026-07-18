@@ -111,6 +111,13 @@ struct HtmlBlockShapeEntry {
     auto operator<=>(const HtmlBlockShapeEntry&) const = default;
 };
 
+enum class TextAlignment {
+    Start,
+    Center,
+    End,
+    Justify,
+};
+
 struct BlockHtmlSpecial {
     std::u32string source;
     HtmlCstTree tree;
@@ -119,6 +126,7 @@ struct BlockHtmlSpecial {
     std::string root_tag;
     std::u32string opening_marker;
     std::u32string closing_marker;
+    std::optional<TextAlignment> text_alignment;
 };
 
 // Rare, independently optional payloads share one indirection so the common

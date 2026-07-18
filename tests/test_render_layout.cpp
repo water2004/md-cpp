@@ -919,6 +919,52 @@ suite render_layout_tests = [] {
     expect(fatal(bool(!decorated_whitespace))) << "link indentation remains undecorated";
 };
 
+"html_paragraph_alignment_and_formatting_whitespace_project_semantically"_test = [] {
+    auto text_model = build_model(
+        "<p align=\"center\">\n"
+        "  面向高并发场景的现代化外置登录与材质平台\n"
+        "</p>");
+    expect(fatal(text_model.blocks.size() == 1u));
+    if (text_model.blocks.empty()) return;
+    expect(fatal(text_model.blocks.front().block_style.text_alignment
+        == std::optional<TextAlignment>{TextAlignment::Center}));
+    expect(fatal(text_model.blocks.front().inline_items.size() == 1u));
+    if (!text_model.blocks.front().inline_items.empty()) {
+        expect(fatal(text_model.blocks.front().inline_items.front().text
+            == U"面向高并发场景的现代化外置登录与材质平台"));
+        expect(fatal(text_model.blocks.front().inline_items.front().source_span.source_range.start == 3u));
+    }
+
+    auto badges = build_model(
+        "<p align=\"center\">\n"
+        "  <a href='one'>\n    <img src='one.svg'>\n  </a>\n"
+        "  <a href='two'>\n    <img src='two.svg'>\n  </a>\n"
+        "  <img src='three.svg'>\n"
+        "</p>");
+    expect(fatal(badges.blocks.size() == 1u));
+    if (badges.blocks.empty()) return;
+    std::size_t links = 0;
+    std::size_t images = 0;
+    std::size_t separating_spaces = 0;
+    for (const auto& item : badges.blocks.front().inline_items) {
+        if (item.kind == InlineRenderItem::Kind::Link) {
+            ++links;
+            for (const auto& child : item.special().semantic().children) {
+                if (child.kind == InlineRenderItem::Kind::Image) ++images;
+                expect(!(child.kind == InlineRenderItem::Kind::Text
+                    && child.text == U" ")) << "media-only anchors discard formatting indentation";
+            }
+        } else if (item.kind == InlineRenderItem::Kind::Image) {
+            ++images;
+        } else if (item.kind == InlineRenderItem::Kind::Text && item.text == U" ") {
+            ++separating_spaces;
+        }
+    }
+    expect(fatal(links == 2u));
+    expect(fatal(images == 3u));
+    expect(fatal(separating_spaces == 2u));
+};
+
 "math_inside_emphasis_renders_without_inheriting_text_style"_test = [] {
     auto m = build_model("**before $x$ after** *\\(y\\)* ~~$z$~~\n- **$q$**\n");
     std::vector<InlineRenderItem> math;

@@ -22,6 +22,7 @@ import elmd.core.diagnostics;
 import elmd.core.utf;
 import elmd.core.render_model;
 import elmd.core.html_inline_presentation;
+import elmd.core.html_inline_flow;
 
 export namespace elmd {
 
@@ -128,6 +129,9 @@ inline void append(Hasher& hash, BlockNode const& block) {
     });
     auto const& container = block.container_special();
     hash.text(container.callout_kind); hash.text(container.footnote_label);
+    auto const& html = block.html_special();
+    hash.text(html.root_tag); hash.text(html.opening_marker); hash.text(html.closing_marker);
+    hash.optional(html.text_alignment, [&](auto value) { hash.scalar(value); });
     hash.scalar(block.children.size());
     for (auto const& child : block.children) append(hash, child);
 }
@@ -346,6 +350,7 @@ struct Builder {
             block.id,
             block_local_length(block),
             flow_container_style(block.kind, block.container_special().callout_kind));
+        rendered.block_style.text_alignment = block.html_special().text_alignment;
         rendered.flow_local_indent_columns = context.indent_columns -
             (std::min)(context.indent_columns, parent_indent_columns);
         rendered.flow_anchor_owner_id = first_editable_owner(block).value_or(block.id);
@@ -760,6 +765,9 @@ struct Builder {
                             append_marker(special.children, node, delim.opening);
                             append_nodes(node.children, child_style, special.children);
                             if (delim.closing) append_marker(special.children, node, *delim.closing);
+                            normalize_html_inline_whitespace(
+                                special.children,
+                                html_inline_media_only(special.children));
                             target.push_back(std::move(item));
                             break;
                         }
@@ -768,7 +776,13 @@ struct Builder {
                             semantic.html_tag,
                             semantic.html_attributes);
                         append_marker(target, node, delim.opening);
-                        append_nodes(node.children, child_style, target);
+                        std::vector<InlineRenderItem> html_children;
+                        append_nodes(node.children, child_style, html_children);
+                        normalize_html_inline_whitespace(html_children, false);
+                        target.insert(
+                            target.end(),
+                            std::make_move_iterator(html_children.begin()),
+                            std::make_move_iterator(html_children.end()));
                         if (delim.closing) append_marker(target, node, *delim.closing);
                         break;
                     }
@@ -814,6 +828,9 @@ struct Builder {
             }
         };
         append_nodes(document.tree.nodes, base, output);
+        if (document.syntax_mode == InlineSyntaxMode::HtmlText) {
+            normalize_html_inline_whitespace(output, true);
+        }
         auto attach_source = [&](auto& self, std::vector<InlineRenderItem>& items) -> void {
             for (auto& item : items) {
                 if (item.kind != InlineRenderItem::Kind::Text
@@ -833,6 +850,7 @@ struct Builder {
     RenderBlock build_block(const BlockNode& b) {
         using BK = BlockKind;
         auto base = [&](BlockStyle style) {
+            style.text_alignment = b.html_special().text_alignment;
             return render_block_base(b.kind, b.id, block_local_length(b), std::move(style));
         };
         switch (b.kind) {

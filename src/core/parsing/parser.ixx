@@ -890,6 +890,69 @@ public:
             range.length()));
     }
 
+    static std::string_view trim_html_css_value(std::string_view value) {
+        while (!value.empty() && static_cast<unsigned char>(value.front()) <= 0x20) {
+            value.remove_prefix(1);
+        }
+        while (!value.empty() && static_cast<unsigned char>(value.back()) <= 0x20) {
+            value.remove_suffix(1);
+        }
+        return value;
+    }
+
+    static std::string lower_html_css_value(std::string_view value) {
+        std::string result(value);
+        std::ranges::transform(result, result.begin(), [](unsigned char ch) {
+            return static_cast<char>(std::tolower(ch));
+        });
+        return result;
+    }
+
+    static std::optional<TextAlignment> parse_html_text_alignment(std::string_view value) {
+        value = trim_html_css_value(value);
+        auto lower = lower_html_css_value(value);
+        if (const auto important = lower.find("!important"); important != std::string::npos) {
+            lower = std::string(trim_html_css_value(std::string_view(lower).substr(0, important)));
+        }
+        if (lower == "left" || lower == "start") return TextAlignment::Start;
+        if (lower == "center") return TextAlignment::Center;
+        if (lower == "right" || lower == "end") return TextAlignment::End;
+        if (lower == "justify") return TextAlignment::Justify;
+        return std::nullopt;
+    }
+
+    std::optional<TextAlignment> html_text_alignment(
+        const HtmlCstNode& node,
+        std::size_t source_start) const {
+        std::optional<TextAlignment> result;
+        if (auto align = html_attribute_value(node, "align", source_start)) {
+            result = parse_html_text_alignment(cps_to_utf8(*align));
+        }
+        auto style = html_attribute_value(node, "style", source_start);
+        if (!style) return result;
+
+        // CSS declarations cascade in source order. Only the safe enumerated
+        // text-align property is projected; the exact style spelling remains
+        // owned by the lossless HTML CST.
+        const auto style_utf8 = cps_to_utf8(*style);
+        auto declarations = std::string_view(style_utf8);
+        while (!declarations.empty()) {
+            const auto semicolon = declarations.find(';');
+            auto declaration = trim_html_css_value(declarations.substr(0, semicolon));
+            declarations = semicolon == std::string_view::npos
+                ? std::string_view{}
+                : declarations.substr(semicolon + 1);
+            const auto colon = declaration.find(':');
+            if (colon == std::string_view::npos) continue;
+            auto property = lower_html_css_value(trim_html_css_value(declaration.substr(0, colon)));
+            if (property != "text-align") continue;
+            if (auto parsed = parse_html_text_alignment(declaration.substr(colon + 1))) {
+                result = parsed;
+            }
+        }
+        return result;
+    }
+
     void push_html_range(
         NodeId id,
         const HtmlCstNode& node,
@@ -917,6 +980,7 @@ public:
         std::size_t source_start) {
         auto& html = block.ensure_html_special();
         html.root_tag = node.tag_name;
+        html.text_alignment = html_text_alignment(node, source_start);
         if (node.opening.valid_for(cps.size() - source_start)) {
             html.opening_marker = cps.substr(
                 source_start + node.opening.start,

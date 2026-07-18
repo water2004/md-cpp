@@ -340,6 +340,9 @@
     <ClCompile Include="..\core\rendering\html_inline_presentation.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\core\rendering\html_inline_flow.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\core\rendering\render_builder.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>

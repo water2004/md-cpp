@@ -975,6 +975,26 @@ suite parser_tests = [] {
         expect(fatal(!malformed_image->image_special().image_width.has_value()));
 };
 
+"html_block_text_alignment_is_semantic_and_lossless"_test = [] {
+    const std::string source =
+        "<p align=\"center\">center</p>\n"
+        "<p align='left' style=\"color: red; text-align: right\">right</p>\n"
+        "<p style='text-align: justify !important'>justify</p>\n"
+        "<p align='sideways'>default</p>";
+    const auto parsed = parse_text(1, source);
+    expect(fatal(parsed.document.root.children.size() == 4u));
+    if (parsed.document.root.children.size() != 4u) return;
+
+    expect(fatal(parsed.document.root.children[0].html_special().text_alignment
+        == std::optional<TextAlignment>{TextAlignment::Center}));
+    expect(fatal(parsed.document.root.children[1].html_special().text_alignment
+        == std::optional<TextAlignment>{TextAlignment::End}));
+    expect(fatal(parsed.document.root.children[2].html_special().text_alignment
+        == std::optional<TextAlignment>{TextAlignment::Justify}));
+    expect(fatal(!parsed.document.root.children[3].html_special().text_alignment));
+    expect(fatal(serialize_markdown(parsed.document) == source));
+};
+
 "save_reload_is_character_exact_for_unchanged_content"_test = [] {
     const std::string source =
         "# __heading__\n\n"
