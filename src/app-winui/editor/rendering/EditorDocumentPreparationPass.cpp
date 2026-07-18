@@ -371,10 +371,6 @@ namespace winrt::Folia
         {
             preparedDocument->lastViewportOffset = scrollOffset;
             preparedDocument->hasLastViewportOffset = true;
-            // Direct scrollbar/touchpad movement may not have an animation
-            // tick after its final offset. Schedule one stable frame so
-            // deferred embedded completions and prefetch cannot be stranded.
-            needsAnotherFrame = needsAnotherFrame || viewportMoved;
         }
 
         if (geometryChanged)
