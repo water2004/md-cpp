@@ -87,6 +87,9 @@
     <ClCompile Include="..\platform\windows\editor\layout\editor_display_mapping.ixx">
       <Filter>Platform Modules\Windows Editor</Filter>
     </ClCompile>
+    <ClCompile Include="..\platform\windows\editor\layout\editor_preparation_plan.ixx">
+      <Filter>Platform Modules\Windows Editor</Filter>
+    </ClCompile>
     <ClCompile Include="..\platform\windows\editor\layout\editor_viewport_plan.ixx">
       <Filter>Platform Modules\Windows Editor</Filter>
     </ClCompile>

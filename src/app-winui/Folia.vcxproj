@@ -300,6 +300,9 @@
     <ClCompile Include="..\platform\windows\editor\layout\editor_display_mapping.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\platform\windows\editor\layout\editor_preparation_plan.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\platform\windows\editor\layout\editor_viewport_plan.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>

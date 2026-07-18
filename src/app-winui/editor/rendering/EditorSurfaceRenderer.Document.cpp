@@ -4,6 +4,7 @@
 #include "localization/Localization.h"
 
 import folia.core.render_model;
+import folia.platform.editor_preparation_plan;
 import folia.platform.editor_viewport_plan;
 
 #include "editor/rendering/EditorContentPreparation.h"
@@ -99,6 +100,40 @@ namespace winrt::Folia
         }
 
         auto remoteImageGeneration = renderCache.RemoteImageGeneration();
+        folia::platform::editor::EditorPreparationCacheView preparationCache;
+        std::optional<std::size_t> previousActiveBlock;
+        std::optional<std::size_t> activeBlock;
+        if (preparedDocument)
+        {
+            preparationCache = {
+                .available = true,
+                .blockCount = preparedDocument->blocks.size(),
+                .modelRevision = preparedDocument->modelRevision,
+                .documentWidth = preparedDocument->documentWidth,
+                .themeRevision = preparedDocument->themeRevision,
+                .active = preparedDocument->selection.active,
+            };
+            auto findOwnerBlock = [&](folia::NodeId owner) -> std::optional<std::size_t>
+            {
+                auto found = preparedDocument->ownerBlockIndex.find(owner.v);
+                if (found == preparedDocument->ownerBlockIndex.end()) return std::nullopt;
+                return found->second;
+            };
+            previousActiveBlock = findOwnerBlock(preparedDocument->selection.active.container_id);
+            activeBlock = findOwnerBlock(selection.active.container_id);
+        }
+        auto invalidationPlan = folia::platform::editor::BuildEditorPreparationInvalidationPlan(
+            preparationCache,
+            frame.renderModel.blocks.size(),
+            frame.renderModel.revision,
+            documentWidth,
+            themeRevision,
+            selection.active,
+            frame.renderModel.incremental_update,
+            sourceDocument,
+            frame.renderModel.changed_block_indices,
+            previousActiveBlock,
+            activeBlock);
         EditorDocumentBlockPreparer blockPreparer(
             frame,
             resources,
@@ -115,15 +150,9 @@ namespace winrt::Folia
             mathSvgSupported,
             embeddedGeneration,
             remoteImageGeneration);
-        auto activePositionChanged = preparedDocument
-            && preparedDocument->selection.active != selection.active;
-        auto modelChanged = preparedDocument
-            && preparedDocument->modelRevision != frame.renderModel.revision;
-        auto rebuildAll = !preparedDocument
-            || preparedDocument->documentWidth != documentWidth
-            || preparedDocument->themeRevision != themeRevision
-            || preparedDocument->blocks.size() != frame.renderModel.blocks.size()
-            || (modelChanged && !frame.renderModel.incremental_update);
+        auto activePositionChanged = invalidationPlan.activePositionChanged;
+        auto modelChanged = invalidationPlan.modelChanged;
+        auto rebuildAll = invalidationPlan.rebuildAll;
         if (rebuildAll)
         {
             auto previous = std::move(preparedDocument);
@@ -174,26 +203,7 @@ namespace winrt::Folia
         }
         else
         {
-            std::unordered_set<std::size_t> invalidated;
-            if (modelChanged)
-            {
-                for (auto index : frame.renderModel.changed_block_indices)
-                    if (index < preparedDocument->blocks.size()) invalidated.insert(index);
-            }
-            if (activePositionChanged
-                && !frame.renderModel.blocks.empty()
-                && !frame.renderModel.blocks.front().source_mode)
-            {
-                auto addOwner = [&](folia::NodeId owner)
-                {
-                    auto found = preparedDocument->ownerBlockIndex.find(owner.v);
-                    if (found != preparedDocument->ownerBlockIndex.end())
-                        invalidated.insert(found->second);
-                };
-                addOwner(preparedDocument->selection.active.container_id);
-                addOwner(selection.active.container_id);
-            }
-            for (auto index : invalidated)
+            for (auto index : invalidationPlan.invalidatedBlocks)
             {
                 auto const& source = frame.renderModel.blocks[index];
                 auto& prepared = preparedDocument->blocks[index];
