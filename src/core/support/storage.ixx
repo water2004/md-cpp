@@ -1,12 +1,12 @@
-// elmd.core.storage — portable file IO + asset manager.
+// folia.core.storage — portable file IO + asset manager.
 // Pure core, portable. WinUI 3 / Windows file dialog integration belongs in
 // the app layer; this module only owns raw path/byte IO and asset path policy,
 // mirroring the Rust storage crate.
-export module elmd.core.storage;
+export module folia.core.storage;
 import std;
-import elmd.core.error;
+import folia.core.error;
 
-export namespace elmd {
+export namespace folia {
 
 namespace fs = std::filesystem;
 
@@ -58,4 +58,4 @@ private:
     std::optional<fs::path> assets_dir_;
 };
 
-} // namespace elmd
+} // namespace folia

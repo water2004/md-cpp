@@ -1,8 +1,8 @@
-// elmd.core.slug — slug generation with collision handling.
-export module elmd.core.slug;
+// folia.core.slug — slug generation with collision handling.
+export module folia.core.slug;
 import std;
 
-export namespace elmd {
+export namespace folia {
 
 inline std::string to_lower_ascii(std::string s) {
     for (char& c : s) if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
@@ -58,4 +58,4 @@ inline std::vector<std::string> generate_unique_slugs(const std::vector<std::str
     return out;
 }
 
-} // namespace elmd
+} // namespace folia

@@ -1,12 +1,12 @@
-// elmd.core.selection_geometry — selection / caret geometry in block-local coordinates.
-export module elmd.core.selection_geometry;
+// folia.core.selection_geometry — selection / caret geometry in block-local coordinates.
+export module folia.core.selection_geometry;
 import std;
-import elmd.core.types;
-import elmd.core.layout_tree;
-import elmd.core.selection;
-import elmd.core.text_edit;
+import folia.core.types;
+import folia.core.layout_tree;
+import folia.core.selection;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 struct SelectionRect {
     TextSpan source_span;
@@ -149,4 +149,4 @@ inline std::optional<CaretGeometry> compute_caret_geometry(const LayoutTree& tre
     return std::nullopt;
 }
 
-} // namespace elmd
+} // namespace folia

@@ -1,23 +1,23 @@
 // Shared source-edit primitives, allocation, and public edit command types.
-export module elmd.core.document_edit_primitives;
-export import elmd.core.document_transaction;
+export module folia.core.document_edit_primitives;
+export import folia.core.document_transaction;
 import std;
-import elmd.core.ast;
-import elmd.core.block_source;
-import elmd.core.block_tree;
-import elmd.core.document;
-import elmd.core.document_ids;
-import elmd.core.document_operation_apply;
-import elmd.core.document_text;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
-import elmd.core.inline_parser;
-import elmd.core.inline_source_edit;
-import elmd.core.ids;
-import elmd.core.text_edit;
-import elmd.core.utf;
+import folia.core.ast;
+import folia.core.block_source;
+import folia.core.block_tree;
+import folia.core.document;
+import folia.core.document_ids;
+import folia.core.document_operation_apply;
+import folia.core.document_text;
+import folia.core.inline_cst;
+import folia.core.inline_document;
+import folia.core.inline_parser;
+import folia.core.inline_source_edit;
+import folia.core.ids;
+import folia.core.text_edit;
+import folia.core.utf;
 
-export namespace elmd {
+export namespace folia {
 
 enum class InlineFormat { Emphasis, Strong, Strikethrough, Code, Math };
 enum class DocumentTableEdit {
@@ -131,11 +131,11 @@ inline InlineDocument make_inline(
 }
 
 inline InlineDocument* find_inline_owner(BlockNode& root, NodeId id) {
-    auto* block = elmd::find_block(root, id);
+    auto* block = folia::find_block(root, id);
     return block ? editable_inline_document(*block) : nullptr;
 }
 inline const InlineDocument* find_inline_owner(const BlockNode& root, NodeId id) {
-    const auto* block = elmd::find_block(root, id);
+    const auto* block = folia::find_block(root, id);
     return block ? editable_inline_document(*block) : nullptr;
 }
 inline InlineDocument* find_inline_owner(EditorDocument& document, NodeId id) {
@@ -286,4 +286,4 @@ enum class ListStyle { Bullet, Ordered, Task };
 
 } // namespace document_edit_detail
 
-} // namespace elmd
+} // namespace folia

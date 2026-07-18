@@ -1,19 +1,19 @@
-// elmd.core.document_paste — semantic Markdown parsing and block-tree splicing.
-export module elmd.core.document_paste;
+// folia.core.document_paste — semantic Markdown parsing and block-tree splicing.
+export module folia.core.document_paste;
 import std;
-import elmd.core.ast;
-import elmd.core.block_tree;
-import elmd.core.document;
-import elmd.core.document_edit_support;
-import elmd.core.document_source_edit;
-import elmd.core.document_text;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
-import elmd.core.parser;
-import elmd.core.text_edit;
-import elmd.core.utf;
+import folia.core.ast;
+import folia.core.block_tree;
+import folia.core.document;
+import folia.core.document_edit_support;
+import folia.core.document_source_edit;
+import folia.core.document_text;
+import folia.core.inline_cst;
+import folia.core.inline_document;
+import folia.core.parser;
+import folia.core.text_edit;
+import folia.core.utf;
 
-export namespace elmd {
+export namespace folia {
 
 namespace document_paste_detail {
 
@@ -698,4 +698,4 @@ inline std::optional<DocumentTransaction> document_paste_text(
         DocumentTransactionReason::Paste);
 }
 
-} // namespace elmd
+} // namespace folia

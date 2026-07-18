@@ -1,20 +1,20 @@
-// elmd.core.source_editor — authoritative plain-source editing session.
+// folia.core.source_editor — authoritative plain-source editing session.
 //
 // This is deliberately separate from EditorDocument. While source mode is
 // active, one flat lossless source buffer and one flat source selection are
 // authoritative. The block tree is rebuilt only when leaving source mode.
-export module elmd.core.source_editor;
+export module folia.core.source_editor;
 import std;
-import elmd.core.ids;
-import elmd.core.text_edit;
-import elmd.core.selection;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
-import elmd.core.inline_parser;
-import elmd.core.source_style;
-import elmd.core.utf;
+import folia.core.ids;
+import folia.core.text_edit;
+import folia.core.selection;
+import folia.core.inline_cst;
+import folia.core.inline_document;
+import folia.core.inline_parser;
+import folia.core.source_style;
+import folia.core.utf;
 
-export namespace elmd {
+export namespace folia {
 
 struct SourceSelection {
     std::size_t anchor = 0;
@@ -714,4 +714,4 @@ private:
     }
 };
 
-} // namespace elmd
+} // namespace folia

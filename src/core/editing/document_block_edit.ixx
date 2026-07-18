@@ -1,17 +1,17 @@
 // Reversible block split, join, exit, removal, and pruning operations.
-export module elmd.core.document_block_edit;
+export module folia.core.document_block_edit;
 import std;
-import elmd.core.ast;
-import elmd.core.block_source;
-import elmd.core.block_tree;
-import elmd.core.document;
-import elmd.core.document_text;
-import elmd.core.inline_document;
-import elmd.core.text_edit;
-import elmd.core.utf;
-import elmd.core.document_edit_primitives;
+import folia.core.ast;
+import folia.core.block_source;
+import folia.core.block_tree;
+import folia.core.document;
+import folia.core.document_text;
+import folia.core.inline_document;
+import folia.core.text_edit;
+import folia.core.utf;
+import folia.core.document_edit_primitives;
 
-export namespace elmd::document_edit_detail {
+export namespace folia::document_edit_detail {
 
 struct RecordedBlockEdit {
     TextPosition target;
@@ -645,4 +645,4 @@ inline void prune_empty_containers_recorded(
     }
 }
 
-} // namespace elmd::document_edit_detail
+} // namespace folia::document_edit_detail

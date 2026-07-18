@@ -1,22 +1,22 @@
-// elmd.core.search — mode-specific document search projections.
+// folia.core.search — mode-specific document search projections.
 //
 // Rendered mode searches a stable projection of visible editable text. Syntax
 // markers and HTML tags never enter that projection. Source mode searches the
 // authoritative flat Markdown buffer directly. Both modes share only the
 // Unicode regular-expression matcher.
-export module elmd.core.search;
+export module folia.core.search;
 import std;
-import elmd.core.ast;
-import elmd.core.block_source;
-import elmd.core.block_tree;
-import elmd.core.document;
-import elmd.core.document_text;
-import elmd.core.ids;
-import elmd.core.render_builder;
-import elmd.core.render_model;
-import elmd.core.text_edit;
+import folia.core.ast;
+import folia.core.block_source;
+import folia.core.block_tree;
+import folia.core.document;
+import folia.core.document_text;
+import folia.core.ids;
+import folia.core.render_builder;
+import folia.core.render_model;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 struct SearchOptions {
     bool regular_expression = false;
@@ -285,4 +285,4 @@ inline RenderedSearchResult search_rendered_fragments_for_replacement(
         fragments, query, options, &replacement_template);
 }
 
-} // namespace elmd
+} // namespace folia

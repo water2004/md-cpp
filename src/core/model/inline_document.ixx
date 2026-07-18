@@ -1,4 +1,4 @@
-// elmd.core.inline_document — per-content-node inline source + lossless CST.
+// folia.core.inline_document — per-content-node inline source + lossless CST.
 //
 // An editable content node (Paragraph, Heading, TableCell, and the
 // paragraph/heading bodies inside list items, task items, block quotes,
@@ -8,15 +8,15 @@
 // Editing mutates `source` (via TextEdit) and re-parses the CST of *this node
 // only*; the tree is structural/analysis state, never a second coordinate
 // system. Saving emits `source` verbatim.
-export module elmd.core.inline_document;
+export module folia.core.inline_document;
 import std;
-import elmd.core.ids;
-import elmd.core.dialect;
-import elmd.core.inline_cst;
-import elmd.core.text_edit;
-import elmd.core.utf;
+import folia.core.ids;
+import folia.core.dialect;
+import folia.core.inline_cst;
+import folia.core.text_edit;
+import folia.core.utf;
 
-export namespace elmd {
+export namespace folia {
 
 // Context the lossless inline parser needs: dialect, an id allocator seed,
 // and (optionally) a link-definition resolver for reference links. This is a
@@ -193,4 +193,4 @@ inline bool inline_contains_kind(const InlineDocument& document, InlineCstKind k
     return inline_contains_kind(document.tree.nodes, kind);
 }
 
-} // namespace elmd
+} // namespace folia

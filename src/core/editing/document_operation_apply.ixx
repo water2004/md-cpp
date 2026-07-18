@@ -1,21 +1,21 @@
-// elmd.core.document_operation_apply — validates and replays reversible
+// folia.core.document_operation_apply — validates and replays reversible
 // block-local source edits and unified-tree edits without document snapshots.
-export module elmd.core.document_operation_apply;
+export module folia.core.document_operation_apply;
 import std;
-import elmd.core.ast;
-import elmd.core.block_source;
-import elmd.core.block_tree;
-import elmd.core.document;
-import elmd.core.document_ids;
-import elmd.core.document_text;
-import elmd.core.document_transaction;
-import elmd.core.ids;
-import elmd.core.inline_document;
-import elmd.core.inline_parser;
-import elmd.core.inline_source_edit;
-import elmd.core.text_edit;
+import folia.core.ast;
+import folia.core.block_source;
+import folia.core.block_tree;
+import folia.core.document;
+import folia.core.document_ids;
+import folia.core.document_text;
+import folia.core.document_transaction;
+import folia.core.ids;
+import folia.core.inline_document;
+import folia.core.inline_parser;
+import folia.core.inline_source_edit;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 namespace document_operation_detail {
 
@@ -146,7 +146,7 @@ inline bool apply_text_edit(
     if (!block) return false;
     auto* source = editable_raw_block_source(*block);
     if (!source || !edit.range.valid_for(source->size())) return false;
-    elmd::apply_text_edit(*source, edit);
+    folia::apply_text_edit(*source, edit);
     reparse_block_source(block->block_source);
     return true;
 }
@@ -198,4 +198,4 @@ inline bool apply_document_operations(
     return true;
 }
 
-}  // namespace elmd
+}  // namespace folia

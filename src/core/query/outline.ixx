@@ -1,13 +1,13 @@
-// elmd.core.outline — Outline + hierarchy projection from cached heading symbols.
-export module elmd.core.outline;
+// folia.core.outline — Outline + hierarchy projection from cached heading symbols.
+export module folia.core.outline;
 import std;
-import elmd.core.ids;
-import elmd.core.instrumentation;
-import elmd.core.slug;
-import elmd.core.symbols;
-import elmd.core.text_edit;
+import folia.core.ids;
+import folia.core.instrumentation;
+import folia.core.slug;
+import folia.core.symbols;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 struct OutlineItem {
     NodeId id{};
@@ -183,4 +183,4 @@ inline const OutlineItem* navigate_next_heading(const std::vector<OutlineItem>& 
     return nullptr;
 }
 
-} // namespace elmd
+} // namespace folia

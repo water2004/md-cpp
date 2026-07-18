@@ -1,32 +1,32 @@
-// elmd.core.editor — owns the authoritative block tree, its single selection,
+// folia.core.editor — owns the authoritative block tree, its single selection,
 // reversible operation history, and the command pipeline.
-export module elmd.core.editor;
+export module folia.core.editor;
 import std;
-import elmd.core.types;
-import elmd.core.ids;
-import elmd.core.selection;
-import elmd.core.command;
-import elmd.core.input;
-import elmd.core.utf;
-import elmd.core.dialect;
-import elmd.core.document;
-import elmd.core.document_text;
-import elmd.core.ast;
-import elmd.core.block_tree;
-import elmd.core.document_edit;
-import elmd.core.document_history;
-import elmd.core.document_search_replace;
-import elmd.core.document_index_update;
-import elmd.core.document_transaction;
-import elmd.core.document_symbols;
-import elmd.core.text_edit;
-import elmd.core.symbols;
-import elmd.core.outline;
-import elmd.core.parser;
-import elmd.core.serializer;
-import elmd.core.search;
+import folia.core.types;
+import folia.core.ids;
+import folia.core.selection;
+import folia.core.command;
+import folia.core.input;
+import folia.core.utf;
+import folia.core.dialect;
+import folia.core.document;
+import folia.core.document_text;
+import folia.core.ast;
+import folia.core.block_tree;
+import folia.core.document_edit;
+import folia.core.document_history;
+import folia.core.document_search_replace;
+import folia.core.document_index_update;
+import folia.core.document_transaction;
+import folia.core.document_symbols;
+import folia.core.text_edit;
+import folia.core.symbols;
+import folia.core.outline;
+import folia.core.parser;
+import folia.core.serializer;
+import folia.core.search;
 
-export namespace elmd {
+export namespace folia {
 
 struct EditorDocumentChange {
     std::vector<DocumentTextOperation> text_operations;
@@ -691,4 +691,4 @@ private:
 
 };
 
-} // namespace elmd
+} // namespace folia

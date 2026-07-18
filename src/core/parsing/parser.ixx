@@ -1,4 +1,4 @@
-// elmd.core.parser — Markdown parser. Pure core, no Windows dependency.
+// folia.core.parser — Markdown parser. Pure core, no Windows dependency.
 //
 // Faithful C++ port of the Rust `markdown-parse` crate with the bug fixes
 // dictated by HANDOFF.md applied from the start:
@@ -15,34 +15,34 @@
 //   * list / blockquote recursion uses parse_blocks with stop conditions
 //
 // All offsets are CHAR indices into a Vec<char32> snapshot.
-export module elmd.core.parser;
+export module folia.core.parser;
 import std;
-import elmd.core.types;
-import elmd.core.ids;
-import elmd.core.dialect;
-import elmd.core.image_dimension;
-import elmd.core.diagnostics;
-import elmd.core.metadata;
-import elmd.core.symbols;
-import elmd.core.ast;
-import elmd.core.block_source;
-import elmd.core.block_tree;
-import elmd.core.block_line_recognizer;
-import elmd.core.callout;
-import elmd.core.document;
-import elmd.core.document_symbols;
-import elmd.core.outline;
-import elmd.core.slug;
-import elmd.core.utf;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
-import elmd.core.inline_parser;
-import elmd.core.html_cst;
-import elmd.core.instrumentation;
-import elmd.core.serializer;
-import elmd.core.text_edit;
+import folia.core.types;
+import folia.core.ids;
+import folia.core.dialect;
+import folia.core.image_dimension;
+import folia.core.diagnostics;
+import folia.core.metadata;
+import folia.core.symbols;
+import folia.core.ast;
+import folia.core.block_source;
+import folia.core.block_tree;
+import folia.core.block_line_recognizer;
+import folia.core.callout;
+import folia.core.document;
+import folia.core.document_symbols;
+import folia.core.outline;
+import folia.core.slug;
+import folia.core.utf;
+import folia.core.inline_cst;
+import folia.core.inline_document;
+import folia.core.inline_parser;
+import folia.core.html_cst;
+import folia.core.instrumentation;
+import folia.core.serializer;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 using ParseProgressCallback = std::function<void(std::size_t consumed, std::size_t total)>;
 
@@ -2186,4 +2186,4 @@ inline ParsedBlockFragment parse_block_fragment(
     return result;
 }
 
-} // namespace elmd
+} // namespace folia

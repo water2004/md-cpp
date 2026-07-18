@@ -1,8 +1,8 @@
-// elmd.core.dialect — Markdown dialect configuration + related enums.
-export module elmd.core.dialect;
+// folia.core.dialect — Markdown dialect configuration + related enums.
+export module folia.core.dialect;
 import std;
 
-export namespace elmd {
+export namespace folia {
 
 enum class MathRenderBackend { Native, SvgRasterized, PlainTextFallback };
 enum class MathDelimiter { InlineDollar, BlockDollar, InlineParen, BlockBracket, FencedMath };
@@ -46,4 +46,4 @@ struct MarkdownDialect {
 
 inline MarkdownDialect default_dialect() { return MarkdownDialect{}; }
 
-} // namespace elmd
+} // namespace folia

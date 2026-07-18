@@ -1,15 +1,15 @@
-// elmd.core.layout_tree — LayoutTree / LayoutBlock / GlyphRunLayout etc.
-export module elmd.core.layout_tree;
+// folia.core.layout_tree — LayoutTree / LayoutBlock / GlyphRunLayout etc.
+export module folia.core.layout_tree;
 import std;
-import elmd.core.types;
-import elmd.core.ids;
-import elmd.core.dialect;
-import elmd.core.render_model;
-import elmd.core.text_measurer;
-import elmd.core.selection;
-import elmd.core.text_edit;
+import folia.core.types;
+import folia.core.ids;
+import folia.core.dialect;
+import folia.core.render_model;
+import folia.core.text_measurer;
+import folia.core.selection;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 struct GlyphRunLayout {
     TextSpan source_span;
@@ -111,4 +111,4 @@ struct LayoutTree {
     }
 };
 
-} // namespace elmd
+} // namespace folia

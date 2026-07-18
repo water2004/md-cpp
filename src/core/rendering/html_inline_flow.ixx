@@ -1,11 +1,11 @@
-// elmd.core.html_inline_flow — browser-like whitespace projection for HTML
+// folia.core.html_inline_flow — browser-like whitespace projection for HTML
 // inline formatting contexts. Source text remains untouched; this derives
 // visible runs with exact source spans for the DirectWrite flow.
-export module elmd.core.html_inline_flow;
+export module folia.core.html_inline_flow;
 import std;
-import elmd.core.render_model;
+import folia.core.render_model;
 
-export namespace elmd {
+export namespace folia {
 
 inline bool is_html_collapsible_space(char32_t ch) {
     return ch == U' ' || ch == U'\t' || ch == U'\r' || ch == U'\n' || ch == U'\f';
@@ -102,4 +102,4 @@ inline void normalize_html_inline_whitespace(
     items = std::move(collapsed);
 }
 
-} // namespace elmd
+} // namespace folia

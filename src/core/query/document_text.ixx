@@ -1,19 +1,19 @@
-// elmd.core.document_text — tree-order text queries over editable block owners.
+// folia.core.document_text — tree-order text queries over editable block owners.
 //
 // These fragments retain their block-local TextPosition coordinate. A flat
 // ACP/UTF-16 projection is a platform concern and must not become core editor
 // state or a second authoritative selection coordinate.
-export module elmd.core.document_text;
+export module folia.core.document_text;
 import std;
-import elmd.core.ast;
-import elmd.core.block_tree;
-import elmd.core.document;
-import elmd.core.ids;
-import elmd.core.inline_document;
-import elmd.core.instrumentation;
-import elmd.core.text_edit;
+import folia.core.ast;
+import folia.core.block_tree;
+import folia.core.document;
+import folia.core.ids;
+import folia.core.inline_document;
+import folia.core.instrumentation;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 struct DocumentTextFragment {
     NodeId container_id{};
@@ -189,4 +189,4 @@ inline std::optional<std::u32string> document_selected_text(
     return result;
 }
 
-} // namespace elmd
+} // namespace folia

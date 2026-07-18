@@ -1,7 +1,7 @@
-export module elmd.core.image_metadata;
+export module folia.core.image_metadata;
 import std;
 
-export namespace elmd {
+export namespace folia {
 
 enum class EncodedImageFormat {
     Gif,
@@ -158,4 +158,4 @@ inline std::optional<EncodedImageMetadata> probe_encoded_image_metadata(
     return std::nullopt;
 }
 
-} // namespace elmd
+} // namespace folia

@@ -1,12 +1,12 @@
-// elmd.core.inline_cst — lossless editable inline concrete syntax tree.
-export module elmd.core.inline_cst;
+// folia.core.inline_cst — lossless editable inline concrete syntax tree.
+export module folia.core.inline_cst;
 import std;
-import elmd.core.ids;
-import elmd.core.dialect;
-import elmd.core.image_dimension;
-import elmd.core.text_edit;
+import folia.core.ids;
+import folia.core.dialect;
+import folia.core.image_dimension;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 enum class ParseStatus {
     Complete,
@@ -169,4 +169,4 @@ inline bool roots_partition_source(const InlineCstTree& tree, std::size_t source
     return cursor == source_length;
 }
 
-} // namespace elmd
+} // namespace folia

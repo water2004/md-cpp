@@ -1,10 +1,10 @@
-// elmd.core.symbols — DocumentSymbolIndex.
-export module elmd.core.symbols;
+// folia.core.symbols — DocumentSymbolIndex.
+export module folia.core.symbols;
 import std;
-import elmd.core.ids;
-import elmd.core.text_edit;
+import folia.core.ids;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 struct HeadingSymbol   {
     NodeId node_id;
@@ -61,4 +61,4 @@ struct DocumentSymbolIndex {
     bool operator==(const DocumentSymbolIndex&) const = default;
 };
 
-} // namespace elmd
+} // namespace folia

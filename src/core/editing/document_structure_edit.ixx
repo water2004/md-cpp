@@ -1,23 +1,23 @@
-export module elmd.core.document_structure_edit;
+export module folia.core.document_structure_edit;
 import std;
-import elmd.core.ast;
-import elmd.core.block_source;
-import elmd.core.block_tree;
-import elmd.core.callout;
-import elmd.core.document;
-import elmd.core.document_ids;
-import elmd.core.ids;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
-import elmd.core.inline_parser;
-import elmd.core.inline_source_edit;
-import elmd.core.text_edit;
-import elmd.core.utf;
-import elmd.core.document_edit_support;
-import elmd.core.document_input_rules;
-import elmd.core.document_source_edit;
+import folia.core.ast;
+import folia.core.block_source;
+import folia.core.block_tree;
+import folia.core.callout;
+import folia.core.document;
+import folia.core.document_ids;
+import folia.core.ids;
+import folia.core.inline_cst;
+import folia.core.inline_document;
+import folia.core.inline_parser;
+import folia.core.inline_source_edit;
+import folia.core.text_edit;
+import folia.core.utf;
+import folia.core.document_edit_support;
+import folia.core.document_input_rules;
+import folia.core.document_source_edit;
 
-export namespace elmd {
+export namespace folia {
 
 namespace document_structure_detail {
 
@@ -917,4 +917,4 @@ inline std::optional<DocumentTransaction> document_edit_table(
 }
 
 
-} // namespace elmd
+} // namespace folia

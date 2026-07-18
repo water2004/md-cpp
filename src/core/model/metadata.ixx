@@ -1,10 +1,10 @@
-// elmd.core.metadata — document metadata (parsed-from-frontmatter).
-export module elmd.core.metadata;
+// folia.core.metadata — document metadata (parsed-from-frontmatter).
+export module folia.core.metadata;
 import std;
-import elmd.core.dialect;
-import elmd.core.utf;
+import folia.core.dialect;
+import folia.core.utf;
 
-export namespace elmd {
+export namespace folia {
 
 struct DocumentMetadata {
     std::optional<std::string> title;
@@ -82,4 +82,4 @@ inline DocumentMetadata from_frontmatter(const std::string& raw, FrontmatterForm
     return m;
 }
 
-} // namespace elmd
+} // namespace folia

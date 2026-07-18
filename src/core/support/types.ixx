@@ -1,8 +1,8 @@
-// elmd.core.types — platform-independent geometry and rendering primitives.
-export module elmd.core.types;
+// folia.core.types — platform-independent geometry and rendering primitives.
+export module folia.core.types;
 import std;
 
-export namespace elmd {
+export namespace folia {
 
 // ---------------------------------------------------------------------------
 // Geometry — logical device-independent pixels (pre-DPI-scale).
@@ -38,4 +38,4 @@ struct LogicalRect {
     }
 };
 
-} // namespace elmd
+} // namespace folia

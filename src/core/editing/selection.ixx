@@ -1,8 +1,8 @@
-// elmd.core.selection — text affinity shared by block-local positions.
-export module elmd.core.selection;
+// folia.core.selection — text affinity shared by block-local positions.
+export module folia.core.selection;
 
-export namespace elmd {
+export namespace folia {
 
 enum class TextAffinity { Upstream, Downstream };
 
-} // namespace elmd
+} // namespace folia

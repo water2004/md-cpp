@@ -1,8 +1,8 @@
-// elmd.core.theme — platform-independent theme model and built-in fail-safe profiles.
-export module elmd.core.theme;
+// folia.core.theme — platform-independent theme model and built-in fail-safe profiles.
+export module folia.core.theme;
 import std;
 
-export namespace elmd {
+export namespace folia {
 
 enum class Theme { Light, Dark, HighContrast };
 
@@ -141,7 +141,7 @@ inline ThemeTypography default_typography() {
 
 inline ThemeProfile dark_profile() {
     ThemeProfile profile;
-    profile.id = "elmd.dark";
+    profile.id = "folia.dark";
     profile.name = "Folia Dark";
     profile.variant = Theme::Dark;
     profile.typography = default_typography();
@@ -174,7 +174,7 @@ inline ThemeProfile dark_profile() {
 
 inline ThemeProfile light_profile() {
     ThemeProfile profile;
-    profile.id = "elmd.light";
+    profile.id = "folia.light";
     profile.name = "Folia Light";
     profile.variant = Theme::Light;
     profile.typography = default_typography();
@@ -207,7 +207,7 @@ inline ThemeProfile light_profile() {
 
 inline ThemeProfile high_contrast_profile() {
     auto profile = dark_profile();
-    profile.id = "elmd.high-contrast";
+    profile.id = "folia.high-contrast";
     profile.name = "Folia High Contrast";
     profile.variant = Theme::HighContrast;
     auto& t = profile.colors;
@@ -246,4 +246,4 @@ inline ThemeColors const& theme_colors_for(Theme variant) {
 
 inline Theme default_theme() { return Theme::Dark; }
 
-} // namespace elmd
+} // namespace folia

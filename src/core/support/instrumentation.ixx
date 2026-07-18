@@ -1,8 +1,8 @@
-// elmd.core.instrumentation — testable counters for architectural hot-path gates.
-export module elmd.core.instrumentation;
+// folia.core.instrumentation — testable counters for architectural hot-path gates.
+export module folia.core.instrumentation;
 import std;
 
-export namespace elmd {
+export namespace folia {
 
 struct CoreOperationCounters {
     std::uint64_t full_document_parses = 0;
@@ -48,4 +48,4 @@ inline void record_full_document_text_projection() {
 }
 inline void record_inline_reparse() { ++core_operation_counters.inline_reparses; }
 
-} // namespace elmd
+} // namespace folia

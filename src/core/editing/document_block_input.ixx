@@ -1,18 +1,18 @@
 // Non-list block input rules: marker activation, raw blocks, and container unwrapping.
-export module elmd.core.document_block_input;
+export module folia.core.document_block_input;
 import std;
-import elmd.core.ast;
-import elmd.core.block_source;
-import elmd.core.block_tree;
-import elmd.core.document;
-import elmd.core.document_edit_support;
-import elmd.core.ids;
-import elmd.core.inline_document;
-import elmd.core.text_edit;
-import elmd.core.document_input_syntax;
-import elmd.core.document_list_input;
+import folia.core.ast;
+import folia.core.block_source;
+import folia.core.block_tree;
+import folia.core.document;
+import folia.core.document_edit_support;
+import folia.core.ids;
+import folia.core.inline_document;
+import folia.core.text_edit;
+import folia.core.document_input_syntax;
+import folia.core.document_list_input;
 
-export namespace elmd::document_input_rules::detail {
+export namespace folia::document_input_rules::detail {
 
 inline std::optional<document_edit_detail::RecordedBlockEdit> replace_paragraph_with_container(
     EditorDocument& document,
@@ -382,4 +382,4 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> remove_quote_prefi
     return result;
 }
 
-} // namespace elmd::document_input_rules::detail
+} // namespace folia::document_input_rules::detail

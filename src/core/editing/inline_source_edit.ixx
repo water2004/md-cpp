@@ -1,13 +1,13 @@
-// elmd.core.inline_source_edit — the sole mutation path for inline content.
-export module elmd.core.inline_source_edit;
+// folia.core.inline_source_edit — the sole mutation path for inline content.
+export module folia.core.inline_source_edit;
 import std;
-import elmd.core.ids;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
-import elmd.core.inline_parser;
-import elmd.core.text_edit;
+import folia.core.ids;
+import folia.core.inline_cst;
+import folia.core.inline_document;
+import folia.core.inline_parser;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 namespace inline_source_edit_detail {
 
@@ -166,4 +166,4 @@ inline AppliedSourceEdit apply_inline_source_edit(
     return AppliedSourceEdit{edit, std::move(inverse)};
 }
 
-} // namespace elmd
+} // namespace folia

@@ -1,13 +1,13 @@
-// elmd.core.hit_test — hit_test_layout_tree.
-export module elmd.core.hit_test;
+// folia.core.hit_test — hit_test_layout_tree.
+export module folia.core.hit_test;
 import std;
-import elmd.core.types;
-import elmd.core.ids;
-import elmd.core.layout_tree;
-import elmd.core.selection;
-import elmd.core.text_edit;
+import folia.core.types;
+import folia.core.ids;
+import folia.core.layout_tree;
+import folia.core.selection;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 enum class HitKind { Text, Marker, Embedded, LineEnd, BlockGap };
 
@@ -149,4 +149,4 @@ inline std::optional<HitTestResult> hit_test_layout_tree(const LayoutTree& tree,
     return std::nullopt;
 }
 
-} // namespace elmd
+} // namespace folia

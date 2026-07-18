@@ -1,11 +1,11 @@
-// elmd.core.source_style — non-authoritative styling spans for source mode.
+// folia.core.source_style — non-authoritative styling spans for source mode.
 // Source mode always renders the exact source characters. These spans may
 // change presentation only; they never replace text or participate in edits.
-export module elmd.core.source_style;
+export module folia.core.source_style;
 import std;
-import elmd.core.text_edit;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 enum class SourceSyntaxKind {
     None,
@@ -29,4 +29,4 @@ struct SourceStyleSpan {
     bool operator==(SourceStyleSpan const&) const = default;
 };
 
-} // namespace elmd
+} // namespace folia

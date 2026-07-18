@@ -1,10 +1,10 @@
 // Uniform structural operations for the Markdown block tree.
-export module elmd.core.block_tree;
+export module folia.core.block_tree;
 import std;
-import elmd.core.ast;
-import elmd.core.ids;
+import folia.core.ast;
+import folia.core.ids;
 
-export namespace elmd {
+export namespace folia {
 
 using BlockPath = std::vector<std::size_t>;
 
@@ -120,4 +120,4 @@ inline bool move_block(BlockNode& from_parent, std::size_t from_index, BlockNode
     return insert_block(to_parent, to_index, std::move(*node));
 }
 
-} // namespace elmd
+} // namespace folia

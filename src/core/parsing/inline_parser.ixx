@@ -1,4 +1,4 @@
-// elmd.core.inline_parser — lossless editable inline CST parser.
+// folia.core.inline_parser — lossless editable inline CST parser.
 //
 // Parses a content node's `InlineDocument::source` into an `InlineCstTree` such
 // that `flatten_tokens(tree, source) == source` character-for-character. Every
@@ -15,17 +15,17 @@
 //
 // The parser is block-local: it sees only one node's inline source and never
 // crosses a block boundary. Soft/hard breaks are within-node '\n'.
-export module elmd.core.inline_parser;
+export module folia.core.inline_parser;
 import std;
-import elmd.core.ids;
-import elmd.core.dialect;
-import elmd.core.image_dimension;
-import elmd.core.utf;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
-import elmd.core.instrumentation;
+import folia.core.ids;
+import folia.core.dialect;
+import folia.core.image_dimension;
+import folia.core.utf;
+import folia.core.inline_cst;
+import folia.core.inline_document;
+import folia.core.instrumentation;
 
-export namespace elmd {
+export namespace folia {
 
 namespace inline_parser_detail {
 
@@ -1139,4 +1139,4 @@ inline void reparse_inline_document(InlineDocument& document, const InlineParseC
     document.tree = parse_inline(document.source, local);
 }
 
-} // namespace elmd
+} // namespace folia

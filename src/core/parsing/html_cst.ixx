@@ -2,14 +2,14 @@ module;
 
 #include <tree_sitter/api.h>
 
-export module elmd.core.html_cst;
+export module folia.core.html_cst;
 import std;
-import elmd.core.text_edit;
-import elmd.core.utf;
+import folia.core.text_edit;
+import folia.core.utf;
 
 extern "C" const TSLanguage* tree_sitter_html();
 
-export namespace elmd {
+export namespace folia {
 
 enum class HtmlTokenKind {
     Text,
@@ -434,4 +434,4 @@ inline HtmlCstTree parse_html_cst(std::u32string_view source) {
     return result;
 }
 
-} // namespace elmd
+} // namespace folia

@@ -3,16 +3,16 @@
 // Formatting never infers an existing construct by comparing marker text.
 // It locates the matching lossless CST node, preserves that node's exact
 // opening/closing spelling, and applies one source TextEdit.
-export module elmd.core.document_inline_format;
+export module folia.core.document_inline_format;
 import std;
-import elmd.core.document;
-import elmd.core.document_edit_primitives;
-import elmd.core.document_edit_validation;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
-import elmd.core.text_edit;
+import folia.core.document;
+import folia.core.document_edit_primitives;
+import folia.core.document_edit_validation;
+import folia.core.inline_cst;
+import folia.core.inline_document;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 namespace document_inline_format_detail {
 
@@ -265,4 +265,4 @@ inline std::optional<DocumentTransaction> document_toggle_inline_format(
         DocumentTransactionReason::Format);
 }
 
-} // namespace elmd
+} // namespace folia

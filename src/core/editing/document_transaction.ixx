@@ -1,14 +1,14 @@
-// elmd.core.document_transaction — reversible document operations produced by
+// folia.core.document_transaction — reversible document operations produced by
 // editing commands. Commands apply these operations directly to the
 // authoritative document; transactions never retain complete document
 // snapshots.
-export module elmd.core.document_transaction;
+export module folia.core.document_transaction;
 import std;
-import elmd.core.ast;
-import elmd.core.document;
-import elmd.core.text_edit;
+import folia.core.ast;
+import folia.core.document;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 enum class DocumentTransactionReason { InsertText, Delete, Paste, Replace, Format, Structure };
 
@@ -70,4 +70,4 @@ inline DocumentTransaction make_recorded_document_transaction(
     return transaction;
 }
 
-} // namespace elmd
+} // namespace folia

@@ -1,30 +1,30 @@
-// elmd.core.render_builder — derive a local-coordinate RenderModel directly
+// folia.core.render_builder — derive a local-coordinate RenderModel directly
 // from the authoritative block tree and each node's lossless inline source.
-export module elmd.core.render_builder;
+export module folia.core.render_builder;
 import std;
-import elmd.core.types;
-import elmd.core.ids;
-import elmd.core.dialect;
-import elmd.core.ast;
-import elmd.core.block_source;
-import elmd.core.block_tree;
-import elmd.core.callout;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
-import elmd.core.instrumentation;
-import elmd.core.selection;
-import elmd.core.text_edit;
-import elmd.core.document;
-import elmd.core.document_text;
-import elmd.core.symbols;
-import elmd.core.outline;
-import elmd.core.diagnostics;
-import elmd.core.utf;
-import elmd.core.render_model;
-import elmd.core.html_inline_presentation;
-import elmd.core.html_inline_flow;
+import folia.core.types;
+import folia.core.ids;
+import folia.core.dialect;
+import folia.core.ast;
+import folia.core.block_source;
+import folia.core.block_tree;
+import folia.core.callout;
+import folia.core.inline_cst;
+import folia.core.inline_document;
+import folia.core.instrumentation;
+import folia.core.selection;
+import folia.core.text_edit;
+import folia.core.document;
+import folia.core.document_text;
+import folia.core.symbols;
+import folia.core.outline;
+import folia.core.diagnostics;
+import folia.core.utf;
+import folia.core.render_model;
+import folia.core.html_inline_presentation;
+import folia.core.html_inline_flow;
 
-export namespace elmd {
+export namespace folia {
 
 inline RenderDiagnostic convert_diagnostic(const Diagnostic& d) {
     RenderDiagnostic r;
@@ -1470,4 +1470,4 @@ inline RenderModel build_render_model_incremental(
     return model;
 }
 
-} // namespace elmd
+} // namespace folia

@@ -1,20 +1,20 @@
-// elmd.core.render_model — RenderModel, RenderBlock enums and styles.
+// folia.core.render_model — RenderModel, RenderBlock enums and styles.
 // No HtmlRenderBlock / HtmlInlineRenderItem variants (acceptance gate).
-export module elmd.core.render_model;
+export module folia.core.render_model;
 import std;
-import elmd.core.types;
-import elmd.core.ids;
-import elmd.core.dialect;
-import elmd.core.image_dimension;
-import elmd.core.theme;
-import elmd.core.outline;
-import elmd.core.diagnostics;
-import elmd.core.ast; // for AST contents reused during build (children)
-import elmd.core.selection;
-import elmd.core.text_edit;
-import elmd.core.source_style;
+import folia.core.types;
+import folia.core.ids;
+import folia.core.dialect;
+import folia.core.image_dimension;
+import folia.core.theme;
+import folia.core.outline;
+import folia.core.diagnostics;
+import folia.core.ast; // for AST contents reused during build (children)
+import folia.core.selection;
+import folia.core.text_edit;
+import folia.core.source_style;
 
-export namespace elmd {
+export namespace folia {
 
 enum class MathDisplayMode { Inline, Block };
 enum class MarkerVisibility { Always, WhenCaretInsideNode, WhenBlockFocused, HiddenButEditable };
@@ -418,4 +418,4 @@ struct RenderModel {
     std::vector<std::size_t> changed_block_indices;
 };
 
-} // namespace elmd
+} // namespace folia

@@ -1,10 +1,10 @@
-// elmd.core.utf — UTF-16 / grapheme helpers over std::u32string / std::string.
+// folia.core.utf — UTF-16 / grapheme helpers over std::u32string / std::string.
 // We model char offsets as Unicode scalar values (Rust char); great care taken
 // to never mix with byte/utf16 offsets.
-export module elmd.core.utf;
+export module folia.core.utf;
 import std;
 
-export namespace elmd {
+export namespace folia {
 
 // ---------------------------------------------------------------------------
 // UTF-16 helpers (work on char32 codepoint stream).
@@ -178,4 +178,4 @@ inline std::string cps_to_utf8(std::u32string_view cps) {
     return out;
 }
 
-} // namespace elmd
+} // namespace folia

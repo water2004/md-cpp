@@ -1,15 +1,15 @@
-export module elmd.core.serializer;
+export module folia.core.serializer;
 import std;
-import elmd.core.ast;
-import elmd.core.block_tree;
-import elmd.core.document;
-import elmd.core.document_text;
-import elmd.core.ids;
-import elmd.core.instrumentation;
-import elmd.core.text_edit;
-import elmd.core.utf;
+import folia.core.ast;
+import folia.core.block_tree;
+import folia.core.document;
+import folia.core.document_text;
+import folia.core.ids;
+import folia.core.instrumentation;
+import folia.core.text_edit;
+import folia.core.utf;
 
-export namespace elmd {
+export namespace folia {
 
 struct SerializedSourceMap {
     NodeId container_id{};
@@ -630,4 +630,4 @@ inline std::string serialize_markdown(const EditorDocument& document) {
     return cps_to_utf8(serialize_markdown_cps(document));
 }
 
-}  // namespace elmd
+}  // namespace folia

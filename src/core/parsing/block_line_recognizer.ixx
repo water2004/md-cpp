@@ -1,13 +1,13 @@
-// elmd.core.block_line_recognizer — read-only Markdown block line recognition.
+// folia.core.block_line_recognizer — read-only Markdown block line recognition.
 //
 // This scanner classifies physical lines. It never allocates document nodes,
 // advances parser state, or owns source coordinates.
-export module elmd.core.block_line_recognizer;
+export module folia.core.block_line_recognizer;
 import std;
-import elmd.core.html_cst;
-import elmd.core.utf;
+import folia.core.html_cst;
+import folia.core.utf;
 
-export namespace elmd::detail {
+export namespace folia::detail {
 
 class BlockLineRecognizer {
 public:

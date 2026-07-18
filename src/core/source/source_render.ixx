@@ -1,16 +1,16 @@
-// elmd.core.source_render — exact-character render projection for source mode.
-export module elmd.core.source_render;
+// folia.core.source_render — exact-character render projection for source mode.
+export module folia.core.source_render;
 import std;
-import elmd.core.source_editor;
-import elmd.core.source_style;
-import elmd.core.render_model;
-import elmd.core.outline;
-import elmd.core.inline_document;
-import elmd.core.inline_parser;
-import elmd.core.symbols;
-import elmd.core.utf;
+import folia.core.source_editor;
+import folia.core.source_style;
+import folia.core.render_model;
+import folia.core.outline;
+import folia.core.inline_document;
+import folia.core.inline_parser;
+import folia.core.symbols;
+import folia.core.utf;
 
-export namespace elmd {
+export namespace folia {
 
 namespace source_render_detail {
 
@@ -394,4 +394,4 @@ inline RenderModel build_source_render_model_incremental(
     return model;
 }
 
-} // namespace elmd
+} // namespace folia

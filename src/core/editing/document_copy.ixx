@@ -1,14 +1,14 @@
-// elmd.core.document_copy — lossless Markdown extraction from a structural selection.
-export module elmd.core.document_copy;
+// folia.core.document_copy — lossless Markdown extraction from a structural selection.
+export module folia.core.document_copy;
 import std;
-import elmd.core.ast;
-import elmd.core.block_tree;
-import elmd.core.document;
-import elmd.core.document_text;
-import elmd.core.serializer;
-import elmd.core.text_edit;
+import folia.core.ast;
+import folia.core.block_tree;
+import folia.core.document;
+import folia.core.document_text;
+import folia.core.serializer;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 namespace document_copy_detail {
 
@@ -202,4 +202,4 @@ inline std::optional<std::u32string> document_selected_markdown(
     return serialize_markdown_fragment(selected);
 }
 
-} // namespace elmd
+} // namespace folia

@@ -1,8 +1,8 @@
-// elmd.core.ids — NodeId and friends, plus IdAllocator.
-export module elmd.core.ids;
+// folia.core.ids — NodeId and friends, plus IdAllocator.
+export module folia.core.ids;
 import std;
 
-export namespace elmd {
+export namespace folia {
 
 struct NodeId {
     std::uint64_t v{};
@@ -34,4 +34,4 @@ struct IdAllocator {
     BrushId next_brush_id() { return BrushId{next_brush++}; }
 };
 
-} // namespace elmd
+} // namespace folia

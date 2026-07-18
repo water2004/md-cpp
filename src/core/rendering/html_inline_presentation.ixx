@@ -1,12 +1,12 @@
-// elmd.core.html_inline_presentation — safe HTML inline style projection.
+// folia.core.html_inline_presentation — safe HTML inline style projection.
 // HTML remains a lossless CST syntax island; this module derives presentation
 // only and never mutates or normalizes InlineDocument.source.
-export module elmd.core.html_inline_presentation;
+export module folia.core.html_inline_presentation;
 import std;
-import elmd.core.render_model;
-import elmd.core.theme;
+import folia.core.render_model;
+import folia.core.theme;
 
-export namespace elmd {
+export namespace folia {
 
 namespace html_inline_presentation_detail {
 
@@ -350,4 +350,4 @@ inline InlineStyle apply_html_inline_presentation(
     return inherited;
 }
 
-} // namespace elmd
+} // namespace folia

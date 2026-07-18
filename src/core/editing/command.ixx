@@ -1,11 +1,11 @@
-// elmd.core.command — Command enum + to_transaction() translation.
+// folia.core.command — Command enum + to_transaction() translation.
 // Faithful port of editor-core::command. Some commands return std::nullopt
 // (unimplemented in v1) and are handled at the editor/UI layer (HANDOFF).
-export module elmd.core.command;
+export module folia.core.command;
 import std;
-import elmd.core.dialect;
+import folia.core.dialect;
 
-export namespace elmd {
+export namespace folia {
 
 enum class CommandKind {
     InsertText, DeleteBackward, DeleteForward, DeleteSelection, InsertNewline, InsertSoftBreak,
@@ -51,4 +51,4 @@ struct Command {
     // ...other factories are small enough to inline at call-sites.
 };
 
-} // namespace elmd
+} // namespace folia

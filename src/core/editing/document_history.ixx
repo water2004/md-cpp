@@ -1,15 +1,15 @@
-// elmd.core.document_history — reversible source and block-tree operation log.
+// folia.core.document_history — reversible source and block-tree operation log.
 //
 // Normal undo/redo stores only the edits that changed the document. It never
 // retains complete EditorDocument snapshots.
-export module elmd.core.document_history;
+export module folia.core.document_history;
 import std;
-import elmd.core.document;
-import elmd.core.document_operation_apply;
-import elmd.core.document_transaction;
-import elmd.core.text_edit;
+import folia.core.document;
+import folia.core.document_operation_apply;
+import folia.core.document_transaction;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 struct DocumentHistoryEntry {
     std::vector<DocumentOperation> operations;
@@ -92,4 +92,4 @@ private:
     std::vector<DocumentHistoryEntry> redo_;
 };
 
-} // namespace elmd
+} // namespace folia

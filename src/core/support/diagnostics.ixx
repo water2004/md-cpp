@@ -1,9 +1,9 @@
-// elmd.core.diagnostics — diagnostic types.
-export module elmd.core.diagnostics;
+// folia.core.diagnostics — diagnostic types.
+export module folia.core.diagnostics;
 import std;
-import elmd.core.text_edit;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 enum class DiagnosticSeverity { Hint, Warning, Error };
 
@@ -35,4 +35,4 @@ inline Diagnostic make_diagnostic(DiagnosticSeverity sev, std::string msg,
     d.source_span = span; d.code = std::move(code); return d;
 }
 
-} // namespace elmd
+} // namespace folia

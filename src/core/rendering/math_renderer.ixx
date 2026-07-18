@@ -1,12 +1,12 @@
-// elmd.core.math_renderer — FallbackMathRenderer + SimpleMathParser + MathCache.
-export module elmd.core.math_renderer;
+// folia.core.math_renderer — FallbackMathRenderer + SimpleMathParser + MathCache.
+export module folia.core.math_renderer;
 import std;
-import elmd.core.types;
-import elmd.core.theme;
-import elmd.core.utf;
-import elmd.core.render_model; // MathDisplayMode
+import folia.core.types;
+import folia.core.theme;
+import folia.core.utf;
+import folia.core.render_model; // MathDisplayMode
 
-export namespace elmd {
+export namespace folia {
 
 enum class MathDisplayMode2 { Inline, Block }; // (kept separate to avoid cycle; layout uses MathDisplayMode)
 
@@ -122,4 +122,4 @@ struct MathCache {
     void clear() { entries.clear(); }
 };
 
-} // namespace elmd
+} // namespace folia

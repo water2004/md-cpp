@@ -1,13 +1,13 @@
-// elmd.core.document_ids — document-owned monotonic NodeId allocation.
-export module elmd.core.document_ids;
+// folia.core.document_ids — document-owned monotonic NodeId allocation.
+export module folia.core.document_ids;
 import std;
-import elmd.core.ast;
-import elmd.core.document;
-import elmd.core.ids;
-import elmd.core.inline_cst;
-import elmd.core.instrumentation;
+import folia.core.ast;
+import folia.core.document;
+import folia.core.ids;
+import folia.core.inline_cst;
+import folia.core.instrumentation;
 
-export namespace elmd {
+export namespace folia {
 
 namespace document_id_detail {
 
@@ -52,4 +52,4 @@ inline void reserve_document_node_ids(EditorDocument& document, const BlockNode&
     document.next_node_id = (std::max)(document.next_node_id, maximum + 1);
 }
 
-} // namespace elmd
+} // namespace folia

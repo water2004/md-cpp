@@ -1,10 +1,10 @@
-// elmd.core.text_measurer — TextMeasurer interface + StubMeasurer for tests.
-export module elmd.core.text_measurer;
+// folia.core.text_measurer — TextMeasurer interface + StubMeasurer for tests.
+export module folia.core.text_measurer;
 import std;
-import elmd.core.types;
-import elmd.core.render_model;
+import folia.core.types;
+import folia.core.render_model;
 
-export namespace elmd {
+export namespace folia {
 
 struct GlyphInfo {
     std::uint16_t glyph_index{};
@@ -56,4 +56,4 @@ public:
     }
 };
 
-} // namespace elmd
+} // namespace folia

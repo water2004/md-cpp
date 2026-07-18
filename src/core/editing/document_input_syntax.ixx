@@ -1,12 +1,12 @@
 // Pure recognition of block markers typed into a block-local source.
-export module elmd.core.document_input_syntax;
+export module folia.core.document_input_syntax;
 import std;
-import elmd.core.ast;
-import elmd.core.block_source;
-import elmd.core.dialect;
-import elmd.core.utf;
+import folia.core.ast;
+import folia.core.block_source;
+import folia.core.dialect;
+import folia.core.utf;
 
-export namespace elmd::document_input_rules::detail {
+export namespace folia::document_input_rules::detail {
 
 inline bool horizontal_space(char32_t value) {
     return value == U' ' || value == U'\t';
@@ -158,4 +158,4 @@ inline std::optional<RawBlockOpening> recognize_raw_block_opening(
     return std::nullopt;
 }
 
-} // namespace elmd::document_input_rules::detail
+} // namespace folia::document_input_rules::detail

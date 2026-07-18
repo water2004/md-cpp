@@ -1,18 +1,18 @@
 // Public coordinator for local block-input and structural Enter/Backspace rules.
 // Recognition and tree transformations live in narrowly scoped helper modules.
-export module elmd.core.document_input_rules;
+export module folia.core.document_input_rules;
 import std;
-import elmd.core.ast;
-import elmd.core.block_tree;
-import elmd.core.document;
-import elmd.core.document_edit_support;
-import elmd.core.ids;
-import elmd.core.text_edit;
-import elmd.core.document_input_syntax;
-import elmd.core.document_list_input;
-import elmd.core.document_block_input;
+import folia.core.ast;
+import folia.core.block_tree;
+import folia.core.document;
+import folia.core.document_edit_support;
+import folia.core.ids;
+import folia.core.text_edit;
+import folia.core.document_input_syntax;
+import folia.core.document_list_input;
+import folia.core.document_block_input;
 
-export namespace elmd::document_input_rules {
+export namespace folia::document_input_rules {
 
 inline std::optional<document_edit_detail::RecordedBlockEdit> apply_after_text_insert(
     EditorDocument& document,
@@ -81,4 +81,4 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> handle_backspace_a
     return detail::remove_list_prefix(document, position, allocator);
 }
 
-} // namespace elmd::document_input_rules
+} // namespace folia::document_input_rules

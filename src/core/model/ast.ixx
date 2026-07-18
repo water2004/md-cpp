@@ -1,17 +1,17 @@
-// elmd.core.ast — unified Markdown block tree plus block-local inline CST.
+// folia.core.ast — unified Markdown block tree plus block-local inline CST.
 // CommonMark+GFM+math+toc+frontmatter+footnotes+definition_lists+callouts+
 // wiki_links+tables+images and safe recursive HTML semantics.
-export module elmd.core.ast;
+export module folia.core.ast;
 import std;
-import elmd.core.block_source;
-import elmd.core.ids;
-import elmd.core.dialect;
-import elmd.core.image_dimension;
-import elmd.core.text_edit;
-import elmd.core.inline_document;
-import elmd.core.html_cst;
+import folia.core.block_source;
+import folia.core.ids;
+import folia.core.dialect;
+import folia.core.image_dimension;
+import folia.core.text_edit;
+import folia.core.inline_document;
+import folia.core.html_cst;
 
-export namespace elmd {
+export namespace folia {
 
 struct BlockNode;
 
@@ -346,4 +346,4 @@ inline std::vector<HtmlBlockShapeEntry> html_block_structure_shape(const BlockNo
 inline const InlineDocument& heading_inline_content(const BlockNode& b) { return b.inline_content; }
 inline bool is_heading_block(const BlockNode& b) { return b.kind == BlockKind::Heading; }
 
-} // namespace elmd
+} // namespace folia

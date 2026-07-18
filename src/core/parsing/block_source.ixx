@@ -1,12 +1,12 @@
-// elmd.core.block_source — lossless, block-local source documents for raw
+// folia.core.block_source — lossless, block-local source documents for raw
 // code and display-math blocks. The source is authoritative; the tree is a
 // projection used for rendering, syntax metadata, and semantic Enter rules.
-export module elmd.core.block_source;
+export module folia.core.block_source;
 import std;
-import elmd.core.text_edit;
-import elmd.core.utf;
+import folia.core.text_edit;
+import folia.core.utf;
 
-export namespace elmd {
+export namespace folia {
 
 enum class BlockSourceKind {
     FencedCode,
@@ -452,4 +452,4 @@ inline std::size_t block_source_offset_for_content(
     return document.tree().content_to_source[index];
 }
 
-} // namespace elmd
+} // namespace folia

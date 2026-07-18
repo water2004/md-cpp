@@ -1,7 +1,7 @@
-export module elmd.core.callout;
+export module folia.core.callout;
 import std;
 
-export namespace elmd {
+export namespace folia {
 
 enum class CalloutVisualKind {
     Note,
@@ -56,4 +56,4 @@ inline std::u32string rewrite_callout_opening_marker(
     return rewritten;
 }
 
-} // namespace elmd
+} // namespace folia

@@ -1,18 +1,18 @@
 // Document invariants and source-edit transaction materialization.
-export module elmd.core.document_edit_validation;
+export module folia.core.document_edit_validation;
 import std;
-import elmd.core.ast;
-import elmd.core.block_source;
-import elmd.core.document;
-import elmd.core.document_text;
-import elmd.core.ids;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
-import elmd.core.inline_source_edit;
-import elmd.core.text_edit;
-import elmd.core.document_edit_primitives;
+import folia.core.ast;
+import folia.core.block_source;
+import folia.core.document;
+import folia.core.document_text;
+import folia.core.ids;
+import folia.core.inline_cst;
+import folia.core.inline_document;
+import folia.core.inline_source_edit;
+import folia.core.text_edit;
+import folia.core.document_edit_primitives;
 
-export namespace elmd::document_edit_detail {
+export namespace folia::document_edit_detail {
 
 inline void validate_inline_document(NodeId owner, const InlineDocument& document, std::unordered_set<std::uint64_t>& ids, std::vector<DocumentInvariantError>& errors) {
     if (!tokens_partition_source(document.tree, document.source.size())) errors.push_back({owner, "inline tokens do not partition source"});
@@ -77,4 +77,4 @@ inline DocumentTransaction source_transaction(
         reason);
 }
 
-} // namespace elmd::document_edit_detail
+} // namespace folia::document_edit_detail

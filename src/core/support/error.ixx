@@ -1,8 +1,8 @@
-// elmd.core.error — error model.
-export module elmd.core.error;
+// folia.core.error — error model.
+export module folia.core.error;
 import std;
 
-export namespace elmd {
+export namespace folia {
 
 enum class ErrorCode {
     Io, Parse, Render, Layout, Export, InvalidOffset, InvalidRange,
@@ -47,4 +47,4 @@ public:
     explicit operator bool() const { return ok; }
 };
 
-} // namespace elmd
+} // namespace folia

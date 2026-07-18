@@ -1,9 +1,9 @@
-// elmd.core.settings — editor settings (defaults per Rust shared::settings).
-export module elmd.core.settings;
+// folia.core.settings — editor settings (defaults per Rust shared::settings).
+export module folia.core.settings;
 import std;
-import elmd.core.theme;
+import folia.core.theme;
 
-export namespace elmd {
+export namespace folia {
 
 enum class MarkerVisibilityMode { AlwaysVisible, Dim, DimWhenFocused, HideWhenFocused };
 
@@ -54,4 +54,4 @@ struct EditorSettings {
     AutosaveSettings autosave;
 };
 
-} // namespace elmd
+} // namespace folia

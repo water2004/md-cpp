@@ -1,19 +1,19 @@
-// elmd.core.document_search_replace — rendered-mode semantic replacements.
+// folia.core.document_search_replace — rendered-mode semantic replacements.
 // Search matches are already projected back to one or more block-local source
 // ranges. This layer applies those edits as one reversible document transaction
 // without serializing or reparsing the full document.
-export module elmd.core.document_search_replace;
+export module folia.core.document_search_replace;
 import std;
-import elmd.core.document;
-import elmd.core.document_edit_support;
-import elmd.core.document_text;
-import elmd.core.document_transaction;
-import elmd.core.ids;
-import elmd.core.search;
-import elmd.core.selection;
-import elmd.core.text_edit;
+import folia.core.document;
+import folia.core.document_edit_support;
+import folia.core.document_text;
+import folia.core.document_transaction;
+import folia.core.ids;
+import folia.core.search;
+import folia.core.selection;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 namespace document_search_replace_detail {
 
@@ -101,4 +101,4 @@ inline std::optional<DocumentTransaction> document_replace_rendered_matches(
         DocumentTransactionReason::Replace);
 }
 
-} // namespace elmd
+} // namespace folia

@@ -1,8 +1,8 @@
-export module elmd.core.extension;
+export module folia.core.extension;
 import std;
-import elmd.core.dialect;
+import folia.core.dialect;
 
-export namespace elmd {
+export namespace folia {
 
 class MarkdownExtensionBase {
 public:

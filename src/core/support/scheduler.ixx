@@ -1,10 +1,10 @@
-// elmd.core.scheduler — parse/render scheduler (revision tracking).
+// folia.core.scheduler — parse/render scheduler (revision tracking).
 // Pure core. UI owns real threading; this is the policy object the UI layer
 // queries to decide whether to kick a parse and record its completion.
-export module elmd.core.scheduler;
+export module folia.core.scheduler;
 import std;
 
-export namespace elmd {
+export namespace folia {
 
 class ParseScheduler {
 public:
@@ -22,4 +22,4 @@ public:
     void complete_parse(std::uint64_t revision) { running = false; last_revision = revision; }
 };
 
-} // namespace elmd
+} // namespace folia

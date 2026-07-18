@@ -1,15 +1,15 @@
 // Incremental maintenance for EditorDocument's derived block-locator and
 // editable-owner order indexes. The block tree remains authoritative.
-export module elmd.core.document_index_update;
+export module folia.core.document_index_update;
 import std;
-import elmd.core.ast;
-import elmd.core.block_tree;
-import elmd.core.document;
-import elmd.core.document_transaction;
-import elmd.core.ids;
-import elmd.core.instrumentation;
+import folia.core.ast;
+import folia.core.block_tree;
+import folia.core.document;
+import folia.core.document_transaction;
+import folia.core.ids;
+import folia.core.instrumentation;
 
-export namespace elmd {
+export namespace folia {
 
 namespace document_index_update_detail {
 
@@ -247,4 +247,4 @@ inline bool update_document_block_index(
     return true;
 }
 
-} // namespace elmd
+} // namespace folia

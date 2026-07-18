@@ -1,8 +1,8 @@
-export module elmd.core.layout_plan;
+export module folia.core.layout_plan;
 import std;
-import elmd.core.ids;
+import folia.core.ids;
 
-export namespace elmd {
+export namespace folia {
 
 struct BlockLayoutInput {
     BlockId id{};

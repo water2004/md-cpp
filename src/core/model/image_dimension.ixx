@@ -1,8 +1,8 @@
-// elmd.core.image_dimension — unit-aware dimensions projected from image syntax.
-export module elmd.core.image_dimension;
+// folia.core.image_dimension — unit-aware dimensions projected from image syntax.
+export module folia.core.image_dimension;
 import std;
 
-export namespace elmd {
+export namespace folia {
 
 enum class ImageDimensionUnit {
     Pixels,
@@ -53,4 +53,4 @@ inline std::optional<ImageDimension> parse_html_image_dimension(std::string_view
     }
 }
 
-} // namespace elmd
+} // namespace folia

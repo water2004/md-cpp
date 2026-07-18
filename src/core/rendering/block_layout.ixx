@@ -1,18 +1,18 @@
-﻿// elmd.core.block_layout — layout_blocks + helpers. Bakes viewport_origin into
+﻿// folia.core.block_layout — layout_blocks + helpers. Bakes viewport_origin into
 // every rect/origin (single screen-coordinate system, HANDOFF invariant #1).
-export module elmd.core.block_layout;
+export module folia.core.block_layout;
 import std;
-import elmd.core.types;
-import elmd.core.ids;
-import elmd.core.render_model;
-import elmd.core.text_measurer;
-import elmd.core.utf;
-import elmd.core.layout_tree;
-import elmd.core.outline;
-import elmd.core.selection;
-import elmd.core.text_edit;
+import folia.core.types;
+import folia.core.ids;
+import folia.core.render_model;
+import folia.core.text_measurer;
+import folia.core.utf;
+import folia.core.layout_tree;
+import folia.core.outline;
+import folia.core.selection;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 inline MarkerVisibility marker_visibility_for(TextSpan span, std::optional<TextPosition> caret) {
     if (caret && caret->container_id == span.container_id && span.source_range.covers(caret->source_offset)) return MarkerVisibility::Always;
@@ -472,4 +472,4 @@ case RenderBlockKind::Toc:
     return tree;
 }
 
-} // namespace elmd
+} // namespace folia

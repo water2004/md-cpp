@@ -1,20 +1,20 @@
-export module elmd.core.document_source_edit;
+export module folia.core.document_source_edit;
 import std;
-import elmd.core.ast;
-import elmd.core.block_tree;
-import elmd.core.document;
-import elmd.core.document_text;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
-import elmd.core.inline_parser;
-import elmd.core.inline_source_edit;
-import elmd.core.text_edit;
-import elmd.core.utf;
-import elmd.core.document_edit_support;
-import elmd.core.document_block_reparse;
-import elmd.core.document_input_rules;
+import folia.core.ast;
+import folia.core.block_tree;
+import folia.core.document;
+import folia.core.document_text;
+import folia.core.inline_cst;
+import folia.core.inline_document;
+import folia.core.inline_parser;
+import folia.core.inline_source_edit;
+import folia.core.text_edit;
+import folia.core.utf;
+import folia.core.document_edit_support;
+import folia.core.document_block_reparse;
+import folia.core.document_input_rules;
 
-export namespace elmd {
+export namespace folia {
 
 inline void normalize_document(EditorDocument& document) {
     document_edit_detail::NodeAllocator allocator(document);
@@ -547,4 +547,4 @@ inline std::optional<TextSelection> document_select_all(const EditorDocument& do
         {order.back(), last_text->size(), TextAffinity::Downstream}};
 }
 
-} // namespace elmd
+} // namespace folia

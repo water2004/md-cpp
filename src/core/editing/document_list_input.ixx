@@ -1,17 +1,17 @@
 // Structural list input rules: task upgrade, Enter, exit, split, and outdent.
-export module elmd.core.document_list_input;
+export module folia.core.document_list_input;
 import std;
-import elmd.core.ast;
-import elmd.core.block_tree;
-import elmd.core.document;
-import elmd.core.document_edit_support;
-import elmd.core.ids;
-import elmd.core.inline_document;
-import elmd.core.text_edit;
-import elmd.core.utf;
-import elmd.core.document_input_syntax;
+import folia.core.ast;
+import folia.core.block_tree;
+import folia.core.document;
+import folia.core.document_edit_support;
+import folia.core.ids;
+import folia.core.inline_document;
+import folia.core.text_edit;
+import folia.core.utf;
+import folia.core.document_input_syntax;
 
-export namespace elmd::document_input_rules::detail {
+export namespace folia::document_input_rules::detail {
 
 inline BlockNode list_shell_from(const BlockNode& source, NodeId id) {
     BlockNode result;
@@ -640,4 +640,4 @@ inline std::optional<document_edit_detail::RecordedBlockEdit> remove_list_prefix
     return remove_top_level_list_prefix(document, *context, position, allocator);
 }
 
-} // namespace elmd::document_input_rules::detail
+} // namespace folia::document_input_rules::detail

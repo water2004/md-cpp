@@ -1,20 +1,20 @@
-// elmd.core.document_block_reparse — local block-structure recognition after
+// folia.core.document_block_reparse — local block-structure recognition after
 // edits to a direct block's authoritative source. This reparses one block
 // fragment only; it never serializes or reparses the complete document.
-export module elmd.core.document_block_reparse;
+export module folia.core.document_block_reparse;
 import std;
-import elmd.core.ast;
-import elmd.core.block_source;
-import elmd.core.block_tree;
-import elmd.core.document;
-import elmd.core.document_edit_support;
-import elmd.core.document_text;
-import elmd.core.ids;
-import elmd.core.parser;
-import elmd.core.serializer;
-import elmd.core.text_edit;
+import folia.core.ast;
+import folia.core.block_source;
+import folia.core.block_tree;
+import folia.core.document;
+import folia.core.document_edit_support;
+import folia.core.document_text;
+import folia.core.ids;
+import folia.core.parser;
+import folia.core.serializer;
+import folia.core.text_edit;
 
-export namespace elmd::document_edit_detail {
+export namespace folia::document_edit_detail {
 
 namespace block_reparse_detail {
 
@@ -278,4 +278,4 @@ inline std::optional<RecordedBlockEdit> reparse_edited_direct_block(
     return result;
 }
 
-} // namespace elmd::document_edit_detail
+} // namespace folia::document_edit_detail

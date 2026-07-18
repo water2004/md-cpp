@@ -1,12 +1,12 @@
-// elmd.core.input — platform-agnostic editor input events.
-export module elmd.core.input;
+// folia.core.input — platform-agnostic editor input events.
+export module folia.core.input;
 import std;
-import elmd.core.types;
-import elmd.core.selection;
-import elmd.core.text_edit;
-import elmd.core.ids;
+import folia.core.types;
+import folia.core.selection;
+import folia.core.text_edit;
+import folia.core.ids;
 
-export namespace elmd {
+export namespace folia {
 
 enum class KeyCode {
     Char, Left, Right, Up, Down, Home, End, PageUp, PageDown,
@@ -60,4 +60,4 @@ struct EditorInputEvent {
     float dpi = 0.0f;
 };
 
-} // namespace elmd
+} // namespace folia

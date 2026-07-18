@@ -1,20 +1,20 @@
-// elmd.core.document_symbols — derive symbols directly from the block tree and
+// folia.core.document_symbols — derive symbols directly from the block tree and
 // each editable node's lossless inline CST.
-export module elmd.core.document_symbols;
+export module folia.core.document_symbols;
 import std;
-import elmd.core.ast;
-import elmd.core.block_source;
-import elmd.core.block_tree;
-import elmd.core.document;
-import elmd.core.document_text;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
-import elmd.core.ids;
-import elmd.core.instrumentation;
-import elmd.core.symbols;
-import elmd.core.utf;
+import folia.core.ast;
+import folia.core.block_source;
+import folia.core.block_tree;
+import folia.core.document;
+import folia.core.document_text;
+import folia.core.inline_cst;
+import folia.core.inline_document;
+import folia.core.ids;
+import folia.core.instrumentation;
+import folia.core.symbols;
+import folia.core.utf;
 
-export namespace elmd {
+export namespace folia {
 
 namespace document_symbols_detail {
 
@@ -198,4 +198,4 @@ inline DocumentSymbolIndex project_document_symbol_index(
     return rebuilt;
 }
 
-} // namespace elmd
+} // namespace folia

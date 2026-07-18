@@ -1,21 +1,21 @@
-// elmd.core.document_footnotes — semantic footnote indexing, navigation, and
+// folia.core.document_footnotes — semantic footnote indexing, navigation, and
 // atomic source/tree transactions. No serialized Markdown or UI state is
 // consulted when resolving references and definitions.
-export module elmd.core.document_footnotes;
+export module folia.core.document_footnotes;
 import std;
-import elmd.core.ast;
-import elmd.core.block_source;
-import elmd.core.block_tree;
-import elmd.core.document;
-import elmd.core.document_edit_support;
-import elmd.core.document_text;
-import elmd.core.document_transaction;
-import elmd.core.inline_document;
-import elmd.core.symbols;
-import elmd.core.text_edit;
-import elmd.core.utf;
+import folia.core.ast;
+import folia.core.block_source;
+import folia.core.block_tree;
+import folia.core.document;
+import folia.core.document_edit_support;
+import folia.core.document_text;
+import folia.core.document_transaction;
+import folia.core.inline_document;
+import folia.core.symbols;
+import folia.core.text_edit;
+import folia.core.utf;
 
-export namespace elmd {
+export namespace folia {
 
 struct FootnoteResolution {
     std::string label;
@@ -224,4 +224,4 @@ inline std::optional<DocumentTransaction> document_insert_footnote(
         DocumentTransactionReason::Structure);
 }
 
-} // namespace elmd
+} // namespace folia

@@ -2,10 +2,10 @@ module;
 
 #include <srell.hpp>
 
-module elmd.core.search;
+module folia.core.search;
 import std;
 
-namespace elmd {
+namespace folia {
 
 namespace {
 
@@ -80,4 +80,4 @@ SearchTextResult search_text_for_replacement(
     return search_text_impl(text, query, options, &replacement_template);
 }
 
-} // namespace elmd
+} // namespace folia

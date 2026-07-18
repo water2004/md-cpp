@@ -1,19 +1,19 @@
-// elmd.core.exporter — Markdown / HTML / PlainText export pipeline.
+// folia.core.exporter — Markdown / HTML / PlainText export pipeline.
 // Pure core, portable. Raw HTML is always escaped on export (project gate).
 // No WinUI / Windows / DirectWrite dependency.
-// (module name avoids the `export` keyword: `elmd.core.exporter`.)
-export module elmd.core.exporter;
+// (module name avoids the `export` keyword: `folia.core.exporter`.)
+export module folia.core.exporter;
 import std;
-import elmd.core.ast;
-import elmd.core.image_dimension;
-import elmd.core.block_source;
-import elmd.core.document;
-import elmd.core.settings;
-import elmd.core.serializer;
-import elmd.core.error;
-import elmd.core.utf;
+import folia.core.ast;
+import folia.core.image_dimension;
+import folia.core.block_source;
+import folia.core.document;
+import folia.core.settings;
+import folia.core.serializer;
+import folia.core.error;
+import folia.core.utf;
 
-export namespace elmd {
+export namespace folia {
 
 enum class ExportFormat { Markdown, Html, Pdf, Docx, PlainText };
 
@@ -350,4 +350,4 @@ inline EditorResult<ExportArtifact> export_html(std::string_view /*source*/,
     return a;
 }
 
-} // namespace elmd
+} // namespace folia

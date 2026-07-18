@@ -1,18 +1,18 @@
-// elmd.core.document_interaction — block-local interactive metadata queries.
+// folia.core.document_interaction — block-local interactive metadata queries.
 //
 // Pointer interaction already supplies the authoritative block-local source
 // position. Resolve links and tooltips from that owner's CST instead of
 // walking the complete render projection.
-export module elmd.core.document_interaction;
+export module folia.core.document_interaction;
 import std;
-import elmd.core.ast;
-import elmd.core.document;
-import elmd.core.document_text;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
-import elmd.core.text_edit;
+import folia.core.ast;
+import folia.core.document;
+import folia.core.document_text;
+import folia.core.inline_cst;
+import folia.core.inline_document;
+import folia.core.text_edit;
 
-export namespace elmd {
+export namespace folia {
 
 struct DocumentInteraction {
     std::optional<std::string> link;
@@ -82,4 +82,4 @@ inline std::optional<DocumentInteraction> document_interaction_at(
         : std::nullopt;
 }
 
-} // namespace elmd
+} // namespace folia

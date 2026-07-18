@@ -1,10 +1,10 @@
-// elmd.core.text_edit — block-local source coordinates and source edits.
-export module elmd.core.text_edit;
+// folia.core.text_edit — block-local source coordinates and source edits.
+export module folia.core.text_edit;
 import std;
-import elmd.core.ids;
-import elmd.core.selection;
+import folia.core.ids;
+import folia.core.selection;
 
-export namespace elmd {
+export namespace folia {
 
 // Half-open [start, end) range in an editable node's block-local source.
 struct SourceRange {
@@ -117,4 +117,4 @@ inline TextSelection translate_selection(TextSelection selection, const TextEdit
     return selection;
 }
 
-} // namespace elmd
+} // namespace folia

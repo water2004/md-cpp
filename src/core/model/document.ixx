@@ -1,16 +1,16 @@
-// elmd.core.document — EditorDocument, the parsed and editable document root.
-export module elmd.core.document;
+// folia.core.document — EditorDocument, the parsed and editable document root.
+export module folia.core.document;
 import std;
-import elmd.core.types;
-import elmd.core.ids;
-import elmd.core.ast;
-import elmd.core.block_tree;
-import elmd.core.metadata;
-import elmd.core.diagnostics;
-import elmd.core.dialect;
-import elmd.core.instrumentation;
+import folia.core.types;
+import folia.core.ids;
+import folia.core.ast;
+import folia.core.block_tree;
+import folia.core.metadata;
+import folia.core.diagnostics;
+import folia.core.dialect;
+import folia.core.instrumentation;
 
-export namespace elmd {
+export namespace folia {
 
 struct BlockLocator {
     NodeId parent_id{};
@@ -168,4 +168,4 @@ inline const BlockNode* find_document_block(const EditorDocument& document, Node
     return path ? block_at_path(document.root, *path) : nullptr;
 }
 
-} // namespace elmd
+} // namespace folia
