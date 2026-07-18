@@ -51,20 +51,12 @@ namespace winrt::Folia
         ::Microsoft::WRL::ComPtr<IDWriteTextLayout> FindTextLayout(std::uint64_t key);
         void StoreTextLayout(std::uint64_t key, ::Microsoft::WRL::ComPtr<IDWriteTextLayout> const& layout, std::size_t bytes);
         ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> FindSvgDocument(std::uint64_t renderId);
-        ::Microsoft::WRL::ComPtr<ID2D1CommandList> FindSvgCommands(std::uint64_t renderId);
-        ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> FindOrCreateSvgDocument(
-            ID2D1DeviceContext5* context,
-            std::uint64_t renderId,
-            std::string const& source,
-            float width,
-            float height,
-            bool recordCommands = false);
+        ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> FindOrCreateSvgDocument(ID2D1DeviceContext5* context, std::uint64_t renderId, std::string const& source, float width, float height);
 
     private:
         struct CachedSvgDocument
         {
             ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> document;
-            ::Microsoft::WRL::ComPtr<ID2D1CommandList> commands;
             std::size_t bytes = 0;
             std::list<std::uint64_t>::iterator order;
         };
@@ -103,8 +95,6 @@ namespace winrt::Folia
         void QueueRemoteImage(std::string source);
         void QueueRemoteImageDimensions(std::string source);
         void StopAnimationPump();
-        ID2D1DeviceContext5* EnsureSvgRecordingContext(
-            ID2D1DeviceContext5* sourceContext);
 
         std::unordered_map<std::uint64_t, CachedTextLayout> textLayouts;
         std::deque<std::uint64_t> textLayoutOrder;
@@ -120,8 +110,6 @@ namespace winrt::Folia
         std::unordered_map<std::uint64_t, CachedSvgDocument> svgDocuments;
         std::list<std::uint64_t> svgDocumentOrder;
         std::size_t svgDocumentBytes = 0;
-        ::Microsoft::WRL::ComPtr<ID2D1Device> svgRecordingDevice;
-        ::Microsoft::WRL::ComPtr<ID2D1DeviceContext5> svgRecordingContext;
         std::shared_ptr<RemoteState> remoteState = std::make_shared<RemoteState>();
         winrt::event_token animationRenderingToken{};
         std::optional<std::chrono::steady_clock::time_point> animationDeadline;

@@ -3,53 +3,6 @@
 
 namespace winrt::Folia
 {
-    namespace
-    {
-        ::Microsoft::WRL::ComPtr<ID2D1CommandList> RecordSvgCommands(
-            ID2D1DeviceContext5* recording,
-            ID2D1SvgDocument* document)
-        {
-            if (!recording || !document) return {};
-
-            ::Microsoft::WRL::ComPtr<ID2D1CommandList> commands;
-            if (FAILED(recording->CreateCommandList(commands.GetAddressOf()))
-                || !commands) return {};
-
-            recording->SetTarget(commands.Get());
-            recording->BeginDraw();
-            recording->SetTransform(D2D1::Matrix3x2F::Identity());
-            recording->DrawSvgDocument(document);
-            auto result = recording->EndDraw();
-            recording->SetTarget(nullptr);
-            if (FAILED(result) || FAILED(commands->Close())) return {};
-            return commands;
-        }
-    }
-
-    ID2D1DeviceContext5* EditorRenderCache::EnsureSvgRecordingContext(
-        ID2D1DeviceContext5* sourceContext)
-    {
-        if (!sourceContext) return nullptr;
-        ::Microsoft::WRL::ComPtr<ID2D1Device> device;
-        sourceContext->GetDevice(device.GetAddressOf());
-        if (!device) return nullptr;
-        if (svgRecordingContext && svgRecordingDevice.Get() == device.Get())
-            return svgRecordingContext.Get();
-
-        svgRecordingContext = nullptr;
-        svgRecordingDevice = device;
-        ::Microsoft::WRL::ComPtr<ID2D1DeviceContext> recordingBase;
-        if (FAILED(device->CreateDeviceContext(
-                D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
-                recordingBase.GetAddressOf()))
-            || FAILED(recordingBase.As(&svgRecordingContext)))
-        {
-            svgRecordingDevice = nullptr;
-            svgRecordingContext = nullptr;
-        }
-        return svgRecordingContext.Get();
-    }
-
     ::Microsoft::WRL::ComPtr<IDWriteTextLayout> EditorRenderCache::FindTextLayout(std::uint64_t key)
     {
         auto found = textLayouts.find(key);
@@ -93,41 +46,10 @@ namespace winrt::Folia
         return {};
     }
 
-    ::Microsoft::WRL::ComPtr<ID2D1CommandList> EditorRenderCache::FindSvgCommands(
-        std::uint64_t renderId)
-    {
-        if (auto found = svgDocuments.find(renderId); found != svgDocuments.end())
-        {
-            svgDocumentOrder.splice(
-                svgDocumentOrder.end(),
-                svgDocumentOrder,
-                found->second.order);
-            return found->second.commands;
-        }
-        return {};
-    }
-
-    ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> EditorRenderCache::FindOrCreateSvgDocument(
-        ID2D1DeviceContext5* context,
-        std::uint64_t renderId,
-        std::string const& source,
-        float width,
-        float height,
-        bool recordCommands)
+    ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> EditorRenderCache::FindOrCreateSvgDocument(ID2D1DeviceContext5* context, std::uint64_t renderId, std::string const& source, float width, float height)
     {
         if (!context || renderId == 0 || source.empty() || width <= 0.0f || height <= 0.0f) return {};
-        if (auto found = svgDocuments.find(renderId); found != svgDocuments.end())
-        {
-            svgDocumentOrder.splice(
-                svgDocumentOrder.end(),
-                svgDocumentOrder,
-                found->second.order);
-            if (recordCommands && !found->second.commands)
-                found->second.commands = RecordSvgCommands(
-                    EnsureSvgRecordingContext(context),
-                    found->second.document.Get());
-            return found->second.document;
-        }
+        if (auto document = FindSvgDocument(renderId)) return document;
         auto allocation = GlobalAlloc(GMEM_MOVEABLE, source.size());
         if (!allocation) return {};
         auto bytes = static_cast<char*>(GlobalLock(allocation));
@@ -146,11 +68,6 @@ namespace winrt::Folia
         }
         ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> document;
         if (FAILED(context->CreateSvgDocument(stream.Get(), D2D1::SizeF(width, height), document.GetAddressOf())) || !document) return {};
-        auto commands = recordCommands
-            ? RecordSvgCommands(
-                EnsureSvgRecordingContext(context),
-                document.Get())
-            : ::Microsoft::WRL::ComPtr<ID2D1CommandList>{};
         constexpr std::size_t budget = 24 * 1024 * 1024;
         constexpr std::size_t limit = 512;
         auto resourceCost = (std::max)(std::size_t{16 * 1024}, source.size() * 8);
@@ -169,7 +86,6 @@ namespace winrt::Folia
             svgDocumentOrder.push_back(renderId);
             svgDocuments.emplace(renderId, CachedSvgDocument{
                 document,
-                commands,
                 resourceCost,
                 std::prev(svgDocumentOrder.end()),
             });
