@@ -390,7 +390,10 @@ namespace winrt::Folia::implementation
         if (settingsMode) return;
         try
         {
-            editorRenderer.Render(editorSession.RenderFrame());
+            auto snippetPlaceholders = keyboardController.SnippetPlaceholders();
+            auto frame = editorSession.RenderFrame();
+            frame.snippetPlaceholders = snippetPlaceholders;
+            editorRenderer.Render(frame);
             scrollController.Sync();
         }
         catch (winrt::hresult_error const& error)

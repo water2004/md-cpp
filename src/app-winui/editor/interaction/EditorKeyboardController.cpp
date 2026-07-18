@@ -337,6 +337,13 @@ namespace winrt::Folia
         snippetSession_.Cancel();
     }
 
+    std::vector<folia::platform::editor::EditorSnippetPlaceholder>
+    EditorKeyboardController::SnippetPlaceholders()
+    {
+        if (!session_) return {};
+        return snippetSession_.Placeholders(session_->Selection());
+    }
+
     bool EditorKeyboardController::MoveCaretVerticalStep(bool down, bool extend)
     {
         if (!session_ || !renderer_) return false;

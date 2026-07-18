@@ -50,6 +50,9 @@ namespace winrt::Folia
             std::optional<std::size_t> tableDropIndex);
 
     private:
+        void DrawSnippetPlaceholders(
+            std::span<const folia::platform::editor::EditorSnippetPlaceholder> placeholders);
+
         EditorRenderResources& resources;
         EditorStyleSheet const& styleSheet;
         EditorInteractionMap& interactionMap;

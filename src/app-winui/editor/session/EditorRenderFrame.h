@@ -3,6 +3,7 @@
 import folia.core.render_model;
 import folia.core.selection;
 import folia.core.text_edit;
+import folia.platform.editor_snippet_session;
 
 namespace winrt::Folia::detail
 {
@@ -20,5 +21,6 @@ namespace winrt::Folia::detail
         std::wstring const& baseDirectory;
         std::function<void(std::size_t, std::size_t)> materializeBlocks;
         std::function<void(std::size_t, std::size_t)> releaseBlocksOutside;
+        std::span<const folia::platform::editor::EditorSnippetPlaceholder> snippetPlaceholders;
     };
 }

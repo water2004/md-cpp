@@ -264,6 +264,79 @@ namespace folia::platform::editor
         return line ? CaretRectOnLine(lines[*line], position, bodyLineHeight) : std::nullopt;
     }
 
+    std::vector<D2D1_RECT_F> EditorInteractionMap::TextRangeBounds(
+        folia::TextSpan span) const
+    {
+        std::vector<D2D1_RECT_F> result;
+        if (span.source_range.empty()) return result;
+        for (auto const& line : lines)
+        {
+            auto lineSpan = SourceSpanFor(line, span.container_id);
+            if (!lineSpan) continue;
+            auto start = (std::max)(span.source_range.start, lineSpan->source_range.start);
+            auto end = (std::min)(span.source_range.end, lineSpan->source_range.end);
+            if (end <= start || line.blockIndex >= blocks.size()) continue;
+
+            auto const& block = blocks[line.blockIndex];
+            IDWriteTextLayout* layout = block.layout.Get();
+            auto textOrigin = block.textOrigin;
+            auto const* mapping = &block.displayToSource;
+            if (line.tableIndex < tables.size()
+                && line.cellIndex < tables[line.tableIndex].cells.size())
+            {
+                auto const& cell = tables[line.tableIndex].cells[line.cellIndex];
+                layout = cell.layout.Get();
+                textOrigin = cell.textOrigin;
+                mapping = &cell.displayToSource;
+            }
+            if (!layout || mapping->empty()) continue;
+
+            auto displayStart = DisplayPositionForSource(*mapping, {
+                span.container_id, start, folia::TextAffinity::Downstream});
+            auto displayEnd = DisplayPositionForSource(*mapping, {
+                span.container_id, end, folia::TextAffinity::Upstream});
+            displayStart = (std::clamp)(
+                displayStart,
+                static_cast<std::size_t>(line.displayStart),
+                static_cast<std::size_t>(line.displayEnd));
+            displayEnd = (std::clamp)(
+                displayEnd,
+                static_cast<std::size_t>(line.displayStart),
+                static_cast<std::size_t>(line.displayEnd));
+            if (displayEnd <= displayStart) continue;
+
+            UINT32 count = 0;
+            auto hit = layout->HitTestTextRange(
+                static_cast<UINT32>(displayStart),
+                static_cast<UINT32>(displayEnd - displayStart),
+                textOrigin.x,
+                textOrigin.y,
+                nullptr,
+                0,
+                &count);
+            if (hit != E_NOT_SUFFICIENT_BUFFER || count == 0) continue;
+            std::vector<DWRITE_HIT_TEST_METRICS> metrics(count);
+            if (FAILED(layout->HitTestTextRange(
+                    static_cast<UINT32>(displayStart),
+                    static_cast<UINT32>(displayEnd - displayStart),
+                    textOrigin.x,
+                    textOrigin.y,
+                    metrics.data(),
+                    count,
+                    &count))) continue;
+            for (UINT32 index = 0; index < count; ++index)
+            {
+                auto const& metric = metrics[index];
+                result.push_back(D2D1::RectF(
+                    metric.left,
+                    metric.top,
+                    metric.left + metric.width,
+                    metric.top + metric.height));
+            }
+        }
+        return result;
+    }
+
     std::optional<folia::TextPosition> EditorInteractionMap::VisualLineStart(folia::TextPosition position) const
     {
         auto line = LineIndexFor(position);

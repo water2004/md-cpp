@@ -113,6 +113,7 @@ export namespace folia::platform::editor
         std::optional<folia::TextPosition> HitTest(float x, float y) const;
         std::optional<folia::TextPosition> TaskCheckboxAt(float x, float y) const;
         std::optional<EditorVisualFootnoteHit> FootnoteAt(float x, float y) const;
+        std::vector<D2D1_RECT_F> TextRangeBounds(folia::TextSpan span) const;
         std::optional<EditorTableAction> TableActionAt(float x, float y) const;
         std::optional<std::size_t> TableDropIndexAt(
             std::optional<EditorTableAction> const& draggedAction,

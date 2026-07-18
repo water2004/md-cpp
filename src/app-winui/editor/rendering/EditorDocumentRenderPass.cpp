@@ -231,6 +231,7 @@ namespace winrt::Folia
             printMode ? std::nullopt : pointerPosition,
             draggedTableAction,
             tableDropIndex);
+        if (!printMode) DrawSnippetPlaceholders(frame.snippetPlaceholders);
         if (!printMode && selection.is_caret())
         {
             if (auto rect = interactionMap.CaretBounds(caret, styleSheet.body.lineHeight))
@@ -239,6 +240,59 @@ namespace winrt::Folia
                     D2D1::Point2F(rect->left, rect->bottom),
                     resources.caretBrush.Get(),
                     1.5f);
+        }
+    }
+
+    void EditorDocumentRenderPass::DrawSnippetPlaceholders(
+        std::span<const folia::platform::editor::EditorSnippetPlaceholder> placeholders)
+    {
+        for (auto const& placeholder : placeholders)
+        {
+            auto brush = placeholder.current
+                ? resources.accentBrush.Get()
+                : resources.mutedBrush.Get();
+            auto strokeWidth = placeholder.current ? 1.5f : 1.0f;
+            if (placeholder.range.empty())
+            {
+                auto position = folia::TextPosition{
+                    placeholder.container,
+                    placeholder.range.start,
+                    folia::TextAffinity::Downstream};
+                auto caret = interactionMap.CaretBounds(position, styleSheet.body.lineHeight);
+                if (!caret) continue;
+                auto top = caret->top + 2.0f;
+                auto bottom = caret->bottom - 2.0f;
+                auto x = caret->left;
+                resources.d2dContext->DrawLine(
+                    D2D1::Point2F(x, top),
+                    D2D1::Point2F(x, bottom),
+                    brush,
+                    strokeWidth);
+                resources.d2dContext->DrawLine(
+                    D2D1::Point2F(x - 2.5f, top),
+                    D2D1::Point2F(x + 2.5f, top),
+                    brush,
+                    strokeWidth);
+                resources.d2dContext->DrawLine(
+                    D2D1::Point2F(x - 2.5f, bottom),
+                    D2D1::Point2F(x + 2.5f, bottom),
+                    brush,
+                    strokeWidth);
+                continue;
+            }
+
+            auto span = folia::TextSpan{placeholder.container, placeholder.range};
+            for (auto rect : interactionMap.TextRangeBounds(span))
+            {
+                rect.left -= 1.5f;
+                rect.top += 1.0f;
+                rect.right += 1.5f;
+                rect.bottom -= 1.0f;
+                resources.d2dContext->DrawRoundedRectangle(
+                    D2D1::RoundedRect(rect, 2.5f, 2.5f),
+                    brush,
+                    strokeWidth);
+            }
         }
     }
 }

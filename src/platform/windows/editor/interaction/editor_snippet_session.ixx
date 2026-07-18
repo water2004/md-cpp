@@ -21,6 +21,15 @@ struct SnippetNavigationResult {
     bool Handled() const { return kind != SnippetNavigationKind::NotHandled; }
 };
 
+struct EditorSnippetPlaceholder {
+    folia::NodeId container;
+    folia::SourceRange range;
+    std::size_t tab_index = 0;
+    bool current = false;
+
+    bool operator==(EditorSnippetPlaceholder const&) const = default;
+};
+
 class EditorSnippetSession {
 public:
     std::optional<folia::TextSelection> Start(
@@ -31,11 +40,14 @@ public:
         if (tab_stops.empty()) return std::nullopt;
         state_.emplace();
         state_->container = container;
-        state_->ranges.reserve(tab_stops.size());
+        state_->stops.reserve(tab_stops.size());
         for (auto const& stop : tab_stops) {
-            state_->ranges.push_back({
-                SaturatingAdd(base_offset, stop.range.start),
-                SaturatingAdd(base_offset, stop.range.end),
+            state_->stops.push_back({
+                stop.index,
+                {
+                    SaturatingAdd(base_offset, stop.range.start),
+                    SaturatingAdd(base_offset, stop.range.end),
+                },
             });
         }
         return SelectionAtCurrent();
@@ -57,7 +69,7 @@ public:
             if (state.current == 0) return {SnippetNavigationKind::Stay};
             --state.current;
         } else {
-            if (state.current + 1 >= state.ranges.size()) {
+            if (state.current + 1 >= state.stops.size()) {
                 Cancel();
                 return {SnippetNavigationKind::Complete};
             }
@@ -66,13 +78,44 @@ public:
         return {SnippetNavigationKind::Move, SelectionAtCurrent()};
     }
 
+    std::vector<EditorSnippetPlaceholder> Placeholders(
+        folia::TextSelection const& selection) {
+        if (!state_) return {};
+        if (selection.active.container_id != state_->container
+            || selection.anchor.container_id != state_->container) {
+            Cancel();
+            return {};
+        }
+
+        RebaseCurrent(selection);
+        std::vector<EditorSnippetPlaceholder> result;
+        result.reserve(state_->stops.size());
+        for (std::size_t index = 0; index < state_->stops.size(); ++index) {
+            auto const& stop = state_->stops[index];
+            // $0 is the final caret destination, not an editable placeholder.
+            if (stop.tab_index == 0) continue;
+            result.push_back({
+                state_->container,
+                stop.range,
+                stop.tab_index,
+                index == state_->current,
+            });
+        }
+        return result;
+    }
+
     void Cancel() { state_.reset(); }
     bool Active() const { return state_.has_value(); }
 
 private:
+    struct Stop {
+        std::size_t tab_index = 0;
+        folia::SourceRange range;
+    };
+
     struct State {
         folia::NodeId container;
-        std::vector<folia::SourceRange> ranges;
+        std::vector<Stop> stops;
         std::size_t current = 0;
     };
 
@@ -89,7 +132,7 @@ private:
 
     void RebaseCurrent(folia::TextSelection const& selection) {
         auto& state = *state_;
-        auto& current = state.ranges[state.current];
+        auto& current = state.stops[state.current].range;
         auto actual = folia::SourceRange{
             (std::min)(selection.anchor.source_offset, selection.active.source_offset),
             (std::max)(selection.anchor.source_offset, selection.active.source_offset),
@@ -109,17 +152,18 @@ private:
                 ? (std::numeric_limits<std::int64_t>::min)() + 1
                 : -static_cast<std::int64_t>(difference);
         }
-        for (std::size_t index = 0; index < state.ranges.size(); ++index) {
-            if (index == state.current || state.ranges[index].start < old_end) continue;
-            state.ranges[index].start = Shift(state.ranges[index].start, delta);
-            state.ranges[index].end = Shift(state.ranges[index].end, delta);
+        for (std::size_t index = 0; index < state.stops.size(); ++index) {
+            auto& range = state.stops[index].range;
+            if (index == state.current || range.start < old_end) continue;
+            range.start = Shift(range.start, delta);
+            range.end = Shift(range.end, delta);
         }
         current = actual;
     }
 
     std::optional<folia::TextSelection> SelectionAtCurrent() const {
-        if (!state_ || state_->current >= state_->ranges.size()) return std::nullopt;
-        auto range = state_->ranges[state_->current];
+        if (!state_ || state_->current >= state_->stops.size()) return std::nullopt;
+        auto range = state_->stops[state_->current].range;
         if (range.empty()) {
             return folia::TextSelection::caret({
                 state_->container,

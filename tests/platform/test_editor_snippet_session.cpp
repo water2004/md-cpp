@@ -77,6 +77,32 @@ suite editor_snippet_session_tests = [] {
     expect(final.selection == Caret(NodeId{50}, 16));
 };
 
+"snippet presentation exposes editable stops and omits the final caret"_test = [] {
+    auto parsed = parse_snippet_template(U"\\begin{matrix}\n${1:a & b}\n$2\n\\end{matrix}$0");
+    EditorSnippetSession session;
+    auto first = session.Start(NodeId{51}, 20, parsed.tab_stops);
+    expect(first == Selected(NodeId{51}, 35, 40));
+
+    auto placeholders = session.Placeholders(*first);
+    expect(placeholders.size() == 2_u);
+    expect(placeholders[0] == EditorSnippetPlaceholder{
+        NodeId{51}, {35, 40}, 1, true});
+    expect(placeholders[1] == EditorSnippetPlaceholder{
+        NodeId{51}, {41, 41}, 2, false});
+};
+
+"snippet presentation rebases later visual stops while typing"_test = [] {
+    auto parsed = parse_snippet_template(U"A$1B$2C$0");
+    EditorSnippetSession session;
+    session.Start(NodeId{52}, 10, parsed.tab_stops);
+
+    auto placeholders = session.Placeholders(Caret(NodeId{52}, 14));
+    expect(placeholders.size() == 2_u);
+    expect(placeholders[0].range == SourceRange{14, 14});
+    expect(placeholders[0].current);
+    expect(placeholders[1].range == SourceRange{15, 15});
+};
+
 "backward navigation at the first stop is handled without moving"_test = [] {
     auto parsed = parse_snippet_template(U"$1x$0");
     EditorSnippetSession session;
