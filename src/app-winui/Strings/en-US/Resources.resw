@@ -178,7 +178,7 @@
   <data name="ShortcutCaptureHint" xml:space="preserve"><value>Press the desired key combination. Press Esc to cancel or bare Backspace/Delete to disable the shortcut.</value></data>
   <data name="ShortcutConflict" xml:space="preserve"><value>{0} is already assigned to “{1}” in this scope.</value></data>
   <data name="CustomInsertionAction" xml:space="preserve"><value>Custom insertion action</value></data>
-  <data name="SnippetPlaceholderDescription" xml:space="preserve"><value>Use $1, $2, … for Tab stops and $0 for the final caret. Use $$ to insert a literal dollar sign.</value></data>
+  <data name="SnippetPlaceholderDescription" xml:space="preserve"><value>Templates may span lines. Use $1 or ${1:default} for Tab stops, $0 for the final caret, ${TM_SELECTED_TEXT} for the selection, and $$ for a literal dollar sign. ${1:${TM_SELECTED_TEXT}} inserts and selects the current selection.</value></data>
   <data name="ActionName" xml:space="preserve"><value>Action name</value></data>
   <data name="ActionNameExample" xml:space="preserve"><value>Insert fraction</value></data>
   <data name="InsertionTemplate" xml:space="preserve"><value>Insertion template</value></data>
@@ -215,7 +215,7 @@
   <data name="LatexRankingDescription" xml:space="preserve"><value>Accepted commands are ranked with a 14-day usage decay. Typing and browsing candidates are not counted.</value></data>
   <data name="ResetLatexUsage" xml:space="preserve"><value>Reset recent usage</value></data>
   <data name="CustomLatexCommand" xml:space="preserve"><value>Custom command</value></data>
-  <data name="LatexTemplateHelp" xml:space="preserve"><value>Use $1, $2, … for Tab stops, $0 for the final caret, and $$ for a literal dollar sign.</value></data>
+  <data name="LatexTemplateHelp" xml:space="preserve"><value>Templates may span lines. Use $1 or ${1:default} for Tab stops, $0 for the final caret, ${TM_SELECTED_TEXT} for the selection, and $$ for a literal dollar sign.</value></data>
   <data name="LatexCommand" xml:space="preserve"><value>Command</value></data>
   <data name="Description" xml:space="preserve"><value>Description</value></data>
   <data name="LatexDescriptionExample" xml:space="preserve"><value>Insert a custom operator</value></data>

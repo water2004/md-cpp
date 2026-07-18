@@ -53,6 +53,12 @@ namespace winrt::Folia
         fields.Children().Append(triggerBox_);
         templateBox_.Header(box_value(Localize(L"InsertionTemplate")));
         templateBox_.PlaceholderText(LR"(\frac{$1}{$2}$0)");
+        templateBox_.AcceptsReturn(true);
+        templateBox_.TextWrapping(TextWrapping::Wrap);
+        templateBox_.MinHeight(88);
+        templateBox_.MaxHeight(160);
+        ScrollViewer::SetVerticalScrollBarVisibility(
+            templateBox_, ScrollBarVisibility::Auto);
         Grid::SetColumn(templateBox_, 1);
         fields.Children().Append(templateBox_);
         descriptionBox_.Header(box_value(Localize(L"Description")));

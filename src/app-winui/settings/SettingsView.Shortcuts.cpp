@@ -208,6 +208,12 @@ namespace winrt::Folia
         form.Children().Append(snippetNameBox_);
         snippetTemplateBox_.Header(box_value(Localize(L"InsertionTemplate")));
         snippetTemplateBox_.PlaceholderText(LR"(\frac{$1}{$2}$0)");
+        snippetTemplateBox_.AcceptsReturn(true);
+        snippetTemplateBox_.TextWrapping(TextWrapping::Wrap);
+        snippetTemplateBox_.MinHeight(88);
+        snippetTemplateBox_.MaxHeight(160);
+        ScrollViewer::SetVerticalScrollBarVisibility(
+            snippetTemplateBox_, ScrollBarVisibility::Auto);
         Grid::SetColumn(snippetTemplateBox_, 1);
         form.Children().Append(snippetTemplateBox_);
         snippetScopeBox_.Header(box_value(Localize(L"ShortcutScope")));
