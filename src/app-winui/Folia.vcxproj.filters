@@ -327,6 +327,9 @@
     <ClCompile Include="editor\rendering\EditorContentPreparation.cpp">
       <Filter>Editor\Rendering</Filter>
     </ClCompile>
+    <ClCompile Include="editor\rendering\EditorDocumentBlockPreparer.cpp">
+      <Filter>Editor\Rendering</Filter>
+    </ClCompile>
     <ClCompile Include="editor\rendering\EditorDocumentPainter.cpp">
       <Filter>Editor\Rendering</Filter>
     </ClCompile>
@@ -480,6 +483,9 @@
       <Filter>Editor\Rendering</Filter>
     </ClInclude>
     <ClInclude Include="editor\rendering\EditorContentPreparation.h">
+      <Filter>Editor\Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\rendering\EditorDocumentBlockPreparer.h">
       <Filter>Editor\Rendering</Filter>
     </ClInclude>
     <ClInclude Include="editor\rendering\EditorDocumentPainter.h">

@@ -152,6 +152,7 @@
     <ClInclude Include="editor\session\EditorRenderFrame.h" />
     <ClInclude Include="editor\rendering\EditorStyleSheet.h" />
     <ClInclude Include="editor\rendering\EditorContentPreparation.h" />
+    <ClInclude Include="editor\rendering\EditorDocumentBlockPreparer.h" />
     <ClInclude Include="editor\rendering\EditorDocumentPainter.h" />
     <ClInclude Include="editor\rendering\EditorDocumentRenderPass.h" />
     <ClInclude Include="editor\rendering\EditorRenderResources.h" />
@@ -438,6 +439,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="editor\rendering\EditorContentPreparation.cpp" />
+    <ClCompile Include="editor\rendering\EditorDocumentBlockPreparer.cpp" />
     <ClCompile Include="editor\rendering\EditorDocumentPainter.cpp" />
     <ClCompile Include="editor\rendering\EditorDocumentRenderPass.cpp" />
     <ClCompile Include="editor\rendering\EditorContentUtilities.cpp" />
