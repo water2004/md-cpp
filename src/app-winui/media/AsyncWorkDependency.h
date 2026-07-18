@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace winrt::Folia
 {
@@ -15,4 +16,6 @@ namespace winrt::Folia
 
         explicit operator bool() const noexcept { return !key.empty(); }
     };
+
+    using AsyncWorkDependencyGroup = std::vector<AsyncWorkDependency>;
 }

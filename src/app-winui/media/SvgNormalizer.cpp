@@ -221,19 +221,26 @@ namespace winrt::Folia
         return std::nullopt;
     }
 
-    bool SvgNormalizer::AnyCompletedAfter(
-        std::span<AsyncWorkDependency const> dependencies) const
+    bool SvgNormalizer::AnyGroupCompletedAfter(
+        std::span<AsyncWorkDependencyGroup const> groups) const
     {
-        if (dependencies.empty()) return false;
+        if (groups.empty()) return false;
         std::scoped_lock lock(state->mutex);
         return std::ranges::any_of(
-            dependencies,
-            [&](AsyncWorkDependency const& dependency)
+            groups,
+            [&](AsyncWorkDependencyGroup const& group)
             {
-                if (dependency.key.empty()) return false;
-                auto completed = state->completionRevisions.find(dependency.key);
-                return completed != state->completionRevisions.end()
-                    && completed->second > dependency.observedCompletion;
+                return !group.empty() && std::ranges::all_of(
+                    group,
+                    [&](AsyncWorkDependency const& dependency)
+                    {
+                        if (dependency.key.empty()) return false;
+                        auto completed = state->completionRevisions.find(
+                            dependency.key);
+                        return completed != state->completionRevisions.end()
+                            && completed->second
+                                > dependency.observedCompletion;
+                    });
             });
     }
 

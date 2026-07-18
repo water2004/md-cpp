@@ -64,10 +64,10 @@ namespace winrt::Folia
                     prepared.pendingMathJaxDependencies.end(),
                     display.pendingMathJaxDependencies.begin(),
                     display.pendingMathJaxDependencies.end());
-                prepared.pendingSvgDependencies.insert(
-                    prepared.pendingSvgDependencies.end(),
-                    display.pendingSvgDependencies.begin(),
-                    display.pendingSvgDependencies.end());
+                prepared.pendingSvgDependencyGroups.insert(
+                    prepared.pendingSvgDependencyGroups.end(),
+                    display.pendingSvgDependencyGroups.begin(),
+                    display.pendingSvgDependencyGroups.end());
                 auto wide = ToWide(display.text);
                 auto layout = textLayoutEngine.Create(wide, resources.textFormat.Get(), (std::max)(1.0f, columnWidth - 20.0f));
                 auto cellTextHeight = styleSheet.body.lineHeight;

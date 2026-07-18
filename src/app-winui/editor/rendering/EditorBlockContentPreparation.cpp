@@ -150,7 +150,7 @@ namespace winrt::Folia
             fontSize,
             requestMath,
             highPriority,
-            &display.pendingSvgDependencies) : std::nullopt;
+            &display.pendingSvgDependencyGroups) : std::nullopt;
         display.pendingMath = !rawMath || !math;
         if (editing)
         {

@@ -303,10 +303,12 @@ namespace winrt::Folia
             target.pendingMathJaxDependencies.end(),
             std::make_move_iterator(source.pendingMathJaxDependencies.begin()),
             std::make_move_iterator(source.pendingMathJaxDependencies.end()));
-        target.pendingSvgDependencies.insert(
-            target.pendingSvgDependencies.end(),
-            std::make_move_iterator(source.pendingSvgDependencies.begin()),
-            std::make_move_iterator(source.pendingSvgDependencies.end()));
+        target.pendingSvgDependencyGroups.insert(
+            target.pendingSvgDependencyGroups.end(),
+            std::make_move_iterator(
+                source.pendingSvgDependencyGroups.begin()),
+            std::make_move_iterator(
+                source.pendingSvgDependencyGroups.end()));
         target.pendingMath = target.pendingMath || source.pendingMath;
     }
 
@@ -512,7 +514,7 @@ namespace winrt::Folia
                     fontSize,
                     requestMath,
                     highPriority,
-                    &display.pendingSvgDependencies) : std::nullopt;
+                    &display.pendingSvgDependencyGroups) : std::nullopt;
                 display.pendingMath = display.pendingMath || !rawMath || !math;
                 auto editing = CaretTouchesSpan(caret, item.source_span);
                 auto delimiterLength = item.special().display == folia::MathDisplayMode::Block

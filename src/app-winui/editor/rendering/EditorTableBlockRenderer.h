@@ -39,7 +39,7 @@ namespace winrt::Folia
             std::vector<std::vector<EditorInlineImageRenderer::ImageDraw>> imageDraws;
             std::vector<std::vector<MathPreview>> mathPreviews;
             std::vector<AsyncWorkDependency> pendingMathJaxDependencies;
-            std::vector<AsyncWorkDependency> pendingSvgDependencies;
+            std::vector<AsyncWorkDependencyGroup> pendingSvgDependencyGroups;
             std::vector<float> textHeights;
             float height = 0.0f;
             bool pendingMath = false;

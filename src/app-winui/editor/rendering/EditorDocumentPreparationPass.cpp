@@ -427,8 +427,8 @@ namespace winrt::Folia
                 && prepared.embeddedRequested
                 && (mathJax.AnyCompletedAfter(
                         prepared.pendingMathJaxDependencies)
-                    || svgNormalizer.AnyCompletedAfter(
-                        prepared.pendingSvgDependencies));
+                    || svgNormalizer.AnyGroupCompletedAfter(
+                        prepared.pendingSvgDependencyGroups));
             auto refreshForImages = prepared.containsImage
                 && prepared.embeddedRequested
                 && (prepared.remoteImageGeneration != remoteImageGeneration

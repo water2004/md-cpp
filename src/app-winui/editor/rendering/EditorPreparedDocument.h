@@ -26,7 +26,7 @@ namespace winrt::Folia
             std::vector<EditorInlineImageRenderer::ImageDraw> images;
             std::vector<MathPreview> mathPreviews;
             std::vector<AsyncWorkDependency> pendingMathJaxDependencies;
-            std::vector<AsyncWorkDependency> pendingSvgDependencies;
+            std::vector<AsyncWorkDependencyGroup> pendingSvgDependencyGroups;
             std::optional<EditorTableBlockRenderer::PreparedTable> table;
             std::vector<folia::NodeId> owners;
             float textHeight = 0.0f;

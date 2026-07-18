@@ -362,8 +362,8 @@ namespace winrt::Folia
                 prepared.pendingMath = prepared.table->pendingMath;
                 prepared.pendingMathJaxDependencies =
                     prepared.table->pendingMathJaxDependencies;
-                prepared.pendingSvgDependencies =
-                    prepared.table->pendingSvgDependencies;
+                prepared.pendingSvgDependencyGroups =
+                    prepared.table->pendingSvgDependencyGroups;
                 prepared.pendingImage = prepared.table->pendingImage;
                 prepared.height = prepared.table->height;
                 prepared.valid = true;
@@ -426,8 +426,8 @@ namespace winrt::Folia
         prepared.pendingMath = prepared.display.pendingMath;
         prepared.pendingMathJaxDependencies =
             prepared.display.pendingMathJaxDependencies;
-        prepared.pendingSvgDependencies =
-            prepared.display.pendingSvgDependencies;
+        prepared.pendingSvgDependencyGroups =
+            prepared.display.pendingSvgDependencyGroups;
         auto format = textLayoutEngine.FormatFor(
             prepared.code || prepared.sourceMode,
             prepared.display.ranges);

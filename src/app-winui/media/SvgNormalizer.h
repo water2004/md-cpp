@@ -41,8 +41,8 @@ namespace winrt::Folia
             bool allowQueue = true,
             bool highPriority = false,
             AsyncWorkDependency* pendingDependency = nullptr);
-        bool AnyCompletedAfter(
-            std::span<AsyncWorkDependency const> dependencies) const;
+        bool AnyGroupCompletedAfter(
+            std::span<AsyncWorkDependencyGroup const> groups) const;
         void SetCompletionCallback(std::function<void()> callback);
         void SetBackgroundPaused(bool paused);
 

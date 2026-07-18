@@ -80,10 +80,11 @@ namespace winrt::Folia
         float fontSize,
         bool allowQueue,
         bool highPriority,
-        std::vector<AsyncWorkDependency>* pendingDependencies)
+        std::vector<AsyncWorkDependencyGroup>* pendingDependencyGroups)
     {
         MathJaxSvg result = source;
         auto pending = false;
+        AsyncWorkDependencyGroup pendingDependencies;
         for (auto& fragment : result.fragments)
         {
             if (!fragment.svg) return std::nullopt;
@@ -97,8 +98,8 @@ namespace winrt::Folia
             if (!normalized)
             {
                 pending = true;
-                if (pendingDependencies && dependency)
-                    pendingDependencies->push_back(std::move(dependency));
+                if (dependency)
+                    pendingDependencies.push_back(std::move(dependency));
                 continue;
             }
             if (!static_cast<bool>(*normalized))
@@ -111,7 +112,13 @@ namespace winrt::Folia
             fragment.renderId = normalized->id;
             fragment.svg = normalized->svg;
         }
-        if (pending) return std::nullopt;
+        if (pending)
+        {
+            if (pendingDependencyGroups && !pendingDependencies.empty())
+                pendingDependencyGroups->push_back(
+                    std::move(pendingDependencies));
+            return std::nullopt;
+        }
         return result;
     }
 
