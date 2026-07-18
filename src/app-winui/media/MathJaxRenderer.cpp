@@ -2,6 +2,8 @@
 #include "media/MathJaxRenderer.h"
 #include "storage/AssetPaths.h"
 
+import folia.platform.editor_priority_work_queue;
+
 #pragma warning(push)
 #pragma warning(disable : 4100 4244)
 extern "C"
@@ -152,6 +154,10 @@ namespace
 
 namespace winrt::Folia
 {
+    using folia::platform::editor::EditorPriorityWorkQueue;
+    using folia::platform::editor::EditorQueueChange;
+    using folia::platform::editor::EditorWorkPriority;
+
     struct MathJaxRenderer::State
     {
         struct Request
@@ -164,18 +170,9 @@ namespace winrt::Folia
             std::uint64_t generation = 0;
         };
 
-        enum class RequestState
-        {
-            BackgroundQueued,
-            HighPriorityQueued,
-            InFlight,
-        };
-
         std::mutex mutex;
         std::condition_variable_any ready;
-        std::deque<Request> highPriorityRequests;
-        std::deque<Request> requests;
-        std::unordered_map<std::string, RequestState> requestStates;
+        EditorPriorityWorkQueue<Request> requestQueue;
         std::unordered_map<std::string, std::shared_ptr<MathJaxSvg const>> cache;
         std::unordered_map<std::string, std::size_t> transientFailures;
         std::deque<std::string> cacheOrder;
@@ -418,25 +415,17 @@ namespace winrt::Folia
             {
                 Request request;
                 auto highPriority = false;
+                std::uint64_t ticket = 0;
                 {
                     std::unique_lock lock(mutex);
                     if (!ready.wait(lock, stop, [&] {
-                            return !highPriorityRequests.empty() || !requests.empty();
+                            return requestQueue.Ready();
                         })) break;
-                    if (!highPriorityRequests.empty())
-                    {
-                        highPriority = true;
-                        request = std::move(highPriorityRequests.front());
-                        highPriorityRequests.pop_front();
-                    }
-                    else
-                    {
-                        request = std::move(requests.front());
-                        requests.pop_front();
-                    }
-                    if (auto found = requestStates.find(request.key);
-                        found != requestStates.end())
-                        found->second = RequestState::InFlight;
+                    auto queued = requestQueue.Pop();
+                    if (!queued) continue;
+                    highPriority = queued->priority == EditorWorkPriority::Visible;
+                    ticket = queued->ticket;
+                    request = std::move(queued->work);
                 }
                 SetThreadPriority(
                     GetCurrentThread(),
@@ -447,7 +436,7 @@ namespace winrt::Folia
                 std::function<void()> notify;
                 {
                     std::scoped_lock lock(mutex);
-                    requestStates.erase(request.key);
+                    requestQueue.Complete(request.key, ticket);
                     if (request.generation == generation)
                     {
                         auto retryable = RetryableFailure(result.error);
@@ -501,9 +490,7 @@ namespace winrt::Folia
             if (!state->enabled && !state->worker.joinable()) return;
             state->enabled = false;
             ++state->generation;
-            state->highPriorityRequests.clear();
-            state->requests.clear();
-            state->requestStates.clear();
+            state->requestQueue.Clear();
             state->cache.clear();
             state->cacheOrder.clear();
             state->transientFailures.clear();
@@ -529,9 +516,7 @@ namespace winrt::Folia
         if (!state) return;
         std::scoped_lock lock(state->mutex);
         ++state->generation;
-        state->highPriorityRequests.clear();
-        state->requests.clear();
-        state->requestStates.clear();
+        state->requestQueue.Clear();
         state->cache.clear();
         state->cacheOrder.clear();
         state->transientFailures.clear();
@@ -557,53 +542,20 @@ namespace winrt::Folia
         if (!state->enabled) return {};
         if (auto found = state->cache.find(key); found != state->cache.end()) return found->second;
         if (!allowQueue) return {};
-        auto [requestState, inserted] = state->requestStates.try_emplace(
-            key,
+        auto change = state->requestQueue.Enqueue(
+            State::Request{
+                key,
+                std::string(tex),
+                display,
+                em,
+                containerWidth,
+                state->generation,
+            },
             highPriority
-                ? State::RequestState::HighPriorityQueued
-                : State::RequestState::BackgroundQueued);
-        if (!inserted)
-        {
-            if (highPriority
-                && requestState->second == State::RequestState::BackgroundQueued)
-            {
-                auto found = std::ranges::find(state->requests, key, &State::Request::key);
-                if (found != state->requests.end())
-                {
-                    state->highPriorityRequests.push_back(std::move(*found));
-                    state->requests.erase(found);
-                    requestState->second = State::RequestState::HighPriorityQueued;
-                    state->ready.notify_one();
-                }
-            }
-            return {};
-        }
-
-        while (state->highPriorityRequests.size() + state->requests.size() >= 256)
-        {
-            auto* queue = !state->requests.empty()
-                ? &state->requests
-                : &state->highPriorityRequests;
-            state->requestStates.erase(queue->front().key);
-            queue->pop_front();
-        }
-        auto request = State::Request{
-            key,
-            std::string(tex),
-            display,
-            em,
-            containerWidth,
-            state->generation,
-        };
-        if (highPriority)
-        {
-            state->highPriorityRequests.push_back(std::move(request));
-        }
-        else
-        {
-            state->requests.push_back(std::move(request));
-        }
-        state->ready.notify_one();
+                ? EditorWorkPriority::Visible
+                : EditorWorkPriority::Background,
+            256);
+        if (change != EditorQueueChange::Unchanged) state->ready.notify_one();
         return {};
     }
 }

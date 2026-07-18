@@ -325,6 +325,9 @@
     <ClCompile Include="..\platform\windows\editor\layout\editor_viewport_plan.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\platform\windows\editor\layout\editor_priority_work_queue.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\platform\windows\editor\interaction\editor_interaction.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>

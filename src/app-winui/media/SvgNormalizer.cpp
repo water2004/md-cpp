@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "media/SvgNormalizer.h"
 
+import folia.platform.editor_priority_work_queue;
+
 namespace
 {
     std::wstring ModuleDirectory()
@@ -87,6 +89,10 @@ namespace
 
 namespace winrt::Folia
 {
+    using folia::platform::editor::EditorPriorityWorkQueue;
+    using folia::platform::editor::EditorQueueChange;
+    using folia::platform::editor::EditorWorkPriority;
+
     struct SvgNormalizer::State
     {
         struct Request
@@ -94,13 +100,6 @@ namespace winrt::Folia
             std::string key;
             std::string source;
             float fontSize = 0.0f;
-        };
-
-        enum class RequestState
-        {
-            BackgroundQueued,
-            HighPriorityQueued,
-            InFlight,
         };
 
         State() : worker([this] { Run(); }) {}
@@ -123,26 +122,18 @@ namespace winrt::Folia
             {
                 Request request;
                 auto highPriority = false;
+                std::uint64_t ticket = 0;
                 {
                     std::unique_lock lock(mutex);
                     wake.wait(lock, [this] {
-                        return stopping || !highPriorityPending.empty() || !pending.empty();
+                        return stopping || requestQueue.Ready();
                     });
                     if (stopping) return;
-                    if (!highPriorityPending.empty())
-                    {
-                        highPriority = true;
-                        request = std::move(highPriorityPending.front());
-                        highPriorityPending.pop_front();
-                    }
-                    else
-                    {
-                        request = std::move(pending.front());
-                        pending.pop_front();
-                    }
-                    if (auto found = requestStates.find(request.key);
-                        found != requestStates.end())
-                        found->second = RequestState::InFlight;
+                    auto queued = requestQueue.Pop();
+                    if (!queued) continue;
+                    highPriority = queued->priority == EditorWorkPriority::Visible;
+                    ticket = queued->ticket;
+                    request = std::move(queued->work);
                 }
                 SetThreadPriority(
                     GetCurrentThread(),
@@ -154,7 +145,7 @@ namespace winrt::Folia
                 std::function<void()> callback;
                 {
                     std::scoped_lock lock(mutex);
-                    requestStates.erase(request.key);
+                    requestQueue.Complete(request.key, ticket);
                     Store(request.key, std::move(result));
                     if (!stopping) callback = completion;
                 }
@@ -189,9 +180,7 @@ namespace winrt::Folia
         std::condition_variable wake;
         bool stopping = false;
         std::thread worker;
-        std::deque<Request> highPriorityPending;
-        std::deque<Request> pending;
-        std::unordered_map<std::string, RequestState> requestStates;
+        EditorPriorityWorkQueue<Request> requestQueue;
         std::unordered_map<std::string, NormalizedSvg> cache;
         std::deque<std::string> cacheOrder;
         std::size_t cacheBytes = 0;
@@ -215,46 +204,13 @@ namespace winrt::Folia
         key.append(reinterpret_cast<char const*>(&fontSize), sizeof(fontSize));
         if (auto found = state->cache.find(key); found != state->cache.end()) return found->second;
         if (!allowQueue) return std::nullopt;
-        auto [requestState, inserted] = state->requestStates.try_emplace(
-            key,
+        auto change = state->requestQueue.Enqueue(
+            State::Request{key, std::string(source), fontSize},
             highPriority
-                ? State::RequestState::HighPriorityQueued
-                : State::RequestState::BackgroundQueued);
-        if (!inserted)
-        {
-            if (highPriority
-                && requestState->second == State::RequestState::BackgroundQueued)
-            {
-                auto found = std::ranges::find(state->pending, key, &State::Request::key);
-                if (found != state->pending.end())
-                {
-                    state->highPriorityPending.push_back(std::move(*found));
-                    state->pending.erase(found);
-                    requestState->second = State::RequestState::HighPriorityQueued;
-                    state->wake.notify_one();
-                }
-            }
-            return std::nullopt;
-        }
-
-        while (state->highPriorityPending.size() + state->pending.size() >= 512)
-        {
-            auto* queue = !state->pending.empty()
-                ? &state->pending
-                : &state->highPriorityPending;
-            state->requestStates.erase(queue->front().key);
-            queue->pop_front();
-        }
-        auto request = State::Request{key, std::string(source), fontSize};
-        if (highPriority)
-        {
-            state->highPriorityPending.push_back(std::move(request));
-        }
-        else
-        {
-            state->pending.push_back(std::move(request));
-        }
-        state->wake.notify_one();
+                ? EditorWorkPriority::Visible
+                : EditorWorkPriority::Background,
+            512);
+        if (change != EditorQueueChange::Unchanged) state->wake.notify_one();
         return std::nullopt;
     }
 
