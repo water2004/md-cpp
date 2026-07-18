@@ -10,7 +10,7 @@ import elmd.core.text_edit;
 
 export namespace elmd {
 
-enum class DocumentTransactionReason { InsertText, Delete, Paste, Format, Structure };
+enum class DocumentTransactionReason { InsertText, Delete, Paste, Replace, Format, Structure };
 
 struct DocumentTextOperation {
     TextEdit forward;

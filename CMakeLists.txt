@@ -72,13 +72,17 @@ add_library(elmd_core STATIC)
 target_compile_features(elmd_core PUBLIC cxx_std_23)
 set_target_properties(elmd_core PROPERTIES CXX_MODULE_STD ON)
 target_include_directories(elmd_core PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tree-sitter/include)
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tree-sitter/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/srell)
 target_link_libraries(elmd_core PRIVATE elmd_tree_sitter_html)
 
 file(GLOB_RECURSE ELMD_CORE_MODULE CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.ixx)
+file(GLOB_RECURSE ELMD_CORE_SOURCE CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.cpp)
 target_sources(elmd_core PUBLIC
     FILE_SET CXX_MODULES FILES ${ELMD_CORE_MODULE})
+target_sources(elmd_core PRIVATE ${ELMD_CORE_SOURCE})
 
 # ---------------------------------------------------------------------------
 # Platform library — the ONLY Windows-touching layer.

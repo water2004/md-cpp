@@ -67,6 +67,11 @@ struct SourceEditTransaction {
     SourceSelection selection_after;
 };
 
+struct SourceReplacement {
+    SourceRange range;
+    std::u32string replacement;
+};
+
 struct SourceLineChange {
     std::size_t old_start = 0;
     std::size_t old_end = 0;
@@ -289,6 +294,35 @@ public:
         if (!range.valid_for(source_.size())) return false;
         auto target = range.start + replacement.size();
         return replace_with_selection_(range, std::move(replacement), SourceSelection::caret(target));
+    }
+
+    bool replace_all(std::span<const SourceReplacement> replacements) {
+        if (replacements.empty()) return false;
+        auto ordered = std::vector<SourceReplacement>(replacements.begin(), replacements.end());
+        std::ranges::sort(ordered, [](auto const& left, auto const& right) {
+            if (left.range.start != right.range.start) return left.range.start < right.range.start;
+            return left.range.end < right.range.end;
+        });
+        for (std::size_t index = 0; index < ordered.size(); ++index) {
+            if (!ordered[index].range.valid_for(source_.size())) return false;
+            if (index > 0 && ordered[index].range.start < ordered[index - 1].range.end) return false;
+        }
+        auto const enclosing = SourceRange{
+            ordered.front().range.start,
+            ordered.back().range.end};
+        std::u32string replacement;
+        auto cursor = enclosing.start;
+        for (auto const& edit : ordered) {
+            replacement.append(source_, cursor, edit.range.start - cursor);
+            replacement += edit.replacement;
+            cursor = edit.range.end;
+        }
+        auto const first_target = ordered.front().range.start
+            + ordered.front().replacement.size();
+        return replace_with_selection_(
+            enclosing,
+            std::move(replacement),
+            SourceSelection::caret(first_target));
     }
 
     bool indent() {

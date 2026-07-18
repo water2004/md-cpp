@@ -15,6 +15,7 @@ import elmd.core.ast;
 import elmd.core.block_tree;
 import elmd.core.document_edit;
 import elmd.core.document_history;
+import elmd.core.document_search_replace;
 import elmd.core.document_index_update;
 import elmd.core.document_transaction;
 import elmd.core.document_symbols;
@@ -23,6 +24,7 @@ import elmd.core.symbols;
 import elmd.core.outline;
 import elmd.core.parser;
 import elmd.core.serializer;
+import elmd.core.search;
 
 export namespace elmd {
 
@@ -160,6 +162,15 @@ public:
         } else {
             apply_document_transaction_(*transaction);
         }
+        return transaction;
+    }
+
+    std::optional<DocumentTransaction> execute_document_replace_matches(
+        std::span<const RenderedSearchMatch> matches) {
+        auto transaction = document_replace_rendered_matches(
+            document_, selection_, matches);
+        if (!transaction) return std::nullopt;
+        apply_document_transaction_(*transaction);
         return transaction;
     }
 
