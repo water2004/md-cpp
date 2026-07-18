@@ -7,17 +7,31 @@ This layer owns the native window, command bar, side panels, status bar, file di
 Source ownership:
 
 - The directory root contains XAML application/window files and the composition root. `MainWindow.xaml.cpp` owns lifecycle and window state; command and event wiring live in separate translation units.
-- `editor/session/` adapts the core editor/document state to the native application.
+- `editor/session/` adapts the core editor/document state to the native
+  application. The session facade is split by boundary: document/render-model
+  lifecycle, rendered/source editing dispatch, search, and UTF-32-to-UTF-16
+  text-input projection. These translation units share one session state; they
+  must not introduce parallel selections or cached document models.
 - `editor/interaction/` translates WinUI routed events into platform input
   actions and core commands; it also owns text input, scrolling, document
-  actions, frame scheduling, and sidebar controllers.
+  actions, frame scheduling, and sidebar controllers. Long-running PDF export
+  orchestration is isolated from file, clipboard, link, and image commands but
+  remains part of the document controller lifecycle so detach/cancel has one
+  owner.
 - `editor/rendering/` owns Direct2D/DirectWrite materialization and drawing.
   `EditorSurfaceRenderer` is the stateful facade; document work is delegated to
   a preparation pass, a one-block resource preparer, and a render pass. Native
   layouts, COM resources, image handles, and the prepared-document cache stay
   here because they are application rendering state rather than portable
   policy.
-- `media/` owns GIF decoding and MathJax, Mermaid, and SVG integration.
+- `media/` owns GIF decoding and MathJax, Mermaid, and SVG integration. MathJax
+  runtime/queue ownership is separate from parsing the renderer's SVG fragment
+  protocol; changing fragment measurement must not alter QuickJS lifecycle or
+  scheduling.
+- `settings/` owns WinUI settings pages and persisted application settings.
+  Feature-specific schemas such as shortcut/snippet bindings serialize through
+  dedicated components; the root settings store owns only schema versioning,
+  validation dispatch, and atomic file replacement.
 - `export/` owns Windows PDF/print integration and the value types used to
   report export progress across UI controllers.
 
