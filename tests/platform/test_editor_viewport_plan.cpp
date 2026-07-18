@@ -78,4 +78,42 @@ suite editor_viewport_plan_tests = [] {
     expect(plan.retention.Empty());
 };
 
+"embedded refresh traversal prioritizes visible work and scroll direction"_test = [] {
+    auto forward = BuildEditorPrioritizedTraversal(
+        EditorIndexRange{10, 14},
+        EditorIndexRange{4, 20},
+        true);
+    expect(forward.count == 3_u);
+    expect(forward.segments[0] == EditorIndexTraversal{{10, 14}, false});
+    expect(forward.segments[1] == EditorIndexTraversal{{14, 20}, false});
+    expect(forward.segments[2] == EditorIndexTraversal{{4, 10}, true});
+
+    auto backward = BuildEditorPrioritizedTraversal(
+        EditorIndexRange{10, 14},
+        EditorIndexRange{4, 20},
+        false);
+    expect(backward.count == 3_u);
+    expect(backward.segments[0] == EditorIndexTraversal{{10, 14}, true});
+    expect(backward.segments[1] == EditorIndexTraversal{{4, 10}, true});
+    expect(backward.segments[2] == EditorIndexTraversal{{14, 20}, false});
+};
+
+"embedded refresh traversal handles disjoint and clipped ranges"_test = [] {
+    auto disjoint = BuildEditorPrioritizedTraversal(
+        EditorIndexRange{30, 40},
+        EditorIndexRange{4, 8},
+        false);
+    expect(disjoint.count == 1_u);
+    expect(disjoint.segments[0] == EditorIndexTraversal{{4, 8}, true});
+
+    auto clipped = BuildEditorPrioritizedTraversal(
+        EditorIndexRange{0, 20},
+        EditorIndexRange{4, 8},
+        true);
+    expect(clipped.count == 1_u);
+    expect(clipped.segments[0] == EditorIndexTraversal{{4, 8}, false});
+
+    expect(BuildEditorPrioritizedTraversal({}, {}, true).count == 0_u);
+};
+
 }; // suite editor_viewport_plan_tests

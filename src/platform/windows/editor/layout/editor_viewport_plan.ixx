@@ -44,6 +44,62 @@ export namespace folia::platform::editor
         float embeddedKeepBottom = 0.0f;
     };
 
+    struct EditorIndexTraversal
+    {
+        EditorIndexRange range;
+        bool reverse = false;
+
+        bool operator==(EditorIndexTraversal const&) const = default;
+    };
+
+    struct EditorPrioritizedTraversal
+    {
+        std::array<EditorIndexTraversal, 3> segments{};
+        std::size_t count = 0;
+    };
+
+    // Split a larger work band into non-overlapping traversal segments. The
+    // visible intersection always comes first, followed by work in the scroll
+    // direction and finally work behind it. This lets resource preparation
+    // stop on a frame deadline without delaying newly visible content.
+    inline EditorPrioritizedTraversal BuildEditorPrioritizedTraversal(
+        EditorIndexRange visible,
+        EditorIndexRange work,
+        bool forward)
+    {
+        EditorPrioritizedTraversal result;
+        if (work.Empty()) return result;
+        auto append = [&](EditorIndexRange range, bool reverse)
+        {
+            range.begin = (std::clamp)(range.begin, work.begin, work.end);
+            range.end = (std::clamp)(range.end, work.begin, work.end);
+            if (range.Empty() || result.count >= result.segments.size()) return;
+            result.segments[result.count++] = {range, reverse};
+        };
+
+        auto overlap = EditorIndexRange{
+            (std::max)(visible.begin, work.begin),
+            (std::min)(visible.end, work.end),
+        };
+        if (overlap.Empty())
+        {
+            append(work, !forward);
+            return result;
+        }
+        append(overlap, !forward);
+        if (forward)
+        {
+            append({overlap.end, work.end}, false);
+            append({work.begin, overlap.begin}, true);
+        }
+        else
+        {
+            append({work.begin, overlap.begin}, true);
+            append({overlap.end, work.end}, false);
+        }
+        return result;
+    }
+
     inline EditorIndexRange EditorBlocksIntersecting(
         EditorBlockGeometryIndex const& geometry,
         float documentTop,
