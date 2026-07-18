@@ -100,7 +100,8 @@ namespace winrt::Folia
         float fontSize,
         float containerWidth,
         bool svgSupported,
-        bool requestMath)
+        bool requestMath,
+        bool highPriority)
     {
         DisplayInlineText display;
         auto const& special = block.special();
@@ -130,8 +131,20 @@ namespace winrt::Folia
             return display;
         }
 
-        auto rawMath = mathJax.GetOrQueue(folia::cps_to_utf8(special.tex), true, fontSize, containerWidth, requestMath);
-        auto math = rawMath ? NormalizeMathJaxSvg(*rawMath, svgNormalizer, svgColor, fontSize, requestMath) : std::nullopt;
+        auto rawMath = mathJax.GetOrQueue(
+            folia::cps_to_utf8(special.tex),
+            true,
+            fontSize,
+            containerWidth,
+            requestMath,
+            highPriority);
+        auto math = rawMath ? NormalizeMathJaxSvg(
+            *rawMath,
+            svgNormalizer,
+            svgColor,
+            fontSize,
+            requestMath,
+            highPriority) : std::nullopt;
         display.pendingMath = !rawMath || !math;
         if (editing)
         {

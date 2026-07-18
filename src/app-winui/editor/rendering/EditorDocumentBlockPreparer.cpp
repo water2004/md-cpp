@@ -220,7 +220,8 @@ namespace winrt::Folia
     DisplayInlineText EditorDocumentBlockPreparer::BuildDisplay(
         folia::RenderBlock const& block,
         float width,
-        bool requestEmbedded)
+        bool requestEmbedded,
+        bool highPriority)
     {
         if (block.kind == folia::RenderBlockKind::Blank)
         {
@@ -245,7 +246,8 @@ namespace winrt::Folia
                 styleSheet.body.size,
                 width,
                 mathSvgSupported,
-                requestEmbedded);
+                requestEmbedded,
+                highPriority);
         if (!block.inline_items.empty())
         {
             auto sourceEnd = InlineItemsEndPosition(
@@ -261,7 +263,8 @@ namespace winrt::Folia
                 styleSheet.body.size,
                 width,
                 mathSvgSupported,
-                requestEmbedded);
+                requestEmbedded,
+                highPriority);
         }
 
         DisplayInlineText display;
@@ -320,7 +323,8 @@ namespace winrt::Folia
 
     EditorPreparedDocument::Block EditorDocumentBlockPreparer::Prepare(
         folia::RenderBlock const& block,
-        bool requestEmbedded)
+        bool requestEmbedded,
+        bool highPriority)
     {
         EditorPreparedDocument::Block prepared;
         InitializeMetadata(prepared, block);
@@ -344,6 +348,7 @@ namespace winrt::Folia
                 documentWidth,
                 mathSvgSupported,
                 requestEmbedded,
+                highPriority,
                 resources,
                 styleSheet,
                 textLayoutEngine,
@@ -369,7 +374,11 @@ namespace winrt::Folia
         auto paddingLeft = flowContainer ? 0.0f : block.block_style.padding_left;
         auto paddingRight = flowContainer ? 0.0f : block.block_style.padding_right;
         auto contentWidth = (std::max)(1.0f, documentWidth - paddingLeft - paddingRight);
-        prepared.display = BuildDisplay(block, contentWidth, requestEmbedded);
+        prepared.display = BuildDisplay(
+            block,
+            contentWidth,
+            requestEmbedded,
+            highPriority);
         if (block.source_mode
             && block.source_code
             && block.special().language

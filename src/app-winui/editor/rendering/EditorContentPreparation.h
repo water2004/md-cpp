@@ -110,7 +110,13 @@ namespace winrt::Folia
 
     std::wstring ToWide(std::u32string_view text);
     std::optional<std::vector<std::uint8_t>> DecodeBase64(std::string_view source);
-    std::optional<MathJaxSvg> NormalizeMathJaxSvg(MathJaxSvg const& source, SvgNormalizer& normalizer, D2D1_COLOR_F color, float fontSize, bool allowQueue);
+    std::optional<MathJaxSvg> NormalizeMathJaxSvg(
+        MathJaxSvg const& source,
+        SvgNormalizer& normalizer,
+        D2D1_COLOR_F color,
+        float fontSize,
+        bool allowQueue,
+        bool highPriority);
     std::optional<MermaidSvg> NormalizeMermaidSvg(MermaidSvg const& source, SvgNormalizer& normalizer, bool allowQueue);
     std::u32string InlineText(std::vector<folia::InlineRenderItem> const& items);
     folia::TextPosition InlineItemsEndPosition(std::vector<folia::InlineRenderItem> const& items, folia::TextPosition fallback);
@@ -151,7 +157,8 @@ namespace winrt::Folia
         float fontSize,
         float containerWidth,
         bool svgSupported,
-        bool requestMath);
+        bool requestMath,
+        bool highPriority);
     DisplayInlineText BuildCodeBlockText(folia::RenderBlock const& block, folia::TextPosition caret, TreeSitterHighlighter& highlighter);
     DisplayInlineText BuildMathBlockText(
         folia::RenderBlock const& block,
@@ -162,5 +169,6 @@ namespace winrt::Folia
         float fontSize,
         float containerWidth,
         bool svgSupported,
-        bool requestMath);
+        bool requestMath,
+        bool highPriority);
 }

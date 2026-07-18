@@ -32,7 +32,11 @@ namespace winrt::Folia
         SvgNormalizer(SvgNormalizer const&) = delete;
         SvgNormalizer& operator=(SvgNormalizer const&) = delete;
 
-        std::optional<NormalizedSvg> GetOrQueue(std::string_view source, float fontSize, bool allowQueue = true);
+        std::optional<NormalizedSvg> GetOrQueue(
+            std::string_view source,
+            float fontSize,
+            bool allowQueue = true,
+            bool highPriority = false);
         void SetCompletionCallback(std::function<void()> callback);
 
     private:

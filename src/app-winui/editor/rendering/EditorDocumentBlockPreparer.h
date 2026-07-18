@@ -48,7 +48,8 @@ namespace winrt::Folia
         float EstimateHeight(folia::RenderBlock const& block);
         EditorPreparedDocument::Block Prepare(
             folia::RenderBlock const& block,
-            bool requestEmbedded);
+            bool requestEmbedded,
+            bool highPriority);
 
         static std::vector<std::string> ImageSources(
             EditorPreparedDocument::Block const& prepared);
@@ -57,7 +58,8 @@ namespace winrt::Folia
         DisplayInlineText BuildDisplay(
             folia::RenderBlock const& block,
             float width,
-            bool requestEmbedded);
+            bool requestEmbedded,
+            bool highPriority);
 
         detail::EditorRenderFrame const& frame;
         EditorRenderResources& resources;

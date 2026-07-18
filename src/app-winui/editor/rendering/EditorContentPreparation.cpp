@@ -430,7 +430,8 @@ namespace winrt::Folia
         float fontSize,
         float containerWidth,
         bool svgSupported,
-        bool requestMath)
+        bool requestMath,
+        bool highPriority)
     {
         DisplayInlineText display;
         auto markerVisibility = RevealedStyleMarkers(items, caret);
@@ -453,7 +454,7 @@ namespace winrt::Folia
                 }
                 else
                 {
-                    MergeDisplayText(display, BuildDisplayInlineText(item.special().semantic().children, caret, {item.source_span.container_id, item.source_span.source_range.end, folia::TextAffinity::Downstream}, mathJax, svgNormalizer, svgColor, fontSize, containerWidth, svgSupported, requestMath));
+                    MergeDisplayText(display, BuildDisplayInlineText(item.special().semantic().children, caret, {item.source_span.container_id, item.source_span.source_range.end, folia::TextAffinity::Downstream}, mathJax, svgNormalizer, svgColor, fontSize, containerWidth, svgSupported, requestMath, highPriority));
                 }
                 continue;
             }
@@ -489,8 +490,15 @@ namespace winrt::Folia
                     displayMath,
                     fontSize,
                     containerWidth,
-                    requestMath);
-                auto math = rawMath ? NormalizeMathJaxSvg(*rawMath, svgNormalizer, svgColor, fontSize, requestMath) : std::nullopt;
+                    requestMath,
+                    highPriority);
+                auto math = rawMath ? NormalizeMathJaxSvg(
+                    *rawMath,
+                    svgNormalizer,
+                    svgColor,
+                    fontSize,
+                    requestMath,
+                    highPriority) : std::nullopt;
                 display.pendingMath = display.pendingMath || !rawMath || !math;
                 auto editing = CaretTouchesSpan(caret, item.source_span);
                 auto delimiterLength = item.special().display == folia::MathDisplayMode::Block

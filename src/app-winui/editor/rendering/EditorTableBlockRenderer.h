@@ -50,6 +50,7 @@ namespace winrt::Folia
             float tableWidth,
             bool svgSupported,
             bool requestEmbedded,
+            bool highPriority,
             EditorRenderResources& resources,
             EditorStyleSheet const& styleSheet,
             EditorTextLayoutEngine& textLayoutEngine,

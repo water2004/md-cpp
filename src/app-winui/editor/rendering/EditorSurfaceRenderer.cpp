@@ -2,6 +2,8 @@
 #include "editor/rendering/EditorSurfaceRenderer.h"
 #include "editor/rendering/EditorPreparedDocument.h"
 
+import folia.platform.editor_viewport_plan;
+
 namespace winrt::Folia
 {
     EditorSurfaceRenderer::EditorSurfaceRenderer() = default;
@@ -147,9 +149,30 @@ namespace winrt::Folia
         struct Reset { EditorSurfaceRenderer& owner; ~Reset() { owner.rendering = false; if (owner.deferredInvalidate.exchange(false)) owner.Invalidate(); } } reset{*this};
         // Background workers can complete several formulas and SVG fragments
         // while the physical-refresh scheduler is waiting to present. Consume
-        // them as one epoch at the frame boundary so pending blocks are not
-        // rebuilt repeatedly for results that will share the same frame.
-        if (embeddedCompletionPending.exchange(false)) ++embeddedGeneration;
+        // them as one epoch only after the viewport is stable. Advancing the
+        // global embedded generation during scrolling would rebuild every
+        // visible pending formula even when an off-screen prefetch completed.
+        // Keep the pending flag set and request a stable follow-up frame so the
+        // last completion cannot be stranded when scrolling stops.
+        auto viewportMoved = preparedDocument
+            && preparedDocument->hasLastViewportOffset
+            && folia::platform::editor::EditorViewportMoved(
+                true,
+                preparedDocument->lastViewportOffset,
+                scrollState.Offset());
+        if (embeddedCompletionPending.load(std::memory_order_acquire))
+        {
+            if (viewportMoved)
+            {
+                deferredInvalidate = true;
+            }
+            else if (embeddedCompletionPending.exchange(
+                         false,
+                         std::memory_order_acq_rel))
+            {
+                ++embeddedGeneration;
+            }
+        }
         resources.EnsureFrameResources(styleSheet);
         resources.d2dContext->BeginDraw();
         resources.d2dContext->Clear(styleSheet.canvasColor);

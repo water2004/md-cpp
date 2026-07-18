@@ -73,14 +73,29 @@ namespace winrt::Folia
         return result;
     }
 
-    std::optional<MathJaxSvg> NormalizeMathJaxSvg(MathJaxSvg const& source, SvgNormalizer& normalizer, D2D1_COLOR_F color, float fontSize, bool allowQueue)
+    std::optional<MathJaxSvg> NormalizeMathJaxSvg(
+        MathJaxSvg const& source,
+        SvgNormalizer& normalizer,
+        D2D1_COLOR_F color,
+        float fontSize,
+        bool allowQueue,
+        bool highPriority)
     {
         MathJaxSvg result = source;
+        auto pending = false;
         for (auto& fragment : result.fragments)
         {
             if (!fragment.svg) return std::nullopt;
-            auto normalized = normalizer.GetOrQueue(ResolveSvgColor(*fragment.svg, color), fontSize, allowQueue);
-            if (!normalized) return std::nullopt;
+            auto normalized = normalizer.GetOrQueue(
+                ResolveSvgColor(*fragment.svg, color),
+                fontSize,
+                allowQueue,
+                highPriority);
+            if (!normalized)
+            {
+                pending = true;
+                continue;
+            }
             if (!static_cast<bool>(*normalized))
             {
                 result.fragments.clear();
@@ -91,6 +106,7 @@ namespace winrt::Folia
             fragment.renderId = normalized->id;
             fragment.svg = normalized->svg;
         }
+        if (pending) return std::nullopt;
         return result;
     }
 

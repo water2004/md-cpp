@@ -55,7 +55,13 @@ namespace winrt::Folia
 
         void SetEnabled(bool enabled);
         bool Enabled() const;
-        std::shared_ptr<MathJaxSvg const> GetOrQueue(std::string_view tex, bool display, float em, float containerWidth, bool allowQueue = true);
+        std::shared_ptr<MathJaxSvg const> GetOrQueue(
+            std::string_view tex,
+            bool display,
+            float em,
+            float containerWidth,
+            bool allowQueue = true,
+            bool highPriority = false);
         void SetCompletionCallback(std::function<void()> callback);
         void Clear();
 

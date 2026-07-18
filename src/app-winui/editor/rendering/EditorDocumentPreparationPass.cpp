@@ -260,14 +260,17 @@ namespace winrt::Folia
         auto deadline = std::chrono::steady_clock::now()
             + (printMode ? std::chrono::hours{24} : std::chrono::milliseconds{2});
 
-        auto prepareIndex = [&](std::size_t index)
+        auto prepareIndex = [&](std::size_t index, bool highPriority)
         {
             auto placement = preparedDocument->geometry.At(index);
             auto const& block = frame.renderModel.blocks[index];
             auto& prepared = preparedDocument->blocks[index];
             if (block.kind == folia::RenderBlockKind::ThematicBreak || prepared.valid) return;
             auto previousHeight = prepared.height;
-            prepared = blockPreparer.Prepare(block, RequestEmbeddedAt(placement.top));
+            prepared = blockPreparer.Prepare(
+                block,
+                RequestEmbeddedAt(placement.top),
+                highPriority);
             preparedDocument->layoutBlocks.insert(index);
             if (prepared.embeddedRequested && (prepared.containsMath || prepared.containsImage))
                 preparedDocument->embeddedBlocks.insert(index);
@@ -287,7 +290,7 @@ namespace winrt::Folia
             return printMode || preparedThisFrame == 0
                 || std::chrono::steady_clock::now() < deadline;
         };
-        auto prepareForward = [&](std::size_t begin, std::size_t end)
+        auto prepareForward = [&](std::size_t begin, std::size_t end, bool highPriority)
         {
             constexpr std::size_t materializationBatch = 16;
             for (auto cursor = begin; cursor < end;)
@@ -297,7 +300,7 @@ namespace winrt::Folia
                 if (frame.materializeBlocks) frame.materializeBlocks(cursor, batchEnd);
                 for (; cursor < batchEnd; ++cursor)
                 {
-                    prepareIndex(cursor);
+                    prepareIndex(cursor, highPriority);
                     if (!withinBudget() && cursor + 1 < end)
                     {
                         ++cursor;
@@ -308,7 +311,7 @@ namespace winrt::Folia
                 if (needsAnotherFrame) break;
             }
         };
-        auto prepareBackward = [&](std::size_t begin, std::size_t end)
+        auto prepareBackward = [&](std::size_t begin, std::size_t end, bool highPriority)
         {
             constexpr std::size_t materializationBatch = 16;
             auto cursor = end;
@@ -322,7 +325,7 @@ namespace winrt::Folia
                 while (cursor > batchBegin)
                 {
                     --cursor;
-                    prepareIndex(cursor);
+                    prepareIndex(cursor, highPriority);
                     if (!withinBudget() && cursor > begin)
                     {
                         needsAnotherFrame = true;
@@ -346,13 +349,13 @@ namespace winrt::Folia
             printMode,
             scrollingForward,
             viewportPolicy);
-        prepareForward(viewportPlan.visible.begin, viewportPlan.visible.end);
+        prepareForward(viewportPlan.visible.begin, viewportPlan.visible.end, true);
         if (!printMode && !needsAnotherFrame && !viewportPlan.prefetch.Empty())
         {
             if (scrollingForward)
-                prepareForward(viewportPlan.prefetch.begin, viewportPlan.prefetch.end);
+                prepareForward(viewportPlan.prefetch.begin, viewportPlan.prefetch.end, false);
             else
-                prepareBackward(viewportPlan.prefetch.begin, viewportPlan.prefetch.end);
+                prepareBackward(viewportPlan.prefetch.begin, viewportPlan.prefetch.end, false);
         }
         if (!printMode)
         {
@@ -421,7 +424,9 @@ namespace winrt::Folia
                 return false;
             }
             auto previousHeight = prepared.height;
-            prepared = blockPreparer.Prepare(block, true);
+            auto highPriority = index >= embeddedPlan.visible.begin
+                && index < embeddedPlan.visible.end;
+            prepared = blockPreparer.Prepare(block, true, highPriority);
             ++refreshes;
             preparedDocument->layoutBlocks.insert(index);
             preparedDocument->embeddedBlocks.insert(index);
@@ -470,7 +475,7 @@ namespace winrt::Folia
             auto& prepared = preparedDocument->blocks[index];
             auto imageSources = EditorDocumentBlockPreparer::ImageSources(prepared);
             auto previousHeight = prepared.height;
-            prepared = blockPreparer.Prepare(block, false);
+            prepared = blockPreparer.Prepare(block, false, false);
             preparedDocument->layoutBlocks.insert(index);
             preparedDocument->embeddedBlocks.erase(index);
             for (auto const& source : imageSources) inlineImages.ReleaseGif(source);

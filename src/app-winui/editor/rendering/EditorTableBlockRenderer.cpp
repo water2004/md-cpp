@@ -14,6 +14,7 @@ namespace winrt::Folia
         float tableWidth,
         bool svgSupported,
         bool requestEmbedded,
+        bool highPriority,
         EditorRenderResources& resources,
         EditorStyleSheet const& styleSheet,
         EditorTextLayoutEngine& textLayoutEngine,
@@ -51,7 +52,7 @@ namespace winrt::Folia
                 auto renderCellIndex = row * table.columnCount + column;
                 if (renderCellIndex < special.table_cells.size())
                 {
-                    display = BuildDisplayInlineText(special.table_cells[renderCellIndex], caret, {sourceSpan.container_id, sourceSpan.source_range.end, folia::TextAffinity::Downstream}, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, (std::max)(1.0f, columnWidth - 20.0f), svgSupported, requestEmbedded);
+                    display = BuildDisplayInlineText(special.table_cells[renderCellIndex], caret, {sourceSpan.container_id, sourceSpan.source_range.end, folia::TextAffinity::Downstream}, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, (std::max)(1.0f, columnWidth - 20.0f), svgSupported, requestEmbedded, highPriority);
                 }
                 else
                 {

@@ -164,10 +164,18 @@ namespace winrt::Folia
             std::uint64_t generation = 0;
         };
 
+        enum class RequestState
+        {
+            BackgroundQueued,
+            HighPriorityQueued,
+            InFlight,
+        };
+
         std::mutex mutex;
         std::condition_variable_any ready;
+        std::deque<Request> highPriorityRequests;
         std::deque<Request> requests;
-        std::unordered_set<std::string> queued;
+        std::unordered_map<std::string, RequestState> requestStates;
         std::unordered_map<std::string, std::shared_ptr<MathJaxSvg const>> cache;
         std::unordered_map<std::string, std::size_t> transientFailures;
         std::deque<std::string> cacheOrder;
@@ -411,15 +419,28 @@ namespace winrt::Folia
                 Request request;
                 {
                     std::unique_lock lock(mutex);
-                    if (!ready.wait(lock, stop, [&] { return !requests.empty(); })) break;
-                    request = std::move(requests.front());
-                    requests.pop_front();
+                    if (!ready.wait(lock, stop, [&] {
+                            return !highPriorityRequests.empty() || !requests.empty();
+                        })) break;
+                    if (!highPriorityRequests.empty())
+                    {
+                        request = std::move(highPriorityRequests.front());
+                        highPriorityRequests.pop_front();
+                    }
+                    else
+                    {
+                        request = std::move(requests.front());
+                        requests.pop_front();
+                    }
+                    if (auto found = requestStates.find(request.key);
+                        found != requestStates.end())
+                        found->second = RequestState::InFlight;
                 }
                 auto result = RenderNow(request);
                 std::function<void()> notify;
                 {
                     std::scoped_lock lock(mutex);
-                    queued.erase(request.key);
+                    requestStates.erase(request.key);
                     if (request.generation == generation)
                     {
                         auto retryable = RetryableFailure(result.error);
@@ -473,8 +494,9 @@ namespace winrt::Folia
             if (!state->enabled && !state->worker.joinable()) return;
             state->enabled = false;
             ++state->generation;
+            state->highPriorityRequests.clear();
             state->requests.clear();
-            state->queued.clear();
+            state->requestStates.clear();
             state->cache.clear();
             state->cacheOrder.clear();
             state->transientFailures.clear();
@@ -500,8 +522,9 @@ namespace winrt::Folia
         if (!state) return;
         std::scoped_lock lock(state->mutex);
         ++state->generation;
+        state->highPriorityRequests.clear();
         state->requests.clear();
-        state->queued.clear();
+        state->requestStates.clear();
         state->cache.clear();
         state->cacheOrder.clear();
         state->transientFailures.clear();
@@ -514,23 +537,66 @@ namespace winrt::Folia
         state->completion = std::move(callback);
     }
 
-    std::shared_ptr<MathJaxSvg const> MathJaxRenderer::GetOrQueue(std::string_view tex, bool display, float em, float containerWidth, bool allowQueue)
+    std::shared_ptr<MathJaxSvg const> MathJaxRenderer::GetOrQueue(
+        std::string_view tex,
+        bool display,
+        float em,
+        float containerWidth,
+        bool allowQueue,
+        bool highPriority)
     {
         auto key = std::string(tex) + '\x1f' + (display ? "1" : "0") + '\x1f' + std::to_string(em) + '\x1f' + std::to_string(containerWidth);
         std::scoped_lock lock(state->mutex);
         if (!state->enabled) return {};
         if (auto found = state->cache.find(key); found != state->cache.end()) return found->second;
         if (!allowQueue) return {};
-        if (state->queued.insert(key).second)
+        auto [requestState, inserted] = state->requestStates.try_emplace(
+            key,
+            highPriority
+                ? State::RequestState::HighPriorityQueued
+                : State::RequestState::BackgroundQueued);
+        if (!inserted)
         {
-            while (state->requests.size() >= 256)
+            if (highPriority
+                && requestState->second == State::RequestState::BackgroundQueued)
             {
-                state->queued.erase(state->requests.front().key);
-                state->requests.pop_front();
+                auto found = std::ranges::find(state->requests, key, &State::Request::key);
+                if (found != state->requests.end())
+                {
+                    state->highPriorityRequests.push_back(std::move(*found));
+                    state->requests.erase(found);
+                    requestState->second = State::RequestState::HighPriorityQueued;
+                    state->ready.notify_one();
+                }
             }
-            state->requests.push_back(State::Request{ key, std::string(tex), display, em, containerWidth, state->generation });
-            state->ready.notify_one();
+            return {};
         }
+
+        while (state->highPriorityRequests.size() + state->requests.size() >= 256)
+        {
+            auto* queue = !state->requests.empty()
+                ? &state->requests
+                : &state->highPriorityRequests;
+            state->requestStates.erase(queue->front().key);
+            queue->pop_front();
+        }
+        auto request = State::Request{
+            key,
+            std::string(tex),
+            display,
+            em,
+            containerWidth,
+            state->generation,
+        };
+        if (highPriority)
+        {
+            state->highPriorityRequests.push_back(std::move(request));
+        }
+        else
+        {
+            state->requests.push_back(std::move(request));
+        }
+        state->ready.notify_one();
         return {};
     }
 }
