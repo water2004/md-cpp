@@ -220,10 +220,10 @@
   <data name="LatexRankingDescription" xml:space="preserve"><value>Accepted commands are ranked with a 14-day usage decay. Typing and browsing candidates are not counted.</value></data>
   <data name="ResetLatexUsage" xml:space="preserve"><value>Reset recent usage</value></data>
   <data name="CustomLatexCommand" xml:space="preserve"><value>Custom command</value></data>
-  <data name="LatexTemplateHelp" xml:space="preserve"><value>Enter one escaped line: use \\ for LaTeX backslashes, \n for a new line, and \t for a tab. Tab stops use $1 or ${1:default}; $0 is the final caret.</value></data>
+  <data name="LatexTemplateHelp" xml:space="preserve"><value>Each entry maps exactly one prefix to one template. Enter the template on one escaped line: use \\ for LaTeX backslashes, \n for a new line, and \t for a tab. Tab stops use $1 or ${1:default}; $0 is the final caret.</value></data>
   <data name="LatexCommandList" xml:space="preserve"><value>Command catalog</value></data>
   <data name="EditLatexCommand" xml:space="preserve"><value>Edit LaTeX command</value></data>
-  <data name="LatexCommand" xml:space="preserve"><value>Command</value></data>
+  <data name="LatexCommand" xml:space="preserve"><value>Prefix</value></data>
   <data name="Description" xml:space="preserve"><value>Description</value></data>
   <data name="LatexDescriptionExample" xml:space="preserve"><value>Insert a custom operator</value></data>
   <data name="AddCommand" xml:space="preserve"><value>Add command</value></data>
@@ -270,4 +270,12 @@
   <data name="LatexDescriptionPmatrix" xml:space="preserve"><value>Parenthesized matrix</value></data>
   <data name="LatexDescriptionCases" xml:space="preserve"><value>Piecewise cases</value></data>
   <data name="LatexDescriptionAligned" xml:space="preserve"><value>Aligned equations</value></data>
+  <data name="LatexDescriptionStructureGeneric" xml:space="preserve"><value>Math structure template</value></data>
+  <data name="LatexDescriptionOperatorGeneric" xml:space="preserve"><value>Math operator template</value></data>
+  <data name="LatexDescriptionAccentGeneric" xml:space="preserve"><value>Math accent template</value></data>
+  <data name="LatexDescriptionGreekGeneric" xml:space="preserve"><value>Greek letter</value></data>
+  <data name="LatexDescriptionRelationGeneric" xml:space="preserve"><value>Relation symbol</value></data>
+  <data name="LatexDescriptionArrowGeneric" xml:space="preserve"><value>Arrow symbol</value></data>
+  <data name="LatexDescriptionSymbolGeneric" xml:space="preserve"><value>Math symbol</value></data>
+  <data name="LatexDescriptionEnvironmentGeneric" xml:space="preserve"><value>Math environment</value></data>
 </root>

@@ -150,7 +150,7 @@ namespace winrt::Folia
         fields.Children().Append(Text(Localize(L"LatexTemplateHelp"), 12));
         TextBox trigger;
         trigger.Header(box_value(Localize(L"LatexCommand")));
-        trigger.PlaceholderText(L"frac");
+        trigger.PlaceholderText(L"begin{matrix}");
         if (command)
             trigger.Text(winrt::to_hstring(folia::cps_to_utf8(command->trigger)));
         fields.Children().Append(trigger);

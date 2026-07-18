@@ -220,10 +220,10 @@
   <data name="LatexRankingDescription" xml:space="preserve"><value>仅接受候选时计入使用情况，并按 14 天半衰期排序；输入和浏览不会计数。</value></data>
   <data name="ResetLatexUsage" xml:space="preserve"><value>重置近期使用</value></data>
   <data name="CustomLatexCommand" xml:space="preserve"><value>自定义命令</value></data>
-  <data name="LatexTemplateHelp" xml:space="preserve"><value>模板只输入一行：LaTeX 反斜杠写为 \\，换行写为 \n，制表符写为 \t。使用 $1 或 ${1:默认内容} 定义 Tab 跳位，$0 定义最终光标。</value></data>
+  <data name="LatexTemplateHelp" xml:space="preserve"><value>每一项只将一个前缀映射到一个模板。模板只输入一行：LaTeX 反斜杠写为 \\，换行写为 \n，制表符写为 \t。使用 $1 或 ${1:默认内容} 定义 Tab 跳位，$0 定义最终光标。</value></data>
   <data name="LatexCommandList" xml:space="preserve"><value>命令列表</value></data>
   <data name="EditLatexCommand" xml:space="preserve"><value>编辑 LaTeX 命令</value></data>
-  <data name="LatexCommand" xml:space="preserve"><value>命令</value></data>
+  <data name="LatexCommand" xml:space="preserve"><value>前缀</value></data>
   <data name="Description" xml:space="preserve"><value>说明</value></data>
   <data name="LatexDescriptionExample" xml:space="preserve"><value>插入自定义运算符</value></data>
   <data name="AddCommand" xml:space="preserve"><value>添加命令</value></data>
@@ -270,4 +270,12 @@
   <data name="LatexDescriptionPmatrix" xml:space="preserve"><value>圆括号矩阵</value></data>
   <data name="LatexDescriptionCases" xml:space="preserve"><value>分段函数环境</value></data>
   <data name="LatexDescriptionAligned" xml:space="preserve"><value>对齐公式环境</value></data>
+  <data name="LatexDescriptionStructureGeneric" xml:space="preserve"><value>数学结构模板</value></data>
+  <data name="LatexDescriptionOperatorGeneric" xml:space="preserve"><value>数学运算符模板</value></data>
+  <data name="LatexDescriptionAccentGeneric" xml:space="preserve"><value>数学重音模板</value></data>
+  <data name="LatexDescriptionGreekGeneric" xml:space="preserve"><value>希腊字母</value></data>
+  <data name="LatexDescriptionRelationGeneric" xml:space="preserve"><value>关系符号</value></data>
+  <data name="LatexDescriptionArrowGeneric" xml:space="preserve"><value>箭头符号</value></data>
+  <data name="LatexDescriptionSymbolGeneric" xml:space="preserve"><value>数学符号</value></data>
+  <data name="LatexDescriptionEnvironmentGeneric" xml:space="preserve"><value>数学环境</value></data>
 </root>
