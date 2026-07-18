@@ -1,5 +1,5 @@
 /*! MathJax NewCM is licensed under Apache-2.0. */
-globalThis.ElMdMathJaxFont.dynamicSetup('', 'braille', {
+globalThis.FoliaMathJaxFont.dynamicSetup('', 'braille', {
     'sans-serif': {
         0x2800: [0, 0, .725, { p: '' }],
         0x2801: [.651, -.492, .725, { p: '250 492C293 492 330 529 330 572C330 617 294 651 250 651C205 651 171 617 171 572C171 528 205 492 250 492' }],

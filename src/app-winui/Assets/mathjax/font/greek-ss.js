@@ -1,5 +1,5 @@
 /*! MathJax NewCM is licensed under Apache-2.0. */
-globalThis.ElMdMathJaxFont.dynamicSetup('', 'greek-ss', {
+globalThis.FoliaMathJaxFont.dynamicSetup('', 'greek-ss', {
     'sans-serif': {
         0x370: [.694, 0, .611, { p: '517 395L191 395L191 694L94 694L94 0L191 0L191 326L517 326' }],
         0x371: [.529, 0, .414, { p: '387 308L111 308L111 529L27 529L27 0L111 0L111 240L387 240' }],

@@ -1,5 +1,5 @@
 /*! MathJax NewCM is licensed under Apache-2.0. */
-globalThis.ElMdMathJaxFont.dynamicSetup('', 'sans-serif-i', {
+globalThis.FoliaMathJaxFont.dynamicSetup('', 'sans-serif-i', {
     'sans-serif-italic': {
         0xC0: [.868, 0, .667, { p: '494 739L594 739L437 868L314 868M540 0L639 0L526 696L433 696L25 0L107 0L226 202L507 202M452 605C453 584 456 555 461 516L496 266L263 266C333 388 410 516 452 605' }],
         0xC1: [.868, 0, .667, { ic: .052, p: '485 739L719 868L593 868L382 739M541 0L640 0L527 696L434 696L25 0L107 0L226 202L508 202M452 605C453 584 457 555 462 516L497 266L263 266C333 388 409 516 452 605' }],

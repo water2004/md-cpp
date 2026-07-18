@@ -87,12 +87,12 @@ struct SvgNormalizerRuntime
 
     SvgNormalizerRuntime()
     {
-        module = LoadLibraryW(L"../../src/app-winui/third_party/usvg-normalizer/bin/x64/elmd_svg_normalizer.dll");
+        module = LoadLibraryW(L"../../src/app-winui/third_party/usvg-normalizer/bin/x64/folia_svg_normalizer.dll");
         if (!module) return;
-        auto create = reinterpret_cast<Create>(GetProcAddress(module, "elmd_svg_normalizer_create"));
-        destroy = reinterpret_cast<Destroy>(GetProcAddress(module, "elmd_svg_normalizer_destroy"));
-        normalize = reinterpret_cast<Normalize>(GetProcAddress(module, "elmd_svg_normalize"));
-        freeBuffer = reinterpret_cast<FreeBuffer>(GetProcAddress(module, "elmd_svg_buffer_destroy"));
+        auto create = reinterpret_cast<Create>(GetProcAddress(module, "folia_svg_normalizer_create"));
+        destroy = reinterpret_cast<Destroy>(GetProcAddress(module, "folia_svg_normalizer_destroy"));
+        normalize = reinterpret_cast<Normalize>(GetProcAddress(module, "folia_svg_normalize"));
+        freeBuffer = reinterpret_cast<FreeBuffer>(GetProcAddress(module, "folia_svg_buffer_destroy"));
         if (create && destroy && normalize && freeBuffer) context = create();
     }
 
@@ -181,7 +181,7 @@ int main()
     JS_SetInterruptHandler(runtime, Interrupt, nullptr);
     auto context = JS_NewContext(runtime);
     auto setupGlobal = JS_GetGlobalObject(context);
-    JS_SetPropertyStr(context, setupGlobal, "ElMdLoadMathJaxModule", JS_NewCFunction(context, LoadFontModule, "ElMdLoadMathJaxModule", 1));
+    JS_SetPropertyStr(context, setupGlobal, "FoliaLoadMathJaxModule", JS_NewCFunction(context, LoadFontModule, "FoliaLoadMathJaxModule", 1));
     JS_FreeValue(context, setupGlobal);
     deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     auto loaded = JS_Eval(context, bundle.data(), bundle.size(), "mathjax-quickjs.js", JS_EVAL_TYPE_GLOBAL);
@@ -196,7 +196,7 @@ int main()
     }
     JS_FreeValue(context, loaded);
     auto global = JS_GetGlobalObject(context);
-    auto api = JS_GetPropertyStr(context, global, "ElMdMathJax");
+    auto api = JS_GetPropertyStr(context, global, "FoliaMathJax");
     auto render = JS_GetPropertyStr(context, api, "render");
     SvgValidator svgValidator;
     SvgNormalizerRuntime svgNormalizer;

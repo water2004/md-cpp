@@ -23,6 +23,6 @@ for (const name of fs.readdirSync(sourceDir).filter(name => name.endsWith('.js')
   const marker = 'svg_js_1.MathJaxNewcmFont.dynamicSetup';
   const start = source.indexOf(marker);
   if (start < 0) throw new Error(`Missing dynamic font setup in ${name}`);
-  const body = source.slice(start).replaceAll(marker, 'globalThis.ElMdMathJaxFont.dynamicSetup').replace(/\/\/\# sourceMappingURL=.*$/m, '');
+  const body = source.slice(start).replaceAll(marker, 'globalThis.FoliaMathJaxFont.dynamicSetup').replace(/\/\/\# sourceMappingURL=.*$/m, '');
   fs.writeFileSync(path.join(outputDir, name), `/*! MathJax NewCM is licensed under Apache-2.0. */\n${body}`);
 }

@@ -24,9 +24,9 @@ require('@mathjax/src/js/input/tex/verb/VerbConfiguration.js');
 
 const adaptor = liteAdaptor({fontSize: 16});
 RegisterHTMLHandler(adaptor);
-mathjax.asyncLoad = name => globalThis.ElMdLoadMathJaxModule(String(name));
+mathjax.asyncLoad = name => globalThis.FoliaLoadMathJaxModule(String(name));
 mathjax.asyncIsSynchronous = true;
-globalThis.ElMdMathJaxFont = MathJaxNewcmFont;
+globalThis.FoliaMathJaxFont = MathJaxNewcmFont;
 const input = new TeX({
   packages: ['base', 'ams', 'newcommand', 'noundefined', 'boldsymbol', 'braket', 'cancel', 'cases', 'color', 'configmacros', 'extpfeil', 'mathtools', 'physics', 'textmacros', 'unicode', 'upgreek', 'verb'],
   formatError(jax, error) { throw error; }
@@ -40,7 +40,7 @@ const output = new SVG({
 });
 const document = mathjax.document('', {InputJax: input, OutputJax: output});
 
-globalThis.ElMdMathJax = {
+globalThis.FoliaMathJax = {
   render(tex, display, em, width) {
     const node = document.convert(String(tex), {
       display: Boolean(display),
