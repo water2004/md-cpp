@@ -360,6 +360,10 @@ namespace winrt::Folia
                 for (auto const& span : block.special().table_cell_spans)
                     addOwner(span.container_id);
                 prepared.pendingMath = prepared.table->pendingMath;
+                prepared.pendingMathJaxDependencies =
+                    prepared.table->pendingMathJaxDependencies;
+                prepared.pendingSvgDependencies =
+                    prepared.table->pendingSvgDependencies;
                 prepared.pendingImage = prepared.table->pendingImage;
                 prepared.height = prepared.table->height;
                 prepared.valid = true;
@@ -420,6 +424,10 @@ namespace winrt::Folia
         }
         documentPainter.ApplyNestedCodeHighlights(prepared.display, block);
         prepared.pendingMath = prepared.display.pendingMath;
+        prepared.pendingMathJaxDependencies =
+            prepared.display.pendingMathJaxDependencies;
+        prepared.pendingSvgDependencies =
+            prepared.display.pendingSvgDependencies;
         auto format = textLayoutEngine.FormatFor(
             prepared.code || prepared.sourceMode,
             prepared.display.ranges);

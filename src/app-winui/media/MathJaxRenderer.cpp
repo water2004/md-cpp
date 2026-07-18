@@ -174,10 +174,12 @@ namespace winrt::Folia
         std::condition_variable_any ready;
         EditorPriorityWorkQueue<Request> requestQueue;
         std::unordered_map<std::string, std::shared_ptr<MathJaxSvg const>> cache;
+        std::unordered_map<std::string, std::uint64_t> completionRevisions;
         std::unordered_map<std::string, std::size_t> transientFailures;
         std::deque<std::string> cacheOrder;
         std::size_t cacheBytes = 0;
         std::uint64_t generation = 0;
+        std::uint64_t nextCompletionRevision = 1;
         std::function<void()> completion;
         bool backgroundPaused = false;
         JSRuntime* runtime = nullptr;
@@ -401,6 +403,7 @@ namespace winrt::Folia
                 if (found == cache.end()) continue;
                 cacheBytes -= found->first.size() + ResultBytes(*found->second);
                 cache.erase(found);
+                completionRevisions.erase(oldest);
             }
             if (bytes <= budget)
             {
@@ -447,6 +450,7 @@ namespace winrt::Folia
                             transientFailures.erase(request.key);
                         }
                         if (store) Store(request, std::move(result));
+                        completionRevisions[request.key] = nextCompletionRevision++;
                         notify = completion;
                     }
                 }
@@ -487,6 +491,7 @@ namespace winrt::Folia
             ++state->generation;
             state->requestQueue.Clear();
             state->cache.clear();
+            state->completionRevisions.clear();
             state->cacheOrder.clear();
             state->transientFailures.clear();
             state->cacheBytes = 0;
@@ -513,6 +518,7 @@ namespace winrt::Folia
         ++state->generation;
         state->requestQueue.Clear();
         state->cache.clear();
+        state->completionRevisions.clear();
         state->cacheOrder.clear();
         state->transientFailures.clear();
         state->cacheBytes = 0;
@@ -545,12 +551,20 @@ namespace winrt::Folia
         float em,
         float containerWidth,
         bool allowQueue,
-        bool highPriority)
+        bool highPriority,
+        AsyncWorkDependency* pendingDependency)
     {
         auto key = std::string(tex) + '\x1f' + (display ? "1" : "0") + '\x1f' + std::to_string(em) + '\x1f' + std::to_string(containerWidth);
         std::scoped_lock lock(state->mutex);
         if (!state->enabled) return {};
         if (auto found = state->cache.find(key); found != state->cache.end()) return found->second;
+        if (pendingDependency)
+        {
+            pendingDependency->key = key;
+            if (auto completed = state->completionRevisions.find(key);
+                completed != state->completionRevisions.end())
+                pendingDependency->observedCompletion = completed->second;
+        }
         if (!allowQueue) return {};
         auto change = state->requestQueue.Enqueue(
             State::Request{
@@ -567,5 +581,21 @@ namespace winrt::Folia
             256);
         if (change != EditorQueueChange::Unchanged) state->ready.notify_one();
         return {};
+    }
+
+    bool MathJaxRenderer::AnyCompletedAfter(
+        std::span<AsyncWorkDependency const> dependencies) const
+    {
+        if (!state || dependencies.empty()) return false;
+        std::scoped_lock lock(state->mutex);
+        return std::ranges::any_of(
+            dependencies,
+            [&](AsyncWorkDependency const& dependency)
+            {
+                if (dependency.key.empty()) return false;
+                auto completed = state->completionRevisions.find(dependency.key);
+                return completed != state->completionRevisions.end()
+                    && completed->second > dependency.observedCompletion;
+            });
     }
 }

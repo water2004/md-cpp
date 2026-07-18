@@ -105,6 +105,8 @@ namespace winrt::Folia
         std::vector<IndentOverlay> indentOverlays;
         std::vector<TaskCheckboxOverlay> taskCheckboxOverlays;
         std::vector<FootnoteOverlay> footnoteOverlays;
+        std::vector<AsyncWorkDependency> pendingMathJaxDependencies;
+        std::vector<AsyncWorkDependency> pendingSvgDependencies;
         bool pendingMath = false;
     };
 
@@ -116,7 +118,8 @@ namespace winrt::Folia
         D2D1_COLOR_F color,
         float fontSize,
         bool allowQueue,
-        bool highPriority);
+        bool highPriority,
+        std::vector<AsyncWorkDependency>* pendingDependencies = nullptr);
     std::optional<MermaidSvg> NormalizeMermaidSvg(MermaidSvg const& source, SvgNormalizer& normalizer, bool allowQueue);
     std::u32string InlineText(std::vector<folia::InlineRenderItem> const& items);
     folia::TextPosition InlineItemsEndPosition(std::vector<folia::InlineRenderItem> const& items, folia::TextPosition fallback);

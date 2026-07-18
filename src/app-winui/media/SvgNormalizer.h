@@ -4,8 +4,11 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
+
+#include "media/AsyncWorkDependency.h"
 
 namespace winrt::Folia
 {
@@ -36,7 +39,10 @@ namespace winrt::Folia
             std::string_view source,
             float fontSize,
             bool allowQueue = true,
-            bool highPriority = false);
+            bool highPriority = false,
+            AsyncWorkDependency* pendingDependency = nullptr);
+        bool AnyCompletedAfter(
+            std::span<AsyncWorkDependency const> dependencies) const;
         void SetCompletionCallback(std::function<void()> callback);
         void SetBackgroundPaused(bool paused);
 

@@ -4,9 +4,12 @@
 #include <memory>
 #include <functional>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "media/AsyncWorkDependency.h"
 
 namespace winrt::Folia
 {
@@ -61,7 +64,10 @@ namespace winrt::Folia
             float em,
             float containerWidth,
             bool allowQueue = true,
-            bool highPriority = false);
+            bool highPriority = false,
+            AsyncWorkDependency* pendingDependency = nullptr);
+        bool AnyCompletedAfter(
+            std::span<AsyncWorkDependency const> dependencies) const;
         void SetCompletionCallback(std::function<void()> callback);
         void SetBackgroundPaused(bool paused);
         void Clear();

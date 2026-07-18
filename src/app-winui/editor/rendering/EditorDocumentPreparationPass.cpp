@@ -18,6 +18,8 @@ namespace winrt::Folia
         EditorStyleSheet const& valueStyleSheet,
         EditorInlineImageRenderer& valueInlineImages,
         EditorSvgPainter& valueSvgPainter,
+        MathJaxRenderer& valueMathJax,
+        SvgNormalizer& valueSvgNormalizer,
         EditorDocumentBlockPreparer& valueBlockPreparer,
         folia::platform::editor::EditorScrollState& valueScrollState,
         std::unique_ptr<EditorPreparedDocument>& valuePreparedDocument,
@@ -33,6 +35,8 @@ namespace winrt::Folia
           styleSheet(valueStyleSheet),
           inlineImages(valueInlineImages),
           svgPainter(valueSvgPainter),
+          mathJax(valueMathJax),
+          svgNormalizer(valueSvgNormalizer),
           blockPreparer(valueBlockPreparer),
           scrollState(valueScrollState),
           preparedDocument(valuePreparedDocument),
@@ -421,7 +425,10 @@ namespace winrt::Folia
             if (!prepared.valid) return true;
             auto refreshForMath = prepared.pendingMath
                 && prepared.embeddedRequested
-                && prepared.embeddedGeneration != embeddedGeneration;
+                && (mathJax.AnyCompletedAfter(
+                        prepared.pendingMathJaxDependencies)
+                    || svgNormalizer.AnyCompletedAfter(
+                        prepared.pendingSvgDependencies));
             auto refreshForImages = prepared.containsImage
                 && prepared.embeddedRequested
                 && (prepared.remoteImageGeneration != remoteImageGeneration

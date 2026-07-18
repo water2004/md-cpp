@@ -141,6 +141,7 @@ namespace winrt::Folia
                     std::scoped_lock lock(mutex);
                     requestQueue.Complete(request.key, ticket);
                     Store(request.key, std::move(result));
+                    completionRevisions[request.key] = nextCompletionRevision++;
                     if (!stopping) callback = completion;
                 }
                 if (callback) callback();
@@ -160,6 +161,7 @@ namespace winrt::Folia
                 if (found == cache.end()) continue;
                 cacheBytes -= oldest.size() + (found->second.svg ? found->second.svg->size() : 0) + found->second.error.size();
                 cache.erase(found);
+                completionRevisions.erase(oldest);
             }
             if (bytes <= budget)
             {
@@ -176,9 +178,11 @@ namespace winrt::Folia
         std::thread worker;
         EditorPriorityWorkQueue<Request> requestQueue;
         std::unordered_map<std::string, NormalizedSvg> cache;
+        std::unordered_map<std::string, std::uint64_t> completionRevisions;
         std::deque<std::string> cacheOrder;
         std::size_t cacheBytes = 0;
         std::uint64_t nextId = 1;
+        std::uint64_t nextCompletionRevision = 1;
         std::function<void()> completion;
         bool backgroundPaused = false;
     };
@@ -190,7 +194,8 @@ namespace winrt::Folia
         std::string_view source,
         float fontSize,
         bool allowQueue,
-        bool highPriority)
+        bool highPriority,
+        AsyncWorkDependency* pendingDependency)
     {
         if (source.empty()) return std::nullopt;
         std::scoped_lock lock(state->mutex);
@@ -198,6 +203,13 @@ namespace winrt::Folia
         key.push_back('\0');
         key.append(reinterpret_cast<char const*>(&fontSize), sizeof(fontSize));
         if (auto found = state->cache.find(key); found != state->cache.end()) return found->second;
+        if (pendingDependency)
+        {
+            pendingDependency->key = key;
+            if (auto completed = state->completionRevisions.find(key);
+                completed != state->completionRevisions.end())
+                pendingDependency->observedCompletion = completed->second;
+        }
         if (!allowQueue) return std::nullopt;
         auto change = state->requestQueue.Enqueue(
             State::Request{key, std::string(source), fontSize},
@@ -207,6 +219,22 @@ namespace winrt::Folia
             512);
         if (change != EditorQueueChange::Unchanged) state->wake.notify_one();
         return std::nullopt;
+    }
+
+    bool SvgNormalizer::AnyCompletedAfter(
+        std::span<AsyncWorkDependency const> dependencies) const
+    {
+        if (dependencies.empty()) return false;
+        std::scoped_lock lock(state->mutex);
+        return std::ranges::any_of(
+            dependencies,
+            [&](AsyncWorkDependency const& dependency)
+            {
+                if (dependency.key.empty()) return false;
+                auto completed = state->completionRevisions.find(dependency.key);
+                return completed != state->completionRevisions.end()
+                    && completed->second > dependency.observedCompletion;
+            });
     }
 
     void SvgNormalizer::SetCompletionCallback(std::function<void()> callback)

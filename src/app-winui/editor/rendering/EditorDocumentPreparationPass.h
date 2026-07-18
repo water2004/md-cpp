@@ -33,6 +33,8 @@ namespace winrt::Folia
             EditorStyleSheet const& styleSheet,
             EditorInlineImageRenderer& inlineImages,
             EditorSvgPainter& svgPainter,
+            MathJaxRenderer& mathJax,
+            SvgNormalizer& svgNormalizer,
             EditorDocumentBlockPreparer& blockPreparer,
             folia::platform::editor::EditorScrollState& scrollState,
             std::unique_ptr<EditorPreparedDocument>& preparedDocument,
@@ -61,6 +63,8 @@ namespace winrt::Folia
         EditorStyleSheet const& styleSheet;
         EditorInlineImageRenderer& inlineImages;
         EditorSvgPainter& svgPainter;
+        MathJaxRenderer& mathJax;
+        SvgNormalizer& svgNormalizer;
         EditorDocumentBlockPreparer& blockPreparer;
         folia::platform::editor::EditorScrollState& scrollState;
         std::unique_ptr<EditorPreparedDocument>& preparedDocument;

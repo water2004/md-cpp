@@ -79,21 +79,26 @@ namespace winrt::Folia
         D2D1_COLOR_F color,
         float fontSize,
         bool allowQueue,
-        bool highPriority)
+        bool highPriority,
+        std::vector<AsyncWorkDependency>* pendingDependencies)
     {
         MathJaxSvg result = source;
         auto pending = false;
         for (auto& fragment : result.fragments)
         {
             if (!fragment.svg) return std::nullopt;
+            AsyncWorkDependency dependency;
             auto normalized = normalizer.GetOrQueue(
                 ResolveSvgColor(*fragment.svg, color),
                 fontSize,
                 allowQueue,
-                highPriority);
+                highPriority,
+                &dependency);
             if (!normalized)
             {
                 pending = true;
+                if (pendingDependencies && dependency)
+                    pendingDependencies->push_back(std::move(dependency));
                 continue;
             }
             if (!static_cast<bool>(*normalized))

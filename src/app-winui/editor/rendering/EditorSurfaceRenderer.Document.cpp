@@ -128,6 +128,8 @@ namespace winrt::Folia
             styleSheet,
             inlineImages,
             svgPainter,
+            mathJax,
+            svgNormalizer,
             blockPreparer,
             scrollState,
             preparedDocument,

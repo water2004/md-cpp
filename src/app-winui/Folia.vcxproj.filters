@@ -578,6 +578,9 @@
     <ClInclude Include="editor\rendering\EditorPreparedDocument.h">
       <Filter>Editor\Rendering</Filter>
     </ClInclude>
+    <ClInclude Include="media\AsyncWorkDependency.h">
+      <Filter>Media Services</Filter>
+    </ClInclude>
     <ClInclude Include="media\MathJaxRenderer.h">
       <Filter>Media Services</Filter>
     </ClInclude>

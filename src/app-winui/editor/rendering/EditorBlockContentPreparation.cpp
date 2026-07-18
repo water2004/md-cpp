@@ -131,20 +131,26 @@ namespace winrt::Folia
             return display;
         }
 
+        AsyncWorkDependency mathJaxDependency;
         auto rawMath = mathJax.GetOrQueue(
             folia::cps_to_utf8(special.tex),
             true,
             fontSize,
             containerWidth,
             requestMath,
-            highPriority);
+            highPriority,
+            &mathJaxDependency);
+        if (!rawMath && mathJaxDependency)
+            display.pendingMathJaxDependencies.push_back(
+                std::move(mathJaxDependency));
         auto math = rawMath ? NormalizeMathJaxSvg(
             *rawMath,
             svgNormalizer,
             svgColor,
             fontSize,
             requestMath,
-            highPriority) : std::nullopt;
+            highPriority,
+            &display.pendingSvgDependencies) : std::nullopt;
         display.pendingMath = !rawMath || !math;
         if (editing)
         {

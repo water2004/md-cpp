@@ -299,6 +299,14 @@ namespace winrt::Folia
             overlay.displayStart += offset;
             target.footnoteOverlays.push_back(std::move(overlay));
         }
+        target.pendingMathJaxDependencies.insert(
+            target.pendingMathJaxDependencies.end(),
+            std::make_move_iterator(source.pendingMathJaxDependencies.begin()),
+            std::make_move_iterator(source.pendingMathJaxDependencies.end()));
+        target.pendingSvgDependencies.insert(
+            target.pendingSvgDependencies.end(),
+            std::make_move_iterator(source.pendingSvgDependencies.begin()),
+            std::make_move_iterator(source.pendingSvgDependencies.end()));
         target.pendingMath = target.pendingMath || source.pendingMath;
     }
 
@@ -485,20 +493,26 @@ namespace winrt::Folia
                     continue;
                 }
                 auto displayMath = item.special().display == folia::MathDisplayMode::Block;
+                AsyncWorkDependency mathJaxDependency;
                 auto rawMath = mathJax.GetOrQueue(
                     folia::cps_to_utf8(item.text),
                     displayMath,
                     fontSize,
                     containerWidth,
                     requestMath,
-                    highPriority);
+                    highPriority,
+                    &mathJaxDependency);
+                if (!rawMath && mathJaxDependency)
+                    display.pendingMathJaxDependencies.push_back(
+                        std::move(mathJaxDependency));
                 auto math = rawMath ? NormalizeMathJaxSvg(
                     *rawMath,
                     svgNormalizer,
                     svgColor,
                     fontSize,
                     requestMath,
-                    highPriority) : std::nullopt;
+                    highPriority,
+                    &display.pendingSvgDependencies) : std::nullopt;
                 display.pendingMath = display.pendingMath || !rawMath || !math;
                 auto editing = CaretTouchesSpan(caret, item.source_span);
                 auto delimiterLength = item.special().display == folia::MathDisplayMode::Block
