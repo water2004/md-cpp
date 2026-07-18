@@ -28,8 +28,8 @@ namespace winrt::Folia
             std::vector<D2D1_RECT_F>& nonInteractiveRegions,
             EditorInlineImageRenderer& inlineImages,
             EditorDocumentPainter& documentPainter,
-            EditorDrawMath const& drawMath,
-            EditorDrawMathFallback const& drawMathFallback);
+            EditorDrawMath drawMath,
+            EditorDrawMathFallback drawMathFallback);
 
         void Paint(
             detail::EditorRenderFrame const& frame,
@@ -56,7 +56,9 @@ namespace winrt::Folia
         std::vector<D2D1_RECT_F>& nonInteractiveRegions;
         EditorInlineImageRenderer& inlineImages;
         EditorDocumentPainter& documentPainter;
-        EditorDrawMath const& drawMath;
-        EditorDrawMathFallback const& drawMathFallback;
+        // Own these type-erased callbacks: callers commonly pass lambdas whose
+        // temporary std::function conversions do not outlive construction.
+        EditorDrawMath drawMath;
+        EditorDrawMathFallback drawMathFallback;
     };
 }

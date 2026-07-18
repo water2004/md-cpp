@@ -11,16 +11,16 @@ namespace winrt::Folia
         std::vector<D2D1_RECT_F>& valueNonInteractiveRegions,
         EditorInlineImageRenderer& valueInlineImages,
         EditorDocumentPainter& valueDocumentPainter,
-        EditorDrawMath const& valueDrawMath,
-        EditorDrawMathFallback const& valueDrawMathFallback)
+        EditorDrawMath valueDrawMath,
+        EditorDrawMathFallback valueDrawMathFallback)
         : resources(valueResources),
           styleSheet(valueStyleSheet),
           interactionMap(valueInteractionMap),
           nonInteractiveRegions(valueNonInteractiveRegions),
           inlineImages(valueInlineImages),
           documentPainter(valueDocumentPainter),
-          drawMath(valueDrawMath),
-          drawMathFallback(valueDrawMathFallback)
+          drawMath(std::move(valueDrawMath)),
+          drawMathFallback(std::move(valueDrawMathFallback))
     {
     }
 
