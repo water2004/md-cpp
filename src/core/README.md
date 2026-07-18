@@ -22,4 +22,11 @@ Some large files are intentionally cohesive:
 - `parsing/inline_parser.ixx` owns the lossless inline CST state machine.
 - `rendering/render_builder.ixx` owns one recursive block-tree-to-render-model traversal.
 
+HTML remains a lossless syntax island in the document model. The rendering
+layer derives only allow-listed presentation: `html_inline_presentation.ixx`
+projects safe inline styles, while `html_inline_flow.ixx` applies HTML
+formatting-context whitespace rules without changing source text or source
+spans. Block-level alignment is carried explicitly through `BlockStyle`; it is
+not inferred from rendered coordinates.
+
 Extract helpers from these only when they have an independent invariant and one-way dependency. Do not divide a parser state machine or tree traversal into arbitrary line ranges.

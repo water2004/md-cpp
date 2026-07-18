@@ -37,7 +37,9 @@ the user did not change.
 - **Rich rendering** — MathJax, Mermaid, Tree-sitter syntax highlighting,
   native SVG, animated GIFs, Windows image codecs (PNG, JPEG, BMP, TIFF, ICO,
   and installed WebP/HEIF codecs), tables, footnotes, callouts, and recursively
-  nested blocks.
+  nested blocks. Safe embedded HTML is projected into native block/inline
+  presentation, including common text styles, image/link flows, and
+  `align`/`text-align`; no browser surface is embedded.
 - **Focused reading** — configurable themes, English and Chinese interfaces,
   a borderless WinUI shell, and native Windows PDF export.
 - **Clear boundaries** — the C++23 modules core remains platform independent;
