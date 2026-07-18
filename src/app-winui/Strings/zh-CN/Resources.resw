@@ -164,4 +164,46 @@
   <data name="FindNoResults" xml:space="preserve"><value>无匹配结果</value></data>
   <data name="FindResultCount" xml:space="preserve"><value>第 {0} 项，共 {1} 项</value></data>
   <data name="FindError" xml:space="preserve"><value>表达式无效：{0}</value></data>
+  <data name="Shortcuts" xml:space="preserve"><value>快捷键</value></data>
+  <data name="ShortcutsDescription" xml:space="preserve"><value>按编辑上下文分配按键。未设置即为禁用；代码和数学作用域仅在对应区域覆盖相同的全局按键。</value></data>
+  <data name="ShortcutAction" xml:space="preserve"><value>动作</value></data>
+  <data name="ShortcutScope" xml:space="preserve"><value>范围</value></data>
+  <data name="ShortcutKeys" xml:space="preserve"><value>快捷键</value></data>
+  <data name="ShortcutOperations" xml:space="preserve"><value>操作</value></data>
+  <data name="ShortcutScopeGlobal" xml:space="preserve"><value>全局</value></data>
+  <data name="ShortcutScopeCode" xml:space="preserve"><value>代码区域</value></data>
+  <data name="ShortcutScopeMath" xml:space="preserve"><value>数学区域</value></data>
+  <data name="ShortcutUnassigned" xml:space="preserve"><value>未设置</value></data>
+  <data name="PressShortcut" xml:space="preserve"><value>请按快捷键…</value></data>
+  <data name="ShortcutCaptureHint" xml:space="preserve"><value>按下所需组合键；按 Esc 取消，或直接按 Backspace/Delete 禁用此快捷键。</value></data>
+  <data name="ShortcutConflict" xml:space="preserve"><value>{0} 已在此范围内分配给“{1}”。</value></data>
+  <data name="CustomInsertionAction" xml:space="preserve"><value>自定义插入动作</value></data>
+  <data name="SnippetPlaceholderDescription" xml:space="preserve"><value>使用 $1、$2……定义 Tab 跳位，$0 定义最终光标；使用 $$ 插入普通美元符号。</value></data>
+  <data name="ActionName" xml:space="preserve"><value>动作名称</value></data>
+  <data name="ActionNameExample" xml:space="preserve"><value>插入分数</value></data>
+  <data name="InsertionTemplate" xml:space="preserve"><value>插入模板</value></data>
+  <data name="AddInsertionAction" xml:space="preserve"><value>添加动作</value></data>
+  <data name="SaveInsertionAction" xml:space="preserve"><value>保存动作</value></data>
+  <data name="Cancel" xml:space="preserve"><value>取消</value></data>
+  <data name="Clear" xml:space="preserve"><value>清除</value></data>
+  <data name="Edit" xml:space="preserve"><value>编辑</value></data>
+  <data name="Remove" xml:space="preserve"><value>移除</value></data>
+  <data name="ShortcutsSaved" xml:space="preserve"><value>快捷键设置已保存</value></data>
+  <data name="SnippetFieldsRequired" xml:space="preserve"><value>请同时填写动作名称和插入模板。</value></data>
+  <data name="ShortcutUndo" xml:space="preserve"><value>撤销</value></data>
+  <data name="ShortcutRedo" xml:space="preserve"><value>重做</value></data>
+  <data name="ShortcutDocumentStart" xml:space="preserve"><value>移至文档开头</value></data>
+  <data name="ShortcutSelectDocumentStart" xml:space="preserve"><value>选择至文档开头</value></data>
+  <data name="ShortcutDocumentEnd" xml:space="preserve"><value>移至文档结尾</value></data>
+  <data name="ShortcutSelectDocumentEnd" xml:space="preserve"><value>选择至文档结尾</value></data>
+  <data name="ShortcutTableRowAbove" xml:space="preserve"><value>在上方插入表格行</value></data>
+  <data name="ShortcutTableRowBelow" xml:space="preserve"><value>在下方插入表格行</value></data>
+  <data name="ShortcutTableColumnLeft" xml:space="preserve"><value>在左侧插入表格列</value></data>
+  <data name="ShortcutTableColumnRight" xml:space="preserve"><value>在右侧插入表格列</value></data>
+  <data name="ShortcutTableMoveRowUp" xml:space="preserve"><value>向上移动表格行</value></data>
+  <data name="ShortcutTableMoveRowDown" xml:space="preserve"><value>向下移动表格行</value></data>
+  <data name="ShortcutTableMoveColumnLeft" xml:space="preserve"><value>向左移动表格列</value></data>
+  <data name="ShortcutTableMoveColumnRight" xml:space="preserve"><value>向右移动表格列</value></data>
+  <data name="ShortcutTableDeleteRow" xml:space="preserve"><value>删除表格行</value></data>
+  <data name="ShortcutTableDeleteColumn" xml:space="preserve"><value>删除表格列</value></data>
 </root>
