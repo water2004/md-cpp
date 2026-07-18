@@ -350,7 +350,14 @@ namespace winrt::Folia
             scrollingForward,
             viewportPolicy);
         prepareForward(viewportPlan.visible.begin, viewportPlan.visible.end, true);
-        if (!printMode && !needsAnotherFrame && !viewportPlan.prefetch.Empty())
+        // Moving frames spend their budget on the new visible range only.
+        // A stable follow-up frame fills the speculative band; otherwise a
+        // fast scroll can continuously feed obsolete MathJax/SVG work even
+        // though visible requests are correctly prioritized.
+        if (!printMode
+            && !viewportMoved
+            && !needsAnotherFrame
+            && !viewportPlan.prefetch.Empty())
         {
             if (scrollingForward)
                 prepareForward(viewportPlan.prefetch.begin, viewportPlan.prefetch.end, false);
@@ -361,6 +368,10 @@ namespace winrt::Folia
         {
             preparedDocument->lastViewportOffset = scrollOffset;
             preparedDocument->hasLastViewportOffset = true;
+            // Direct scrollbar/touchpad movement may not have an animation
+            // tick after its final offset. Schedule one stable frame so
+            // deferred embedded completions and prefetch cannot be stranded.
+            needsAnotherFrame = needsAnotherFrame || viewportMoved;
         }
 
         if (geometryChanged)
@@ -508,7 +519,10 @@ namespace winrt::Folia
             scrollingForward,
             viewportPolicy);
         auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{1};
-        constexpr std::size_t maximumCreations = 4;
+        // Small MathJax line-break fragments are cheap individually. The time
+        // budget is the primary frame guard; a larger count cap avoids making
+        // a many-fragment formula wait through several otherwise idle frames.
+        constexpr std::size_t maximumCreations = 16;
         auto creations = std::size_t{0};
         auto workRemaining = false;
 

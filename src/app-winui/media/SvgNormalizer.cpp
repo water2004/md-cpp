@@ -122,6 +122,7 @@ namespace winrt::Folia
             for (;;)
             {
                 Request request;
+                auto highPriority = false;
                 {
                     std::unique_lock lock(mutex);
                     wake.wait(lock, [this] {
@@ -130,6 +131,7 @@ namespace winrt::Folia
                     if (stopping) return;
                     if (!highPriorityPending.empty())
                     {
+                        highPriority = true;
                         request = std::move(highPriorityPending.front());
                         highPriorityPending.pop_front();
                     }
@@ -142,6 +144,11 @@ namespace winrt::Folia
                         found != requestStates.end())
                         found->second = RequestState::InFlight;
                 }
+                SetThreadPriority(
+                    GetCurrentThread(),
+                    highPriority
+                        ? THREAD_PRIORITY_NORMAL
+                        : THREAD_PRIORITY_BELOW_NORMAL);
                 if (!runtime) runtime = std::make_unique<Runtime>();
                 auto result = runtime->Process(request.source, request.fontSize);
                 std::function<void()> callback;
