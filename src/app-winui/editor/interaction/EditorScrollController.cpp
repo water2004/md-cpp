@@ -170,6 +170,8 @@ namespace winrt::ElMd
     void EditorScrollController::QueueScrollBy(float delta)
     {
         if (!renderer) return;
+        selectionAutoScrollVelocity = 0.0f;
+        updateSelectionDuringAutoScroll = {};
         renderer->QueueScrollBy(delta);
         Start();
     }
@@ -177,10 +179,40 @@ namespace winrt::ElMd
     void EditorScrollController::ScrollPreciselyBy(float delta)
     {
         if (!renderer || !std::isfinite(delta) || delta == 0.0f) return;
+        selectionAutoScrollVelocity = 0.0f;
+        updateSelectionDuringAutoScroll = {};
         // Precision touchpads already emit a continuous, inertial stream. Move
         // the model directly and use the frame scheduler only to coalesce paint.
         renderer->ScrollBy(delta);
         Start();
+    }
+
+    void EditorScrollController::BeginSelectionAutoScroll(
+        float velocityPixelsPerSecond,
+        std::function<void()> updateSelection)
+    {
+        if (!renderer || !std::isfinite(velocityPixelsPerSecond) || velocityPixelsPerSecond == 0.0f)
+        {
+            EndSelectionAutoScroll();
+            return;
+        }
+        if (selectionAutoScrollVelocity == 0.0f)
+        {
+            // A drag selection owns scrolling while it is outside the viewport.
+            // Discard a pending wheel target so two motion models cannot compete.
+            renderer->SetScrollOffset(renderer->ScrollOffset());
+        }
+        selectionAutoScrollVelocity = velocityPixelsPerSecond;
+        updateSelectionDuringAutoScroll = std::move(updateSelection);
+        Start();
+    }
+
+    void EditorScrollController::EndSelectionAutoScroll()
+    {
+        if (selectionAutoScrollVelocity == 0.0f && !updateSelectionDuringAutoScroll) return;
+        selectionAutoScrollVelocity = 0.0f;
+        updateSelectionDuringAutoScroll = {};
+        Stop();
     }
 
     void EditorScrollController::Start()
@@ -204,6 +236,9 @@ namespace winrt::ElMd
 
     void EditorScrollController::Stop()
     {
+        selectionAutoScrollVelocity = 0.0f;
+        updateSelectionDuringAutoScroll = {};
+        if (renderer) renderer->SetScrollOffset(renderer->ScrollOffset());
         if (!rendering) return;
         rendering = false;
         lastAnimationFrame = {};
@@ -375,8 +410,22 @@ namespace winrt::ElMd
             ? nominalFrameInterval
             : std::chrono::duration<float>(now - lastAnimationFrame).count();
         lastAnimationFrame = now;
-        auto active = renderer->AdvanceScrollAnimation(
-            (std::clamp)(elapsed, 0.0f, 0.5f));
+        auto active = false;
+        if (selectionAutoScrollVelocity != 0.0f)
+        {
+            auto before = renderer->ScrollOffset();
+            // Do not turn a temporarily blocked UI thread into a large selection
+            // jump when it resumes.
+            auto stepSeconds = (std::clamp)(elapsed, 0.0f, 0.05f);
+            renderer->ScrollBy(selectionAutoScrollVelocity * stepSeconds);
+            active = std::fabs(renderer->ScrollOffset() - before) > 0.01f;
+            if (active && updateSelectionDuringAutoScroll) updateSelectionDuringAutoScroll();
+        }
+        else
+        {
+            active = renderer->AdvanceScrollAnimation(
+                (std::clamp)(elapsed, 0.0f, 0.5f));
+        }
         if (render) render();
         if (active) RequestFrame();
         else Stop();

@@ -18,6 +18,8 @@ namespace winrt::ElMd
         void SetWidth(float value);
         void QueueScrollBy(float delta);
         void ScrollPreciselyBy(float delta);
+        void BeginSelectionAutoScroll(float velocityPixelsPerSecond, std::function<void()> updateSelection);
+        void EndSelectionAutoScroll();
         void Stop();
 
     private:
@@ -46,5 +48,7 @@ namespace winrt::ElMd
         bool rendering = false;
         bool synchronizing = false;
         float width = 16.0f;
+        float selectionAutoScrollVelocity = 0.0f;
+        std::function<void()> updateSelectionDuringAutoScroll;
     };
 }

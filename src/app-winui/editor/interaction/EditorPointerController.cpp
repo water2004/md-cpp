@@ -5,9 +5,23 @@ import elmd.core.command;
 
 namespace winrt::ElMd
 {
+    namespace
+    {
+        float SelectionAutoScrollVelocity(float y, float viewportHeight)
+        {
+            if (viewportHeight <= 0.0f || (y >= 0.0f && y <= viewportHeight)) return 0.0f;
+            auto distance = y < 0.0f ? -y : y - viewportHeight;
+            // Start gently at the edge, then accelerate with the distance while
+            // retaining a finite ceiling for predictable long drags.
+            auto speed = (std::min)(2400.0f, 80.0f + 8.0f * distance + 0.02f * distance * distance);
+            return y < 0.0f ? -speed : speed;
+        }
+    }
+
     void EditorPointerController::Attach(
         EditorSession& session,
         EditorSurfaceRenderer& renderer,
+        EditorScrollController& scroll,
         EditorTextInputController& textInput,
         winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& surface,
         ExecuteCommand executeCommand,
@@ -19,6 +33,7 @@ namespace winrt::ElMd
         Detach();
         session_ = &session;
         renderer_ = &renderer;
+        scroll_ = &scroll;
         textInput_ = &textInput;
         surface_ = surface;
         executeCommand_ = std::move(executeCommand);
@@ -30,6 +45,7 @@ namespace winrt::ElMd
 
     void EditorPointerController::Detach()
     {
+        StopSelectionAutoScroll();
         if (renderer_)
         {
             renderer_->SetTableDrag(std::nullopt, std::nullopt);
@@ -48,6 +64,7 @@ namespace winrt::ElMd
         resetCaretGoal_ = {};
         surface_ = nullptr;
         textInput_ = nullptr;
+        scroll_ = nullptr;
         renderer_ = nullptr;
         session_ = nullptr;
     }
@@ -58,6 +75,9 @@ namespace winrt::ElMd
         surface_.Focus(winrt::Microsoft::UI::Xaml::FocusState::Pointer);
         if (resetCaretGoal_) resetCaretGoal_();
         auto point = args.GetCurrentPoint(surface_).Position();
+        pointerX_ = static_cast<float>(point.X);
+        pointerY_ = static_cast<float>(point.Y);
+        if (scroll_) scroll_->Stop();
         renderer_->UpdatePointer(static_cast<float>(point.X), static_cast<float>(point.Y));
         if (auto action = renderer_->TableActionAt(static_cast<float>(point.X), static_cast<float>(point.Y)))
         {
@@ -139,6 +159,8 @@ namespace winrt::ElMd
     {
         if (!session_ || !renderer_ || !surface_) return;
         auto point = args.GetCurrentPoint(surface_).Position();
+        pointerX_ = static_cast<float>(point.X);
+        pointerY_ = static_cast<float>(point.Y);
         auto taskCheckbox = renderer_->TaskCheckboxAt(static_cast<float>(point.X), static_cast<float>(point.Y));
         auto tableAction = renderer_->TableActionAt(static_cast<float>(point.X), static_cast<float>(point.Y));
         auto hoverVisualChanged = taskCheckbox != hoverTaskCheckbox_ || tableAction != hoverTableAction_;
@@ -171,10 +193,7 @@ namespace winrt::ElMd
             if (hoverVisualChanged && render_) render_();
             return;
         }
-        auto hit = renderer_->HitTest(static_cast<float>(point.X), static_cast<float>(point.Y));
-        if (!hit) return;
-        session_->SetSelection(anchor_, *hit);
-        if (textInput_) textInput_->NotifySelectionChanged();
+        UpdateDragSelection(pointerX_, pointerY_, true);
         if (render_) render_();
         args.Handled(true);
     }
@@ -210,6 +229,11 @@ namespace winrt::ElMd
         }
         if (selecting_)
         {
+            auto point = args.GetCurrentPoint(surface_).Position();
+            pointerX_ = static_cast<float>(point.X);
+            pointerY_ = static_cast<float>(point.Y);
+            UpdateDragSelection(pointerX_, pointerY_, false);
+            StopSelectionAutoScroll();
             selecting_ = false;
             surface_.ReleasePointerCapture(args.Pointer());
             args.Handled(true);
@@ -225,6 +249,19 @@ namespace winrt::ElMd
         if (!tableDrag_ && renderer_)
         {
             renderer_->ClearPointer();
+            if (render_) render_();
+        }
+    }
+
+    void EditorPointerController::CancelPointerInteraction()
+    {
+        StopSelectionAutoScroll();
+        selecting_ = false;
+        if (tableDrag_ && renderer_)
+        {
+            tableDrag_.reset();
+            tableDropIndex_.reset();
+            renderer_->SetTableDrag(std::nullopt, std::nullopt);
             if (render_) render_();
         }
     }
@@ -265,6 +302,47 @@ namespace winrt::ElMd
             {position.container_id, end, elmd::TextAffinity::Downstream});
         if (textInput_) textInput_->NotifySelectionChanged();
         return true;
+    }
+
+    void EditorPointerController::UpdateDragSelection(float x, float y, bool updateAutoScroll)
+    {
+        if (!selecting_ || !session_ || !renderer_) return;
+        auto viewportHeight = renderer_->ViewportHeight();
+        if (updateAutoScroll)
+        {
+            auto velocity = SelectionAutoScrollVelocity(y, viewportHeight);
+            if (velocity != 0.0f && scroll_)
+            {
+                selectionAutoScrolling_ = true;
+                scroll_->BeginSelectionAutoScroll(velocity, [this]
+                {
+                    UpdateDragSelection(pointerX_, pointerY_, false);
+                });
+            }
+            else
+            {
+                StopSelectionAutoScroll();
+            }
+        }
+
+        auto width = surface_ ? static_cast<float>(surface_.ActualWidth()) : 0.0f;
+        auto hitX = width > 0.0f ? (std::clamp)(x, 0.0f, width) : x;
+        auto hitY = viewportHeight > 0.0f
+            ? (std::clamp)(y, 0.0f, (std::max)(0.0f, viewportHeight - 0.5f))
+            : y;
+        auto hit = renderer_->HitTest(hitX, hitY);
+        if (!hit) return;
+        auto selection = session_->Selection();
+        if (selection.anchor == anchor_ && selection.active == *hit) return;
+        session_->SetSelection(anchor_, *hit);
+        if (textInput_) textInput_->NotifySelectionChanged();
+    }
+
+    void EditorPointerController::StopSelectionAutoScroll()
+    {
+        if (!selectionAutoScrolling_) return;
+        selectionAutoScrolling_ = false;
+        if (scroll_) scroll_->EndSelectionAutoScroll();
     }
 
     std::optional<std::string> EditorPointerController::LinkAtPosition(elmd::TextPosition position) const

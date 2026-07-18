@@ -44,6 +44,7 @@ namespace winrt::ElMd::implementation
         pointerController.Attach(
             editorSession,
             editorRenderer,
+            scrollController,
             textInputController,
             EditorSurface(),
             [this](elmd::Command const& command) { return ExecuteEditorCommand(command); },
@@ -135,6 +136,16 @@ namespace winrt::ElMd::implementation
             pointerController.PointerExited();
         });
 
+        EditorSurface().PointerCaptureLost([this](auto const&, auto const&)
+        {
+            pointerController.CancelPointerInteraction();
+        });
+
+        EditorSurface().PointerCanceled([this](auto const&, auto const&)
+        {
+            pointerController.CancelPointerInteraction();
+        });
+
         EditorSurface().PointerWheelChanged([this](auto const&, Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
         {
             HandlePointerWheel(args);
@@ -147,6 +158,7 @@ namespace winrt::ElMd::implementation
 
         EditorSurface().LostFocus([this](auto const&, auto const&)
         {
+            pointerController.CancelPointerInteraction();
             textInputController.FocusLeave();
         });
 
