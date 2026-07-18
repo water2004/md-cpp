@@ -43,7 +43,9 @@ namespace winrt::Folia
     private:
         bool DispatchInputAction(folia::platform::editor::EditorInputAction const& action);
         bool DispatchShortcut(folia::platform::editor::EditorShortcutBinding const& shortcut);
-        bool InsertSnippet(std::u32string_view source);
+        bool InsertSnippet(
+            std::u32string_view source,
+            std::optional<std::u32string> selectedText = std::nullopt);
         bool MoveSnippetTabStop(bool backward);
         bool MoveCaretVerticalStep(bool down, bool extend);
         bool KeyDown(winrt::Windows::System::VirtualKey key) const;

@@ -406,11 +406,16 @@ namespace winrt::Folia
             : !core_->editor.selection().is_caret();
     }
 
+    std::u32string EditorSession::SelectedSource() const
+    {
+        return core_->sourceEditor
+            ? core_->sourceEditor->selected_text()
+            : core_->editor.selected_markdown_cps();
+    }
+
     std::string EditorSession::SelectedTextUtf8() const
     {
-        return folia::cps_to_utf8(core_->sourceEditor
-            ? core_->sourceEditor->selected_text()
-            : core_->editor.selected_markdown_cps());
+        return folia::cps_to_utf8(SelectedSource());
     }
 
     bool EditorSession::HasFile() const
