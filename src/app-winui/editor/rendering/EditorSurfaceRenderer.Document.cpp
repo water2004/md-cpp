@@ -47,10 +47,8 @@ namespace winrt::Folia
         auto selection = printMode ? folia::TextSelection{} : frame.selection;
         auto caret = selection.active;
 
-        ::Microsoft::WRL::ComPtr<ID2D1DeviceContext5> svgContext;
-        auto svgSupported = SUCCEEDED(resources.d2dContext.As(&svgContext)) && svgContext;
-        auto mathSvgSupported = svgSupported && mathJax.Enabled();
         EditorSvgPainter svgPainter(resources, renderCache);
+        auto mathSvgSupported = svgPainter.Supported() && mathJax.Enabled();
         EditorTextLayoutEngine textLayoutEngine(resources, styleSheet);
         EditorInlineImageRenderer inlineImages(
             resources,
@@ -61,7 +59,19 @@ namespace winrt::Folia
             frame.baseDirectory,
             !printMode);
         auto drawMath = [&](MathJaxSvgFragment const& fragment, D2D1_POINT_2F origin, D2D1_COLOR_F) {
-            return fragment.svg && svgPainter.Draw(fragment.renderId, *fragment.svg, fragment.width, fragment.height, origin);
+            if (!fragment.svg) return false;
+            if (printMode)
+                return svgPainter.Draw(
+                    fragment.renderId,
+                    *fragment.svg,
+                    fragment.width,
+                    fragment.height,
+                    origin);
+            return svgPainter.DrawCached(
+                fragment.renderId,
+                fragment.width,
+                fragment.height,
+                origin);
         };
         auto drawMathFallback = [&](folia::TextSpan, D2D1_POINT_2F origin) {
             auto label = Localize(L"Formula");
@@ -117,6 +127,7 @@ namespace winrt::Folia
             resources,
             styleSheet,
             inlineImages,
+            svgPainter,
             blockPreparer,
             scrollState,
             preparedDocument,

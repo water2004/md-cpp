@@ -50,6 +50,7 @@ namespace winrt::Folia
         void RequestAnimationFrame(std::chrono::milliseconds delay);
         ::Microsoft::WRL::ComPtr<IDWriteTextLayout> FindTextLayout(std::uint64_t key);
         void StoreTextLayout(std::uint64_t key, ::Microsoft::WRL::ComPtr<IDWriteTextLayout> const& layout, std::size_t bytes);
+        ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> FindSvgDocument(std::uint64_t renderId);
         ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> FindOrCreateSvgDocument(ID2D1DeviceContext5* context, std::uint64_t renderId, std::string const& source, float width, float height);
 
     private:

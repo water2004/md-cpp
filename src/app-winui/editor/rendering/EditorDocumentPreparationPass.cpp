@@ -15,6 +15,7 @@ namespace winrt::Folia
         EditorRenderResources& valueResources,
         EditorStyleSheet const& valueStyleSheet,
         EditorInlineImageRenderer& valueInlineImages,
+        EditorSvgPainter& valueSvgPainter,
         EditorDocumentBlockPreparer& valueBlockPreparer,
         folia::platform::editor::EditorScrollState& valueScrollState,
         std::unique_ptr<EditorPreparedDocument>& valuePreparedDocument,
@@ -29,6 +30,7 @@ namespace winrt::Folia
           resources(valueResources),
           styleSheet(valueStyleSheet),
           inlineImages(valueInlineImages),
+          svgPainter(valueSvgPainter),
           blockPreparer(valueBlockPreparer),
           scrollState(valueScrollState),
           preparedDocument(valuePreparedDocument),
@@ -329,7 +331,7 @@ namespace winrt::Folia
             }
         };
 
-        auto scrollingForward = !preparedDocument->hasLastViewportOffset
+        scrollingForward = !preparedDocument->hasLastViewportOffset
             || scrollOffset >= preparedDocument->lastViewportOffset;
         auto viewportPlan = BuildEditorViewportPlan(
             preparedDocument->geometry,
@@ -435,6 +437,80 @@ namespace winrt::Folia
             preparedDocument->totalHeight = preparedDocument->geometry.TotalHeight();
     }
 
+    void EditorDocumentPreparationPass::WarmMathDocuments()
+    {
+        if (printMode || !svgPainter.Supported()) return;
+
+        // Creating an ID2D1SvgDocument parses the SVG and can be expensive.
+        // Keep that work out of the paint loop and cap it to a small slice of
+        // the presentation budget. Visible content is warmed before the
+        // directional prefetch band; anything left schedules another paced
+        // frame instead of blocking the current scroll frame.
+        auto deadline = std::chrono::steady_clock::now()
+            + std::chrono::milliseconds{1};
+        constexpr std::size_t maximumCreations = 8;
+        auto creations = std::size_t{0};
+        auto workRemaining = false;
+
+        auto warmDisplay = [&](DisplayInlineText const& display)
+        {
+            for (auto const& overlay : display.mathOverlays)
+            {
+                auto const& fragment = overlay.fragment;
+                if (fragment.renderId == 0 || !fragment.svg || fragment.svg->empty()
+                    || fragment.width <= 0.0f || fragment.height <= 0.0f) continue;
+                if (svgPainter.Prepared(fragment.renderId)) continue;
+                if (creations >= maximumCreations
+                    || (creations != 0 && std::chrono::steady_clock::now() >= deadline))
+                {
+                    workRemaining = true;
+                    return false;
+                }
+                if (svgPainter.Prepare(
+                        fragment.renderId,
+                        *fragment.svg,
+                        fragment.width,
+                        fragment.height))
+                    ++creations;
+            }
+            return true;
+        };
+        auto warmBlock = [&](EditorPreparedDocument::Block const& block)
+        {
+            if (!warmDisplay(block.display)) return false;
+            for (auto const& preview : block.mathPreviews)
+                if (!warmDisplay(preview.display)) return false;
+            if (!block.table) return true;
+            for (auto const& display : block.table->displays)
+                if (!warmDisplay(display)) return false;
+            for (auto const& cellPreviews : block.table->mathPreviews)
+                for (auto const& preview : cellPreviews)
+                    if (!warmDisplay(preview.display)) return false;
+            return true;
+        };
+        auto warmRange = [&](folia::platform::editor::EditorIndexRange range)
+        {
+            for (auto index = range.begin; index < range.end; ++index)
+            {
+                if (index >= preparedDocument->blocks.size()) break;
+                auto const& block = preparedDocument->blocks[index];
+                if (!block.valid || !block.containsMath) continue;
+                if (!warmBlock(block)) return false;
+            }
+            return true;
+        };
+
+        auto viewportPlan = BuildEditorViewportPlan(
+            preparedDocument->geometry,
+            scrollOffset,
+            resources.surfaceHeightDip,
+            false,
+            scrollingForward,
+            viewportPolicy);
+        if (warmRange(viewportPlan.visible)) warmRange(viewportPlan.prefetch);
+        invalidateRequested = invalidateRequested || workRemaining;
+    }
+
     void EditorDocumentPreparationPass::ReleaseOutsideRetention()
     {
         auto retentionPlan = BuildEditorViewportPlan(
@@ -470,6 +546,7 @@ namespace winrt::Folia
         if (!preparedDocument->geometry.Initialized()) InitializeGeometry();
         PrepareViewport();
         RefreshEmbeddedContent();
+        WarmMathDocuments();
         ReleaseOutsideRetention();
 
         auto paintPlan = BuildEditorViewportPlan(

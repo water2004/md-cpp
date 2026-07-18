@@ -35,14 +35,21 @@ namespace winrt::Folia
         textLayouts.emplace(key, CachedTextLayout{ layout, bytes });
     }
 
-    ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> EditorRenderCache::FindOrCreateSvgDocument(ID2D1DeviceContext5* context, std::uint64_t renderId, std::string const& source, float width, float height)
+    ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> EditorRenderCache::FindSvgDocument(
+        std::uint64_t renderId)
     {
-        if (!context || renderId == 0 || source.empty() || width <= 0.0f || height <= 0.0f) return {};
         if (auto found = svgDocuments.find(renderId); found != svgDocuments.end())
         {
             svgDocumentOrder.splice(svgDocumentOrder.end(), svgDocumentOrder, found->second.order);
             return found->second.document;
         }
+        return {};
+    }
+
+    ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> EditorRenderCache::FindOrCreateSvgDocument(ID2D1DeviceContext5* context, std::uint64_t renderId, std::string const& source, float width, float height)
+    {
+        if (!context || renderId == 0 || source.empty() || width <= 0.0f || height <= 0.0f) return {};
+        if (auto document = FindSvgDocument(renderId)) return document;
         auto allocation = GlobalAlloc(GMEM_MOVEABLE, source.size());
         if (!allocation) return {};
         auto bytes = static_cast<char*>(GlobalLock(allocation));

@@ -8,6 +8,7 @@ import folia.platform.editor_viewport_plan;
 #include "editor/rendering/EditorInlineImageRenderer.h"
 #include "editor/rendering/EditorPreparedDocument.h"
 #include "editor/rendering/EditorRenderResources.h"
+#include "editor/rendering/EditorSvgPainter.h"
 #include "editor/rendering/EditorStyleSheet.h"
 #include "editor/session/EditorRenderFrame.h"
 
@@ -31,6 +32,7 @@ namespace winrt::Folia
             EditorRenderResources& resources,
             EditorStyleSheet const& styleSheet,
             EditorInlineImageRenderer& inlineImages,
+            EditorSvgPainter& svgPainter,
             EditorDocumentBlockPreparer& blockPreparer,
             folia::platform::editor::EditorScrollState& scrollState,
             std::unique_ptr<EditorPreparedDocument>& preparedDocument,
@@ -49,6 +51,7 @@ namespace winrt::Folia
         void InitializeGeometry();
         void PrepareViewport();
         void RefreshEmbeddedContent();
+        void WarmMathDocuments();
         void ReleaseOutsideRetention();
         bool RequestEmbeddedAt(float documentTop) const;
         std::optional<std::size_t> FindOwnerBlock(folia::NodeId owner) const;
@@ -57,6 +60,7 @@ namespace winrt::Folia
         EditorRenderResources& resources;
         EditorStyleSheet const& styleSheet;
         EditorInlineImageRenderer& inlineImages;
+        EditorSvgPainter& svgPainter;
         EditorDocumentBlockPreparer& blockPreparer;
         folia::platform::editor::EditorScrollState& scrollState;
         std::unique_ptr<EditorPreparedDocument>& preparedDocument;
@@ -68,6 +72,7 @@ namespace winrt::Folia
         float scrollOffset = 0.0f;
         bool printMode = false;
         bool invalidateRequested = false;
+        bool scrollingForward = true;
         static constexpr folia::platform::editor::EditorViewportPolicy viewportPolicy{};
     };
 }
