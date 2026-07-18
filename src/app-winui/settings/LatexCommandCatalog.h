@@ -1,6 +1,8 @@
 #pragma once
 
-import folia.core.latex_completion;
+#include "settings/LatexCommandStore.h"
+
+import folia.core.latex_command_catalog;
 
 namespace winrt::Folia
 {
@@ -9,11 +11,9 @@ namespace winrt::Folia
     public:
         LatexCommandCatalog();
 
-        std::vector<folia::LatexCommandDefinition> const& Commands() const { return commands_; }
-        std::vector<folia::LatexCommandDefinition> const& CustomCommands() const { return custom_; }
-        std::unordered_map<std::string, folia::LatexCommandUsage> const& Usage() const { return usage_; }
+        std::vector<folia::LatexCommandDefinition> const& Commands() const { return state_.Commands(); }
+        std::vector<folia::LatexCommandDefinition> const& CustomCommands() const { return state_.CustomCommands(); }
         std::vector<winrt::hstring> const& Diagnostics() const { return diagnostics_; }
-        std::uint64_t Revision() const { return revision_; }
 
         std::optional<winrt::hstring> AddCustom(
             std::u32string trigger,
@@ -34,18 +34,15 @@ namespace winrt::Folia
         std::optional<winrt::hstring> Flush();
 
     private:
-        void LoadBuiltIns();
-        void LoadUserState();
-        void Rebuild();
         std::optional<winrt::hstring> SaveUserState();
+        std::optional<winrt::hstring> CommitMutation(
+            folia::LatexCatalogMutationResult const& result);
+        winrt::hstring MutationError(folia::LatexCatalogMutationError error) const;
         std::int64_t NowSeconds() const;
 
-        std::vector<folia::LatexCommandDefinition> builtIn_;
-        std::vector<folia::LatexCommandDefinition> custom_;
-        std::vector<folia::LatexCommandDefinition> commands_;
-        std::unordered_map<std::string, folia::LatexCommandUsage> usage_;
+        LatexCommandStore store_;
+        folia::LatexCommandCatalogState state_;
         std::vector<winrt::hstring> diagnostics_;
-        std::uint64_t revision_ = 1;
         std::size_t usageChangesSinceFlush_ = 0;
         bool dirty_ = false;
     };

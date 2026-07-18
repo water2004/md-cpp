@@ -148,6 +148,7 @@
     <ClInclude Include="settings\SettingsView.h" />
     <ClInclude Include="settings\SettingsViewSupport.h" />
     <ClInclude Include="settings\LatexCommandCatalog.h" />
+    <ClInclude Include="settings\LatexCommandStore.h" />
     <ClInclude Include="editor\interaction\EditorLatexCompletionController.h" />
     <ClInclude Include="theme\ThemeConfig.h" />
     <ClInclude Include="theme\ThemeCatalog.h" />
@@ -308,6 +309,9 @@
     <ClCompile Include="..\core\query\latex_completion.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\core\query\latex_command_catalog.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\platform\windows\editor\geometry\editor_geometry.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
@@ -452,6 +456,7 @@
     </ClCompile>
     <ClCompile Include="settings\AppSettings.cpp" />
     <ClCompile Include="settings\LatexCommandCatalog.cpp" />
+    <ClCompile Include="settings\LatexCommandStore.cpp" />
     <ClCompile Include="localization\Localization.cpp" />
     <ClCompile Include="settings\SettingsView.cpp" />
     <ClCompile Include="settings\SettingsView.General.cpp" />

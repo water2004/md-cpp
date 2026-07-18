@@ -228,6 +228,9 @@
   <data name="LatexCommandRemoved" xml:space="preserve"><value>Custom command removed</value></data>
   <data name="LatexUsageReset" xml:space="preserve"><value>Recent LaTeX command usage was reset</value></data>
   <data name="LatexSuggestionHint" xml:space="preserve"><value>↑↓  Navigate     Tab / Enter  Insert     Esc  Close</value></data>
+  <data name="LatexDuplicateTriggerError" xml:space="preserve"><value>A custom command with this trigger already exists.</value></data>
+  <data name="LatexInvalidCommandError" xml:space="preserve"><value>Command names must contain letters only, and the insertion template cannot be empty.</value></data>
+  <data name="LatexMissingCustomError" xml:space="preserve"><value>The custom command no longer exists.</value></data>
   <data name="LatexDescriptionFrac" xml:space="preserve"><value>Fraction</value></data>
   <data name="LatexDescriptionDfrac" xml:space="preserve"><value>Display-style fraction</value></data>
   <data name="LatexDescriptionSqrt" xml:space="preserve"><value>Square root</value></data>

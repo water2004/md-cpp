@@ -228,6 +228,9 @@
   <data name="LatexCommandRemoved" xml:space="preserve"><value>自定义命令已移除</value></data>
   <data name="LatexUsageReset" xml:space="preserve"><value>LaTeX 命令的近期使用情况已重置</value></data>
   <data name="LatexSuggestionHint" xml:space="preserve"><value>↑↓  选择     Tab / Enter  插入     Esc  关闭</value></data>
+  <data name="LatexDuplicateTriggerError" xml:space="preserve"><value>已存在使用该触发词的自定义命令。</value></data>
+  <data name="LatexInvalidCommandError" xml:space="preserve"><value>命令名只能包含英文字母，且插入模板不能为空。</value></data>
+  <data name="LatexMissingCustomError" xml:space="preserve"><value>该自定义命令已不存在。</value></data>
   <data name="LatexDescriptionFrac" xml:space="preserve"><value>分数</value></data>
   <data name="LatexDescriptionDfrac" xml:space="preserve"><value>行间样式分数</value></data>
   <data name="LatexDescriptionSqrt" xml:space="preserve"><value>平方根</value></data>
