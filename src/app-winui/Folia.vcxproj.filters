@@ -438,6 +438,9 @@
     <ClCompile Include="editor\interaction\EditorDocumentController.cpp">
       <Filter>Editor\Interaction</Filter>
     </ClCompile>
+    <ClCompile Include="editor\interaction\EditorDocumentController.Pdf.cpp">
+      <Filter>Editor\Interaction</Filter>
+    </ClCompile>
     <ClCompile Include="export\EditorPdfPrintJob.cpp">
       <Filter>Export</Filter>
     </ClCompile>
@@ -600,6 +603,9 @@
       <Filter>Editor\Interaction</Filter>
     </ClInclude>
     <ClInclude Include="editor\interaction\EditorDocumentController.h">
+      <Filter>Editor\Interaction</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\interaction\EditorDocumentControllerState.h">
       <Filter>Editor\Interaction</Filter>
     </ClInclude>
     <ClInclude Include="export\EditorPdfPrintJob.h">

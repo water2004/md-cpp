@@ -181,6 +181,7 @@
     <ClInclude Include="editor\interaction\EditorPointerController.h" />
     <ClInclude Include="editor\interaction\EditorKeyboardController.h" />
     <ClInclude Include="editor\interaction\EditorDocumentController.h" />
+    <ClInclude Include="editor\interaction\EditorDocumentControllerState.h" />
     <ClInclude Include="export\EditorPdfPrintJob.h" />
     <ClInclude Include="export\EditorPdfExportTypes.h" />
     <ClInclude Include="editor\interaction\EditorSidebarController.h" />
@@ -526,6 +527,7 @@
     <ClCompile Include="editor\interaction\EditorKeyboardController.Snippets.cpp" />
     <ClCompile Include="editor\interaction\EditorLatexCompletionController.cpp" />
     <ClCompile Include="editor\interaction\EditorDocumentController.cpp" />
+    <ClCompile Include="editor\interaction\EditorDocumentController.Pdf.cpp" />
     <ClCompile Include="export\EditorPdfPrintJob.cpp" />
     <ClCompile Include="editor\interaction\EditorSidebarController.cpp" />
     <ClCompile Include="editor\rendering\EditorSurfaceRenderer.cpp" />
