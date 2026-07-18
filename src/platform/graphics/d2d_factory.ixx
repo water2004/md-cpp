@@ -1,14 +1,14 @@
-// elmd.platform.d2d_factory — Direct2D factory bootstrap.
+// folia.platform.d2d_factory — Direct2D factory bootstrap.
 module;
 #include <d2d1.h>
 #include <wrl/client.h>
 
-export module elmd.platform.d2d_factory;
+export module folia.platform.d2d_factory;
 import std;
 
 using Microsoft::WRL::ComPtr;
 
-export namespace elmd::platform {
+export namespace folia::platform {
 
 inline ComPtr<ID2D1Factory> create_d2d_factory() {
     ComPtr<ID2D1Factory> factory;
@@ -16,4 +16,4 @@ inline ComPtr<ID2D1Factory> create_d2d_factory() {
     return factory;
 }
 
-} // namespace elmd::platform
+} // namespace folia::platform

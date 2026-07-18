@@ -1,9 +1,9 @@
 #include "support/folia_test.hpp"
 
-import elmd.platform.editor_scroll_state;
+import folia.platform.editor_scroll_state;
 
 using namespace boost::ut;
-using elmd::platform::editor::EditorScrollState;
+using folia::platform::editor::EditorScrollState;
 
 suite editor_scroll_state_tests = [] {
 

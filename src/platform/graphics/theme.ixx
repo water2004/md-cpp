@@ -1,27 +1,27 @@
-// elmd.platform.theme — platform palette / brush resolution.
+// folia.platform.theme — platform palette / brush resolution.
 module;
 #include <d2d1.h>
 #include <wrl/client.h>
 #include <vector>
 #include <unordered_map>
 
-export module elmd.platform.theme;
+export module folia.platform.theme;
 import std;
-import elmd.core.theme;
-import elmd.core.ids;
+import folia.core.theme;
+import folia.core.ids;
 
 using Microsoft::WRL::ComPtr;
 
-export namespace elmd::platform {
+export namespace folia::platform {
 
 struct ColorRgba { float r, g, b, a; };
 
-inline ColorRgba color_rgba(elmd::Color color) {
+inline ColorRgba color_rgba(folia::Color color) {
     constexpr auto scale = 1.0f / 255.0f;
     return {color.r * scale, color.g * scale, color.b * scale, color.a * scale};
 }
 
-inline ColorRgba palette_color(elmd::ThemeProfile const& theme, std::string_view token) {
+inline ColorRgba palette_color(folia::ThemeProfile const& theme, std::string_view token) {
     auto const& colors = theme.colors;
     if (token == "text") return color_rgba(colors.fg);
     if (token == "heading") return color_rgba(colors.heading_fg);
@@ -42,7 +42,7 @@ public:
     BrushCache() = default;
     explicit BrushCache(ComPtr<ID2D1RenderTarget> rt) : rt_(std::move(rt)) {}
     void set_target(ComPtr<ID2D1RenderTarget> rt) { rt_ = std::move(rt); brushes_.clear(); }
-    ComPtr<ID2D1SolidColorBrush> get(elmd::BrushId id, const ColorRgba& c) {
+    ComPtr<ID2D1SolidColorBrush> get(folia::BrushId id, const ColorRgba& c) {
         if (!rt_) return nullptr;
         auto it = brushes_.find(id.v);
         if (it != brushes_.end()) return it->second;
@@ -58,4 +58,4 @@ private:
     std::unordered_map<std::uint64_t, ComPtr<ID2D1SolidColorBrush>> brushes_;
 };
 
-} // namespace elmd::platform
+} // namespace folia::platform

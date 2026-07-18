@@ -1,10 +1,10 @@
 #include "support/folia_test.hpp"
 
-import elmd.platform.editor_input_command;
+import folia.platform.editor_input_command;
 
 using namespace boost::ut;
-using namespace elmd;
-using namespace elmd::platform::editor;
+using namespace folia;
+using namespace folia::platform::editor;
 
 suite editor_input_command_tests = [] {
 

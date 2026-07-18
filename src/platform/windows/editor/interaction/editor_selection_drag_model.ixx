@@ -1,8 +1,8 @@
-// elmd.platform.editor_selection_drag_model — deterministic drag projection.
-export module elmd.platform.editor_selection_drag_model;
+// folia.platform.editor_selection_drag_model — deterministic drag projection.
+export module folia.platform.editor_selection_drag_model;
 import std;
 
-export namespace elmd::platform::editor
+export namespace folia::platform::editor
 {
     struct EditorSelectionDragPolicy
     {

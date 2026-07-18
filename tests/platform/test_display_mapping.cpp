@@ -1,13 +1,13 @@
 #include "support/folia_test.hpp"
 
-import elmd.core.ids;
-import elmd.core.selection;
-import elmd.core.text_edit;
-import elmd.platform.editor_display_mapping;
+import folia.core.ids;
+import folia.core.selection;
+import folia.core.text_edit;
+import folia.platform.editor_display_mapping;
 
 using namespace boost::ut;
-using namespace elmd;
-using namespace elmd::platform::editor;
+using namespace folia;
+using namespace folia::platform::editor;
 
 suite display_mapping_tests = [] {
 

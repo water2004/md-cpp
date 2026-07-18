@@ -1,8 +1,8 @@
-// elmd.platform.editor_geometry — persistent block placement index.
-export module elmd.platform.editor_geometry;
+// folia.platform.editor_geometry — persistent block placement index.
+export module folia.platform.editor_geometry;
 import std;
 
-export namespace elmd::platform::editor
+export namespace folia::platform::editor
 {
     class EditorBlockGeometryIndex
     {

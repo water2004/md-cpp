@@ -1,10 +1,10 @@
 #include "support/folia_test.hpp"
 
-import elmd.platform.editor_geometry;
-import elmd.platform.editor_viewport_plan;
+import folia.platform.editor_geometry;
+import folia.platform.editor_viewport_plan;
 
 using namespace boost::ut;
-using namespace elmd::platform::editor;
+using namespace folia::platform::editor;
 
 namespace
 {

@@ -1,4 +1,4 @@
-// elmd.platform.dwrite_measurer — DirectWrite-backed TextMeasurer.
+// folia.platform.dwrite_measurer — DirectWrite-backed TextMeasurer.
 //
 // Platform layer: Windows/DirectWrite headers live in the global module
 // fragment so they (and their macros) cannot leak into importers.
@@ -9,14 +9,14 @@ module;
 #include <vector>
 #include <cstdint>
 
-export module elmd.platform.dwrite_measurer;
+export module folia.platform.dwrite_measurer;
 import std;
-import elmd.core.render_model;
-import elmd.core.text_measurer;
+import folia.core.render_model;
+import folia.core.text_measurer;
 
 using Microsoft::WRL::ComPtr;
 
-export namespace elmd::platform {
+export namespace folia::platform {
 
 // Caches IDWriteTextFormat per (family, weight, italic, size) bucket so the
 // measure and draw paths use the SAME format object (acceptance invariant:
@@ -26,7 +26,7 @@ public:
     TextFormatCache() = default;
     explicit TextFormatCache(ComPtr<IDWriteFactory> factory) : factory_(std::move(factory)) {}
 
-    ComPtr<IDWriteTextFormat> get(const elmd::InlineStyle& s, float font_size, std::wstring_view family = L"Segoe UI") {
+    ComPtr<IDWriteTextFormat> get(const folia::InlineStyle& s, float font_size, std::wstring_view family = L"Segoe UI") {
         DWRITE_FONT_WEIGHT weight = s.bold ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL;
         DWRITE_FONT_STYLE style = s.italic ? DWRITE_FONT_STYLE_ITALIC : DWRITE_FONT_STYLE_NORMAL;
         for (const auto& e : entries_) {
@@ -65,7 +65,7 @@ private:
     std::wstring default_family_ = L"Segoe UI";
 };
 
-class DirectWriteMeasurer : public elmd::TextMeasurer {
+class DirectWriteMeasurer : public folia::TextMeasurer {
 public:
     DirectWriteMeasurer() = default;
     explicit DirectWriteMeasurer(ComPtr<IDWriteFactory> factory)
@@ -76,10 +76,10 @@ public:
     const ComPtr<IDWriteFactory>& factory() const { return factory_; }
     TextFormatCache& cache() { return cache_; }
 
-    elmd::ShapeResult measure(std::u32string_view text_sv, float font_size,
-                              const elmd::InlineStyle& style,
+    folia::ShapeResult measure(std::u32string_view text_sv, float font_size,
+                              const folia::InlineStyle& style,
                               std::optional<float> max_width = std::nullopt) override {
-        elmd::ShapeResult r;
+        folia::ShapeResult r;
         if (text_sv.empty()) return r;
         if (!factory_) return fallback(text_sv, font_size);
 
@@ -132,7 +132,7 @@ public:
 
         r.glyphs.reserve(text.size());
         for (std::size_t i = 0; i < text.size(); ++i) {
-            elmd::GlyphInfo g;
+            folia::GlyphInfo g;
             g.advance = (leading_x[i + 1] - leading_x[i]);
             if (g.advance < 0.0f) g.advance = 0.0f;
             g.is_whitespace = (text[i] == U' ' || text[i] == U'\t' || text[i] == U'\n');
@@ -145,13 +145,13 @@ public:
     }
 
 private:
-    elmd::ShapeResult fallback(std::u32string_view text, float font_size) const {
+    folia::ShapeResult fallback(std::u32string_view text, float font_size) const {
         float adv = font_size * 0.6f;
-        elmd::ShapeResult r;
+        folia::ShapeResult r;
         r.width = adv * static_cast<float>(text.size());
         r.height = font_size * 1.4f;
         for (std::size_t i = 0; i < text.size(); ++i) {
-            elmd::GlyphInfo g;
+            folia::GlyphInfo g;
             g.advance = adv; g.char_index = i;
             g.is_whitespace = (text[i] == U' ' || text[i] == U'\t' || text[i] == U'\n');
             r.glyphs.push_back(g);
@@ -163,4 +163,4 @@ private:
     TextFormatCache cache_;
 };
 
-} // namespace elmd::platform
+} // namespace folia::platform

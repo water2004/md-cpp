@@ -2,14 +2,14 @@ module;
 #include <d2d1.h>
 #include <dwrite.h>
 
-module elmd.platform.editor_interaction;
+module folia.platform.editor_interaction;
 import std;
 
-namespace elmd::platform::editor
+namespace folia::platform::editor
 {
     namespace
     {
-        elmd::TextSpan const* SourceSpanFor(EditorVisualLine const& line, elmd::NodeId containerId)
+        folia::TextSpan const* SourceSpanFor(EditorVisualLine const& line, folia::NodeId containerId)
         {
             auto found = std::find_if(line.sourceSpans.begin(), line.sourceSpans.end(), [&](auto const& span)
             {
@@ -18,25 +18,25 @@ namespace elmd::platform::editor
             return found == line.sourceSpans.end() ? nullptr : &*found;
         }
 
-        bool Contains(EditorVisualLine const& line, elmd::TextPosition position)
+        bool Contains(EditorVisualLine const& line, folia::TextPosition position)
         {
             auto span = SourceSpanFor(line, position.container_id);
             return span && span->source_range.covers(position.source_offset);
         }
 
-        std::vector<elmd::TextSpan> SpansFromMapping(
+        std::vector<folia::TextSpan> SpansFromMapping(
             EditorDisplayMapping const& mapping,
             std::size_t start,
             std::size_t end,
-            elmd::TextSpan fallback)
+            folia::TextSpan fallback)
         {
             if (mapping.empty()) return {fallback};
             start = (std::min)(start, mapping.size() - 1);
             end = (std::min)(end, mapping.size() - 1);
             if (end < start) std::swap(start, end);
 
-            std::vector<elmd::TextSpan> spans;
-            auto add = [&](elmd::TextPosition position, bool allowNewContainer)
+            std::vector<folia::TextSpan> spans;
+            auto add = [&](folia::TextPosition position, bool allowNewContainer)
             {
                 auto found = std::find_if(spans.begin(), spans.end(), [&](auto const& span)
                 {
@@ -68,7 +68,7 @@ namespace elmd::platform::editor
             return spans;
         }
 
-        std::optional<elmd::TextPosition> ResolveMappedPosition(
+        std::optional<folia::TextPosition> ResolveMappedPosition(
             EditorVisualLine const& line,
             EditorDisplayMapping const& mapping,
             std::size_t displayPosition)
@@ -77,15 +77,15 @@ namespace elmd::platform::editor
             if (mapping.empty())
             {
                 auto const& span = line.sourceSpans.front();
-                return elmd::TextPosition{span.container_id, span.source_range.start, elmd::TextAffinity::Downstream};
+                return folia::TextPosition{span.container_id, span.source_range.start, folia::TextAffinity::Downstream};
             }
 
             auto first = (std::min)(static_cast<std::size_t>(line.displayStart), mapping.size() - 1);
             auto last = (std::min)(static_cast<std::size_t>(line.displayEnd), mapping.size() - 1);
             displayPosition = (std::clamp)(displayPosition, first, last);
-            auto resolve = [&](std::size_t index) -> std::optional<elmd::TextPosition>
+            auto resolve = [&](std::size_t index) -> std::optional<folia::TextPosition>
             {
-                elmd::TextPosition position = mapping[index];
+                folia::TextPosition position = mapping[index];
                 auto span = SourceSpanFor(line, position.container_id);
                 if (!span) return std::nullopt;
                 position.source_offset = (std::clamp)(position.source_offset, span->source_range.start, span->source_range.end);
@@ -96,12 +96,12 @@ namespace elmd::platform::editor
             if (displayPosition >= last)
             {
                 auto const& span = line.sourceSpans.back();
-                return elmd::TextPosition{span.container_id, span.source_range.end, elmd::TextAffinity::Upstream};
+                return folia::TextPosition{span.container_id, span.source_range.end, folia::TextAffinity::Upstream};
             }
             if (displayPosition <= first)
             {
                 auto const& span = line.sourceSpans.front();
-                return elmd::TextPosition{span.container_id, span.source_range.start, elmd::TextAffinity::Downstream};
+                return folia::TextPosition{span.container_id, span.source_range.start, folia::TextAffinity::Downstream};
             }
 
             for (auto index = displayPosition; index > first; --index)
@@ -110,7 +110,7 @@ namespace elmd::platform::editor
                 if (auto after = resolve(index)) return after;
 
             auto const& span = line.sourceSpans.front();
-            return elmd::TextPosition{span.container_id, span.source_range.start, elmd::TextAffinity::Downstream};
+            return folia::TextPosition{span.container_id, span.source_range.start, folia::TextAffinity::Downstream};
         }
     }
 
@@ -204,7 +204,7 @@ namespace elmd::platform::editor
         lines.push_back(line);
     }
 
-    std::optional<std::size_t> EditorInteractionMap::LineIndexFor(elmd::TextPosition position) const
+    std::optional<std::size_t> EditorInteractionMap::LineIndexFor(folia::TextPosition position) const
     {
         std::optional<std::size_t> first;
         std::optional<std::size_t> last;
@@ -215,12 +215,12 @@ namespace elmd::platform::editor
             last = index;
         }
         if (!first) return std::nullopt;
-        return position.affinity == elmd::TextAffinity::Upstream ? first : last;
+        return position.affinity == folia::TextAffinity::Upstream ? first : last;
     }
 
     std::optional<D2D1_RECT_F> EditorInteractionMap::CaretRectOnLine(
         EditorVisualLine const& line,
-        elmd::TextPosition position,
+        folia::TextPosition position,
         float bodyLineHeight) const
     {
         auto sourceSpan = SourceSpanFor(line, position.container_id);
@@ -249,7 +249,7 @@ namespace elmd::platform::editor
         UINT32 hitPos = static_cast<UINT32>(displayPos);
         BOOL trailing = FALSE;
         if (displayPos == line.displayEnd
-            && position.affinity == elmd::TextAffinity::Upstream
+            && position.affinity == folia::TextAffinity::Upstream
             && displayPos > line.displayStart) { --hitPos; trailing = TRUE; }
         FLOAT x = 0.0f, y = 0.0f;
         DWRITE_HIT_TEST_METRICS metrics{};
@@ -258,31 +258,31 @@ namespace elmd::platform::editor
         return D2D1::RectF(left, line.rect.top, left + 2.0f, line.rect.bottom);
     }
 
-    std::optional<D2D1_RECT_F> EditorInteractionMap::CaretBounds(elmd::TextPosition position, float bodyLineHeight) const
+    std::optional<D2D1_RECT_F> EditorInteractionMap::CaretBounds(folia::TextPosition position, float bodyLineHeight) const
     {
         auto line = LineIndexFor(position);
         return line ? CaretRectOnLine(lines[*line], position, bodyLineHeight) : std::nullopt;
     }
 
-    std::optional<elmd::TextPosition> EditorInteractionMap::VisualLineStart(elmd::TextPosition position) const
+    std::optional<folia::TextPosition> EditorInteractionMap::VisualLineStart(folia::TextPosition position) const
     {
         auto line = LineIndexFor(position);
         if (!line) return std::nullopt;
         auto span = SourceSpanFor(lines[*line], position.container_id);
         if (!span) return std::nullopt;
-        return elmd::TextPosition{span->container_id, span->source_range.start, elmd::TextAffinity::Downstream};
+        return folia::TextPosition{span->container_id, span->source_range.start, folia::TextAffinity::Downstream};
     }
 
-    std::optional<elmd::TextPosition> EditorInteractionMap::VisualLineEnd(elmd::TextPosition position) const
+    std::optional<folia::TextPosition> EditorInteractionMap::VisualLineEnd(folia::TextPosition position) const
     {
         auto line = LineIndexFor(position);
         if (!line) return std::nullopt;
         auto span = SourceSpanFor(lines[*line], position.container_id);
         if (!span) return std::nullopt;
-        return elmd::TextPosition{span->container_id, span->source_range.end, elmd::TextAffinity::Upstream};
+        return folia::TextPosition{span->container_id, span->source_range.end, folia::TextAffinity::Upstream};
     }
 
-    std::optional<elmd::TextPosition> EditorInteractionMap::HitTest(float x, float y) const
+    std::optional<folia::TextPosition> EditorInteractionMap::HitTest(float x, float y) const
     {
         for (auto hit = mathHits.rbegin(); hit != mathHits.rend(); ++hit)
         {
@@ -292,7 +292,7 @@ namespace elmd::platform::editor
             auto progress = hit->progressStart + local * (hit->progressEnd - hit->progressStart);
             auto length = hit->sourceSpan.source_range.length();
             auto offset = hit->sourceSpan.source_range.start + static_cast<std::size_t>(std::llround(progress * static_cast<float>(length)));
-            return elmd::TextPosition{hit->sourceSpan.container_id, (std::min)(offset, hit->sourceSpan.source_range.end), elmd::TextAffinity::Downstream};
+            return folia::TextPosition{hit->sourceSpan.container_id, (std::min)(offset, hit->sourceSpan.source_range.end), folia::TextAffinity::Downstream};
         }
         if (lines.empty()) return std::nullopt;
         std::size_t best = 0;
@@ -314,8 +314,8 @@ namespace elmd::platform::editor
         auto const& block = blocks[line.blockIndex];
         auto const& firstSpan = line.sourceSpans.front();
         auto const& lastSpan = line.sourceSpans.back();
-        auto start = elmd::TextPosition{firstSpan.container_id, firstSpan.source_range.start, elmd::TextAffinity::Downstream};
-        auto end = elmd::TextPosition{lastSpan.container_id, lastSpan.source_range.end, elmd::TextAffinity::Upstream};
+        auto start = folia::TextPosition{firstSpan.container_id, firstSpan.source_range.start, folia::TextAffinity::Downstream};
+        auto end = folia::TextPosition{lastSpan.container_id, lastSpan.source_range.end, folia::TextAffinity::Upstream};
         if (block.thematicBreak) return y < (block.rect.top + block.rect.bottom) * 0.5f ? start : end;
         IDWriteTextLayout* layout = block.layout.Get();
         auto textOrigin = block.textOrigin;
@@ -340,11 +340,11 @@ namespace elmd::platform::editor
             && lines[best + 1].wrapContinuation && lines[best + 1].displayStart == line.displayEnd;
         auto sourceSpan = SourceSpanFor(line, position.container_id);
         if (sourceSpan && position.source_offset == sourceSpan->source_range.end && nextWrap)
-            position.affinity = elmd::TextAffinity::Upstream;
+            position.affinity = folia::TextAffinity::Upstream;
         return position;
     }
 
-    std::optional<elmd::TextPosition> EditorInteractionMap::TaskCheckboxAt(float x, float y) const
+    std::optional<folia::TextPosition> EditorInteractionMap::TaskCheckboxAt(float x, float y) const
     {
         for (auto hit = taskCheckboxHits.rbegin(); hit != taskCheckboxHits.rend(); ++hit)
         {
@@ -364,8 +364,8 @@ namespace elmd::platform::editor
         return std::nullopt;
     }
 
-    std::optional<elmd::TextPosition> EditorInteractionMap::MoveCaretVertically(
-        elmd::TextPosition position,
+    std::optional<folia::TextPosition> EditorInteractionMap::MoveCaretVertically(
+        folia::TextPosition position,
         bool down,
         float& goalX,
         float bodyLineHeight) const
@@ -383,12 +383,12 @@ namespace elmd::platform::editor
         if (!down && *current == 0)
         {
             auto const& span = lines.front().sourceSpans.front();
-            return elmd::TextPosition{span.container_id, span.source_range.start, elmd::TextAffinity::Downstream};
+            return folia::TextPosition{span.container_id, span.source_range.start, folia::TextAffinity::Downstream};
         }
         if (down && *current + 1 >= lines.size())
         {
             auto const& span = lines.back().sourceSpans.back();
-            return elmd::TextPosition{span.container_id, span.source_range.end, elmd::TextAffinity::Upstream};
+            return folia::TextPosition{span.container_id, span.source_range.end, folia::TextAffinity::Upstream};
         }
         auto targetIndex = down ? *current + 1 : *current - 1;
         auto const& currentLine = lines[*current];
@@ -411,7 +411,7 @@ namespace elmd::platform::editor
         auto const& target = lines[targetIndex];
         if (target.sourceSpans.empty()) return std::nullopt;
         auto const& firstTargetSpan = target.sourceSpans.front();
-        auto targetPosition = elmd::TextPosition{firstTargetSpan.container_id, firstTargetSpan.source_range.start, elmd::TextAffinity::Downstream};
+        auto targetPosition = folia::TextPosition{firstTargetSpan.container_id, firstTargetSpan.source_range.start, folia::TextAffinity::Downstream};
         auto const& block = blocks[target.blockIndex];
         IDWriteTextLayout* layout = block.layout.Get();
         auto textOrigin = block.textOrigin;
@@ -438,12 +438,12 @@ namespace elmd::platform::editor
         auto targetSpan = SourceSpanFor(target, targetPosition.container_id);
         if (!targetSpan) return std::nullopt;
         targetPosition.source_offset = (std::clamp)(targetPosition.source_offset, targetSpan->source_range.start, targetSpan->source_range.end);
-        targetPosition.affinity = elmd::TextAffinity::Downstream;
+        targetPosition.affinity = folia::TextAffinity::Downstream;
         auto downstreamLine = LineIndexFor(targetPosition);
-        targetPosition.affinity = elmd::TextAffinity::Upstream;
+        targetPosition.affinity = folia::TextAffinity::Upstream;
         auto upstreamLine = LineIndexFor(targetPosition);
         auto newUpstream = (!downstreamLine || *downstreamLine != targetIndex) && upstreamLine && *upstreamLine == targetIndex;
-        targetPosition.affinity = newUpstream ? elmd::TextAffinity::Upstream : elmd::TextAffinity::Downstream;
+        targetPosition.affinity = newUpstream ? folia::TextAffinity::Upstream : folia::TextAffinity::Downstream;
         return targetPosition;
     }
 }

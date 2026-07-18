@@ -1,11 +1,11 @@
-// elmd.platform.editor_display_mapping — source/display coordinate bridge.
-export module elmd.platform.editor_display_mapping;
+// folia.platform.editor_display_mapping — source/display coordinate bridge.
+export module folia.platform.editor_display_mapping;
 import std;
-export import elmd.core.ids;
-export import elmd.core.selection;
-export import elmd.core.text_edit;
+export import folia.core.ids;
+export import folia.core.selection;
+export import folia.core.text_edit;
 
-export namespace elmd::platform::editor
+export namespace folia::platform::editor
 {
     enum class EditorDisplayPositionKind
     {
@@ -20,23 +20,23 @@ export namespace elmd::platform::editor
         DefinitionLabel,
     };
 
-    struct EditorDisplayPosition : elmd::TextPosition
+    struct EditorDisplayPosition : folia::TextPosition
     {
         EditorDisplayPositionKind kind = EditorDisplayPositionKind::Source;
 
         EditorDisplayPosition() = default;
         EditorDisplayPosition(
-            elmd::TextPosition position,
+            folia::TextPosition position,
             EditorDisplayPositionKind displayKind = EditorDisplayPositionKind::Source)
-            : elmd::TextPosition(position), kind(displayKind)
+            : folia::TextPosition(position), kind(displayKind)
         {
         }
         EditorDisplayPosition(
-            elmd::NodeId containerId,
+            folia::NodeId containerId,
             std::size_t sourceOffset,
-            elmd::TextAffinity affinity,
+            folia::TextAffinity affinity,
             EditorDisplayPositionKind displayKind = EditorDisplayPositionKind::Source)
-            : elmd::TextPosition{containerId, sourceOffset, affinity}, kind(displayKind)
+            : folia::TextPosition{containerId, sourceOffset, affinity}, kind(displayKind)
         {
         }
     };
@@ -45,7 +45,7 @@ export namespace elmd::platform::editor
 
     inline std::size_t DisplayPositionForSource(
         EditorDisplayMapping const& mapping,
-        elmd::TextPosition sourcePosition)
+        folia::TextPosition sourcePosition)
     {
         if (mapping.empty()) return 0;
 
@@ -77,7 +77,7 @@ export namespace elmd::platform::editor
                 // far-left container edge. Upstream decorations are suffixes;
                 // they intentionally keep the first boundary before the run.
                 if (point.kind == EditorDisplayPositionKind::BoundaryDecoration
-                    && sourcePosition.affinity == elmd::TextAffinity::Downstream)
+                    && sourcePosition.affinity == folia::TextAffinity::Downstream)
                 {
                     exactGeneratedAffinity = (std::min)(index + 1, mapping.size() - 1);
                 }

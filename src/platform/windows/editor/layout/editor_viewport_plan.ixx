@@ -1,9 +1,9 @@
-// elmd.platform.editor_viewport_plan — deterministic viewport work bands.
-export module elmd.platform.editor_viewport_plan;
+// folia.platform.editor_viewport_plan — deterministic viewport work bands.
+export module folia.platform.editor_viewport_plan;
 import std;
-import elmd.platform.editor_geometry;
+import folia.platform.editor_geometry;
 
-export namespace elmd::platform::editor
+export namespace folia::platform::editor
 {
     struct EditorIndexRange
     {

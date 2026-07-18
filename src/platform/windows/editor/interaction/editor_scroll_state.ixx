@@ -1,8 +1,8 @@
-// elmd.platform.editor_scroll_state — deterministic editor scroll state.
-export module elmd.platform.editor_scroll_state;
+// folia.platform.editor_scroll_state — deterministic editor scroll state.
+export module folia.platform.editor_scroll_state;
 import std;
 
-export namespace elmd::platform::editor
+export namespace folia::platform::editor
 {
     class EditorScrollState
     {

@@ -1,12 +1,12 @@
 #include "support/folia_test.hpp"
 
-import elmd.platform.editor_geometry;
+import folia.platform.editor_geometry;
 
 using namespace boost::ut;
 
 namespace
 {
-    using Geometry = elmd::platform::editor::EditorBlockGeometryIndex;
+    using Geometry = folia::platform::editor::EditorBlockGeometryIndex;
 
     Geometry::Placement NaivePlacement(
         std::vector<Geometry::Entry> const& entries,

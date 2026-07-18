@@ -3,17 +3,17 @@
 #include <wrl/client.h>
 #include "support/folia_test.hpp"
 
-import elmd.core.ids;
-import elmd.core.selection;
-import elmd.core.text_edit;
-import elmd.platform.dwrite_factory;
-import elmd.platform.editor_display_mapping;
-import elmd.platform.editor_interaction;
+import folia.core.ids;
+import folia.core.selection;
+import folia.core.text_edit;
+import folia.platform.dwrite_factory;
+import folia.platform.editor_display_mapping;
+import folia.platform.editor_interaction;
 
 using namespace boost::ut;
-using namespace elmd;
-using namespace elmd::platform;
-using namespace elmd::platform::editor;
+using namespace folia;
+using namespace folia::platform;
+using namespace folia::platform::editor;
 
 namespace
 {

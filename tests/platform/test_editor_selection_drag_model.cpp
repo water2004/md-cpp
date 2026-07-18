@@ -1,9 +1,9 @@
 #include "support/folia_test.hpp"
 
-import elmd.platform.editor_selection_drag_model;
+import folia.platform.editor_selection_drag_model;
 
 using namespace boost::ut;
-using namespace elmd::platform::editor;
+using namespace folia::platform::editor;
 
 suite editor_selection_drag_model_tests = [] {
 

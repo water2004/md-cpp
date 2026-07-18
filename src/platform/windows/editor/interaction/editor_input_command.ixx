@@ -1,9 +1,9 @@
-// elmd.platform.editor_input_command — deterministic Windows key gesture mapping.
-export module elmd.platform.editor_input_command;
+// folia.platform.editor_input_command — deterministic Windows key gesture mapping.
+export module folia.platform.editor_input_command;
 import std;
-export import elmd.core.command;
+export import folia.core.command;
 
-export namespace elmd::platform::editor
+export namespace folia::platform::editor
 {
     // Values intentionally match Windows.System.VirtualKey without importing
     // WinRT into the deterministic input model.
@@ -63,21 +63,21 @@ export namespace elmd::platform::editor
     struct EditorInputAction
     {
         EditorInputActionKind kind = EditorInputActionKind::None;
-        elmd::Command command{};
+        folia::Command command{};
 
         bool Handled() const noexcept { return kind != EditorInputActionKind::None; }
     };
 
     inline EditorInputAction TranslateEditorKeyGesture(EditorKeyGesture gesture)
     {
-        auto execute = [](elmd::Command command)
+        auto execute = [](folia::Command command)
         {
             return EditorInputAction{
                 .kind = EditorInputActionKind::ExecuteCommand,
                 .command = std::move(command),
             };
         };
-        auto command = elmd::Command{};
+        auto command = folia::Command{};
 
         if (gesture.control)
         {
@@ -85,79 +85,79 @@ export namespace elmd::platform::editor
             {
                 case EditorKey::Up:
                     command.kind = gesture.alt
-                        ? elmd::CommandKind::MoveTableRowUp
-                        : elmd::CommandKind::InsertTableRowAbove;
+                        ? folia::CommandKind::MoveTableRowUp
+                        : folia::CommandKind::InsertTableRowAbove;
                     break;
                 case EditorKey::Down:
                     command.kind = gesture.alt
-                        ? elmd::CommandKind::MoveTableRowDown
-                        : elmd::CommandKind::InsertTableRowBelow;
+                        ? folia::CommandKind::MoveTableRowDown
+                        : folia::CommandKind::InsertTableRowBelow;
                     break;
                 case EditorKey::Left:
                     command.kind = gesture.alt
-                        ? elmd::CommandKind::MoveTableColumnLeft
-                        : elmd::CommandKind::InsertTableColumnLeft;
+                        ? folia::CommandKind::MoveTableColumnLeft
+                        : folia::CommandKind::InsertTableColumnLeft;
                     break;
                 case EditorKey::Right:
                     command.kind = gesture.alt
-                        ? elmd::CommandKind::MoveTableColumnRight
-                        : elmd::CommandKind::InsertTableColumnRight;
+                        ? folia::CommandKind::MoveTableColumnRight
+                        : folia::CommandKind::InsertTableColumnRight;
                     break;
                 case EditorKey::Back:
-                    command.kind = elmd::CommandKind::DeleteTableRow;
+                    command.kind = folia::CommandKind::DeleteTableRow;
                     break;
                 case EditorKey::DeleteKey:
-                    command.kind = elmd::CommandKind::DeleteTableColumn;
+                    command.kind = folia::CommandKind::DeleteTableColumn;
                     break;
                 case EditorKey::Home:
-                    command.kind = elmd::CommandKind::MoveDocumentStart;
+                    command.kind = folia::CommandKind::MoveDocumentStart;
                     command.extend_selection = gesture.shift;
                     break;
                 case EditorKey::End:
-                    command.kind = elmd::CommandKind::MoveDocumentEnd;
+                    command.kind = folia::CommandKind::MoveDocumentEnd;
                     command.extend_selection = gesture.shift;
                     break;
                 case EditorKey::Number1:
-                    command.kind = elmd::CommandKind::SetHeading;
+                    command.kind = folia::CommandKind::SetHeading;
                     command.level = 1;
                     break;
                 case EditorKey::Number2:
-                    command.kind = elmd::CommandKind::SetHeading;
+                    command.kind = folia::CommandKind::SetHeading;
                     command.level = 2;
                     break;
                 case EditorKey::Number7:
-                    command.kind = elmd::CommandKind::ToggleOrderedList;
+                    command.kind = folia::CommandKind::ToggleOrderedList;
                     break;
                 case EditorKey::Number8:
-                    command.kind = elmd::CommandKind::ToggleUnorderedList;
+                    command.kind = folia::CommandKind::ToggleUnorderedList;
                     break;
                 case EditorKey::Number9:
-                    command.kind = elmd::CommandKind::ToggleTaskList;
+                    command.kind = folia::CommandKind::ToggleTaskList;
                     break;
                 case EditorKey::B:
-                    command.kind = elmd::CommandKind::ToggleStrong;
+                    command.kind = folia::CommandKind::ToggleStrong;
                     break;
                 case EditorKey::I:
-                    command.kind = elmd::CommandKind::ToggleEmphasis;
+                    command.kind = folia::CommandKind::ToggleEmphasis;
                     break;
                 case EditorKey::Q:
-                    command.kind = elmd::CommandKind::ToggleBlockQuote;
+                    command.kind = folia::CommandKind::ToggleBlockQuote;
                     break;
                 case EditorKey::T:
-                    command.kind = elmd::CommandKind::InsertTable;
+                    command.kind = folia::CommandKind::InsertTable;
                     command.rows = 2;
                     command.cols = 3;
                     break;
                 case EditorKey::Z:
                     command.kind = gesture.shift
-                        ? elmd::CommandKind::Redo
-                        : elmd::CommandKind::Undo;
+                        ? folia::CommandKind::Redo
+                        : folia::CommandKind::Undo;
                     break;
                 case EditorKey::Y:
-                    command.kind = elmd::CommandKind::Redo;
+                    command.kind = folia::CommandKind::Redo;
                     break;
                 case EditorKey::A:
-                    command.kind = elmd::CommandKind::SelectAll;
+                    command.kind = folia::CommandKind::SelectAll;
                     break;
                 case EditorKey::C:
                     return {.kind = EditorInputActionKind::Copy};
@@ -174,46 +174,46 @@ export namespace elmd::platform::editor
         switch (gesture.key)
         {
             case EditorKey::Back:
-                command.kind = elmd::CommandKind::DeleteBackward;
+                command.kind = folia::CommandKind::DeleteBackward;
                 return execute(std::move(command));
             case EditorKey::DeleteKey:
-                command.kind = elmd::CommandKind::DeleteForward;
+                command.kind = folia::CommandKind::DeleteForward;
                 return execute(std::move(command));
             case EditorKey::Enter:
                 command.kind = gesture.shift
-                    ? elmd::CommandKind::InsertSoftBreak
-                    : elmd::CommandKind::InsertNewline;
+                    ? folia::CommandKind::InsertSoftBreak
+                    : folia::CommandKind::InsertNewline;
                 return {
                     .kind = EditorInputActionKind::ExecuteCommandIfApplied,
                     .command = std::move(command),
                 };
             case EditorKey::Left:
-                command.kind = elmd::CommandKind::MoveLeft;
+                command.kind = folia::CommandKind::MoveLeft;
                 command.extend_selection = gesture.shift;
                 return execute(std::move(command));
             case EditorKey::Right:
-                command.kind = elmd::CommandKind::MoveRight;
+                command.kind = folia::CommandKind::MoveRight;
                 command.extend_selection = gesture.shift;
                 return execute(std::move(command));
             case EditorKey::Up:
                 return {
                     .kind = EditorInputActionKind::VisualLineUp,
-                    .command = elmd::Command::MoveUp(gesture.shift),
+                    .command = folia::Command::MoveUp(gesture.shift),
                 };
             case EditorKey::Down:
                 return {
                     .kind = EditorInputActionKind::VisualLineDown,
-                    .command = elmd::Command::MoveDown(gesture.shift),
+                    .command = folia::Command::MoveDown(gesture.shift),
                 };
             case EditorKey::Home:
-                command.kind = elmd::CommandKind::MoveLineStart;
+                command.kind = folia::CommandKind::MoveLineStart;
                 command.extend_selection = gesture.shift;
                 return {
                     .kind = EditorInputActionKind::VisualLineStart,
                     .command = std::move(command),
                 };
             case EditorKey::End:
-                command.kind = elmd::CommandKind::MoveLineEnd;
+                command.kind = folia::CommandKind::MoveLineEnd;
                 command.extend_selection = gesture.shift;
                 return {
                     .kind = EditorInputActionKind::VisualLineEnd,

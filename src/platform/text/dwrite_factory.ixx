@@ -1,14 +1,14 @@
-// elmd.platform.dwrite_factory — DirectWrite factory bootstrap.
+// folia.platform.dwrite_factory — DirectWrite factory bootstrap.
 module;
 #include <dwrite.h>
 #include <wrl/client.h>
 
-export module elmd.platform.dwrite_factory;
+export module folia.platform.dwrite_factory;
 import std;
 
 using Microsoft::WRL::ComPtr;
 
-export namespace elmd::platform {
+export namespace folia::platform {
 
 inline ComPtr<IDWriteFactory> create_dwrite_factory() {
     ComPtr<IDWriteFactory> factory;
@@ -17,4 +17,4 @@ inline ComPtr<IDWriteFactory> create_dwrite_factory() {
     return factory;
 }
 
-} // namespace elmd::platform
+} // namespace folia::platform
