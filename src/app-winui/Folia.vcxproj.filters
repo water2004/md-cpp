@@ -339,6 +339,9 @@
     <ClCompile Include="editor\interaction\EditorFrameScheduler.cpp">
       <Filter>Editor\Interaction</Filter>
     </ClCompile>
+    <ClCompile Include="editor\interaction\EditorSelectionDrag.cpp">
+      <Filter>Editor\Interaction</Filter>
+    </ClCompile>
     <ClCompile Include="editor\interaction\EditorTextInputController.cpp">
       <Filter>Editor\Interaction</Filter>
     </ClCompile>
@@ -477,6 +480,9 @@
       <Filter>Editor\Interaction</Filter>
     </ClInclude>
     <ClInclude Include="editor\interaction\EditorFrameScheduler.h">
+      <Filter>Editor\Interaction</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\interaction\EditorSelectionDrag.h">
       <Filter>Editor\Interaction</Filter>
     </ClInclude>
     <ClInclude Include="editor\interaction\EditorTextInputController.h">

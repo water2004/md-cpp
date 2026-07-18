@@ -3,6 +3,7 @@
 #include "editor/session/EditorSession.h"
 #include "editor/rendering/EditorSurfaceRenderer.h"
 #include "editor/interaction/EditorScrollController.h"
+#include "editor/interaction/EditorSelectionDrag.h"
 #include "editor/interaction/EditorTextInputController.h"
 
 namespace winrt::ElMd
@@ -36,8 +37,6 @@ namespace winrt::ElMd
 
     private:
         bool SelectWordAt(elmd::TextPosition position);
-        void UpdateDragSelection(float x, float y, bool updateAutoScroll);
-        void StopSelectionAutoScroll();
         void SetLinkCursor(bool link);
         std::optional<std::string> LinkAtPosition(elmd::TextPosition position) const;
 
@@ -45,6 +44,7 @@ namespace winrt::ElMd
         EditorSurfaceRenderer* renderer_ = nullptr;
         EditorScrollController* scroll_ = nullptr;
         EditorTextInputController* textInput_ = nullptr;
+        EditorSelectionDrag selectionDrag_;
         winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel surface_{ nullptr };
         winrt::Microsoft::UI::Input::InputCursor textCursor_{ nullptr };
         winrt::Microsoft::UI::Input::InputCursor linkCursor_{ nullptr };
@@ -53,15 +53,10 @@ namespace winrt::ElMd
         OpenLink openLink_;
         OpenFootnote openFootnote_;
         ResetCaretGoal resetCaretGoal_;
-        bool selecting_ = false;
-        bool selectionAutoScrolling_ = false;
         bool linkCursorActive_ = false;
-        float pointerX_ = 0.0f;
-        float pointerY_ = 0.0f;
         std::optional<std::string> hoverTooltip_;
         std::optional<elmd::TextPosition> hoverTaskCheckbox_;
         std::optional<EditorSurfaceRenderer::TableAction> hoverTableAction_;
-        elmd::TextPosition anchor_;
         std::optional<EditorSurfaceRenderer::TableAction> tableDrag_;
         std::optional<std::size_t> tableDropIndex_;
     };
