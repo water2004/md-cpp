@@ -60,6 +60,30 @@ namespace
         expect(SUCCEEDED(layoutResult));
         return layout;
     }
+
+    EditorVisualTable MakeEditableTable(NodeId owner)
+    {
+        EditorVisualTable table;
+        table.rect = D2D1_RECT_F{0.0f, 0.0f, 200.0f, 100.0f};
+        table.sourceSpans = {{owner, {0, 40}}};
+        table.rowCount = 2;
+        table.columnCount = 2;
+        table.rowBoundaries = {0.0f, 50.0f, 100.0f};
+        table.columnBoundaries = {0.0f, 100.0f, 200.0f};
+        for (std::size_t row = 0; row < table.rowCount; ++row)
+        {
+            for (std::size_t column = 0; column < table.columnCount; ++column)
+            {
+                auto offset = (row * table.columnCount + column) * 10;
+                table.cells.push_back(EditorVisualTableCell{
+                    .sourceSpan = {owner, {offset, offset + 10}},
+                    .row = row,
+                    .column = column,
+                });
+            }
+        }
+        return table;
+    }
 }
 
 suite editor_interaction_tests = [] {
@@ -133,6 +157,69 @@ suite editor_interaction_tests = [] {
     expect(moved->source_offset >= 6_u);
     expect(moved->source_offset <= length);
     expect(goalX >= 30.0f);
+};
+
+"table hit policy returns semantic actions without renderer ownership"_test = [] {
+    const auto owner = NodeId{503};
+    EditorInteractionMap interaction;
+    interaction.tables.push_back(MakeEditableTable(owner));
+
+    auto insertRow = interaction.TableActionAt(50.0f, 0.0f);
+    expect(insertRow.has_value());
+    expect(insertRow->kind == EditorTableActionKind::InsertRow);
+    expect(insertRow->index == 0_u);
+    expect(insertRow->sourcePosition == TextPosition{owner, 0, TextAffinity::Downstream});
+
+    auto insertColumn = interaction.TableActionAt(0.0f, 25.0f);
+    expect(insertColumn.has_value());
+    expect(insertColumn->kind == EditorTableActionKind::InsertColumn);
+    expect(insertColumn->index == 0_u);
+
+    auto dragRow = interaction.TableActionAt(-40.0f, 25.0f);
+    expect(dragRow.has_value());
+    expect(dragRow->kind == EditorTableActionKind::DragRow);
+    expect(dragRow->index == 0_u);
+
+    auto deleteRow = interaction.TableActionAt(-15.0f, 75.0f);
+    expect(deleteRow.has_value());
+    expect(deleteRow->kind == EditorTableActionKind::DeleteRow);
+    expect(deleteRow->index == 1_u);
+
+    auto dragColumn = interaction.TableActionAt(40.0f, -18.0f);
+    expect(dragColumn.has_value());
+    expect(dragColumn->kind == EditorTableActionKind::DragColumn);
+    expect(dragColumn->index == 0_u);
+
+    auto deleteColumn = interaction.TableActionAt(60.0f, -18.0f);
+    expect(deleteColumn.has_value());
+    expect(deleteColumn->kind == EditorTableActionKind::DeleteColumn);
+    expect(deleteColumn->index == 0_u);
+};
+
+"table drop policy stays within the source table and tolerates incomplete geometry"_test = [] {
+    const auto owner = NodeId{504};
+    EditorInteractionMap interaction;
+    interaction.tables.push_back(MakeEditableTable(owner));
+
+    EditorTableAction dragged{
+        EditorTableActionKind::DragRow,
+        TextPosition{owner, 0, TextAffinity::Downstream},
+        0,
+    };
+    expect(interaction.TableDropIndexAt(dragged, 50.0f, 80.0f, true) == std::optional<std::size_t>{2});
+    expect(interaction.TableDropIndexAt(dragged, 130.0f, 25.0f, false) == std::optional<std::size_t>{1});
+
+    auto foreign = dragged;
+    foreign.sourcePosition.container_id = NodeId{999};
+    expect(!interaction.TableDropIndexAt(foreign, 50.0f, 80.0f, true).has_value());
+
+    EditorVisualTable incomplete;
+    incomplete.editable = true;
+    incomplete.rowCount = 1;
+    incomplete.columnCount = 1;
+    interaction.tables = {std::move(incomplete)};
+    expect(!interaction.TableActionAt(0.0f, 0.0f).has_value());
+    expect(!interaction.TableDropIndexAt(std::nullopt, 0.0f, 0.0f, true).has_value());
 };
 
 }; // suite editor_interaction_tests

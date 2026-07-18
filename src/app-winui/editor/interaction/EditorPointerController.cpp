@@ -80,10 +80,10 @@ namespace winrt::Folia
         renderer_->UpdatePointer(static_cast<float>(point.X), static_cast<float>(point.Y));
         if (auto action = renderer_->TableActionAt(static_cast<float>(point.X), static_cast<float>(point.Y)))
         {
-            if (action->kind == EditorSurfaceRenderer::TableActionKind::DragRow || action->kind == EditorSurfaceRenderer::TableActionKind::DragColumn)
+            if (action->kind == EditorTableActionKind::DragRow || action->kind == EditorTableActionKind::DragColumn)
             {
                 tableDrag_ = action;
-                auto rows = action->kind == EditorSurfaceRenderer::TableActionKind::DragRow;
+                auto rows = action->kind == EditorTableActionKind::DragRow;
                 tableDropIndex_ = renderer_->TableDropIndexAt(static_cast<float>(point.X), static_cast<float>(point.Y), rows);
                 renderer_->SetTableDrag(tableDrag_, tableDropIndex_);
                 surface_.CapturePointer(args.Pointer());
@@ -98,16 +98,16 @@ namespace winrt::Folia
             command.table_index = action->index;
             switch (action->kind)
             {
-                case EditorSurfaceRenderer::TableActionKind::InsertRow:
+                case EditorTableActionKind::InsertRow:
                     command.kind = folia::CommandKind::InsertTableRowAt;
                     break;
-                case EditorSurfaceRenderer::TableActionKind::InsertColumn:
+                case EditorTableActionKind::InsertColumn:
                     command.kind = folia::CommandKind::InsertTableColumnAt;
                     break;
-                case EditorSurfaceRenderer::TableActionKind::DeleteRow:
+                case EditorTableActionKind::DeleteRow:
                     command.kind = folia::CommandKind::DeleteTableRow;
                     break;
-                case EditorSurfaceRenderer::TableActionKind::DeleteColumn:
+                case EditorTableActionKind::DeleteColumn:
                     command.kind = folia::CommandKind::DeleteTableColumn;
                     break;
                 default:
@@ -178,7 +178,7 @@ namespace winrt::Folia
         if (tableDrag_)
         {
             SetLinkCursor(false);
-            auto rows = tableDrag_->kind == EditorSurfaceRenderer::TableActionKind::DragRow;
+            auto rows = tableDrag_->kind == EditorTableActionKind::DragRow;
             tableDropIndex_ = renderer_->TableDropIndexAt(static_cast<float>(point.X), static_cast<float>(point.Y), rows);
             renderer_->SetTableDrag(tableDrag_, tableDropIndex_);
             if (render_) render_();
@@ -212,7 +212,7 @@ namespace winrt::Folia
                 session_->SetSelection(action.sourcePosition, action.sourcePosition);
                 if (textInput_) textInput_->NotifySelectionChanged();
                 folia::Command command;
-                command.kind = action.kind == EditorSurfaceRenderer::TableActionKind::DragRow
+                command.kind = action.kind == EditorTableActionKind::DragRow
                     ? folia::CommandKind::MoveTableRowTo
                     : folia::CommandKind::MoveTableColumnTo;
                 command.table_index = *dropIndex;

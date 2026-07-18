@@ -49,7 +49,7 @@ namespace winrt::Folia::implementation
         folia::SearchOptions CurrentSearchOptions();
         bool ExecuteEditorCommand(folia::Command const& command);
         void ShowFootnoteFlyout(
-            winrt::Folia::EditorSurfaceRenderer::FootnoteHit const& hit,
+            folia::platform::editor::EditorVisualFootnoteHit const& hit,
             winrt::Windows::Foundation::Point position);
         void NavigateToFootnote(folia::TextPosition position);
         void HandlePointerWheel(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);

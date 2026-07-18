@@ -18,6 +18,7 @@ namespace winrt::Folia
     using folia::platform::editor::EditorInteractionMap;
     using folia::platform::editor::EditorScrollState;
     using folia::platform::editor::EditorFootnoteControlKind;
+    using folia::platform::editor::EditorTableAction;
     using folia::platform::editor::EditorVisualBlock;
     using folia::platform::editor::EditorVisualFootnoteHit;
     using folia::platform::editor::EditorVisualLine;
@@ -62,22 +63,18 @@ namespace winrt::Folia
         void ResetDocumentCaches();
         void SetInvalidateCallback(std::function<void()> callback);
 
-        using TableActionKind = EditorTableActionKind;
-        using TableAction = EditorTableAction;
-        using FootnoteHit = EditorVisualFootnoteHit;
-
         std::optional<folia::TextPosition> HitTest(float x, float y) const;
         std::optional<folia::TextPosition> TaskCheckboxAt(float x, float y) const;
-        std::optional<FootnoteHit> FootnoteAt(float x, float y) const;
+        std::optional<EditorVisualFootnoteHit> FootnoteAt(float x, float y) const;
         std::optional<D2D1_RECT_F> CaretBounds(folia::TextPosition position) const;
         std::optional<folia::TextPosition> MoveCaretVertically(folia::TextPosition position, bool down, float& goalX) const;
         std::optional<folia::TextPosition> VisualLineStart(folia::TextPosition position) const;
         std::optional<folia::TextPosition> VisualLineEnd(folia::TextPosition position) const;
         void UpdatePointer(float x, float y);
         void ClearPointer();
-        std::optional<TableAction> TableActionAt(float x, float y) const;
+        std::optional<EditorTableAction> TableActionAt(float x, float y) const;
         std::optional<std::size_t> TableDropIndexAt(float x, float y, bool rows) const;
-        void SetTableDrag(std::optional<TableAction> action, std::optional<std::size_t> dropIndex);
+        void SetTableDrag(std::optional<EditorTableAction> action, std::optional<std::size_t> dropIndex);
         void ScrollBy(float delta);
         void QueueScrollBy(float delta);
         bool AdvanceScrollAnimation(float elapsedSeconds);
@@ -126,7 +123,7 @@ namespace winrt::Folia
         std::shared_ptr<PdfExportState> pdfExportState;
         std::uint64_t embeddedGeneration = 0;
         std::optional<D2D1_POINT_2F> pointerPosition;
-        std::optional<TableAction> draggedTableAction;
+        std::optional<EditorTableAction> draggedTableAction;
         std::optional<std::size_t> tableDropIndex;
         EditorScrollState scrollState;
         float totalDocumentHeight = 0.0f;

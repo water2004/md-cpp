@@ -86,6 +86,25 @@ export namespace folia::platform::editor
         Kind kind = Kind::Reference;
     };
 
+    enum class EditorTableActionKind
+    {
+        InsertRow,
+        InsertColumn,
+        DeleteRow,
+        DeleteColumn,
+        DragRow,
+        DragColumn,
+    };
+
+    struct EditorTableAction
+    {
+        EditorTableActionKind kind = EditorTableActionKind::InsertRow;
+        folia::TextPosition sourcePosition;
+        std::size_t index = 0;
+
+        bool operator==(EditorTableAction const&) const = default;
+    };
+
     struct EditorInteractionMap
     {
         void Clear();
@@ -94,6 +113,12 @@ export namespace folia::platform::editor
         std::optional<folia::TextPosition> HitTest(float x, float y) const;
         std::optional<folia::TextPosition> TaskCheckboxAt(float x, float y) const;
         std::optional<EditorVisualFootnoteHit> FootnoteAt(float x, float y) const;
+        std::optional<EditorTableAction> TableActionAt(float x, float y) const;
+        std::optional<std::size_t> TableDropIndexAt(
+            std::optional<EditorTableAction> const& draggedAction,
+            float x,
+            float y,
+            bool rows) const;
         std::optional<D2D1_RECT_F> CaretBounds(folia::TextPosition position, float bodyLineHeight) const;
         std::optional<folia::TextPosition> MoveCaretVertically(folia::TextPosition position, bool down, float& goalX, float bodyLineHeight) const;
         std::optional<folia::TextPosition> VisualLineStart(folia::TextPosition position) const;

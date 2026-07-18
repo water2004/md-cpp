@@ -8,12 +8,15 @@
 
 namespace winrt::Folia
 {
+    using folia::platform::editor::EditorTableAction;
+    using folia::platform::editor::EditorVisualFootnoteHit;
+
     struct EditorPointerController
     {
         using ExecuteCommand = std::function<bool(folia::Command const&)>;
         using Render = std::function<void()>;
         using OpenLink = std::function<void(std::string)>;
-        using OpenFootnote = std::function<void(EditorSurfaceRenderer::FootnoteHit, winrt::Windows::Foundation::Point)>;
+        using OpenFootnote = std::function<void(EditorVisualFootnoteHit, winrt::Windows::Foundation::Point)>;
         using ResetCaretGoal = std::function<void()>;
 
         void Attach(
@@ -56,8 +59,8 @@ namespace winrt::Folia
         bool linkCursorActive_ = false;
         std::optional<std::string> hoverTooltip_;
         std::optional<folia::TextPosition> hoverTaskCheckbox_;
-        std::optional<EditorSurfaceRenderer::TableAction> hoverTableAction_;
-        std::optional<EditorSurfaceRenderer::TableAction> tableDrag_;
+        std::optional<EditorTableAction> hoverTableAction_;
+        std::optional<EditorTableAction> tableDrag_;
         std::optional<std::size_t> tableDropIndex_;
     };
 }

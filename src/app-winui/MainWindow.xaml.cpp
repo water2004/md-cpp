@@ -244,7 +244,7 @@ namespace winrt::Folia::implementation
     }
 
     void MainWindow::ShowFootnoteFlyout(
-        winrt::Folia::EditorSurfaceRenderer::FootnoteHit const& hit,
+        folia::platform::editor::EditorVisualFootnoteHit const& hit,
         Windows::Foundation::Point position)
     {
         using namespace Microsoft::UI::Xaml;

@@ -25,9 +25,9 @@ namespace winrt::Folia
     HANDLE EditorSurfaceRenderer::FrameLatencyWaitableObject() const { return resources.frameLatencyWaitableObject; }
     void EditorSurfaceRenderer::UpdatePointer(float x, float y) { pointerPosition = D2D1::Point2F(x, y); }
     void EditorSurfaceRenderer::ClearPointer() { pointerPosition.reset(); }
-    void EditorSurfaceRenderer::SetTableDrag(std::optional<TableAction> action, std::optional<std::size_t> dropIndex) { draggedTableAction = std::move(action); tableDropIndex = dropIndex; }
-    std::optional<EditorSurfaceRenderer::TableAction> EditorSurfaceRenderer::TableActionAt(float x, float y) const { return EditorTableInteraction::ActionAt(interactionMap, x, y); }
-    std::optional<std::size_t> EditorSurfaceRenderer::TableDropIndexAt(float x, float y, bool rows) const { return EditorTableInteraction::DropIndexAt(interactionMap, draggedTableAction, x, y, rows); }
+    void EditorSurfaceRenderer::SetTableDrag(std::optional<EditorTableAction> action, std::optional<std::size_t> dropIndex) { draggedTableAction = std::move(action); tableDropIndex = dropIndex; }
+    std::optional<EditorTableAction> EditorSurfaceRenderer::TableActionAt(float x, float y) const { return interactionMap.TableActionAt(x, y); }
+    std::optional<std::size_t> EditorSurfaceRenderer::TableDropIndexAt(float x, float y, bool rows) const { return interactionMap.TableDropIndexAt(draggedTableAction, x, y, rows); }
 
     bool EditorSurfaceRenderer::ScrollToPosition(folia::TextPosition position)
     {
@@ -72,7 +72,7 @@ namespace winrt::Folia
         return interactionMap.HitTest(x, y);
     }
     std::optional<folia::TextPosition> EditorSurfaceRenderer::TaskCheckboxAt(float x, float y) const { return interactionMap.TaskCheckboxAt(x, y); }
-    std::optional<EditorSurfaceRenderer::FootnoteHit> EditorSurfaceRenderer::FootnoteAt(float x, float y) const { return interactionMap.FootnoteAt(x, y); }
+    std::optional<EditorVisualFootnoteHit> EditorSurfaceRenderer::FootnoteAt(float x, float y) const { return interactionMap.FootnoteAt(x, y); }
     std::optional<D2D1_RECT_F> EditorSurfaceRenderer::CaretBounds(folia::TextPosition position) const { return interactionMap.CaretBounds(position, styleSheet.body.lineHeight); }
     std::optional<folia::TextPosition> EditorSurfaceRenderer::MoveCaretVertically(folia::TextPosition position, bool down, float& goalX) const { return interactionMap.MoveCaretVertically(position, down, goalX, styleSheet.body.lineHeight); }
     std::optional<folia::TextPosition> EditorSurfaceRenderer::VisualLineStart(folia::TextPosition position) const { return interactionMap.VisualLineStart(position); }
