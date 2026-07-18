@@ -29,6 +29,7 @@ namespace winrt::Folia
         void NotifyTextChanged();
         void NotifySelectionChanged();
         void BeginHardwareKey();
+        void RecordSemanticLineBreakUpdate();
         bool ConsumeCommittedCoreTextCharacter(std::u32string_view text);
         void RecordCharacterTextUpdate(std::size_t start, std::u32string text);
 
@@ -70,5 +71,13 @@ namespace winrt::Folia
         };
         std::optional<CharacterUpdate> pendingCharacterUpdate_;
         std::optional<CharacterUpdate> committedCoreTextUpdate_;
+        struct SemanticLineBreakUpdate
+        {
+            folia::NodeId container{};
+            std::size_t start = 0;
+            std::uint64_t revision = 0;
+            std::chrono::steady_clock::time_point recordedAt;
+        };
+        std::optional<SemanticLineBreakUpdate> pendingSemanticLineBreakUpdate_;
     };
 }

@@ -107,6 +107,23 @@ export namespace folia::platform::editor
         bool Handled() const noexcept { return kind != EditorInputActionKind::None; }
     };
 
+    // Hardware Enter is executed by the semantic block editor before
+    // CoreText reports the corresponding text update.  Recognize that
+    // acknowledgement in the text service's UTF-16 projection so it is not
+    // executed a second time.  This deliberately describes a general text
+    // protocol state; it is independent of the surrounding Markdown block.
+    inline bool IsAppliedSemanticNewlineUpdate(
+        std::wstring_view text,
+        std::size_t updateStart,
+        bool selectionIsCaret,
+        std::size_t activeAcp) noexcept
+    {
+        return selectionIsCaret
+            && updateStart < text.size()
+            && text[updateStart] == L'\n'
+            && activeAcp == updateStart + 1;
+    }
+
     inline EditorInputAction TranslateEditorKeyGesture(EditorKeyGesture gesture)
     {
         auto execute = [](folia::Command command)

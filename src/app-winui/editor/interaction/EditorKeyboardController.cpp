@@ -158,7 +158,12 @@ namespace winrt::Folia
                 return true;
             case EditorInputActionKind::ExecuteCommandIfApplied:
                 CancelSnippetSession();
-                return executeCommand_(action.command);
+                if (!executeCommand_(action.command)) return false;
+                if (textInput_
+                    && (action.command.kind == folia::CommandKind::InsertNewline
+                        || action.command.kind == folia::CommandKind::InsertSoftBreak))
+                    textInput_->RecordSemanticLineBreakUpdate();
+                return true;
             case EditorInputActionKind::Copy:
                 if (copy_) copy_();
                 return true;

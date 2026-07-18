@@ -4,6 +4,7 @@
 
 import folia.core.command;
 import folia.core.utf;
+import folia.platform.editor_input_command;
 
 namespace
 {
@@ -86,6 +87,7 @@ namespace winrt::Folia
         forceFullSynchronization_ = false;
         pendingCharacterUpdate_.reset();
         committedCoreTextUpdate_.reset();
+        pendingSemanticLineBreakUpdate_.reset();
         lifetime_.reset();
     }
 
@@ -142,6 +144,26 @@ namespace winrt::Folia
     {
         pendingCharacterUpdate_.reset();
         committedCoreTextUpdate_.reset();
+        pendingSemanticLineBreakUpdate_.reset();
+    }
+
+    void EditorTextInputController::RecordSemanticLineBreakUpdate()
+    {
+        pendingSemanticLineBreakUpdate_.reset();
+        if (!session_) return;
+        auto const selection = session_->Selection();
+        if (!selection.is_caret()) return;
+        auto const container = selection.active.container_id;
+        auto const text = session_->TextInputTextUtf16(container);
+        auto const activeAcp = session_->TextInputAcpOffset(selection.active);
+        if (activeAcp == 0 || activeAcp > text.size() || text[activeAcp - 1] != L'\n')
+            return;
+        pendingSemanticLineBreakUpdate_ = SemanticLineBreakUpdate{
+            .container = container,
+            .start = activeAcp - 1,
+            .revision = session_->Revision(),
+            .recordedAt = std::chrono::steady_clock::now(),
+        };
     }
 
     bool EditorTextInputController::ConsumeCommittedCoreTextCharacter(std::u32string_view text)
@@ -371,12 +393,30 @@ namespace winrt::Folia
             auto activeAcp = selection.active.container_id == activeContainer_
                 ? session_->TextInputAcpOffset(selection.active)
                 : 0u;
-            if (isIncomingNewline && start < text.size() && text[start] == L'\n' && selection.is_caret() && activeAcp == start + 1)
+            auto const acknowledgesSemanticLineBreak = isIncomingNewline
+                && pendingSemanticLineBreakUpdate_
+                && pendingSemanticLineBreakUpdate_->container == activeContainer_
+                && pendingSemanticLineBreakUpdate_->revision == session_->Revision()
+                && pendingSemanticLineBreakUpdate_->start == start
+                && std::chrono::steady_clock::now()
+                        - pendingSemanticLineBreakUpdate_->recordedAt
+                    < std::chrono::milliseconds(250)
+                && folia::platform::editor::IsAppliedSemanticNewlineUpdate(
+                    text,
+                    start,
+                    selection.is_caret(),
+                    activeAcp);
+            pendingSemanticLineBreakUpdate_.reset();
+            if (acknowledgesSemanticLineBreak)
             {
                 // Enter is handled as a semantic structure command by the key
-                // controller. Reject the duplicate CoreText update: accepting
-                // it would make the text service advance a second newline.
-                args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Failed);
+                // controller. The requested text is already present, so this
+                // callback is an acknowledgement rather than a failed edit.
+                // Reporting failure makes CoreText retry/resynchronize an
+                // update whose post-edit selection it already observes; in
+                // consecutive empty lines that can violate the text-store
+                // range invariant and make TextInputFramework fail-fast.
+                args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Succeeded);
                 QueueSynchronization();
                 return;
             }
