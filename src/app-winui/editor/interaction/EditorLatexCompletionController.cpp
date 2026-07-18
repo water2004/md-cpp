@@ -152,8 +152,7 @@ namespace winrt::Folia
             StackPanel command;
             command.Spacing(2);
             TextBlock trigger;
-            trigger.Text(L"\\" + winrt::to_hstring(
-                folia::cps_to_utf8(candidate.command.trigger)));
+            trigger.Text(CandidateLabel(candidate.command));
             trigger.FontFamily(Media::FontFamily(L"Cascadia Mono"));
             trigger.FontSize(15);
             trigger.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
@@ -207,6 +206,20 @@ namespace winrt::Folia
             top = (std::max)(8.0, static_cast<double>(above.Y) - estimatedHeight - 8.0);
         Canvas::SetLeft(popup_, left);
         Canvas::SetTop(popup_, top);
+    }
+
+    hstring EditorLatexCompletionController::CandidateLabel(
+        folia::LatexCommandDefinition const& command) const
+    {
+        if (command.category == "environment"
+            && command.snippet.starts_with(U"\\begin{"))
+        {
+            auto close = command.snippet.find(U'}', 7);
+            if (close != std::u32string::npos)
+                return winrt::to_hstring(folia::cps_to_utf8(
+                    std::u32string_view{command.snippet}.substr(0, close + 1)));
+        }
+        return L"\\" + winrt::to_hstring(folia::cps_to_utf8(command.trigger));
     }
 
     hstring EditorLatexCompletionController::CandidateDescription(

@@ -37,6 +37,7 @@ namespace winrt::Folia
     private:
         void RefreshItems();
         void UpdatePosition();
+        winrt::hstring CandidateLabel(folia::LatexCommandDefinition const& command) const;
         winrt::hstring CandidateDescription(folia::LatexCommandDefinition const& command) const;
 
         EditorSession* session_ = nullptr;
