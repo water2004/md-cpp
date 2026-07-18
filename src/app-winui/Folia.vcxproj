@@ -163,6 +163,7 @@
     <ClInclude Include="editor\rendering\EditorInlineImageRenderer.h" />
     <ClInclude Include="editor\rendering\EditorEmbeddedDraw.h" />
     <ClInclude Include="editor\rendering\EditorTableBlockRenderer.h" />
+    <ClInclude Include="editor\interaction\EditorFrameScheduler.h" />
     <ClInclude Include="editor\interaction\EditorScrollController.h" />
     <ClInclude Include="editor\interaction\EditorTextInputController.h" />
     <ClInclude Include="editor\interaction\EditorPointerController.h" />
@@ -410,6 +411,7 @@
     <ClCompile Include="editor\interaction\EditorTableInteraction.cpp" />
     <ClCompile Include="editor\rendering\EditorInlineImageRenderer.cpp" />
     <ClCompile Include="editor\rendering\EditorTableBlockRenderer.cpp" />
+    <ClCompile Include="editor\interaction\EditorFrameScheduler.cpp" />
     <ClCompile Include="editor\interaction\EditorScrollController.cpp" />
     <ClCompile Include="editor\interaction\EditorTextInputController.cpp" />
     <ClCompile Include="editor\interaction\EditorPointerController.cpp" />

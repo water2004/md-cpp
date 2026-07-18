@@ -1,6 +1,7 @@
 #pragma once
 
 #include "editor/rendering/EditorSurfaceRenderer.h"
+#include "editor/interaction/EditorFrameScheduler.h"
 
 namespace winrt::ElMd
 {
@@ -23,29 +24,16 @@ namespace winrt::ElMd
         void Stop();
 
     private:
-        struct FrameDispatchState;
-
         void Start();
-        void StartFrameScheduler(HANDLE frameLatencyWaitableObject);
-        void StopFrameScheduler();
-        void RequestFrame();
-        void OnFrame(std::uint64_t generation);
+        bool OnFrame(float elapsedSeconds);
 
         EditorSurfaceRenderer* renderer = nullptr;
         winrt::Microsoft::UI::Xaml::Controls::Primitives::ScrollBar scrollBar{ nullptr };
         winrt::Microsoft::UI::Xaml::Controls::ColumnDefinition column{ nullptr };
         std::function<void()> render;
         winrt::event_token valueChangedToken{};
-        std::shared_ptr<FrameDispatchState> frameDispatch;
-        std::jthread frameThread;
-        HANDLE frameRequestEvent = nullptr;
-        HANDLE schedulerStopEvent = nullptr;
-        HANDLE framePacingTimer = nullptr;
-        HWND windowHandle = nullptr;
-        std::uint64_t animationGeneration = 0;
-        std::chrono::steady_clock::time_point lastAnimationFrame{};
+        EditorFrameScheduler frameScheduler;
         bool attached = false;
-        bool rendering = false;
         bool synchronizing = false;
         float width = 16.0f;
         float selectionAutoScrollVelocity = 0.0f;
