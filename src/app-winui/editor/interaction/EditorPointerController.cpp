@@ -36,6 +36,12 @@ namespace winrt::ElMd
         scroll_ = &scroll;
         textInput_ = &textInput;
         surface_ = surface;
+        textCursor_ = winrt::Microsoft::UI::Input::InputSystemCursor::Create(
+            winrt::Microsoft::UI::Input::InputSystemCursorShape::IBeam);
+        linkCursor_ = winrt::Microsoft::UI::Input::InputSystemCursor::Create(
+            winrt::Microsoft::UI::Input::InputSystemCursorShape::Hand);
+        linkCursorActive_ = true;
+        SetLinkCursor(false);
         executeCommand_ = std::move(executeCommand);
         render_ = std::move(render);
         openLink_ = std::move(openLink);
@@ -46,6 +52,11 @@ namespace winrt::ElMd
     void EditorPointerController::Detach()
     {
         StopSelectionAutoScroll();
+        if (surface_)
+        {
+            if (auto protectedElement = surface_.try_as<winrt::Microsoft::UI::Xaml::IUIElementProtected>())
+                protectedElement.ProtectedCursor(nullptr);
+        }
         if (renderer_)
         {
             renderer_->SetTableDrag(std::nullopt, std::nullopt);
@@ -62,6 +73,9 @@ namespace winrt::ElMd
         openLink_ = {};
         openFootnote_ = {};
         resetCaretGoal_ = {};
+        linkCursorActive_ = false;
+        linkCursor_ = nullptr;
+        textCursor_ = nullptr;
         surface_ = nullptr;
         textInput_ = nullptr;
         scroll_ = nullptr;
@@ -170,7 +184,9 @@ namespace winrt::ElMd
         if (!selecting_ && !tableDrag_)
         {
             auto hit = renderer_->HitTest(static_cast<float>(point.X), static_cast<float>(point.Y));
-            auto tooltip = hit ? TooltipAtPosition(*hit) : std::nullopt;
+            auto interaction = hit && session_ ? session_->InteractionAt(*hit) : std::nullopt;
+            auto tooltip = interaction ? std::move(interaction->tooltip) : std::nullopt;
+            SetLinkCursor(interaction && interaction->link.has_value());
             if (tooltip != hoverTooltip_)
             {
                 hoverTooltip_ = tooltip;
@@ -181,6 +197,7 @@ namespace winrt::ElMd
         }
         if (tableDrag_)
         {
+            SetLinkCursor(false);
             auto rows = tableDrag_->kind == EditorSurfaceRenderer::TableActionKind::DragRow;
             tableDropIndex_ = renderer_->TableDropIndexAt(static_cast<float>(point.X), static_cast<float>(point.Y), rows);
             renderer_->SetTableDrag(tableDrag_, tableDropIndex_);
@@ -193,6 +210,7 @@ namespace winrt::ElMd
             if (hoverVisualChanged && render_) render_();
             return;
         }
+        SetLinkCursor(false);
         UpdateDragSelection(pointerX_, pointerY_, true);
         if (render_) render_();
         args.Handled(true);
@@ -242,6 +260,7 @@ namespace winrt::ElMd
 
     void EditorPointerController::PointerExited()
     {
+        SetLinkCursor(false);
         hoverTooltip_.reset();
         hoverTaskCheckbox_.reset();
         hoverTableAction_.reset();
@@ -256,6 +275,7 @@ namespace winrt::ElMd
     void EditorPointerController::CancelPointerInteraction()
     {
         StopSelectionAutoScroll();
+        SetLinkCursor(false);
         selecting_ = false;
         if (tableDrag_ && renderer_)
         {
@@ -345,6 +365,15 @@ namespace winrt::ElMd
         if (scroll_) scroll_->EndSelectionAutoScroll();
     }
 
+    void EditorPointerController::SetLinkCursor(bool link)
+    {
+        if (!surface_ || link == linkCursorActive_) return;
+        auto protectedElement = surface_.try_as<winrt::Microsoft::UI::Xaml::IUIElementProtected>();
+        if (!protectedElement) return;
+        protectedElement.ProtectedCursor(link ? linkCursor_ : textCursor_);
+        linkCursorActive_ = link;
+    }
+
     std::optional<std::string> EditorPointerController::LinkAtPosition(elmd::TextPosition position) const
     {
         if (!session_) return std::nullopt;
@@ -352,10 +381,4 @@ namespace winrt::ElMd
         return interaction ? std::move(interaction->link) : std::nullopt;
     }
 
-    std::optional<std::string> EditorPointerController::TooltipAtPosition(elmd::TextPosition position) const
-    {
-        if (!session_) return std::nullopt;
-        auto interaction = session_->InteractionAt(position);
-        return interaction ? std::move(interaction->tooltip) : std::nullopt;
-    }
 }
