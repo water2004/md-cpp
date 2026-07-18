@@ -225,6 +225,51 @@ suite editor_inline_tests = [] {
     expect(fatal(bool(copied.find(U"gamma") == std::u32string::npos))) << "nested truncation";
 };
 
+"cross_owner_copy_fragments_reparse_truncated_inline_and_raw_sources"_test = [] {
+    Editor editor("first **bold**\n\n```cpp\nvalue\n```");
+    const auto& paragraph = editor.document().root.children.front();
+    const auto& code = editor.document().root.children.back();
+    const TextSelection selection{
+        {paragraph.id, 6, TextAffinity::Downstream},
+        {code.id, 8, TextAffinity::Upstream}};
+    const auto ordered = document_copy_detail::order_selection(
+        editor.document(),
+        selection);
+    expect(fatal(bool(ordered.has_value())));
+    if (!ordered) return;
+
+    auto next_copy_id = editor.document().next_node_id;
+    auto paragraph_copy = document_copy_detail::slice_block(
+        paragraph,
+        *ordered,
+        next_copy_id);
+    auto code_copy = document_copy_detail::slice_block(
+        code,
+        *ordered,
+        next_copy_id);
+    expect(fatal(bool(paragraph_copy.has_value())));
+    expect(fatal(bool(code_copy.has_value())));
+    if (!paragraph_copy || !code_copy) return;
+
+    const auto& inline_document = paragraph_copy->inline_content;
+    expect(fatal(bool(inline_document.source == U"**bold**")));
+    expect(fatal(bool(tokens_partition_source(
+        inline_document.tree,
+        inline_document.source.size()))));
+    expect(fatal(bool(roots_partition_source(
+        inline_document.tree,
+        inline_document.source.size()))));
+    expect(fatal(bool(flatten_tokens(inline_document.tree, inline_document.source)
+        == inline_document.source)));
+    expect(fatal(bool(serialize_lossless(inline_document.tree, inline_document.source)
+        == inline_document.source)));
+
+    expect(fatal(bool(code_copy->block_source.source() == U"```cpp\nv")));
+    expect(fatal(bool(block_source_tokens_partition(code_copy->block_source))));
+    expect(fatal(bool(flatten_block_source_tokens(code_copy->block_source)
+        == code_copy->block_source.source())));
+};
+
 "format_undo_redo_preserve_original_marker_spelling"_test = [] {
     Editor editor("value");
     editor.set_selection(range(first_text(editor), 0, 5));

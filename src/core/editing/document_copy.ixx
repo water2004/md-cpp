@@ -2,9 +2,12 @@
 export module folia.core.document_copy;
 import std;
 import folia.core.ast;
+import folia.core.block_source;
 import folia.core.block_tree;
 import folia.core.document;
+import folia.core.document_ids;
 import folia.core.document_text;
+import folia.core.inline_parser;
 import folia.core.serializer;
 import folia.core.text_edit;
 
@@ -108,7 +111,9 @@ inline bool intersects_selection(
 inline void truncate_owner(
     BlockNode& copy,
     SourceRange range,
-    std::size_t full_length) {
+    std::size_t full_length,
+    const MarkdownDialect& dialect,
+    std::uint64_t& next_copy_id) {
     if (auto* document = editable_inline_document(copy)) {
         document->source = document->source.substr(range.start, range.length());
         // A partial heading selection does not include its structural marker:
@@ -121,16 +126,22 @@ inline void truncate_owner(
             copy.ensure_text_special().opening_marker.clear();
             copy.ensure_text_special().closing_marker.clear();
         }
+        InlineParseContext context;
+        context.dialect = dialect;
+        context.allocate_id = [&next_copy_id] { return NodeId{next_copy_id++}; };
+        reparse_inline_document(*document, context);
         return;
     }
     if (auto* source = editable_raw_block_source(copy)) {
         *source = source->substr(range.start, range.length());
+        reparse_block_source(copy.block_source);
     }
 }
 
 inline std::optional<BlockNode> slice_block(
     const BlockNode& block,
-    const OrderedSelection& selection) {
+    const OrderedSelection& selection,
+    std::uint64_t& next_copy_id) {
     const auto span = descendant_fragment_span(block, selection);
     if (!span || !intersects_selection(*span, selection)) return std::nullopt;
 
@@ -151,12 +162,17 @@ inline std::optional<BlockNode> slice_block(
             has_selected_owner = true;
             const auto text = owner_text(selection, *self);
             if (!text) return std::nullopt;
-            truncate_owner(copy, range, text->size());
+            truncate_owner(
+                copy,
+                range,
+                text->size(),
+                selection.document->dialect,
+                next_copy_id);
         }
     }
 
     for (const auto& child : block.children) {
-        if (auto selected = slice_block(child, selection)) {
+        if (auto selected = slice_block(child, selection, next_copy_id)) {
             copy.children.push_back(std::move(*selected));
         }
     }
@@ -187,8 +203,17 @@ inline std::optional<std::u32string> document_selected_markdown(
 
     BlockVec selected;
     selected.reserve(document.root.children.size());
+    auto next_copy_id = document.next_node_id;
+    if (next_copy_id == 0) {
+        std::uint64_t maximum = 0;
+        document_id_detail::scan_block_ids(document.root, maximum);
+        next_copy_id = maximum + 1;
+    }
     for (const auto& block : document.root.children) {
-        if (auto copy = document_copy_detail::slice_block(block, *ordered)) {
+        if (auto copy = document_copy_detail::slice_block(
+                block,
+                *ordered,
+                next_copy_id)) {
             selected.push_back(std::move(*copy));
         }
     }
