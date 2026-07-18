@@ -291,6 +291,54 @@ int main()
         }
         JS_FreeValue(context, result);
     }
+    {
+        JSValue arguments[] = {
+            JS_NewString(context, R"(\frac{)"),
+            JS_NewBool(context, true),
+            JS_NewFloat64(context, 18.0),
+            JS_NewFloat64(context, 900.0),
+        };
+        deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        auto result = JS_Call(context, render, api, 4, arguments);
+        for (auto& argument : arguments) JS_FreeValue(context, argument);
+        if (JS_IsException(result)) return 11;
+        auto text = JS_ToCString(context, result);
+        if (!text) return 12;
+        auto output = std::string_view(text);
+        auto hasError = output.find("data-mjx-error=") != std::string_view::npos;
+        auto hasRedError = output.find("fill=\"red\"") != std::string_view::npos
+            || output.find("stroke=\"red\"") != std::string_view::npos;
+        if (!hasError || !hasRedError)
+        {
+            std::cerr << "MathJax did not emit a visible red merror: " << output << '\n';
+            JS_FreeCString(context, text);
+            JS_FreeValue(context, result);
+            return 13;
+        }
+        auto svgStart = output.find("<svg");
+        auto svgEnd = svgStart == std::string_view::npos
+            ? std::string_view::npos
+            : SvgElementEnd(output, svgStart);
+        if (svgEnd == std::string_view::npos) return 14;
+        std::string compatible(output.substr(svgStart, svgEnd - svgStart));
+        std::size_t color = 0;
+        while ((color = compatible.find("currentColor", color)) != std::string::npos)
+        {
+            compatible.replace(color, std::string_view("currentColor").size(), "#000000");
+            color += 7;
+        }
+        std::string normalized;
+        if (!svgNormalizer.Process(compatible, normalized)
+            || FAILED(svgValidator.Validate(normalized)))
+        {
+            std::cerr << "MathJax merror SVG is not compatible with the native renderer\n";
+            JS_FreeCString(context, text);
+            JS_FreeValue(context, result);
+            return 15;
+        }
+        JS_FreeCString(context, text);
+        JS_FreeValue(context, result);
+    }
     JS_FreeValue(context, render);
     JS_FreeValue(context, api);
     JS_FreeValue(context, global);

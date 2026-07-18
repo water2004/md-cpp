@@ -28,8 +28,7 @@ mathjax.asyncLoad = name => globalThis.FoliaLoadMathJaxModule(String(name));
 mathjax.asyncIsSynchronous = true;
 globalThis.FoliaMathJaxFont = MathJaxNewcmFont;
 const input = new TeX({
-  packages: ['base', 'ams', 'newcommand', 'noundefined', 'boldsymbol', 'braket', 'cancel', 'cases', 'color', 'configmacros', 'extpfeil', 'mathtools', 'physics', 'textmacros', 'unicode', 'upgreek', 'verb'],
-  formatError(jax, error) { throw error; }
+  packages: ['base', 'ams', 'newcommand', 'noundefined', 'boldsymbol', 'braket', 'cancel', 'cases', 'color', 'configmacros', 'extpfeil', 'mathtools', 'physics', 'textmacros', 'unicode', 'upgreek', 'verb']
 });
 const output = new SVG({
   fontData: MathJaxNewcmFont,
