@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "editor/interaction/EditorKeyboardController.h"
 
-import elmd.core.command;
+import elmd.platform.editor_input_command;
 
 namespace winrt::ElMd
 {
@@ -87,7 +87,6 @@ namespace winrt::ElMd
         if (!session_ || !renderer_ || !executeCommand_) return false;
         if (textInput_) textInput_->BeginHardwareKey();
         pendingHighSurrogate_.reset();
-        elmd::Command command;
         auto ctrl = KeyDown(winrt::Windows::System::VirtualKey::Control)
             || KeyDown(winrt::Windows::System::VirtualKey::LeftControl)
             || KeyDown(winrt::Windows::System::VirtualKey::RightControl);
@@ -97,170 +96,14 @@ namespace winrt::ElMd
         auto alt = KeyDown(winrt::Windows::System::VirtualKey::Menu)
             || KeyDown(winrt::Windows::System::VirtualKey::LeftMenu)
             || KeyDown(winrt::Windows::System::VirtualKey::RightMenu);
-
-        if (ctrl)
-        {
-            switch (key)
-            {
-                case winrt::Windows::System::VirtualKey::Up:
-                    command.kind = alt ? elmd::CommandKind::MoveTableRowUp : elmd::CommandKind::InsertTableRowAbove;
-                    break;
-                case winrt::Windows::System::VirtualKey::Down:
-                    command.kind = alt ? elmd::CommandKind::MoveTableRowDown : elmd::CommandKind::InsertTableRowBelow;
-                    break;
-                case winrt::Windows::System::VirtualKey::Left:
-                    command.kind = alt ? elmd::CommandKind::MoveTableColumnLeft : elmd::CommandKind::InsertTableColumnLeft;
-                    break;
-                case winrt::Windows::System::VirtualKey::Right:
-                    command.kind = alt ? elmd::CommandKind::MoveTableColumnRight : elmd::CommandKind::InsertTableColumnRight;
-                    break;
-                case winrt::Windows::System::VirtualKey::Back:
-                    command.kind = elmd::CommandKind::DeleteTableRow;
-                    break;
-                case winrt::Windows::System::VirtualKey::Delete:
-                    command.kind = elmd::CommandKind::DeleteTableColumn;
-                    break;
-                case winrt::Windows::System::VirtualKey::Home:
-                    command.kind = elmd::CommandKind::MoveDocumentStart;
-                    command.extend_selection = shift;
-                    break;
-                case winrt::Windows::System::VirtualKey::End:
-                    command.kind = elmd::CommandKind::MoveDocumentEnd;
-                    command.extend_selection = shift;
-                    break;
-                case winrt::Windows::System::VirtualKey::Number1:
-                    command.kind = elmd::CommandKind::SetHeading;
-                    command.level = 1;
-                    break;
-                case winrt::Windows::System::VirtualKey::Number2:
-                    command.kind = elmd::CommandKind::SetHeading;
-                    command.level = 2;
-                    break;
-                case winrt::Windows::System::VirtualKey::Number7:
-                    command.kind = elmd::CommandKind::ToggleOrderedList;
-                    break;
-                case winrt::Windows::System::VirtualKey::Number8:
-                    command.kind = elmd::CommandKind::ToggleUnorderedList;
-                    break;
-                case winrt::Windows::System::VirtualKey::Number9:
-                    command.kind = elmd::CommandKind::ToggleTaskList;
-                    break;
-                case winrt::Windows::System::VirtualKey::B:
-                    command.kind = elmd::CommandKind::ToggleStrong;
-                    break;
-                case winrt::Windows::System::VirtualKey::I:
-                    command.kind = elmd::CommandKind::ToggleEmphasis;
-                    break;
-                case winrt::Windows::System::VirtualKey::Q:
-                    command.kind = elmd::CommandKind::ToggleBlockQuote;
-                    break;
-                case winrt::Windows::System::VirtualKey::T:
-                    command.kind = elmd::CommandKind::InsertTable;
-                    command.rows = 2;
-                    command.cols = 3;
-                    break;
-                case winrt::Windows::System::VirtualKey::Z:
-                    command.kind = shift ? elmd::CommandKind::Redo : elmd::CommandKind::Undo;
-                    break;
-                case winrt::Windows::System::VirtualKey::Y:
-                    command.kind = elmd::CommandKind::Redo;
-                    break;
-                case winrt::Windows::System::VirtualKey::A:
-                    command.kind = elmd::CommandKind::SelectAll;
-                    break;
-                case winrt::Windows::System::VirtualKey::C:
-                    if (copy_) copy_();
-                    return true;
-                case winrt::Windows::System::VirtualKey::X:
-                    if (cut_) cut_();
-                    return true;
-                case winrt::Windows::System::VirtualKey::V:
-                    if (paste_) paste_();
-                    return true;
-                default:
-                    return false;
-            }
-            executeCommand_(command);
-            return true;
-        }
-
-        switch (key)
-        {
-            case winrt::Windows::System::VirtualKey::Back:
-                command.kind = elmd::CommandKind::DeleteBackward;
-                break;
-            case winrt::Windows::System::VirtualKey::Delete:
-                command.kind = elmd::CommandKind::DeleteForward;
-                break;
-            case winrt::Windows::System::VirtualKey::Enter:
-                return InsertNewline();
-            case winrt::Windows::System::VirtualKey::Left:
-                command.kind = elmd::CommandKind::MoveLeft;
-                command.extend_selection = shift;
-                ResetCaretGoal();
-                break;
-            case winrt::Windows::System::VirtualKey::Right:
-                command.kind = elmd::CommandKind::MoveRight;
-                command.extend_selection = shift;
-                ResetCaretGoal();
-                break;
-            case winrt::Windows::System::VirtualKey::Up:
-                return MoveCaretVerticalStep(false, shift);
-            case winrt::Windows::System::VirtualKey::Down:
-                return MoveCaretVerticalStep(true, shift);
-            case winrt::Windows::System::VirtualKey::Home:
-            {
-                ResetCaretGoal();
-                auto selection = session_->Selection();
-                if (auto position = renderer_->VisualLineStart(selection.active))
-                {
-                    position->affinity = elmd::TextAffinity::Downstream;
-                    session_->SetSelection(shift ? selection.anchor : *position, *position);
-                    if (textInput_) textInput_->NotifySelectionChanged();
-                    if (render_) render_();
-                    if (renderer_->ScrollToPosition(*position) && render_) render_();
-                    return true;
-                }
-                command.kind = elmd::CommandKind::MoveLineStart;
-                command.extend_selection = shift;
-                break;
-            }
-            case winrt::Windows::System::VirtualKey::End:
-            {
-                ResetCaretGoal();
-                auto selection = session_->Selection();
-                if (auto position = renderer_->VisualLineEnd(selection.active))
-                {
-                    position->affinity = elmd::TextAffinity::Upstream;
-                    session_->SetSelection(shift ? selection.anchor : *position, *position);
-                    if (textInput_) textInput_->NotifySelectionChanged();
-                    if (render_) render_();
-                    if (renderer_->ScrollToPosition(*position) && render_) render_();
-                    return true;
-                }
-                command.kind = elmd::CommandKind::MoveLineEnd;
-                command.extend_selection = shift;
-                break;
-            }
-            case winrt::Windows::System::VirtualKey::Tab:
-                if (shift)
-                {
-                    command.kind = elmd::CommandKind::OutdentListItem;
-                    if (executeCommand_(command)) return true;
-                    command.kind = elmd::CommandKind::MoveTableCellPrevious;
-                    executeCommand_(command);
-                    return true;
-                }
-                command.kind = elmd::CommandKind::IndentListItem;
-                if (executeCommand_(command)) return true;
-                command.kind = elmd::CommandKind::MoveTableCellNext;
-                if (!executeCommand_(command)) executeCommand_(elmd::Command::InsertText(U"    "));
-                return true;
-            default:
-                return false;
-        }
-        executeCommand_(command);
-        return true;
+        auto action = elmd::platform::editor::TranslateEditorKeyGesture({
+            .key = static_cast<elmd::platform::editor::EditorKey>(
+                static_cast<std::uint32_t>(key)),
+            .control = ctrl,
+            .shift = shift,
+            .alt = alt,
+        });
+        return DispatchInputAction(action);
     }
 
     bool EditorKeyboardController::InsertNewline()
@@ -269,9 +112,86 @@ namespace winrt::ElMd
         auto shift = KeyDown(winrt::Windows::System::VirtualKey::Shift)
             || KeyDown(winrt::Windows::System::VirtualKey::LeftShift)
             || KeyDown(winrt::Windows::System::VirtualKey::RightShift);
-        elmd::Command command;
-        command.kind = shift ? elmd::CommandKind::InsertSoftBreak : elmd::CommandKind::InsertNewline;
-        return executeCommand_(command);
+        return DispatchInputAction(
+            elmd::platform::editor::TranslateEditorKeyGesture({
+                .key = elmd::platform::editor::EditorKey::Enter,
+                .shift = shift,
+            }));
+    }
+
+    bool EditorKeyboardController::DispatchInputAction(
+        elmd::platform::editor::EditorInputAction const& action)
+    {
+        using elmd::platform::editor::EditorInputActionKind;
+        if (!executeCommand_) return false;
+        switch (action.kind)
+        {
+            case EditorInputActionKind::None:
+                return false;
+            case EditorInputActionKind::ExecuteCommand:
+                if (action.command.kind == elmd::CommandKind::MoveLeft
+                    || action.command.kind == elmd::CommandKind::MoveRight)
+                    ResetCaretGoal();
+                executeCommand_(action.command);
+                return true;
+            case EditorInputActionKind::ExecuteCommandIfApplied:
+                return executeCommand_(action.command);
+            case EditorInputActionKind::Copy:
+                if (copy_) copy_();
+                return true;
+            case EditorInputActionKind::Cut:
+                if (cut_) cut_();
+                return true;
+            case EditorInputActionKind::Paste:
+                if (paste_) paste_();
+                return true;
+            case EditorInputActionKind::VisualLineUp:
+                return MoveCaretVerticalStep(false, action.command.extend_selection);
+            case EditorInputActionKind::VisualLineDown:
+                return MoveCaretVerticalStep(true, action.command.extend_selection);
+            case EditorInputActionKind::VisualLineStart:
+            case EditorInputActionKind::VisualLineEnd:
+            {
+                ResetCaretGoal();
+                auto selection = session_->Selection();
+                auto position = action.kind == EditorInputActionKind::VisualLineStart
+                    ? renderer_->VisualLineStart(selection.active)
+                    : renderer_->VisualLineEnd(selection.active);
+                if (!position)
+                {
+                    executeCommand_(action.command);
+                    return true;
+                }
+                position->affinity = action.kind == EditorInputActionKind::VisualLineStart
+                    ? elmd::TextAffinity::Downstream
+                    : elmd::TextAffinity::Upstream;
+                session_->SetSelection(
+                    action.command.extend_selection ? selection.anchor : *position,
+                    *position);
+                if (textInput_) textInput_->NotifySelectionChanged();
+                if (render_) render_();
+                if (renderer_->ScrollToPosition(*position) && render_) render_();
+                return true;
+            }
+            case EditorInputActionKind::TabBackward:
+            {
+                auto command = elmd::Command{.kind = elmd::CommandKind::OutdentListItem};
+                if (executeCommand_(command)) return true;
+                command.kind = elmd::CommandKind::MoveTableCellPrevious;
+                executeCommand_(command);
+                return true;
+            }
+            case EditorInputActionKind::TabForward:
+            {
+                auto command = elmd::Command{.kind = elmd::CommandKind::IndentListItem};
+                if (executeCommand_(command)) return true;
+                command.kind = elmd::CommandKind::MoveTableCellNext;
+                if (!executeCommand_(command))
+                    executeCommand_(elmd::Command::InsertText(U"    "));
+                return true;
+            }
+        }
+        return false;
     }
 
     void EditorKeyboardController::ResetCaretGoal()

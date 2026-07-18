@@ -4,6 +4,8 @@
 #include "editor/rendering/EditorSurfaceRenderer.h"
 #include "editor/interaction/EditorTextInputController.h"
 
+import elmd.platform.editor_input_command;
+
 namespace winrt::ElMd
 {
     struct EditorKeyboardController
@@ -28,6 +30,7 @@ namespace winrt::ElMd
         void ResetCaretGoal();
 
     private:
+        bool DispatchInputAction(elmd::platform::editor::EditorInputAction const& action);
         bool MoveCaretVerticalStep(bool down, bool extend);
         bool KeyDown(winrt::Windows::System::VirtualKey key) const;
 
