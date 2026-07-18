@@ -527,9 +527,17 @@ namespace winrt::Folia
         scope.Items().Append(box_value(Localize(L"ShortcutScopeCode")));
         scope.Items().Append(box_value(Localize(L"ShortcutScopeMath")));
         scope.SelectedIndex(existing ? ScopeIndex(existing->scope) : 0);
+        scope.HorizontalAlignment(HorizontalAlignment::Stretch);
         assignment.Children().Append(scope);
-        StackPanel gestureField;
-        gestureField.Spacing(4);
+        Grid gestureField;
+        gestureField.RowSpacing(4);
+        RowDefinition gestureLabelRow;
+        gestureLabelRow.Height(GridLengthHelper::Auto());
+        gestureField.RowDefinitions().Append(gestureLabelRow);
+        RowDefinition gestureButtonRow;
+        gestureButtonRow.Height(GridLengthHelper::Auto());
+        gestureField.RowDefinitions().Append(gestureButtonRow);
+        gestureField.HorizontalAlignment(HorizontalAlignment::Stretch);
         gestureField.Children().Append(Text(Localize(L"ShortcutKeys"), 12));
         Button gestureButton;
         std::optional<EditorKeyGesture> gesture = existing
@@ -537,6 +545,7 @@ namespace winrt::Folia
         gestureButton.Content(box_value(GestureLabel(gesture)));
         gestureButton.HorizontalAlignment(HorizontalAlignment::Stretch);
         gestureButton.HorizontalContentAlignment(HorizontalAlignment::Center);
+        Grid::SetRow(gestureButton, 1);
         bool capturing = false;
         gestureButton.Click([&gestureButton, &capturing](auto const&, auto const&)
         {
