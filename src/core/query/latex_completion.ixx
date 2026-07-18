@@ -1,7 +1,6 @@
 // folia.core.latex_completion — local LaTeX command prefix queries and ranking.
 export module folia.core.latex_completion;
 import std;
-import folia.core.snippet_template;
 import folia.core.text_edit;
 
 export namespace folia {
@@ -32,67 +31,33 @@ struct LatexCompletionCandidate {
     std::size_t catalog_order = 0;
 };
 
-using LatexCommandInvocations = std::vector<std::u32string>;
-
 struct LatexCompletionQuery {
     SourceRange replacement;
     std::u32string prefix;
     std::vector<LatexCompletionCandidate> candidates;
 };
 
-inline bool latex_command_character(char32_t value) {
-    return (value >= U'a' && value <= U'z')
-        || (value >= U'A' && value <= U'Z');
+inline std::u32string_view latex_trigger_view(std::u32string_view trigger) {
+    while (!trigger.empty() && trigger.front() == U'\\') trigger.remove_prefix(1);
+    return trigger;
 }
 
 inline std::u32string normalize_latex_trigger(std::u32string_view trigger) {
-    while (!trigger.empty() && trigger.front() == U'\\') trigger.remove_prefix(1);
-    return std::u32string{trigger};
+    return std::u32string{latex_trigger_view(trigger)};
 }
 
 inline bool valid_latex_command_definition(LatexCommandDefinition const& command) {
-    auto trigger = normalize_latex_trigger(command.trigger);
+    auto trigger = latex_trigger_view(command.trigger);
     return !command.id.empty()
         && !trigger.empty()
-        && std::ranges::all_of(trigger, latex_command_character)
+        && std::ranges::all_of(trigger, [](char32_t value) {
+            return value > U' ' && value != U'\\';
+        })
         && !command.snippet.empty();
 }
 
-inline bool latex_invocation_trailing_space(char32_t value) {
-    return value == U' ' || value == U'\t' || value == U'\r' || value == U'\n';
-}
-
-// Compile every source spelling that can start this registered command. The
-// snippet's static text before its first tab stop is authoritative: punctuation
-// such as '{', '_', or '@' is accepted only when a registered spelling contains it.
-inline LatexCommandInvocations compile_latex_command_invocations(
+inline std::u32string registered_latex_command_prefix(
     LatexCommandDefinition const& command) {
-    LatexCommandInvocations result;
-    auto direct = normalize_latex_trigger(command.trigger);
-    if (!direct.empty()) result.push_back(std::move(direct));
-
-    auto parsed = parse_snippet_template(command.snippet);
-    auto static_end = parsed.text.size();
-    for (auto const& stop : parsed.tab_stops)
-        static_end = (std::min)(static_end, stop.range.start);
-    auto static_prefix = std::u32string_view{parsed.text}.substr(0, static_end);
-    while (!static_prefix.empty() && latex_invocation_trailing_space(static_prefix.back()))
-        static_prefix.remove_suffix(1);
-    if (!static_prefix.empty() && static_prefix.front() == U'\\')
-        static_prefix.remove_prefix(1);
-    if (!static_prefix.empty()
-        && std::ranges::find(result, static_prefix) == result.end())
-        result.emplace_back(static_prefix);
-    return result;
-}
-
-inline std::u32string preferred_latex_command_invocation(
-    LatexCommandDefinition const& command) {
-    auto invocations = compile_latex_command_invocations(command);
-    auto environment = std::ranges::find_if(invocations, [](auto const& invocation) {
-        return invocation.starts_with(U"begin{") && invocation.ends_with(U'}');
-    });
-    if (environment != invocations.end()) return *environment;
     return normalize_latex_trigger(command.trigger);
 }
 
@@ -141,21 +106,17 @@ inline std::vector<LatexCommandDefinition> merge_latex_command_catalog(
 
 inline std::optional<LatexCompletionQuery> query_latex_commands_at(
     std::span<LatexCommandDefinition const> catalog,
-    std::span<LatexCommandInvocations const> invocations,
     std::u32string_view source,
     std::size_t caret,
     std::unordered_map<std::string, LatexCommandUsage> const& usage,
     std::int64_t now_epoch_seconds,
     std::size_t limit = 8) {
-    if (caret > source.size() || invocations.size() != catalog.size())
-        return std::nullopt;
+    if (caret > source.size()) return std::nullopt;
 
     auto maximum_length = std::size_t{0};
-    for (std::size_t index = 0; index < catalog.size(); ++index) {
-        auto const& command = catalog[index];
+    for (auto const& command : catalog) {
         if (!command.enabled || !valid_latex_command_definition(command)) continue;
-        for (auto const& invocation : invocations[index])
-            maximum_length = (std::max)(maximum_length, invocation.size());
+        maximum_length = (std::max)(maximum_length, latex_trigger_view(command.trigger).size());
     }
     if (maximum_length == 0) return std::nullopt;
 
@@ -170,12 +131,12 @@ inline std::optional<LatexCompletionQuery> query_latex_commands_at(
             continue;
         auto candidate_prefix = source.substr(cursor + 1, caret - cursor - 1);
         auto matches = false;
-        for (std::size_t index = 0; index < catalog.size() && !matches; ++index) {
-            auto const& command = catalog[index];
+        for (auto const& command : catalog) {
             if (!command.enabled || !valid_latex_command_definition(command)) continue;
-            matches = std::ranges::any_of(invocations[index], [&](auto const& invocation) {
-                return invocation.starts_with(candidate_prefix);
-            });
+            if (latex_trigger_view(command.trigger).starts_with(candidate_prefix)) {
+                matches = true;
+                break;
+            }
         }
         if (!matches) continue;
         slash = cursor;
@@ -186,19 +147,13 @@ inline std::optional<LatexCompletionQuery> query_latex_commands_at(
 
     std::vector<LatexCompletionCandidate> result;
     result.reserve((std::min)(catalog.size(), limit));
-    std::vector<std::u32string_view> matching_invocations;
+    std::vector<std::u32string_view> matching_triggers;
     for (std::size_t index = 0; index < catalog.size(); ++index) {
         auto const& command = catalog[index];
         if (!command.enabled || !valid_latex_command_definition(command)) continue;
-        auto command_matches = false;
-        auto exact_match = false;
-        for (auto const& invocation : invocations[index]) {
-            if (!invocation.starts_with(prefix)) continue;
-            command_matches = true;
-            exact_match = exact_match || invocation == prefix;
-            matching_invocations.emplace_back(invocation);
-        }
-        if (!command_matches) continue;
+        auto trigger = latex_trigger_view(command.trigger);
+        if (!trigger.starts_with(prefix)) continue;
+        matching_triggers.push_back(trigger);
         auto found_usage = usage.find(command.id);
         auto score = found_usage == usage.end()
             ? 0.0
@@ -206,25 +161,25 @@ inline std::optional<LatexCompletionQuery> query_latex_commands_at(
         result.push_back({
             .command = command,
             .recent_score = score,
-            .exact_match = exact_match,
+            .exact_match = trigger == prefix,
             .catalog_order = index,
         });
     }
 
     auto replacement_end = caret;
     auto matched_length = prefix.size();
-    while (replacement_end < source.size() && !matching_invocations.empty()) {
-        if (std::ranges::any_of(matching_invocations, [&](auto invocation) {
-            return invocation.size() == matched_length;
+    while (replacement_end < source.size() && !matching_triggers.empty()) {
+        if (std::ranges::any_of(matching_triggers, [&](auto trigger) {
+            return trigger.size() == matched_length;
         })) break;
         std::vector<std::u32string_view> continued;
-        for (auto invocation : matching_invocations) {
-            if (invocation.size() > matched_length
-                && invocation[matched_length] == source[replacement_end])
-                continued.push_back(invocation);
+        for (auto trigger : matching_triggers) {
+            if (trigger.size() > matched_length
+                && trigger[matched_length] == source[replacement_end])
+                continued.push_back(trigger);
         }
         if (continued.empty()) break;
-        matching_invocations = std::move(continued);
+        matching_triggers = std::move(continued);
         ++replacement_end;
         ++matched_length;
     }

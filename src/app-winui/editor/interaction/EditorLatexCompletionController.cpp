@@ -216,8 +216,8 @@ namespace winrt::Folia
     hstring EditorLatexCompletionController::CandidateLabel(
         folia::LatexCommandDefinition const& command) const
     {
-        auto invocation = folia::preferred_latex_command_invocation(command);
-        return L"\\" + winrt::to_hstring(folia::cps_to_utf8(invocation));
+        auto prefix = folia::registered_latex_command_prefix(command);
+        return L"\\" + winrt::to_hstring(folia::cps_to_utf8(prefix));
     }
 
     hstring EditorLatexCompletionController::CandidateDescription(

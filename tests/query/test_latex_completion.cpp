@@ -18,15 +18,6 @@ LatexCommandDefinition Command(
     };
 }
 
-std::vector<LatexCommandInvocations> Compile(
-    std::vector<LatexCommandDefinition> const& catalog) {
-    std::vector<LatexCommandInvocations> result;
-    result.reserve(catalog.size());
-    for (auto const& command : catalog)
-        result.push_back(compile_latex_command_invocations(command));
-    return result;
-}
-
 std::optional<LatexCompletionQuery> Query(
     std::vector<LatexCommandDefinition> const& catalog,
     std::u32string_view source,
@@ -34,24 +25,23 @@ std::optional<LatexCompletionQuery> Query(
     std::unordered_map<std::string, LatexCommandUsage> const& usage = {},
     std::int64_t now = 0,
     std::size_t limit = 8) {
-    auto invocations = Compile(catalog);
     return query_latex_commands_at(
-        catalog, invocations, source, caret, usage, now, limit);
+        catalog, source, caret, usage, now, limit);
 }
 
 } // namespace
 
 suite latex_completion_tests = [] {
 
-"registered snippets compile direct and canonical invocation forms"_test = [] {
-    auto matrix = Command(
-        "matrix", U"matrix", U"\\begin{matrix}\n$1\n\\end{matrix}$0");
-    auto forms = compile_latex_command_invocations(matrix);
-    expect(forms == LatexCommandInvocations{U"matrix", U"begin{matrix}"});
-
-    auto fraction = Command("frac", U"frac", U"\\frac{$1}{$2}$0");
-    forms = compile_latex_command_invocations(fraction);
-    expect(forms == LatexCommandInvocations{U"frac", U"frac{"});
+"each registered prefix owns exactly one template"_test = [] {
+    auto shortMatrix = Command(
+        "matrix.short", U"matrix", U"\\begin{matrix}\n$1\n\\end{matrix}$0");
+    auto beginMatrix = Command(
+        "matrix.begin", U"begin{matrix}",
+        U"\\begin{matrix}\n${1:a & b}\n\\end{matrix}$0");
+    expect(registered_latex_command_prefix(shortMatrix) == U"matrix");
+    expect(registered_latex_command_prefix(beginMatrix) == U"begin{matrix}");
+    expect(bool(shortMatrix.snippet != beginMatrix.snippet));
 };
 
 "query replaces the complete registered command around the caret"_test = [] {
@@ -73,10 +63,9 @@ suite latex_completion_tests = [] {
 
 "begin completion remains active through braces because the catalog registers it"_test = [] {
     auto matrix = Command(
-        "matrix", U"matrix", U"\\begin{matrix}\n$1\n\\end{matrix}$0");
+        "matrix.begin", U"begin{matrix}", U"\\begin{matrix}\n$1\n\\end{matrix}$0");
     auto cases = Command(
-        "cases", U"cases", U"\\begin{cases}\n$1\n\\end{cases}$0");
-    cases.category = "custom";
+        "cases.begin", U"begin{cases}", U"\\begin{cases}\n$1\n\\end{cases}$0");
     std::vector catalog{matrix, cases};
 
     for (auto source : {U"\\b", U"\\begin", U"\\begin{", U"\\begin{m"}) {
@@ -89,7 +78,32 @@ suite latex_completion_tests = [] {
     expect(partial->prefix == U"begin{mat");
     expect(partial->replacement == SourceRange{2, 16});
     expect(partial->candidates.size() == 1_u);
-    expect(partial->candidates[0].command.id == "matrix");
+    expect(partial->candidates[0].command.id == "matrix.begin");
+};
+
+"short environment prefix does not implicitly register begin syntax"_test = [] {
+    std::vector catalog{Command(
+        "matrix.short", U"matrix", U"\\begin{matrix}\n$1\n\\end{matrix}$0")};
+    expect(Query(catalog, U"\\mat", 4).has_value());
+    expect(!Query(catalog, U"\\begin{", 7).has_value());
+};
+
+"parallel environment prefixes select their own templates"_test = [] {
+    std::vector catalog{
+        Command("matrix.short", U"matrix", U"short-template$0"),
+        Command("matrix.begin", U"begin{matrix}", U"begin-template$0"),
+    };
+    auto shortQuery = Query(catalog, U"\\mat", 4);
+    expect(fatal(shortQuery.has_value()));
+    expect(shortQuery->candidates.size() == 1_u);
+    expect(shortQuery->candidates[0].command.id == "matrix.short");
+    expect(bool(shortQuery->candidates[0].command.snippet == U"short-template$0"));
+
+    auto beginQuery = Query(catalog, U"\\begin{mat", 10);
+    expect(fatal(beginQuery.has_value()));
+    expect(beginQuery->candidates.size() == 1_u);
+    expect(beginQuery->candidates[0].command.id == "matrix.begin");
+    expect(bool(beginQuery->candidates[0].command.snippet == U"begin-template$0"));
 };
 
 "unregistered begin spelling does not survive punctuation"_test = [] {
@@ -98,7 +112,7 @@ suite latex_completion_tests = [] {
 };
 
 "registered custom punctuation is matched without a LaTeX character whitelist"_test = [] {
-    auto custom = Command("custom", U"thing", U"\\operator@name{$1}$0");
+    auto custom = Command("custom", U"operator@name", U"\\operator@name{$1}$0");
     custom.category = "custom";
     std::vector catalog{custom};
     auto query = Query(catalog, U"\\operator@", 10);
@@ -180,7 +194,7 @@ suite latex_completion_tests = [] {
     disabled.enabled = false;
     std::vector catalog{
         disabled,
-        Command("bad", U"fr-ac", U"x"),
+        Command("bad", U"fr ac", U"x"),
         Command("valid", U"frame", U"\\frame$0"),
     };
     auto query = Query(catalog, U"\\fr", 3);

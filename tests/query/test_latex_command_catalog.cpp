@@ -33,7 +33,7 @@ suite latex_command_catalog_tests = [] {
 
     auto duplicate = catalog.AddCustom(U"frac", U"other", "Duplicate");
     expect(duplicate.error == LatexCatalogMutationError::DuplicateCustomTrigger);
-    auto invalid = catalog.UpdateCustom("user.frac", U"fr-ac", U"other", "Invalid");
+    auto invalid = catalog.UpdateCustom("user.frac", U"fr ac", U"other", "Invalid");
     expect(invalid.error == LatexCatalogMutationError::InvalidDefinition);
     expect(catalog.CustomCommands().front().trigger == U"frac");
     expect(catalog.CustomCommands().front().snippet == U"\\dfrac{$1}{$2}$0");
