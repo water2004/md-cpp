@@ -145,6 +145,7 @@
     <ClInclude Include="storage\AssetPaths.h" />
     <ClInclude Include="localization\Localization.h" />
     <ClInclude Include="settings\AppSettings.h" />
+    <ClInclude Include="settings\ShortcutSettingsSerialization.h" />
     <ClInclude Include="settings\SettingsView.h" />
     <ClInclude Include="settings\SettingsViewSupport.h" />
     <ClInclude Include="settings\LatexCommandCatalog.h" />
@@ -466,6 +467,7 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="settings\AppSettings.cpp" />
+    <ClCompile Include="settings\ShortcutSettingsSerialization.cpp" />
     <ClCompile Include="settings\LatexCommandCatalog.cpp" />
     <ClCompile Include="settings\LatexCommandSettingsComponents.cpp" />
     <ClCompile Include="settings\ShortcutSettingsComponents.cpp" />

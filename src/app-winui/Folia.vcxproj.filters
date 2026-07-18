@@ -318,6 +318,9 @@
     <ClCompile Include="settings\AppSettings.cpp">
       <Filter>Settings</Filter>
     </ClCompile>
+    <ClCompile Include="settings\ShortcutSettingsSerialization.cpp">
+      <Filter>Settings</Filter>
+    </ClCompile>
     <ClCompile Include="settings\SettingsView.cpp">
       <Filter>Settings</Filter>
     </ClCompile>
@@ -504,6 +507,9 @@
       <Filter>Theme</Filter>
     </ClInclude>
     <ClInclude Include="settings\AppSettings.h">
+      <Filter>Settings</Filter>
+    </ClInclude>
+    <ClInclude Include="settings\ShortcutSettingsSerialization.h">
       <Filter>Settings</Filter>
     </ClInclude>
     <ClInclude Include="settings\SettingsView.h">
