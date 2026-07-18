@@ -12,6 +12,7 @@ import folia.platform.editor_scroll_state;
 #include "editor/rendering/EditorRenderCache.h"
 #include "editor/rendering/EditorRenderResources.h"
 #include "editor/interaction/EditorTableInteraction.h"
+#include "export/EditorPdfExportTypes.h"
 
 namespace winrt::Folia
 {
@@ -33,25 +34,11 @@ namespace winrt::Folia
         EditorSurfaceRenderer();
         ~EditorSurfaceRenderer();
 
-        enum class PdfExportResult
-        {
-            WaitingForAssets,
-            InProgress,
-            Completed,
-        };
-
-        struct PdfExportProgress
-        {
-            PdfExportResult result = PdfExportResult::WaitingForAssets;
-            std::size_t completedPages = 0;
-            std::size_t totalPages = 0;
-        };
-
         void Initialize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel);
         void InitializeForPdf();
         void Resize(winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& panel, double width, double height);
         void Render(detail::EditorRenderFrame const& frame);
-        PdfExportProgress ExportPdfStep(
+        EditorPdfExportProgress ExportPdfStep(
             std::filesystem::path const& path,
             std::wstring const& title,
             detail::EditorRenderFrame const& frame);

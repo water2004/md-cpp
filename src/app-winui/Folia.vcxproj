@@ -173,6 +173,7 @@
     <ClInclude Include="editor\interaction\EditorKeyboardController.h" />
     <ClInclude Include="editor\interaction\EditorDocumentController.h" />
     <ClInclude Include="export\EditorPdfPrintJob.h" />
+    <ClInclude Include="export\EditorPdfExportTypes.h" />
     <ClInclude Include="editor\interaction\EditorSidebarController.h" />
     <ClInclude Include="editor\rendering\EditorSurfaceRenderer.h" />
     <ClInclude Include="editor\rendering\EditorPreparedDocument.h" />

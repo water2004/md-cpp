@@ -463,8 +463,8 @@ namespace winrt::Folia
                             auto progress = renderer.ExportPdfStep(outputPath, title, frame);
                             work->completedPages = progress.completedPages;
                             work->totalPages = progress.totalPages;
-                            if (progress.result == EditorSurfaceRenderer::PdfExportResult::Completed) break;
-                            auto delay = progress.result == EditorSurfaceRenderer::PdfExportResult::WaitingForAssets
+                            if (progress.result == EditorPdfExportResult::Completed) break;
+                            auto delay = progress.result == EditorPdfExportResult::WaitingForAssets
                                 ? std::chrono::milliseconds(40)
                                 : std::chrono::milliseconds(1);
                             auto deadline = std::chrono::steady_clock::now() + delay;

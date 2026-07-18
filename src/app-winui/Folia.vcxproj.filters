@@ -554,6 +554,9 @@
     <ClInclude Include="export\EditorPdfPrintJob.h">
       <Filter>Export</Filter>
     </ClInclude>
+    <ClInclude Include="export\EditorPdfExportTypes.h">
+      <Filter>Export</Filter>
+    </ClInclude>
     <ClInclude Include="editor\interaction\EditorSidebarController.h">
       <Filter>Editor\Interaction</Filter>
     </ClInclude>

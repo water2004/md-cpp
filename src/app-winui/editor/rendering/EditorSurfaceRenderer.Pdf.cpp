@@ -43,7 +43,7 @@ namespace winrt::Folia
         }
     };
 
-    EditorSurfaceRenderer::PdfExportProgress EditorSurfaceRenderer::ExportPdfStep(
+    EditorPdfExportProgress EditorSurfaceRenderer::ExportPdfStep(
         std::filesystem::path const& path,
         std::wstring const& title,
         detail::EditorRenderFrame const& frame)
@@ -52,7 +52,7 @@ namespace winrt::Folia
         if (rendering || resizing || exporting)
         {
             return {
-                PdfExportResult::WaitingForAssets,
+                EditorPdfExportResult::WaitingForAssets,
                 pdfExportState ? pdfExportState->completedPages : 0,
                 pdfExportState ? pdfExportState->estimatedTotalPages : 0,
             };
@@ -160,7 +160,7 @@ namespace winrt::Folia
             {
                 finishStep();
                 return {
-                    PdfExportResult::WaitingForAssets,
+                    EditorPdfExportResult::WaitingForAssets,
                     state->completedPages,
                     state->estimatedTotalPages,
                 };
@@ -253,7 +253,7 @@ namespace winrt::Folia
             {
                 finishStep();
                 return {
-                    PdfExportResult::WaitingForAssets,
+                    EditorPdfExportResult::WaitingForAssets,
                     state->completedPages,
                     state->estimatedTotalPages,
                 };
@@ -289,7 +289,7 @@ namespace winrt::Folia
                 updateEstimatedTotal();
                 finishStep();
                 return {
-                    PdfExportResult::InProgress,
+                    EditorPdfExportResult::InProgress,
                     state->completedPages,
                     state->estimatedTotalPages,
                 };
@@ -304,7 +304,7 @@ namespace winrt::Folia
             renderCache.ClearSvgDocuments();
             ClearPreparedDocument();
             Invalidate();
-            return {PdfExportResult::Completed, completed, completed};
+            return {EditorPdfExportResult::Completed, completed, completed};
         }
         catch (...)
         {
