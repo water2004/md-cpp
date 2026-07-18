@@ -415,7 +415,6 @@ namespace winrt::Folia
             while (!stop.stop_requested())
             {
                 Request request;
-                auto highPriority = false;
                 std::uint64_t ticket = 0;
                 {
                     std::unique_lock lock(mutex);
@@ -424,15 +423,10 @@ namespace winrt::Folia
                         })) break;
                     auto queued = requestQueue.Pop(!backgroundPaused);
                     if (!queued) continue;
-                    highPriority = queued->priority == EditorWorkPriority::Visible;
                     ticket = queued->ticket;
                     request = std::move(queued->work);
+                    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
                 }
-                SetThreadPriority(
-                    GetCurrentThread(),
-                    highPriority
-                        ? THREAD_PRIORITY_NORMAL
-                        : THREAD_PRIORITY_BELOW_NORMAL);
                 auto result = RenderNow(request);
                 std::function<void()> notify;
                 {
@@ -537,6 +531,10 @@ namespace winrt::Folia
             std::scoped_lock lock(state->mutex);
             if (state->backgroundPaused == paused) return;
             state->backgroundPaused = paused;
+            if (state->worker.joinable())
+                SetThreadPriority(
+                    state->worker.native_handle(),
+                    paused ? THREAD_PRIORITY_BELOW_NORMAL : THREAD_PRIORITY_NORMAL);
         }
         if (!paused) state->ready.notify_one();
     }
