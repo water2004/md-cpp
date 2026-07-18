@@ -19,6 +19,9 @@ namespace winrt::Folia
         void SetWidth(float value);
         void QueueScrollBy(float delta);
         void ScrollPreciselyBy(float delta);
+        // Schedule one presentation-paced frame for asynchronous renderer
+        // completions. Repeated requests coalesce with an active scroll.
+        void RequestFrame();
         void BeginSelectionAutoScroll(float velocityPixelsPerSecond, std::function<void()> updateSelection);
         void EndSelectionAutoScroll();
         void Stop();

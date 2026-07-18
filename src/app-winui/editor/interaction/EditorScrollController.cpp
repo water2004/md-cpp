@@ -100,6 +100,12 @@ namespace winrt::Folia
         Start();
     }
 
+    void EditorScrollController::RequestFrame()
+    {
+        if (!renderer || !render) return;
+        Start();
+    }
+
     void EditorScrollController::BeginSelectionAutoScroll(
         float velocityPixelsPerSecond,
         std::function<void()> updateSelection)
