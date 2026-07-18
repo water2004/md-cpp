@@ -635,11 +635,17 @@
     </Page>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="settings\ShortcutSettingsComponents.cpp">
+      <Filter>Settings</Filter>
+    </ClCompile>
     <Midl Include="MainWindow.idl">
       <Filter>Resources</Filter>
     </Midl>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="settings\ShortcutSettingsComponents.h">
+      <Filter>Settings</Filter>
+    </ClInclude>
     <PRIResource Include="Strings\en-US\Resources.resw">
       <Filter>Localization</Filter>
     </PRIResource>

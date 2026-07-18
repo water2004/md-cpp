@@ -1,137 +1,11 @@
 #include "pch.h"
 #include "settings/SettingsView.h"
+#include "settings/ShortcutSettingsComponents.h"
 #include "settings/SettingsViewSupport.h"
 #include "localization/Localization.h"
 
 import folia.core.utf;
 import folia.core.snippet_template;
-
-namespace
-{
-    namespace Xaml = winrt::Microsoft::UI::Xaml;
-    namespace Controls = winrt::Microsoft::UI::Xaml::Controls;
-    using ShortcutBinding = folia::platform::editor::EditorShortcutBinding;
-    using ShortcutScope = folia::platform::editor::EditorShortcutScope;
-    using EditorKey = folia::platform::editor::EditorKey;
-    using EditorKeyGesture = folia::platform::editor::EditorKeyGesture;
-
-    std::int32_t ScopeIndex(ShortcutScope scope)
-    {
-        return static_cast<std::int32_t>(scope);
-    }
-
-    ShortcutScope ScopeFromIndex(std::int32_t index)
-    {
-        if (index == 1) return ShortcutScope::Code;
-        if (index == 2) return ShortcutScope::Math;
-        return ShortcutScope::Global;
-    }
-
-    winrt::hstring ActionLabel(ShortcutBinding const& binding)
-    {
-        if (!binding.custom_name.empty()) return winrt::to_hstring(binding.custom_name);
-        constexpr std::array<std::pair<std::string_view, std::wstring_view>, 49> Labels{{
-            {"file.open", L"Open"}, {"file.save", L"Save"},
-            {"file.save_as", L"ShortcutSaveAs"}, {"file.export_pdf", L"Pdf"},
-            {"search.find", L"Find"}, {"search.replace", L"Replace"},
-            {"edit.copy", L"Copy"}, {"edit.cut", L"Cut"},
-            {"edit.paste", L"Paste"}, {"edit.select_all", L"SelectAll"},
-            {"history.undo", L"ShortcutUndo"}, {"history.redo", L"ShortcutRedo"},
-            {"format.strong", L"Bold"}, {"format.emphasis", L"Italic"},
-            {"format.strikethrough", L"Strikethrough"},
-            {"format.inline_code", L"InlineCode"},
-            {"block.quote", L"Quote"}, {"block.table", L"Table"},
-            {"block.code", L"CodeBlock"}, {"math.inline", L"InlineMath"},
-            {"math.block", L"MathBlock"}, {"insert.link", L"Link"},
-            {"insert.image", L"Image"}, {"insert.footnote", L"Footnote"},
-            {"insert.toc", L"TableOfContents"}, {"callout.note", L"Note"},
-            {"callout.tip", L"Tip"}, {"callout.warning", L"Warning"},
-            {"view.source_mode", L"SourceMode"},
-            {"block.heading1", L"Heading1"}, {"block.heading2", L"Heading2"},
-            {"block.ordered_list", L"NumberedList"},
-            {"block.unordered_list", L"BulletedList"},
-            {"block.task_list", L"TaskList"},
-            {"nav.document_start", L"ShortcutDocumentStart"},
-            {"nav.document_start_select", L"ShortcutSelectDocumentStart"},
-            {"nav.document_end", L"ShortcutDocumentEnd"},
-            {"nav.document_end_select", L"ShortcutSelectDocumentEnd"},
-            {"table.row_above", L"ShortcutTableRowAbove"},
-            {"table.row_below", L"ShortcutTableRowBelow"},
-            {"table.column_left", L"ShortcutTableColumnLeft"},
-            {"table.column_right", L"ShortcutTableColumnRight"},
-            {"table.row_move_up", L"ShortcutTableMoveRowUp"},
-            {"table.row_move_down", L"ShortcutTableMoveRowDown"},
-            {"table.column_move_left", L"ShortcutTableMoveColumnLeft"},
-            {"table.column_move_right", L"ShortcutTableMoveColumnRight"},
-            {"table.row_delete", L"ShortcutTableDeleteRow"},
-            {"table.column_delete", L"ShortcutTableDeleteColumn"},
-            {"", L""},
-        }};
-        for (auto const& [action, resource] : Labels)
-            if (binding.action_id == action) return winrt::Folia::Localize(resource);
-        return winrt::to_hstring(binding.action_id);
-    }
-
-    winrt::hstring KeyLabel(EditorKey key)
-    {
-        auto value = static_cast<std::uint32_t>(key);
-        if (value >= static_cast<std::uint32_t>(EditorKey::A)
-            && value <= static_cast<std::uint32_t>(EditorKey::Z))
-            return winrt::hstring(std::wstring(1, static_cast<wchar_t>(value)));
-        if (value >= static_cast<std::uint32_t>(EditorKey::Number0)
-            && value <= static_cast<std::uint32_t>(EditorKey::Number9))
-            return winrt::hstring(std::wstring(1, static_cast<wchar_t>(value)));
-        if (value >= static_cast<std::uint32_t>(EditorKey::F1)
-            && value <= static_cast<std::uint32_t>(EditorKey::F12))
-            return L"F" + winrt::to_hstring(
-                value - static_cast<std::uint32_t>(EditorKey::F1) + 1);
-        switch (key)
-        {
-            case EditorKey::Back: return L"Backspace";
-            case EditorKey::Tab: return L"Tab";
-            case EditorKey::Enter: return L"Enter";
-            case EditorKey::Escape: return L"Esc";
-            case EditorKey::Space: return L"Space";
-            case EditorKey::PageUp: return L"Page Up";
-            case EditorKey::PageDown: return L"Page Down";
-            case EditorKey::End: return L"End";
-            case EditorKey::Home: return L"Home";
-            case EditorKey::Left: return L"Left";
-            case EditorKey::Up: return L"Up";
-            case EditorKey::Right: return L"Right";
-            case EditorKey::Down: return L"Down";
-            case EditorKey::DeleteKey: return L"Delete";
-            default: return winrt::to_hstring(value);
-        }
-    }
-
-    winrt::hstring GestureLabel(std::optional<EditorKeyGesture> const& gesture)
-    {
-        if (!gesture) return winrt::Folia::Localize(L"ShortcutUnassigned");
-        winrt::hstring result;
-        if (gesture->control) result = L"Ctrl+";
-        if (gesture->shift) result = result + L"Shift+";
-        if (gesture->alt) result = result + L"Alt+";
-        return result + KeyLabel(gesture->key);
-    }
-
-    bool ModifierDown(winrt::Windows::System::VirtualKey key)
-    {
-        auto state = winrt::Microsoft::UI::Input::InputKeyboardSource::
-            GetKeyStateForCurrentThread(key);
-        return (static_cast<std::uint32_t>(state) & 0x1u) != 0;
-    }
-
-    bool IsModifierKey(winrt::Windows::System::VirtualKey key)
-    {
-        using winrt::Windows::System::VirtualKey;
-        return key == VirtualKey::Control || key == VirtualKey::LeftControl
-            || key == VirtualKey::RightControl || key == VirtualKey::Shift
-            || key == VirtualKey::LeftShift || key == VirtualKey::RightShift
-            || key == VirtualKey::Menu || key == VirtualKey::LeftMenu
-            || key == VirtualKey::RightMenu;
-    }
-}
 
 namespace winrt::Folia
 {
@@ -140,6 +14,13 @@ namespace winrt::Folia
     using settings_ui::Brush;
     using settings_ui::PageHeading;
     using settings_ui::Text;
+    using settings_ui::ShortcutActionLabel;
+    using settings_ui::ShortcutCaptureDisposition;
+    using settings_ui::ShortcutGestureLabel;
+    using settings_ui::ShortcutScopeFromIndex;
+    using settings_ui::ShortcutScopeIndex;
+    using ShortcutBinding = folia::platform::editor::EditorShortcutBinding;
+    using EditorKeyGesture = folia::platform::editor::EditorKeyGesture;
 
     UIElement SettingsView::BuildShortcutsPage()
     {
@@ -241,7 +122,7 @@ namespace winrt::Folia
             operationsColumn.Width(GridLengthHelper::Auto());
             row.ColumnDefinitions().Append(operationsColumn);
 
-            auto action = Text(ActionLabel(binding));
+            auto action = Text(ShortcutActionLabel(binding));
             action.VerticalAlignment(VerticalAlignment::Center);
             row.Children().Append(action);
 
@@ -249,7 +130,7 @@ namespace winrt::Folia
             scope.Items().Append(box_value(Localize(L"ShortcutScopeGlobal")));
             scope.Items().Append(box_value(Localize(L"ShortcutScopeCode")));
             scope.Items().Append(box_value(Localize(L"ShortcutScopeMath")));
-            scope.SelectedIndex(ScopeIndex(binding.scope));
+            scope.SelectedIndex(ShortcutScopeIndex(binding.scope));
             scope.SelectionChanged([this, index, scope](auto const&, auto const&)
             {
                 if (!refreshing_) ChangeShortcutScope(index, scope.SelectedIndex());
@@ -260,7 +141,7 @@ namespace winrt::Folia
             Button capture;
             capture.HorizontalAlignment(HorizontalAlignment::Stretch);
             capture.HorizontalContentAlignment(HorizontalAlignment::Center);
-            capture.Content(box_value(GestureLabel(binding.gesture)));
+            capture.Content(box_value(ShortcutGestureLabel(binding.gesture)));
             capture.Click([this, index](auto const&, auto const&) { BeginShortcutCapture(index); });
             capture.KeyDown([this, index](
                 auto const&, Input::KeyRoutedEventArgs const& args)
@@ -324,7 +205,7 @@ namespace winrt::Folia
         if (index >= shortcutButtons_.size() || index >= bindings.size()) return;
         if (capturingShortcut_ && *capturingShortcut_ < shortcutButtons_.size())
             shortcutButtons_[*capturingShortcut_].Content(box_value(
-                GestureLabel(bindings[*capturingShortcut_].gesture)));
+                ShortcutGestureLabel(bindings[*capturingShortcut_].gesture)));
         capturingShortcut_ = index;
         shortcutButtons_[index].Content(box_value(Localize(L"PressShortcut")));
         shortcutButtons_[index].Focus(FocusState::Programmatic);
@@ -338,42 +219,23 @@ namespace winrt::Folia
         auto const& bindings = shortcutModel_.Bindings();
         if (!capturingShortcut_ || *capturingShortcut_ != index || index >= bindings.size())
             return;
-        auto key = args.Key();
-        if (key == Windows::System::VirtualKey::Escape)
+        auto captured = settings_ui::CaptureShortcutGesture(args);
+        if (captured.disposition == ShortcutCaptureDisposition::Cancel)
         {
             capturingShortcut_.reset();
-            shortcutButtons_[index].Content(box_value(GestureLabel(bindings[index].gesture)));
+            shortcutButtons_[index].Content(box_value(
+                ShortcutGestureLabel(bindings[index].gesture)));
             SetShortcutStatus({});
             args.Handled(true);
             return;
         }
-        if (IsModifierKey(key))
+        if (captured.disposition == ShortcutCaptureDisposition::Ignore)
         {
             args.Handled(true);
             return;
         }
-        auto gesture = EditorKeyGesture{
-            .key = static_cast<EditorKey>(static_cast<std::uint32_t>(key)),
-            .control = ModifierDown(Windows::System::VirtualKey::Control)
-                || ModifierDown(Windows::System::VirtualKey::LeftControl)
-                || ModifierDown(Windows::System::VirtualKey::RightControl),
-            .shift = ModifierDown(Windows::System::VirtualKey::Shift)
-                || ModifierDown(Windows::System::VirtualKey::LeftShift)
-                || ModifierDown(Windows::System::VirtualKey::RightShift),
-            .alt = ModifierDown(Windows::System::VirtualKey::Menu)
-                || ModifierDown(Windows::System::VirtualKey::LeftMenu)
-                || ModifierDown(Windows::System::VirtualKey::RightMenu),
-        };
-        if ((key == Windows::System::VirtualKey::Back
-                || key == Windows::System::VirtualKey::Delete)
-            && !gesture.control && !gesture.shift && !gesture.alt)
-        {
-            ClearShortcut(index);
-            args.Handled(true);
-            return;
-        }
-        auto result = shortcutModel_.SetGesture(index, gesture);
-        if (HandleShortcutResult(result, gesture))
+        auto result = shortcutModel_.SetGesture(index, captured.gesture);
+        if (HandleShortcutResult(result, captured.gesture))
         {
             capturingShortcut_.reset();
             if (ApplyShortcutSettings()) RefreshShortcutList();
@@ -408,7 +270,8 @@ namespace winrt::Folia
         auto const& bindings = shortcutModel_.Bindings();
         if (index >= bindings.size()) return;
         auto gesture = bindings[index].gesture;
-        auto result = shortcutModel_.SetScope(index, ScopeFromIndex(selectedIndex));
+        auto result = shortcutModel_.SetScope(
+            index, ShortcutScopeFromIndex(selectedIndex));
         if (!HandleShortcutResult(result, gesture))
         {
             RefreshShortcutList();
@@ -431,7 +294,8 @@ namespace winrt::Folia
                 if (!gesture) gesture = bindings[*result.conflict_index].gesture;
                 SetShortcutStatus(LocalizeFormat(
                     L"ShortcutConflict",
-                    {GestureLabel(gesture), ActionLabel(bindings[*result.conflict_index])}),
+                    {ShortcutGestureLabel(gesture),
+                     ShortcutActionLabel(bindings[*result.conflict_index])}),
                     true);
             }
         }
@@ -526,7 +390,7 @@ namespace winrt::Folia
         scope.Items().Append(box_value(Localize(L"ShortcutScopeGlobal")));
         scope.Items().Append(box_value(Localize(L"ShortcutScopeCode")));
         scope.Items().Append(box_value(Localize(L"ShortcutScopeMath")));
-        scope.SelectedIndex(existing ? ScopeIndex(existing->scope) : 0);
+        scope.SelectedIndex(existing ? ShortcutScopeIndex(existing->scope) : 0);
         scope.HorizontalAlignment(HorizontalAlignment::Stretch);
         assignment.Children().Append(scope);
         Grid gestureField;
@@ -542,7 +406,7 @@ namespace winrt::Folia
         Button gestureButton;
         std::optional<EditorKeyGesture> gesture = existing
             ? existing->gesture : std::nullopt;
-        gestureButton.Content(box_value(GestureLabel(gesture)));
+        gestureButton.Content(box_value(ShortcutGestureLabel(gesture)));
         gestureButton.HorizontalAlignment(HorizontalAlignment::Stretch);
         gestureButton.HorizontalContentAlignment(HorizontalAlignment::Center);
         Grid::SetRow(gestureButton, 1);
@@ -557,39 +421,22 @@ namespace winrt::Folia
             auto const&, Input::KeyRoutedEventArgs const& args)
         {
             if (!capturing) return;
-            auto key = args.Key();
-            if (key == Windows::System::VirtualKey::Escape)
+            auto result = settings_ui::CaptureShortcutGesture(args);
+            if (result.disposition == ShortcutCaptureDisposition::Cancel)
             {
                 capturing = false;
-                gestureButton.Content(box_value(GestureLabel(gesture)));
+                gestureButton.Content(box_value(ShortcutGestureLabel(gesture)));
                 args.Handled(true);
                 return;
             }
-            if (IsModifierKey(key))
+            if (result.disposition == ShortcutCaptureDisposition::Ignore)
             {
                 args.Handled(true);
                 return;
             }
-            auto candidate = EditorKeyGesture{
-                .key = static_cast<EditorKey>(static_cast<std::uint32_t>(key)),
-                .control = ModifierDown(Windows::System::VirtualKey::Control)
-                    || ModifierDown(Windows::System::VirtualKey::LeftControl)
-                    || ModifierDown(Windows::System::VirtualKey::RightControl),
-                .shift = ModifierDown(Windows::System::VirtualKey::Shift)
-                    || ModifierDown(Windows::System::VirtualKey::LeftShift)
-                    || ModifierDown(Windows::System::VirtualKey::RightShift),
-                .alt = ModifierDown(Windows::System::VirtualKey::Menu)
-                    || ModifierDown(Windows::System::VirtualKey::LeftMenu)
-                    || ModifierDown(Windows::System::VirtualKey::RightMenu),
-            };
-            if ((key == Windows::System::VirtualKey::Back
-                    || key == Windows::System::VirtualKey::Delete)
-                && !candidate.control && !candidate.shift && !candidate.alt)
-                gesture.reset();
-            else
-                gesture = candidate;
+            gesture = result.gesture;
             capturing = false;
-            gestureButton.Content(box_value(GestureLabel(gesture)));
+            gestureButton.Content(box_value(ShortcutGestureLabel(gesture)));
             args.Handled(true);
         });
         gestureField.Children().Append(gestureButton);
@@ -626,7 +473,7 @@ namespace winrt::Folia
                         *index,
                         winrt::to_string(name.Text()),
                         std::move(decoded.value),
-                        ScopeFromIndex(scope.SelectedIndex()));
+                        ShortcutScopeFromIndex(scope.SelectedIndex()));
                 if (result) result = candidate.SetGesture(*index, gesture);
             }
             else
@@ -637,7 +484,7 @@ namespace winrt::Folia
                 result = candidate.AddSnippet({
                     .id = std::move(id),
                     .custom_name = winrt::to_string(name.Text()),
-                    .scope = ScopeFromIndex(scope.SelectedIndex()),
+                    .scope = ShortcutScopeFromIndex(scope.SelectedIndex()),
                     .gesture = gesture,
                     .snippet = std::move(decoded.value),
                 });
