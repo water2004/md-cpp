@@ -194,7 +194,7 @@ fn write_output(value: String, output: *mut *mut u8, output_len: *mut usize) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn elmd_svg_normalizer_create() -> *mut Normalizer {
+pub extern "C" fn folia_svg_normalizer_create() -> *mut Normalizer {
     catch_unwind(AssertUnwindSafe(|| {
         Box::into_raw(Box::new(Normalizer { fontdb: None }))
     }))
@@ -202,7 +202,7 @@ pub extern "C" fn elmd_svg_normalizer_create() -> *mut Normalizer {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn elmd_svg_normalizer_destroy(normalizer: *mut Normalizer) {
+pub extern "C" fn folia_svg_normalizer_destroy(normalizer: *mut Normalizer) {
     if normalizer.is_null() {
         return;
     }
@@ -212,7 +212,7 @@ pub extern "C" fn elmd_svg_normalizer_destroy(normalizer: *mut Normalizer) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn elmd_svg_normalize(
+pub extern "C" fn folia_svg_normalize(
     normalizer: *mut Normalizer,
     input: *const u8,
     input_len: usize,
@@ -266,7 +266,7 @@ pub extern "C" fn elmd_svg_normalize(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn elmd_mermaid_render(
+pub extern "C" fn folia_mermaid_render(
     normalizer: *mut Normalizer,
     input: *const u8,
     input_len: usize,
@@ -337,7 +337,7 @@ pub extern "C" fn elmd_mermaid_render(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn elmd_svg_buffer_destroy(data: *mut u8, len: usize) {
+pub extern "C" fn folia_svg_buffer_destroy(data: *mut u8, len: usize) {
     if data.is_null() {
         return;
     }
@@ -352,13 +352,13 @@ mod tests {
     use super::*;
 
     fn normalize(source: &[u8]) -> (i32, String, f32, f32) {
-        let normalizer = elmd_svg_normalizer_create();
+        let normalizer = folia_svg_normalizer_create();
         assert!(!normalizer.is_null());
         let mut output = ptr::null_mut();
         let mut output_len = 0;
         let mut width = 0.0;
         let mut height = 0.0;
-        let status = elmd_svg_normalize(
+        let status = folia_svg_normalize(
             normalizer,
             source.as_ptr(),
             source.len(),
@@ -373,10 +373,10 @@ mod tests {
         } else {
             let bytes = unsafe { std::slice::from_raw_parts(output, output_len) };
             let value = String::from_utf8_lossy(bytes).into_owned();
-            elmd_svg_buffer_destroy(output, output_len);
+            folia_svg_buffer_destroy(output, output_len);
             value
         };
-        elmd_svg_normalizer_destroy(normalizer);
+        folia_svg_normalizer_destroy(normalizer);
         (status, value, width, height)
     }
 

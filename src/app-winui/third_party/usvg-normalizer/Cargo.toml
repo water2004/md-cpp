@@ -1,11 +1,11 @@
 [package]
-name = "elmd-native-svg"
+name = "folia-native-svg"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
 
 [lib]
-name = "elmd_svg_normalizer"
+name = "folia_svg_normalizer"
 crate-type = ["cdylib"]
 
 [dependencies]
