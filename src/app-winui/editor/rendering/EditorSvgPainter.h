@@ -39,6 +39,13 @@ namespace winrt::Folia
             D2D1_POINT_2F origin,
             float intrinsicWidth,
             float intrinsicHeight) const;
+        bool PaintCommands(
+            ID2D1CommandList* commands,
+            float width,
+            float height,
+            D2D1_POINT_2F origin,
+            float intrinsicWidth,
+            float intrinsicHeight) const;
 
         EditorRenderResources& resources;
         EditorRenderCache& cache;

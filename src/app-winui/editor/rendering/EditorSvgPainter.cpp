@@ -28,7 +28,12 @@ namespace winrt::Folia
         if (!context || renderId == 0 || source.empty()
             || intrinsicWidth <= 0.0f || intrinsicHeight <= 0.0f) return false;
         return static_cast<bool>(cache.FindOrCreateSvgDocument(
-            context.Get(), renderId, source, intrinsicWidth, intrinsicHeight));
+            context.Get(),
+            renderId,
+            source,
+            intrinsicWidth,
+            intrinsicHeight,
+            true));
     }
 
     bool EditorSvgPainter::PaintDocument(
@@ -58,6 +63,34 @@ namespace winrt::Folia
         return true;
     }
 
+    bool EditorSvgPainter::PaintCommands(
+        ID2D1CommandList* commands,
+        float width,
+        float height,
+        D2D1_POINT_2F origin,
+        float intrinsicWidth,
+        float intrinsicHeight) const
+    {
+        if (!context || !commands || width <= 0.0f || height <= 0.0f) return false;
+        if (origin.x + width < 0.0f || origin.y + height < 0.0f
+            || origin.x > resources.surfaceWidthDip
+            || origin.y > resources.surfaceHeightDip) return true;
+        if (intrinsicWidth <= 0.0f) intrinsicWidth = width;
+        if (intrinsicHeight <= 0.0f) intrinsicHeight = height;
+        D2D1_MATRIX_3X2_F transform{};
+        context->GetTransform(&transform);
+        auto scale = D2D1::Matrix3x2F::Scale(
+            width / intrinsicWidth,
+            height / intrinsicHeight);
+        context->SetTransform(
+            scale
+            * D2D1::Matrix3x2F::Translation(origin.x, origin.y)
+            * transform);
+        context->DrawImage(commands);
+        context->SetTransform(transform);
+        return true;
+    }
+
     bool EditorSvgPainter::DrawCached(
         std::uint64_t renderId,
         float width,
@@ -68,6 +101,14 @@ namespace winrt::Folia
     {
         if (intrinsicWidth <= 0.0f) intrinsicWidth = width;
         if (intrinsicHeight <= 0.0f) intrinsicHeight = height;
+        if (auto commands = cache.FindSvgCommands(renderId))
+            return PaintCommands(
+                commands.Get(),
+                width,
+                height,
+                origin,
+                intrinsicWidth,
+                intrinsicHeight);
         auto document = cache.FindSvgDocument(renderId);
         return PaintDocument(
             document.Get(),
@@ -96,6 +137,14 @@ namespace winrt::Folia
             source,
             intrinsicWidth,
             intrinsicHeight);
+        if (auto commands = cache.FindSvgCommands(renderId))
+            return PaintCommands(
+                commands.Get(),
+                width,
+                height,
+                origin,
+                intrinsicWidth,
+                intrinsicHeight);
         return PaintDocument(
             document.Get(), width, height, origin, intrinsicWidth, intrinsicHeight);
     }

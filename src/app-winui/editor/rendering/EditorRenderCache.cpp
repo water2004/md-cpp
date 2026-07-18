@@ -59,6 +59,8 @@ namespace winrt::Folia
     {
         ClearTextLayouts();
         ClearSvgDocuments();
+        svgRecordingContext = nullptr;
+        svgRecordingDevice = nullptr;
         rasterImages.clear();
         for (auto const& [key, pending] : pendingGifImages) pending.decode->Cancel();
         pendingGifImages.clear();
