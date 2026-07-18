@@ -68,7 +68,9 @@ suite latex_command_catalog_tests = [] {
     expect(!catalog.RecordUsage("missing", 100));
     expect(catalog.RecordUsage("symbol.alpha", 100));
     expect(catalog.RecentScore("symbol.alpha", 100) > 0.99);
-    expect(catalog.Query(U"a", 100).front().command.id == "symbol.alpha");
+    auto query = catalog.QueryAt(U"\\a", 2, 100);
+    expect(fatal(query.has_value()));
+    expect(query->candidates.front().command.id == "symbol.alpha");
     catalog.ResetUsage();
     expect(catalog.Usage().empty());
     expect(catalog.RecentScore("symbol.alpha", 100) == 0.0);

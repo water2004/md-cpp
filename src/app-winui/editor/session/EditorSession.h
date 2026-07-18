@@ -25,6 +25,13 @@ namespace winrt::Folia
         std::optional<std::string> error;
     };
 
+    struct EditorLatexCompletionSource
+    {
+        folia::NodeId container;
+        std::u32string_view source;
+        std::size_t caret = 0;
+    };
+
     namespace detail
     {
         struct EditorSessionCore
@@ -94,7 +101,7 @@ namespace winrt::Folia
         std::optional<EditorDocumentInteraction> InteractionAt(folia::TextPosition position) const;
         folia::TextSelection Selection() const;
         folia::platform::editor::EditorShortcutScope ShortcutScope() const;
-        std::optional<folia::LatexCommandPrefix> LatexCommandPrefixAtCaret() const;
+        std::optional<EditorLatexCompletionSource> LatexCompletionSourceAtCaret() const;
         folia::RenderModel const& RenderModel() const;
         folia::RenderModel BuildPrintRenderModel() const;
         std::optional<folia::TextPosition> FootnoteDefinitionTarget(std::string_view label) const;

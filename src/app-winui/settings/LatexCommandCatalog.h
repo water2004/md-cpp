@@ -26,8 +26,9 @@ namespace winrt::Folia
             std::string description);
         std::optional<winrt::hstring> RemoveCustom(std::string_view id);
         std::optional<winrt::hstring> ResetUsage();
-        std::vector<folia::LatexCompletionCandidate> Query(
-            std::u32string_view prefix,
+        std::optional<folia::LatexCompletionQuery> QueryAt(
+            std::u32string_view source,
+            std::size_t caret,
             std::size_t limit = 8) const;
         void RecordUsage(std::string_view id);
         double RecentScore(std::string_view id) const;

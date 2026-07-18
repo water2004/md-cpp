@@ -46,11 +46,12 @@ namespace winrt::Folia
         return SaveUserState();
     }
 
-    std::vector<folia::LatexCompletionCandidate> LatexCommandCatalog::Query(
-        std::u32string_view prefix,
+    std::optional<folia::LatexCompletionQuery> LatexCommandCatalog::QueryAt(
+        std::u32string_view source,
+        std::size_t caret,
         std::size_t limit) const
     {
-        return state_.Query(prefix, NowSeconds(), limit);
+        return state_.QueryAt(source, caret, NowSeconds(), limit);
     }
 
     void LatexCommandCatalog::RecordUsage(std::string_view id)

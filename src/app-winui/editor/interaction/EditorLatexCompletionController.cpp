@@ -75,21 +75,26 @@ namespace winrt::Folia
             Cancel();
             return;
         }
-        auto query = session_->LatexCommandPrefixAtCaret();
+        auto input = session_->LatexCompletionSourceAtCaret();
+        if (!input)
+        {
+            Cancel();
+            return;
+        }
+        auto query = catalog_->QueryAt(input->source, input->caret);
         if (!query)
         {
             Cancel();
             return;
         }
-        auto candidates = catalog_->Query(query->prefix);
-        auto selection = session_->Selection();
         if (!completion_.Update(
-            selection.active.container_id, query->replacement, std::move(candidates)))
+            input->container, query->replacement, std::move(query->candidates)))
         {
             Cancel();
             return;
         }
-        prefixLabel_.Text(L"\\" + winrt::to_hstring(folia::cps_to_utf8(query->prefix)));
+        auto prefix = winrt::to_hstring(folia::cps_to_utf8(query->prefix));
+        prefixLabel_.Text(L"\\" + prefix);
         RefreshItems();
         UpdatePosition();
         overlay_.IsHitTestVisible(true);
@@ -211,15 +216,8 @@ namespace winrt::Folia
     hstring EditorLatexCompletionController::CandidateLabel(
         folia::LatexCommandDefinition const& command) const
     {
-        if (command.category == "environment"
-            && command.snippet.starts_with(U"\\begin{"))
-        {
-            auto close = command.snippet.find(U'}', 7);
-            if (close != std::u32string::npos)
-                return winrt::to_hstring(folia::cps_to_utf8(
-                    std::u32string_view{command.snippet}.substr(0, close + 1)));
-        }
-        return L"\\" + winrt::to_hstring(folia::cps_to_utf8(command.trigger));
+        auto invocation = folia::preferred_latex_command_invocation(command);
+        return L"\\" + winrt::to_hstring(folia::cps_to_utf8(invocation));
     }
 
     hstring EditorLatexCompletionController::CandidateDescription(

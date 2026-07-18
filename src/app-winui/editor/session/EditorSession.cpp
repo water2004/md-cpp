@@ -543,7 +543,7 @@ namespace winrt::Folia
         return EditorShortcutScope::Global;
     }
 
-    std::optional<folia::LatexCommandPrefix> EditorSession::LatexCommandPrefixAtCaret() const
+    std::optional<EditorLatexCompletionSource> EditorSession::LatexCompletionSourceAtCaret() const
     {
         if (core_->sourceEditor) return std::nullopt;
         auto selection = core_->editor.selection();
@@ -551,9 +551,14 @@ namespace winrt::Folia
         if (folia::document_content_context_at(core_->editor.document(), selection.active)
             != folia::DocumentContentContext::Math)
             return std::nullopt;
-        auto source = core_->editor.editable_source(selection.active.container_id);
+        auto source = folia::document_editable_text_view(
+            core_->editor.document(), selection.active.container_id);
         if (!source) return std::nullopt;
-        return folia::latex_command_prefix_at(*source, selection.active.source_offset);
+        return EditorLatexCompletionSource{
+            .container = selection.active.container_id,
+            .source = *source,
+            .caret = selection.active.source_offset,
+        };
     }
 
     folia::RenderModel const& EditorSession::RenderModel() const

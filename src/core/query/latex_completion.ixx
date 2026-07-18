@@ -1,6 +1,7 @@
 // folia.core.latex_completion — local LaTeX command prefix queries and ranking.
 export module folia.core.latex_completion;
 import std;
+import folia.core.snippet_template;
 import folia.core.text_edit;
 
 export namespace folia {
@@ -24,18 +25,19 @@ struct LatexCommandUsage {
     bool operator==(LatexCommandUsage const&) const = default;
 };
 
-struct LatexCommandPrefix {
-    SourceRange replacement;
-    std::u32string prefix;
-
-    bool operator==(LatexCommandPrefix const&) const = default;
-};
-
 struct LatexCompletionCandidate {
     LatexCommandDefinition command;
     double recent_score = 0.0;
     bool exact_match = false;
     std::size_t catalog_order = 0;
+};
+
+using LatexCommandInvocations = std::vector<std::u32string>;
+
+struct LatexCompletionQuery {
+    SourceRange replacement;
+    std::u32string prefix;
+    std::vector<LatexCompletionCandidate> candidates;
 };
 
 inline bool latex_command_character(char32_t value) {
@@ -56,35 +58,50 @@ inline bool valid_latex_command_definition(LatexCommandDefinition const& command
         && !command.snippet.empty();
 }
 
-inline std::optional<std::u32string_view> latex_command_search_alias(
-    LatexCommandDefinition const& command) {
-    if (command.category != "environment"
-        || !command.snippet.starts_with(U"\\begin{")) return std::nullopt;
-    auto close = command.snippet.find(U'}', 7);
-    if (close == std::u32string::npos || close == 7) return std::nullopt;
-    return U"begin";
+inline bool latex_invocation_trailing_space(char32_t value) {
+    return value == U' ' || value == U'\t' || value == U'\r' || value == U'\n';
 }
 
-inline std::optional<LatexCommandPrefix> latex_command_prefix_at(
+// Compile every source spelling that can start this registered command. The
+// snippet's static text before its first tab stop is authoritative: punctuation
+// such as '{', '_', or '@' is accepted only when a registered spelling contains it.
+inline LatexCommandInvocations compile_latex_command_invocations(
+    LatexCommandDefinition const& command) {
+    LatexCommandInvocations result;
+    auto direct = normalize_latex_trigger(command.trigger);
+    if (!direct.empty()) result.push_back(std::move(direct));
+
+    auto parsed = parse_snippet_template(command.snippet);
+    auto static_end = parsed.text.size();
+    for (auto const& stop : parsed.tab_stops)
+        static_end = (std::min)(static_end, stop.range.start);
+    auto static_prefix = std::u32string_view{parsed.text}.substr(0, static_end);
+    while (!static_prefix.empty() && latex_invocation_trailing_space(static_prefix.back()))
+        static_prefix.remove_suffix(1);
+    if (!static_prefix.empty() && static_prefix.front() == U'\\')
+        static_prefix.remove_prefix(1);
+    if (!static_prefix.empty()
+        && std::ranges::find(result, static_prefix) == result.end())
+        result.emplace_back(static_prefix);
+    return result;
+}
+
+inline std::u32string preferred_latex_command_invocation(
+    LatexCommandDefinition const& command) {
+    auto invocations = compile_latex_command_invocations(command);
+    auto environment = std::ranges::find_if(invocations, [](auto const& invocation) {
+        return invocation.starts_with(U"begin{") && invocation.ends_with(U'}');
+    });
+    if (environment != invocations.end()) return *environment;
+    return normalize_latex_trigger(command.trigger);
+}
+
+inline bool latex_command_slash_is_active(
     std::u32string_view source,
-    std::size_t caret) {
-    if (caret > source.size()) return std::nullopt;
-
-    auto word_start = caret;
-    while (word_start > 0 && latex_command_character(source[word_start - 1])) --word_start;
-    if (word_start == 0 || source[word_start - 1] != U'\\') return std::nullopt;
-
-    auto slash = word_start - 1;
+    std::size_t slash) {
     auto slash_run = slash;
     while (slash_run > 0 && source[slash_run - 1] == U'\\') --slash_run;
-    if ((slash - slash_run + 1) % 2 == 0) return std::nullopt;
-
-    auto word_end = caret;
-    while (word_end < source.size() && latex_command_character(source[word_end])) ++word_end;
-    return LatexCommandPrefix{
-        .replacement = {slash, word_end},
-        .prefix = std::u32string{source.substr(word_start, caret - word_start)},
-    };
+    return (slash - slash_run + 1) % 2 != 0;
 }
 
 inline double decayed_latex_usage_score(
@@ -122,22 +139,66 @@ inline std::vector<LatexCommandDefinition> merge_latex_command_catalog(
     return result;
 }
 
-inline std::vector<LatexCompletionCandidate> query_latex_commands(
+inline std::optional<LatexCompletionQuery> query_latex_commands_at(
     std::span<LatexCommandDefinition const> catalog,
-    std::u32string_view prefix,
+    std::span<LatexCommandInvocations const> invocations,
+    std::u32string_view source,
+    std::size_t caret,
     std::unordered_map<std::string, LatexCommandUsage> const& usage,
     std::int64_t now_epoch_seconds,
     std::size_t limit = 8) {
-    std::vector<LatexCompletionCandidate> result;
-    result.reserve((std::min)(catalog.size(), limit));
+    if (caret > source.size() || invocations.size() != catalog.size())
+        return std::nullopt;
+
+    auto maximum_length = std::size_t{0};
     for (std::size_t index = 0; index < catalog.size(); ++index) {
         auto const& command = catalog[index];
         if (!command.enabled || !valid_latex_command_definition(command)) continue;
-        auto trigger = normalize_latex_trigger(command.trigger);
-        auto alias = latex_command_search_alias(command);
-        auto trigger_match = trigger.starts_with(prefix);
-        auto alias_match = alias && alias->starts_with(prefix);
-        if (!trigger_match && !alias_match) continue;
+        for (auto const& invocation : invocations[index])
+            maximum_length = (std::max)(maximum_length, invocation.size());
+    }
+    if (maximum_length == 0) return std::nullopt;
+
+    auto lower_bound = caret > maximum_length + 1
+        ? caret - maximum_length - 1
+        : std::size_t{0};
+    std::optional<std::size_t> slash;
+    std::u32string_view prefix;
+    for (auto cursor = caret; cursor > lower_bound;) {
+        --cursor;
+        if (source[cursor] != U'\\' || !latex_command_slash_is_active(source, cursor))
+            continue;
+        auto candidate_prefix = source.substr(cursor + 1, caret - cursor - 1);
+        auto matches = false;
+        for (std::size_t index = 0; index < catalog.size() && !matches; ++index) {
+            auto const& command = catalog[index];
+            if (!command.enabled || !valid_latex_command_definition(command)) continue;
+            matches = std::ranges::any_of(invocations[index], [&](auto const& invocation) {
+                return invocation.starts_with(candidate_prefix);
+            });
+        }
+        if (!matches) continue;
+        slash = cursor;
+        prefix = candidate_prefix;
+        break;
+    }
+    if (!slash) return std::nullopt;
+
+    std::vector<LatexCompletionCandidate> result;
+    result.reserve((std::min)(catalog.size(), limit));
+    std::vector<std::u32string_view> matching_invocations;
+    for (std::size_t index = 0; index < catalog.size(); ++index) {
+        auto const& command = catalog[index];
+        if (!command.enabled || !valid_latex_command_definition(command)) continue;
+        auto command_matches = false;
+        auto exact_match = false;
+        for (auto const& invocation : invocations[index]) {
+            if (!invocation.starts_with(prefix)) continue;
+            command_matches = true;
+            exact_match = exact_match || invocation == prefix;
+            matching_invocations.emplace_back(invocation);
+        }
+        if (!command_matches) continue;
         auto found_usage = usage.find(command.id);
         auto score = found_usage == usage.end()
             ? 0.0
@@ -145,9 +206,27 @@ inline std::vector<LatexCompletionCandidate> query_latex_commands(
         result.push_back({
             .command = command,
             .recent_score = score,
-            .exact_match = trigger == prefix || (alias && *alias == prefix),
+            .exact_match = exact_match,
             .catalog_order = index,
         });
+    }
+
+    auto replacement_end = caret;
+    auto matched_length = prefix.size();
+    while (replacement_end < source.size() && !matching_invocations.empty()) {
+        if (std::ranges::any_of(matching_invocations, [&](auto invocation) {
+            return invocation.size() == matched_length;
+        })) break;
+        std::vector<std::u32string_view> continued;
+        for (auto invocation : matching_invocations) {
+            if (invocation.size() > matched_length
+                && invocation[matched_length] == source[replacement_end])
+                continued.push_back(invocation);
+        }
+        if (continued.empty()) break;
+        matching_invocations = std::move(continued);
+        ++replacement_end;
+        ++matched_length;
     }
 
     std::ranges::stable_sort(result, [](auto const& left, auto const& right) {
@@ -156,7 +235,11 @@ inline std::vector<LatexCompletionCandidate> query_latex_commands(
         return left.catalog_order < right.catalog_order;
     });
     if (result.size() > limit) result.resize(limit);
-    return result;
+    return LatexCompletionQuery{
+        .replacement = {*slash, replacement_end},
+        .prefix = std::u32string{prefix},
+        .candidates = std::move(result),
+    };
 }
 
 } // namespace folia

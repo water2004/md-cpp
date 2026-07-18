@@ -125,11 +125,13 @@ public:
             : decayed_latex_usage_score(found->second, now_epoch_seconds);
     }
 
-    std::vector<LatexCompletionCandidate> Query(
-        std::u32string_view prefix,
+    std::optional<LatexCompletionQuery> QueryAt(
+        std::u32string_view source,
+        std::size_t caret,
         std::int64_t now_epoch_seconds,
         std::size_t limit = 8) const {
-        return query_latex_commands(commands_, prefix, usage_, now_epoch_seconds, limit);
+        return query_latex_commands_at(
+            commands_, invocations_, source, caret, usage_, now_epoch_seconds, limit);
     }
 
 private:
@@ -149,11 +151,18 @@ private:
         return id;
     }
 
-    void Rebuild() { commands_ = merge_latex_command_catalog(built_in_, custom_); }
+    void Rebuild() {
+        commands_ = merge_latex_command_catalog(built_in_, custom_);
+        invocations_.clear();
+        invocations_.reserve(commands_.size());
+        for (auto const& command : commands_)
+            invocations_.push_back(compile_latex_command_invocations(command));
+    }
 
     std::vector<LatexCommandDefinition> built_in_;
     std::vector<LatexCommandDefinition> custom_;
     std::vector<LatexCommandDefinition> commands_;
+    std::vector<LatexCommandInvocations> invocations_;
     std::unordered_map<std::string, LatexCommandUsage> usage_;
 };
 

@@ -18,50 +18,132 @@ LatexCommandDefinition Command(
     };
 }
 
+std::vector<LatexCommandInvocations> Compile(
+    std::vector<LatexCommandDefinition> const& catalog) {
+    std::vector<LatexCommandInvocations> result;
+    result.reserve(catalog.size());
+    for (auto const& command : catalog)
+        result.push_back(compile_latex_command_invocations(command));
+    return result;
+}
+
+std::optional<LatexCompletionQuery> Query(
+    std::vector<LatexCommandDefinition> const& catalog,
+    std::u32string_view source,
+    std::size_t caret,
+    std::unordered_map<std::string, LatexCommandUsage> const& usage = {},
+    std::int64_t now = 0,
+    std::size_t limit = 8) {
+    auto invocations = Compile(catalog);
+    return query_latex_commands_at(
+        catalog, invocations, source, caret, usage, now, limit);
+}
+
 } // namespace
 
 suite latex_completion_tests = [] {
 
-"LaTeX prefix query replaces the complete command around the caret"_test = [] {
-    auto prefix = latex_command_prefix_at(U"x + \\frac", 7);
-    expect(fatal(prefix.has_value()));
-    expect(prefix->prefix == U"fr");
-    expect(prefix->replacement == SourceRange{4, 9});
+"registered snippets compile direct and canonical invocation forms"_test = [] {
+    auto matrix = Command(
+        "matrix", U"matrix", U"\\begin{matrix}\n$1\n\\end{matrix}$0");
+    auto forms = compile_latex_command_invocations(matrix);
+    expect(forms == LatexCommandInvocations{U"matrix", U"begin{matrix}"});
+
+    auto fraction = Command("frac", U"frac", U"\\frac{$1}{$2}$0");
+    forms = compile_latex_command_invocations(fraction);
+    expect(forms == LatexCommandInvocations{U"frac", U"frac{"});
 };
 
-"LaTeX prefix query accepts an empty prefix after one command slash"_test = [] {
-    auto prefix = latex_command_prefix_at(U"\\", 1);
-    expect(fatal(prefix.has_value()));
-    expect(prefix->prefix.empty());
-    expect(prefix->replacement == SourceRange{0, 1});
+"query replaces the complete registered command around the caret"_test = [] {
+    std::vector catalog{Command("frac", U"frac", U"\\frac{$1}{$2}$0")};
+    auto query = Query(catalog, U"x + \\frac", 7);
+    expect(fatal(query.has_value()));
+    expect(query->prefix == U"fr");
+    expect(query->replacement == SourceRange{4, 9});
+    expect(query->candidates.size() == 1_u);
 };
 
-"escaped slash runs do not start a LaTeX command"_test = [] {
-    expect(!latex_command_prefix_at(U"\\\\frac", 6).has_value());
-    auto prefix = latex_command_prefix_at(U"\\\\\\frac", 7);
-    expect(fatal(prefix.has_value()));
-    expect(prefix->replacement == SourceRange{2, 7});
+"query accepts an empty prefix after one active slash"_test = [] {
+    std::vector catalog{Command("frac", U"frac", U"\\frac{$1}{$2}$0")};
+    auto query = Query(catalog, U"\\", 1);
+    expect(fatal(query.has_value()));
+    expect(query->prefix.empty());
+    expect(query->replacement == SourceRange{0, 1});
+};
+
+"begin completion remains active through braces because the catalog registers it"_test = [] {
+    auto matrix = Command(
+        "matrix", U"matrix", U"\\begin{matrix}\n$1\n\\end{matrix}$0");
+    auto cases = Command(
+        "cases", U"cases", U"\\begin{cases}\n$1\n\\end{cases}$0");
+    cases.category = "custom";
+    std::vector catalog{matrix, cases};
+
+    for (auto source : {U"\\b", U"\\begin", U"\\begin{", U"\\begin{m"}) {
+        auto query = Query(catalog, source, std::u32string_view{source}.size());
+        expect(fatal(query.has_value()));
+    }
+
+    auto partial = Query(catalog, U"x \\begin{matrix} y", 12);
+    expect(fatal(partial.has_value()));
+    expect(partial->prefix == U"begin{mat");
+    expect(partial->replacement == SourceRange{2, 16});
+    expect(partial->candidates.size() == 1_u);
+    expect(partial->candidates[0].command.id == "matrix");
+};
+
+"unregistered begin spelling does not survive punctuation"_test = [] {
+    std::vector catalog{Command("beta", U"beta", U"\\beta$0")};
+    expect(!Query(catalog, U"\\begin{", 7).has_value());
+};
+
+"registered custom punctuation is matched without a LaTeX character whitelist"_test = [] {
+    auto custom = Command("custom", U"thing", U"\\operator@name{$1}$0");
+    custom.category = "custom";
+    std::vector catalog{custom};
+    auto query = Query(catalog, U"\\operator@", 10);
+    expect(fatal(query.has_value()));
+    expect(query->prefix == U"operator@");
+    expect(query->candidates.size() == 1_u);
+};
+
+"escaped slash runs do not start a registered command"_test = [] {
+    std::vector catalog{Command("frac", U"frac", U"\\frac{$1}{$2}$0")};
+    expect(!Query(catalog, U"\\\\frac", 6).has_value());
+    auto query = Query(catalog, U"\\\\\\frac", 7);
+    expect(fatal(query.has_value()));
+    expect(query->replacement == SourceRange{2, 7});
 };
 
 "invalid offsets and ordinary words do not create completion queries"_test = [] {
-    expect(!latex_command_prefix_at(U"frac", 4).has_value());
-    expect(!latex_command_prefix_at(U"\\frac", 99).has_value());
+    std::vector catalog{Command("frac", U"frac", U"\\frac{$1}{$2}$0")};
+    expect(!Query(catalog, U"frac", 4).has_value());
+    expect(!Query(catalog, U"\\frac", 99).has_value());
 };
 
-"recently accepted commands rank ahead within the same prefix"_test = [] {
+"existing arguments are not swallowed when the direct invocation is complete"_test = [] {
+    std::vector catalog{Command("frac", U"frac", U"\\frac{$1}{$2}$0")};
+    auto query = Query(catalog, U"\\frac{old}", 3);
+    expect(fatal(query.has_value()));
+    expect(query->prefix == U"fr");
+    expect(query->replacement == SourceRange{0, 5});
+};
+
+"recently accepted commands rank ahead within the same registered prefix"_test = [] {
     std::vector catalog{
         Command("frac", U"frac", U"\\frac{$1}{$2}$0"),
         Command("framebox", U"framebox", U"\\framebox{$1}$0"),
     };
     std::unordered_map<std::string, LatexCommandUsage> usage;
     record_latex_command_usage(usage["framebox"], 1000);
-    auto candidates = query_latex_commands(catalog, U"fr", usage, 1000);
-    expect(candidates.size() == 2_u);
-    expect(candidates[0].command.id == "framebox");
-    expect(candidates[1].command.id == "frac");
+    auto query = Query(catalog, U"\\fr", 3, usage, 1000);
+    expect(fatal(query.has_value()));
+    expect(query->candidates.size() == 2_u);
+    expect(query->candidates[0].command.id == "framebox");
+    expect(query->candidates[1].command.id == "frac");
 };
 
-"exact matches outrank recent prefix matches"_test = [] {
+"exact registered forms outrank recent prefix matches"_test = [] {
     std::vector catalog{
         Command("frac", U"frac", U"\\frac{$1}{$2}$0"),
         Command("fraction", U"fraction", U"\\fraction{$1}$0"),
@@ -69,40 +151,11 @@ suite latex_completion_tests = [] {
     std::unordered_map<std::string, LatexCommandUsage> usage;
     for (int index = 0; index < 20; ++index)
         record_latex_command_usage(usage["fraction"], 1000);
-    auto candidates = query_latex_commands(catalog, U"frac", usage, 1000);
-    expect(candidates.size() == 2_u);
-    expect(candidates[0].command.id == "frac");
-    expect(candidates[0].exact_match);
-};
-
-"environment commands remain discoverable through the begin syntax"_test = [] {
-    auto matrix = Command(
-        "environment.matrix", U"matrix", U"\\begin{matrix}\n$1\n\\end{matrix}$0");
-    matrix.category = "environment";
-    auto cases = Command(
-        "environment.cases", U"cases", U"\\begin{cases}\n$1\n\\end{cases}$0");
-    cases.category = "environment";
-    std::vector catalog{
-        Command("symbol.beta", U"beta", U"\\beta$0"),
-        matrix,
-        cases,
-    };
-    std::unordered_map<std::string, LatexCommandUsage> usage;
-    record_latex_command_usage(usage["environment.cases"], 1000);
-
-    auto partial = query_latex_commands(catalog, U"beg", usage, 1000);
-    expect(partial.size() == 2_u);
-    expect(partial[0].command.id == "environment.cases");
-    expect(partial[1].command.id == "environment.matrix");
-
-    auto complete = query_latex_commands(catalog, U"begin", usage, 1000);
-    expect(complete.size() == 2_u);
-    expect(complete[0].exact_match);
-    expect(complete[1].exact_match);
-
-    auto short_trigger = query_latex_commands(catalog, U"mat", usage, 1000);
-    expect(short_trigger.size() == 1_u);
-    expect(short_trigger[0].command.id == "environment.matrix");
+    auto query = Query(catalog, U"\\frac", 5, usage, 1000);
+    expect(fatal(query.has_value()));
+    expect(query->candidates.size() == 2_u);
+    expect(query->candidates[0].command.id == "frac");
+    expect(query->candidates[0].exact_match);
 };
 
 "usage score decays by half over one half life"_test = [] {
@@ -122,18 +175,18 @@ suite latex_completion_tests = [] {
     expect(!merged[0].built_in);
 };
 
-"disabled and malformed commands are excluded from suggestions"_test = [] {
+"disabled and malformed commands are excluded from registered queries"_test = [] {
     auto disabled = Command("disabled", U"frac", U"x");
     disabled.enabled = false;
     std::vector catalog{
         disabled,
         Command("bad", U"fr-ac", U"x"),
-        Command("valid", U"frame", U"x"),
+        Command("valid", U"frame", U"\\frame$0"),
     };
-    auto candidates = query_latex_commands(
-        catalog, U"fr", std::unordered_map<std::string, LatexCommandUsage>{}, 0);
-    expect(candidates.size() == 1_u);
-    expect(candidates[0].command.id == "valid");
+    auto query = Query(catalog, U"\\fr", 3);
+    expect(fatal(query.has_value()));
+    expect(query->candidates.size() == 1_u);
+    expect(query->candidates[0].command.id == "valid");
 };
 
 };
