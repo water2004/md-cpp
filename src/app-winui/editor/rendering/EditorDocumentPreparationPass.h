@@ -10,6 +10,7 @@ import folia.platform.editor_viewport_plan;
 #include "editor/rendering/EditorPreparedDocument.h"
 #include "editor/rendering/EditorRenderResources.h"
 #include "editor/rendering/EditorStyleSheet.h"
+#include "editor/rendering/EditorViewportMaterializer.h"
 #include "editor/session/EditorRenderFrame.h"
 
 namespace winrt::Folia
@@ -48,19 +49,17 @@ namespace winrt::Folia
         EditorDocumentPreparationResult Prepare();
 
     private:
-        void PrepareViewport();
         void RefreshEmbeddedContent();
         void ReleaseOutsideRetention();
-        bool RequestEmbeddedAt(float documentTop) const;
 
         EditorPreparedDocumentCache cache;
+        EditorViewportMaterializer viewportMaterializer;
         detail::EditorRenderFrame const& frame;
         EditorRenderResources& resources;
         EditorInlineImageRenderer& inlineImages;
         MathJaxRenderer& mathJax;
         SvgNormalizer& svgNormalizer;
         EditorDocumentBlockPreparer& blockPreparer;
-        folia::platform::editor::EditorScrollState& scrollState;
         std::unique_ptr<EditorPreparedDocument>& preparedDocument;
         folia::TextSelection selection;
         float documentWidth = 0.0f;
@@ -71,7 +70,6 @@ namespace winrt::Folia
         bool printMode = false;
         bool invalidateRequested = false;
         bool scrollingForward = true;
-        bool viewportMoved = false;
         bool viewportActive = false;
         static constexpr folia::platform::editor::EditorViewportPolicy viewportPolicy{};
     };

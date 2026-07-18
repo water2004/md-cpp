@@ -160,6 +160,7 @@
     <ClInclude Include="editor\rendering\EditorDocumentBlockPreparer.h" />
     <ClInclude Include="editor\rendering\EditorDocumentPainter.h" />
     <ClInclude Include="editor\rendering\EditorDocumentPreparationPass.h" />
+    <ClInclude Include="editor\rendering\EditorViewportMaterializer.h" />
     <ClInclude Include="editor\rendering\EditorDocumentRenderPass.h" />
     <ClInclude Include="editor\rendering\EditorRenderResources.h" />
     <ClInclude Include="media\EditorGifDecoder.h" />
@@ -489,6 +490,7 @@
     <ClCompile Include="editor\rendering\EditorDocumentBlockPreparer.cpp" />
     <ClCompile Include="editor\rendering\EditorDocumentPainter.cpp" />
       <ClCompile Include="editor\rendering\EditorDocumentPreparationPass.cpp" />
+      <ClCompile Include="editor\rendering\EditorViewportMaterializer.cpp" />
       <ClCompile Include="editor\rendering\EditorPreparedDocumentCache.cpp" />
     <ClCompile Include="editor\rendering\EditorDocumentRenderPass.cpp" />
     <ClCompile Include="editor\rendering\EditorContentUtilities.cpp" />

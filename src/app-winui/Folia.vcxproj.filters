@@ -351,6 +351,9 @@
     <ClCompile Include="editor\rendering\EditorDocumentPreparationPass.cpp">
       <Filter>Editor\Rendering</Filter>
     </ClCompile>
+    <ClCompile Include="editor\rendering\EditorViewportMaterializer.cpp">
+      <Filter>Editor\Rendering</Filter>
+    </ClCompile>
     <ClCompile Include="editor\rendering\EditorPreparedDocumentCache.cpp">
       <Filter>Editor\Rendering</Filter>
     </ClCompile>
@@ -513,6 +516,9 @@
       <Filter>Editor\Rendering</Filter>
     </ClInclude>
     <ClInclude Include="editor\rendering\EditorDocumentPreparationPass.h">
+      <Filter>Editor\Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\rendering\EditorViewportMaterializer.h">
       <Filter>Editor\Rendering</Filter>
     </ClInclude>
     <ClInclude Include="editor\rendering\EditorDocumentRenderPass.h">
