@@ -8,7 +8,9 @@ Source ownership:
 
 - The directory root contains XAML application/window files and the composition root. `MainWindow.xaml.cpp` owns lifecycle and window state; command and event wiring live in separate translation units.
 - `editor/session/` adapts the core editor/document state to the native application.
-- `editor/interaction/` owns pointer, keyboard, text input, scrolling, document actions, and sidebar controllers.
+- `editor/interaction/` translates WinUI routed events into platform input
+  actions and core commands; it also owns text input, scrolling, document
+  actions, frame scheduling, and sidebar controllers.
 - `editor/rendering/` owns Direct2D/DirectWrite preparation and drawing. Lifecycle, image, text-layout, and SVG caches are separate translation units.
 - `media/` owns GIF decoding and MathJax, Mermaid, and SVG integration.
 - `export/` owns Windows PDF/print integration.
@@ -20,5 +22,9 @@ Build notes:
 - Build `Folia.vcxproj` through the root `build_app.ps1` script so Windows App SDK XAML/IDL/C++WinRT generation runs through the NuGet targets and all output stays below `build/app-winui`.
 - NuGet packages are restored into `packages/` by running `powershell -ExecutionPolicy Bypass -File setup.ps1` from the repository root.
 - Keep CMake for `folia_core`, `folia_platform`, and tests; do not configure `-DFOLIA_BUILD_WINUI=ON`.
+- Run `build_platform_test.bat` for deterministic Windows editor tests. These
+  tests cover block geometry, DirectWrite hit testing/caret coordinates,
+  viewport planning, scroll state, key gestures, and selection drag projection
+  without UI automation.
 - The editor area is a `SwapChainPanel`; the WinUI rendering layer consumes the core `RenderModel` and maps DirectWrite positions to block-local `TextPosition` values.
 - Do not replace this with WebView2, RichEditBox, TextBox, RichTextBlock, or an HTML renderer.
