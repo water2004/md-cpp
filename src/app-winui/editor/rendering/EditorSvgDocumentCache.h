@@ -17,7 +17,7 @@ namespace winrt::Folia
             winrt::Microsoft::UI::Dispatching::DispatcherQueue const& dispatcher,
             std::function<void()> invalidate);
         void Detach();
-        void Configure(ID2D1Device* device);
+        void Configure(ID2D1DeviceContext5* context);
         void Clear();
 
         ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> Find(std::uint64_t renderId);
@@ -36,9 +36,9 @@ namespace winrt::Folia
 
     private:
         struct State;
-        static void Run(std::shared_ptr<State> const& state, std::stop_token stop);
+        static void Schedule(std::shared_ptr<State> const& state);
+        static void ProcessOne(std::shared_ptr<State> const& state);
 
         std::shared_ptr<State> state;
-        std::jthread worker;
     };
 }

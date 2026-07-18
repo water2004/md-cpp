@@ -94,8 +94,7 @@ namespace winrt::Folia
         }
 
         std::mutex mutex;
-        std::condition_variable_any wake;
-        ::Microsoft::WRL::ComPtr<ID2D1Device> device;
+        ::Microsoft::WRL::ComPtr<ID2D1DeviceContext5> context;
         winrt::Microsoft::UI::Dispatching::DispatcherQueue dispatcher{nullptr};
         std::function<void()> invalidate;
         std::deque<Request> pending;
@@ -105,48 +104,52 @@ namespace winrt::Folia
         std::size_t bytes = 0;
         std::uint64_t generation = 1;
         bool active = false;
+        bool pumpScheduled = false;
     };
 
     EditorSvgDocumentCache::EditorSvgDocumentCache()
-        : state(std::make_shared<State>()),
-          worker([current = state](std::stop_token stop) { Run(current, stop); })
+        : state(std::make_shared<State>())
     {
     }
 
     EditorSvgDocumentCache::~EditorSvgDocumentCache()
     {
         Detach();
-        worker.request_stop();
-        state->wake.notify_all();
     }
 
     void EditorSvgDocumentCache::Attach(
         winrt::Microsoft::UI::Dispatching::DispatcherQueue const& dispatcher,
         std::function<void()> invalidate)
     {
-        std::scoped_lock lock(state->mutex);
-        state->dispatcher = dispatcher;
-        state->invalidate = std::move(invalidate);
-        state->active = true;
+        {
+            std::scoped_lock lock(state->mutex);
+            state->dispatcher = dispatcher;
+            state->invalidate = std::move(invalidate);
+            state->active = true;
+        }
+        Schedule(state);
     }
 
     void EditorSvgDocumentCache::Detach()
     {
         std::scoped_lock lock(state->mutex);
         state->active = false;
+        state->pumpScheduled = false;
         state->dispatcher = nullptr;
         state->invalidate = {};
-        state->device = nullptr;
+        state->context = nullptr;
         state->ClearLocked();
     }
 
-    void EditorSvgDocumentCache::Configure(ID2D1Device* device)
+    void EditorSvgDocumentCache::Configure(ID2D1DeviceContext5* context)
     {
-        std::scoped_lock lock(state->mutex);
-        if (state->device.Get() == device) return;
-        state->device = device;
-        state->ClearLocked();
-        state->wake.notify_all();
+        {
+            std::scoped_lock lock(state->mutex);
+            if (state->context.Get() == context) return;
+            state->context = context;
+            state->ClearLocked();
+        }
+        Schedule(state);
     }
 
     void EditorSvgDocumentCache::Clear()
@@ -173,56 +176,60 @@ namespace winrt::Folia
         bool highPriority)
     {
         if (renderId == 0 || source.empty() || width <= 0.0f || height <= 0.0f) return false;
-        std::scoped_lock lock(state->mutex);
-        if (!state->device || state->documents.contains(renderId)) return false;
-        if (state->queued.contains(renderId))
+        auto inserted = false;
         {
-            if (highPriority)
+            std::scoped_lock lock(state->mutex);
+            if (!state->context || state->documents.contains(renderId)) return false;
+            if (state->queued.contains(renderId))
             {
-                auto found = std::find_if(
-                    state->pending.begin(),
-                    state->pending.end(),
-                    [renderId](State::Request const& request) { return request.renderId == renderId; });
-                if (found != state->pending.end() && !found->highPriority)
+                if (highPriority)
                 {
-                    auto request = std::move(*found);
-                    state->pending.erase(found);
-                    request.highPriority = true;
-                    auto insertion = std::find_if(
+                    auto found = std::find_if(
                         state->pending.begin(),
                         state->pending.end(),
-                        [](State::Request const& pending) { return !pending.highPriority; });
-                    state->pending.insert(insertion, std::move(request));
+                        [renderId](State::Request const& request) { return request.renderId == renderId; });
+                    if (found != state->pending.end() && !found->highPriority)
+                    {
+                        auto request = std::move(*found);
+                        state->pending.erase(found);
+                        request.highPriority = true;
+                        auto insertion = std::find_if(
+                            state->pending.begin(),
+                            state->pending.end(),
+                            [](State::Request const& pending) { return !pending.highPriority; });
+                        state->pending.insert(insertion, std::move(request));
+                    }
                 }
+                return false;
             }
-            return false;
+            constexpr std::size_t pendingLimit = 512;
+            while (state->pending.size() >= pendingLimit)
+            {
+                state->queued.erase(state->pending.back().renderId);
+                state->pending.pop_back();
+            }
+            auto request = State::Request{
+                renderId,
+                source,
+                width,
+                height,
+                state->generation,
+                highPriority,
+            };
+            state->queued.insert(renderId);
+            if (highPriority)
+            {
+                auto insertion = std::find_if(
+                    state->pending.begin(),
+                    state->pending.end(),
+                    [](State::Request const& pending) { return !pending.highPriority; });
+                state->pending.insert(insertion, std::move(request));
+            }
+            else state->pending.push_back(std::move(request));
+            inserted = true;
         }
-        constexpr std::size_t pendingLimit = 512;
-        while (state->pending.size() >= pendingLimit)
-        {
-            state->queued.erase(state->pending.back().renderId);
-            state->pending.pop_back();
-        }
-        auto request = State::Request{
-            renderId,
-            source,
-            width,
-            height,
-            state->generation,
-            highPriority,
-        };
-        state->queued.insert(renderId);
-        if (highPriority)
-        {
-            auto insertion = std::find_if(
-                state->pending.begin(),
-                state->pending.end(),
-                [](State::Request const& pending) { return !pending.highPriority; });
-            state->pending.insert(insertion, std::move(request));
-        }
-        else state->pending.push_back(std::move(request));
-        state->wake.notify_one();
-        return true;
+        Schedule(state);
+        return inserted;
     }
 
     ::Microsoft::WRL::ComPtr<ID2D1SvgDocument> EditorSvgDocumentCache::FindOrCreate(
@@ -242,85 +249,59 @@ namespace winrt::Folia
         return document;
     }
 
-    void EditorSvgDocumentCache::Run(
-        std::shared_ptr<State> const& state,
-        std::stop_token stop)
+    void EditorSvgDocumentCache::Schedule(std::shared_ptr<State> const& state)
     {
-        auto initialized = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-        struct Apartment
+        winrt::Microsoft::UI::Dispatching::DispatcherQueue dispatcher{nullptr};
         {
-            HRESULT initialized;
-            ~Apartment() { if (SUCCEEDED(initialized)) CoUninitialize(); }
-        } apartment{initialized};
+            std::scoped_lock lock(state->mutex);
+            if (!state->active || state->pumpScheduled || state->pending.empty()
+                || !state->context || !state->dispatcher) return;
+            state->pumpScheduled = true;
+            dispatcher = state->dispatcher;
+        }
+        std::weak_ptr<State> weak = state;
+        if (!dispatcher.TryEnqueue(
+                winrt::Microsoft::UI::Dispatching::DispatcherQueuePriority::Low,
+                [weak]
+                {
+                    if (auto current = weak.lock()) ProcessOne(current);
+                }))
+        {
+            std::scoped_lock lock(state->mutex);
+            state->pumpScheduled = false;
+        }
+    }
 
-        ::Microsoft::WRL::ComPtr<ID2D1Device> currentDevice;
+    void EditorSvgDocumentCache::ProcessOne(std::shared_ptr<State> const& state)
+    {
+        State::Request request;
         ::Microsoft::WRL::ComPtr<ID2D1DeviceContext5> context;
-        auto contextGeneration = std::uint64_t{0};
-        while (!stop.stop_requested())
         {
-            State::Request request;
-            ::Microsoft::WRL::ComPtr<ID2D1Device> device;
-            {
-                std::unique_lock lock(state->mutex);
-                state->wake.wait(lock, stop, [&] { return !state->pending.empty(); });
-                if (stop.stop_requested()) return;
-                request = std::move(state->pending.front());
-                state->pending.pop_front();
-                device = state->device;
-                if (!device || request.generation != state->generation)
-                {
-                    state->queued.erase(request.renderId);
-                    continue;
-                }
-            }
+            std::scoped_lock lock(state->mutex);
+            state->pumpScheduled = false;
+            if (!state->active || state->pending.empty() || !state->context) return;
+            request = std::move(state->pending.front());
+            state->pending.pop_front();
+            context = state->context;
+        }
 
-            if (contextGeneration != request.generation || currentDevice.Get() != device.Get())
+        auto document = CreateSvgDocument(
+            context.Get(),
+            request.source,
+            request.width,
+            request.height);
+        auto resourceCost = (std::max)(std::size_t{16 * 1024}, request.source.size() * 8);
+        std::function<void()> invalidate;
+        {
+            std::scoped_lock lock(state->mutex);
+            state->queued.erase(request.renderId);
+            if (request.generation == state->generation && document)
             {
-                context = nullptr;
-                currentDevice = device;
-                ::Microsoft::WRL::ComPtr<ID2D1DeviceContext> baseContext;
-                if (FAILED(device->CreateDeviceContext(
-                        D2D1_DEVICE_CONTEXT_OPTIONS_ENABLE_MULTITHREADED_OPTIMIZATIONS,
-                        baseContext.GetAddressOf()))
-                    || FAILED(baseContext.As(&context)))
-                {
-                    context = nullptr;
-                }
-                contextGeneration = request.generation;
-            }
-            auto document = CreateSvgDocument(
-                context.Get(),
-                request.source,
-                request.width,
-                request.height);
-            auto resourceCost = (std::max)(std::size_t{16 * 1024}, request.source.size() * 8);
-            winrt::Microsoft::UI::Dispatching::DispatcherQueue dispatcher{nullptr};
-            auto publish = false;
-            {
-                std::scoped_lock lock(state->mutex);
-                state->queued.erase(request.renderId);
-                if (request.generation == state->generation && document)
-                {
-                    state->StoreLocked(request.renderId, document, resourceCost);
-                    dispatcher = state->dispatcher;
-                    publish = state->active;
-                }
-            }
-            if (publish && dispatcher)
-            {
-                std::weak_ptr<State> weak = state;
-                dispatcher.TryEnqueue([weak]
-                {
-                    auto current = weak.lock();
-                    if (!current) return;
-                    std::function<void()> invalidate;
-                    {
-                        std::scoped_lock lock(current->mutex);
-                        if (current->active) invalidate = current->invalidate;
-                    }
-                    if (invalidate) invalidate();
-                });
+                state->StoreLocked(request.renderId, document, resourceCost);
+                if (state->active) invalidate = state->invalidate;
             }
         }
+        if (invalidate) invalidate();
+        Schedule(state);
     }
 }

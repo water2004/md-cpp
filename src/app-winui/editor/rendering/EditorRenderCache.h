@@ -41,7 +41,7 @@ namespace winrt::Folia
         void ClearTextLayouts();
         void ClearSvgDocuments();
         void ClearDeviceResources();
-        void ConfigureSvgDevice(ID2D1Device* device);
+        void ConfigureSvgContext(ID2D1DeviceContext5* context);
         bool HasPendingImages() const;
         std::uint64_t RemoteImageGeneration() const;
         std::optional<ImageDimensions> ProbeImageDimensions(EditorRenderResources const& resources, std::wstring const& baseDirectory, std::string_view source);

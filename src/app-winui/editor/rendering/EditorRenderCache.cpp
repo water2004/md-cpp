@@ -56,9 +56,9 @@ namespace winrt::Folia
         svgDocuments.Clear();
     }
 
-    void EditorRenderCache::ConfigureSvgDevice(ID2D1Device* device)
+    void EditorRenderCache::ConfigureSvgContext(ID2D1DeviceContext5* context)
     {
-        svgDocuments.Configure(device);
+        svgDocuments.Configure(context);
     }
 
     void EditorRenderCache::ClearDeviceResources()
