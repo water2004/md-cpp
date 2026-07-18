@@ -84,6 +84,7 @@ namespace winrt::Folia
     {
         if (resources.Ready()) return;
         resources.Initialize(panel, styleSheet);
+        renderCache.ConfigureSvgDevice(resources.d2dDevice.Get());
         auto dispatcher = panel.DispatcherQueue();
         renderCache.Attach(dispatcher, [this] { Invalidate(); });
         auto completion = [this, dispatcher]
@@ -111,6 +112,7 @@ namespace winrt::Folia
             styleSheet,
             pageWidth - pageMargin * 2.0f,
             pageHeight - pageMargin * 2.0f);
+        renderCache.ConfigureSvgDevice(resources.d2dDevice.Get());
         winrt::Microsoft::UI::Dispatching::DispatcherQueue noDispatcher{nullptr};
         renderCache.Attach(noDispatcher, {});
     }

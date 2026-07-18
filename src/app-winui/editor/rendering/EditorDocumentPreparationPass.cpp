@@ -484,18 +484,12 @@ namespace winrt::Folia
     {
         if (printMode || !svgPainter.Supported()) return;
 
-        // Creating an ID2D1SvgDocument parses the SVG and can be expensive.
-        // Keep that work out of the paint loop and cap it to a small slice of
-        // the presentation budget. Visible content is warmed before the
-        // directional prefetch band; anything left schedules another paced
-        // frame instead of blocking the current scroll frame.
-        auto deadline = std::chrono::steady_clock::now()
-            + std::chrono::milliseconds{1};
-        constexpr std::size_t maximumCreations = 8;
-        auto creations = std::size_t{0};
-        auto workRemaining = false;
-
-        auto warmDisplay = [&](DisplayInlineText const& display)
+        // SVG parsing and device-resource creation run on the cache worker.
+        // The presentation thread only feeds a bounded, viewport-prioritized
+        // queue; each completed document requests a paced repaint.
+        constexpr std::size_t maximumNewRequests = 64;
+        auto newRequests = std::size_t{0};
+        auto queueDisplay = [&](DisplayInlineText const& display, bool highPriority)
         {
             for (auto const& overlay : display.mathOverlays)
             {
@@ -503,42 +497,38 @@ namespace winrt::Folia
                 if (fragment.renderId == 0 || !fragment.svg || fragment.svg->empty()
                     || fragment.width <= 0.0f || fragment.height <= 0.0f) continue;
                 if (svgPainter.Prepared(fragment.renderId)) continue;
-                if (creations >= maximumCreations
-                    || (creations != 0 && std::chrono::steady_clock::now() >= deadline))
-                {
-                    workRemaining = true;
-                    return false;
-                }
-                if (svgPainter.Prepare(
+                if (newRequests >= maximumNewRequests) return false;
+                if (svgPainter.Queue(
                         fragment.renderId,
                         *fragment.svg,
                         fragment.width,
-                        fragment.height))
-                    ++creations;
+                        fragment.height,
+                        highPriority))
+                    ++newRequests;
             }
             return true;
         };
-        auto warmBlock = [&](EditorPreparedDocument::Block const& block)
+        auto queueBlock = [&](EditorPreparedDocument::Block const& block, bool highPriority)
         {
-            if (!warmDisplay(block.display)) return false;
+            if (!queueDisplay(block.display, highPriority)) return false;
             for (auto const& preview : block.mathPreviews)
-                if (!warmDisplay(preview.display)) return false;
+                if (!queueDisplay(preview.display, highPriority)) return false;
             if (!block.table) return true;
             for (auto const& display : block.table->displays)
-                if (!warmDisplay(display)) return false;
+                if (!queueDisplay(display, highPriority)) return false;
             for (auto const& cellPreviews : block.table->mathPreviews)
                 for (auto const& preview : cellPreviews)
-                    if (!warmDisplay(preview.display)) return false;
+                    if (!queueDisplay(preview.display, highPriority)) return false;
             return true;
         };
-        auto warmRange = [&](folia::platform::editor::EditorIndexRange range)
+        auto queueRange = [&](folia::platform::editor::EditorIndexRange range, bool highPriority)
         {
             for (auto index = range.begin; index < range.end; ++index)
             {
                 if (index >= preparedDocument->blocks.size()) break;
                 auto const& block = preparedDocument->blocks[index];
                 if (!block.valid || !block.containsMath) continue;
-                if (!warmBlock(block)) return false;
+                if (!queueBlock(block, highPriority)) return false;
             }
             return true;
         };
@@ -550,8 +540,8 @@ namespace winrt::Folia
             false,
             scrollingForward,
             viewportPolicy);
-        if (warmRange(viewportPlan.visible)) warmRange(viewportPlan.prefetch);
-        invalidateRequested = invalidateRequested || workRemaining;
+        if (queueRange(viewportPlan.visible, true))
+            queueRange(viewportPlan.prefetch, false);
     }
 
     void EditorDocumentPreparationPass::ReleaseOutsideRetention()

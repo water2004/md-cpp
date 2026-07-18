@@ -19,16 +19,19 @@ namespace winrt::Folia
         return renderId != 0 && static_cast<bool>(cache.FindSvgDocument(renderId));
     }
 
-    bool EditorSvgPainter::Prepare(
+    bool EditorSvgPainter::Queue(
         std::uint64_t renderId,
         std::string const& source,
         float intrinsicWidth,
-        float intrinsicHeight) const
+        float intrinsicHeight,
+        bool highPriority) const
     {
-        if (!context || renderId == 0 || source.empty()
-            || intrinsicWidth <= 0.0f || intrinsicHeight <= 0.0f) return false;
-        return static_cast<bool>(cache.FindOrCreateSvgDocument(
-            context.Get(), renderId, source, intrinsicWidth, intrinsicHeight));
+        return cache.QueueSvgDocument(
+            renderId,
+            source,
+            intrinsicWidth,
+            intrinsicHeight,
+            highPriority);
     }
 
     bool EditorSvgPainter::PaintDocument(

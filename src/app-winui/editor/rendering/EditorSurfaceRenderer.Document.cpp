@@ -67,11 +67,18 @@ namespace winrt::Folia
                     fragment.width,
                     fragment.height,
                     origin);
-            return svgPainter.DrawCached(
+            if (svgPainter.DrawCached(
+                    fragment.renderId,
+                    fragment.width,
+                    fragment.height,
+                    origin)) return true;
+            svgPainter.Queue(
                 fragment.renderId,
+                *fragment.svg,
                 fragment.width,
                 fragment.height,
-                origin);
+                true);
+            return false;
         };
         auto drawMathFallback = [&](folia::TextSpan, D2D1_POINT_2F origin) {
             auto label = Localize(L"Formula");
