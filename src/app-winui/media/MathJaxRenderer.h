@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct MathJaxSvgFragment
     {

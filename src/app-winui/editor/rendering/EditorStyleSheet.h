@@ -5,9 +5,9 @@
 #include <d2d1.h>
 #include <dwrite.h>
 
-import elmd.core.theme;
+import folia.core.theme;
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct EditorFontStyle
     {
@@ -48,5 +48,5 @@ namespace winrt::ElMd
         float blockGap = 6.0f;
     };
 
-    EditorStyleSheet CreateEditorStyleSheet(elmd::ThemeProfile const& theme);
+    EditorStyleSheet CreateEditorStyleSheet(folia::ThemeProfile const& theme);
 }

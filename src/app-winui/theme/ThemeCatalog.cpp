@@ -9,7 +9,7 @@ namespace
         std::filesystem::path const& directory,
         bool builtIn,
         std::unordered_set<std::string>& ids,
-        std::vector<winrt::ElMd::ThemeEntry>& entries,
+        std::vector<winrt::Folia::ThemeEntry>& entries,
         std::vector<winrt::hstring>& diagnostics)
     {
         std::error_code error;
@@ -18,7 +18,7 @@ namespace
         {
             if (error) break;
             if (!item.is_regular_file() || item.path().extension() != L".json") continue;
-            auto loaded = winrt::ElMd::LoadThemeFile(item.path());
+            auto loaded = winrt::Folia::LoadThemeFile(item.path());
             if (!loaded.profile)
             {
                 diagnostics.push_back(std::move(loaded.diagnostic));
@@ -26,18 +26,18 @@ namespace
             }
             if (!ids.insert(loaded.profile->id).second)
             {
-                diagnostics.push_back(winrt::ElMd::LocalizeFormat(
+                diagnostics.push_back(winrt::Folia::LocalizeFormat(
                     L"IgnoredDuplicateTheme", { winrt::to_hstring(loaded.profile->id) }));
                 continue;
             }
             entries.push_back({ std::move(*loaded.profile), item.path(), builtIn });
         }
-        if (error) diagnostics.push_back(winrt::ElMd::LocalizeFormat(
+        if (error) diagnostics.push_back(winrt::Folia::LocalizeFormat(
             L"UnableEnumerateThemeDirectory", { winrt::hstring(directory.c_str()) }));
     }
 }
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     std::filesystem::path ThemeCatalog::CustomThemeDirectory()
     {
@@ -58,7 +58,7 @@ namespace winrt::ElMd
         });
     }
 
-    ThemeLoadResult ThemeCatalog::Resolve(std::string_view id, elmd::Theme systemVariant) const
+    ThemeLoadResult ThemeCatalog::Resolve(std::string_view id, folia::Theme systemVariant) const
     {
         if (id.empty() || id == "system") return LoadThemeProfile(systemVariant);
         auto found = std::ranges::find(entries_, id, [](ThemeEntry const& entry) { return std::string_view(entry.profile.id); });

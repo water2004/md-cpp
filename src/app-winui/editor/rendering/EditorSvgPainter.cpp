@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "editor/rendering/EditorSvgPainter.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     EditorSvgPainter::EditorSvgPainter(EditorRenderResources& resources, EditorRenderCache& cache)
         : resources(resources), cache(cache)

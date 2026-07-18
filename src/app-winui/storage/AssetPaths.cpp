@@ -33,7 +33,7 @@ namespace
     }
 }
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     std::filesystem::path AssetsDirectory()
     {

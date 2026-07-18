@@ -3,7 +3,7 @@
 #include <initializer_list>
 #include <string_view>
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     winrt::hstring Localize(std::wstring_view resourceId);
     winrt::hstring LocalizeFormat(

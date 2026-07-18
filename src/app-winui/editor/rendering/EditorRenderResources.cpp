@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "editor/rendering/EditorRenderResources.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     EditorRenderResources::~EditorRenderResources()
     {

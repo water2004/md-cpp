@@ -2,20 +2,20 @@
 #include "MainWindow.xaml.h"
 #include "localization/Localization.h"
 
-import elmd.core.search;
-import elmd.core.utf;
+import folia.core.search;
+import folia.core.utf;
 
-namespace winrt::ElMd::implementation
+namespace winrt::Folia::implementation
 {
     namespace
     {
         std::u32string SearchText(winrt::hstring const& text)
         {
-            return elmd::utf8_to_cps(winrt::to_string(text));
+            return folia::utf8_to_cps(winrt::to_string(text));
         }
     }
 
-    elmd::SearchOptions MainWindow::CurrentSearchOptions()
+    folia::SearchOptions MainWindow::CurrentSearchOptions()
     {
         return {
             FindRegexButton().IsChecked().GetBoolean(),

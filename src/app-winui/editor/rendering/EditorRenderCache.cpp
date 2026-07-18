@@ -2,7 +2,7 @@
 #include "editor/rendering/EditorRenderCache.h"
 #include "media/EditorGifDecoder.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     EditorRenderCache::~EditorRenderCache()
     {

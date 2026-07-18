@@ -14,7 +14,7 @@
 #include "theme/ThemeConfig.h"
 #include "MainWindow.g.h"
 
-namespace winrt::ElMd::implementation
+namespace winrt::Folia::implementation
 {
     struct MainWindow : MainWindowT<MainWindow>
     {
@@ -31,11 +31,11 @@ namespace winrt::ElMd::implementation
         void RenderEditorSurface();
         void UpdateTheme();
         void ApplyShellTheme();
-        elmd::Theme CurrentThemeVariant();
+        folia::Theme CurrentThemeVariant();
         void ToggleSettingsMode();
         void SetSettingsMode(bool enabled);
         void SetDocumentCommandsVisible(bool visible);
-        std::optional<winrt::hstring> ApplySettings(winrt::ElMd::AppSettings const& settings);
+        std::optional<winrt::hstring> ApplySettings(winrt::Folia::AppSettings const& settings);
         void RegisterCommandHandlers();
         void ToggleSourceMode();
         void UpdateSourceModeUi();
@@ -46,12 +46,12 @@ namespace winrt::ElMd::implementation
         void NavigateSearch(int direction);
         void ReplaceCurrentSearchMatch();
         void ReplaceAllSearchMatches();
-        elmd::SearchOptions CurrentSearchOptions();
-        bool ExecuteEditorCommand(elmd::Command const& command);
+        folia::SearchOptions CurrentSearchOptions();
+        bool ExecuteEditorCommand(folia::Command const& command);
         void ShowFootnoteFlyout(
-            winrt::ElMd::EditorSurfaceRenderer::FootnoteHit const& hit,
+            winrt::Folia::EditorSurfaceRenderer::FootnoteHit const& hit,
             winrt::Windows::Foundation::Point position);
-        void NavigateToFootnote(elmd::TextPosition position);
+        void NavigateToFootnote(folia::TextPosition position);
         void HandlePointerWheel(winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
         void SetStatus(winrt::hstring const& text);
         void SetOperationProgress(
@@ -61,19 +61,19 @@ namespace winrt::ElMd::implementation
         HWND WindowHandle();
 
         winrt::hstring lastCommand;
-        winrt::ElMd::EditorSession editorSession;
-        winrt::ElMd::EditorSurfaceRenderer editorRenderer;
-        winrt::ElMd::EditorScrollController scrollController;
-        winrt::ElMd::EditorTextInputController textInputController;
-        winrt::ElMd::EditorPointerController pointerController;
-        winrt::ElMd::EditorKeyboardController keyboardController;
-        winrt::ElMd::EditorDocumentController documentController;
-        winrt::ElMd::EditorSidebarController sidebarController;
+        winrt::Folia::EditorSession editorSession;
+        winrt::Folia::EditorSurfaceRenderer editorRenderer;
+        winrt::Folia::EditorScrollController scrollController;
+        winrt::Folia::EditorTextInputController textInputController;
+        winrt::Folia::EditorPointerController pointerController;
+        winrt::Folia::EditorKeyboardController keyboardController;
+        winrt::Folia::EditorDocumentController documentController;
+        winrt::Folia::EditorSidebarController sidebarController;
         winrt::Microsoft::UI::Xaml::Controls::Flyout footnoteFlyout{ nullptr };
-        winrt::ElMd::AppSettings appSettings;
-        std::shared_ptr<winrt::ElMd::ThemeCatalog> themeCatalog = std::make_shared<winrt::ElMd::ThemeCatalog>();
-        std::shared_ptr<winrt::ElMd::SettingsView> settingsView;
-        elmd::ThemeProfile themeProfile = elmd::default_theme_profile();
+        winrt::Folia::AppSettings appSettings;
+        std::shared_ptr<winrt::Folia::ThemeCatalog> themeCatalog = std::make_shared<winrt::Folia::ThemeCatalog>();
+        std::shared_ptr<winrt::Folia::SettingsView> settingsView;
+        folia::ThemeProfile themeProfile = folia::default_theme_profile();
         bool updatingTheme = false;
         bool settingsMode = false;
         bool documentPaneWasOpen = true;
@@ -83,7 +83,7 @@ namespace winrt::ElMd::implementation
     };
 }
 
-namespace winrt::ElMd::factory_implementation
+namespace winrt::Folia::factory_implementation
 {
     struct MainWindow : MainWindowT<MainWindow, implementation::MainWindow>
     {

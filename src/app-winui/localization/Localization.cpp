@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "localization/Localization.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     hstring Localize(std::wstring_view resourceId)
     {

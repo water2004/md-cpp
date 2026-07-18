@@ -1,13 +1,13 @@
 #pragma once
 
-import elmd.platform.editor_interaction;
+import folia.platform.editor_interaction;
 
 #include "editor/rendering/EditorRenderResources.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
-    using elmd::platform::editor::EditorInteractionMap;
-    using elmd::platform::editor::EditorVisualTable;
+    using folia::platform::editor::EditorInteractionMap;
+    using folia::platform::editor::EditorVisualTable;
 
     enum class EditorTableActionKind
     {
@@ -22,7 +22,7 @@ namespace winrt::ElMd
     struct EditorTableAction
     {
         EditorTableActionKind kind = EditorTableActionKind::InsertRow;
-        elmd::TextPosition sourcePosition;
+        folia::TextPosition sourcePosition;
         std::size_t index = 0;
 
         bool operator==(EditorTableAction const&) const = default;

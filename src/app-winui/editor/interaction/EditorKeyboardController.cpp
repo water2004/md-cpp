@@ -1,9 +1,9 @@
 #include "pch.h"
 #include "editor/interaction/EditorKeyboardController.h"
 
-import elmd.platform.editor_input_command;
+import folia.platform.editor_input_command;
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     void EditorKeyboardController::Attach(
         EditorSession& session,
@@ -77,7 +77,7 @@ namespace winrt::ElMd
         {
             start = (std::min)(start, session_->TextInputAcpOffset(selection.anchor));
         }
-        if (!executeCommand_(elmd::Command::InsertText(text))) return false;
+        if (!executeCommand_(folia::Command::InsertText(text))) return false;
         if (textInput_) textInput_->RecordCharacterTextUpdate(start, std::move(text));
         return true;
     }
@@ -96,8 +96,8 @@ namespace winrt::ElMd
         auto alt = KeyDown(winrt::Windows::System::VirtualKey::Menu)
             || KeyDown(winrt::Windows::System::VirtualKey::LeftMenu)
             || KeyDown(winrt::Windows::System::VirtualKey::RightMenu);
-        auto action = elmd::platform::editor::TranslateEditorKeyGesture({
-            .key = static_cast<elmd::platform::editor::EditorKey>(
+        auto action = folia::platform::editor::TranslateEditorKeyGesture({
+            .key = static_cast<folia::platform::editor::EditorKey>(
                 static_cast<std::uint32_t>(key)),
             .control = ctrl,
             .shift = shift,
@@ -113,24 +113,24 @@ namespace winrt::ElMd
             || KeyDown(winrt::Windows::System::VirtualKey::LeftShift)
             || KeyDown(winrt::Windows::System::VirtualKey::RightShift);
         return DispatchInputAction(
-            elmd::platform::editor::TranslateEditorKeyGesture({
-                .key = elmd::platform::editor::EditorKey::Enter,
+            folia::platform::editor::TranslateEditorKeyGesture({
+                .key = folia::platform::editor::EditorKey::Enter,
                 .shift = shift,
             }));
     }
 
     bool EditorKeyboardController::DispatchInputAction(
-        elmd::platform::editor::EditorInputAction const& action)
+        folia::platform::editor::EditorInputAction const& action)
     {
-        using elmd::platform::editor::EditorInputActionKind;
+        using folia::platform::editor::EditorInputActionKind;
         if (!executeCommand_) return false;
         switch (action.kind)
         {
             case EditorInputActionKind::None:
                 return false;
             case EditorInputActionKind::ExecuteCommand:
-                if (action.command.kind == elmd::CommandKind::MoveLeft
-                    || action.command.kind == elmd::CommandKind::MoveRight)
+                if (action.command.kind == folia::CommandKind::MoveLeft
+                    || action.command.kind == folia::CommandKind::MoveRight)
                     ResetCaretGoal();
                 executeCommand_(action.command);
                 return true;
@@ -163,8 +163,8 @@ namespace winrt::ElMd
                     return true;
                 }
                 position->affinity = action.kind == EditorInputActionKind::VisualLineStart
-                    ? elmd::TextAffinity::Downstream
-                    : elmd::TextAffinity::Upstream;
+                    ? folia::TextAffinity::Downstream
+                    : folia::TextAffinity::Upstream;
                 session_->SetSelection(
                     action.command.extend_selection ? selection.anchor : *position,
                     *position);
@@ -175,19 +175,19 @@ namespace winrt::ElMd
             }
             case EditorInputActionKind::TabBackward:
             {
-                auto command = elmd::Command{.kind = elmd::CommandKind::OutdentListItem};
+                auto command = folia::Command{.kind = folia::CommandKind::OutdentListItem};
                 if (executeCommand_(command)) return true;
-                command.kind = elmd::CommandKind::MoveTableCellPrevious;
+                command.kind = folia::CommandKind::MoveTableCellPrevious;
                 executeCommand_(command);
                 return true;
             }
             case EditorInputActionKind::TabForward:
             {
-                auto command = elmd::Command{.kind = elmd::CommandKind::IndentListItem};
+                auto command = folia::Command{.kind = folia::CommandKind::IndentListItem};
                 if (executeCommand_(command)) return true;
-                command.kind = elmd::CommandKind::MoveTableCellNext;
+                command.kind = folia::CommandKind::MoveTableCellNext;
                 if (!executeCommand_(command))
-                    executeCommand_(elmd::Command::InsertText(U"    "));
+                    executeCommand_(folia::Command::InsertText(U"    "));
                 return true;
             }
         }

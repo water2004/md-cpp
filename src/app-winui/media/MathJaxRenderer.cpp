@@ -24,7 +24,7 @@ namespace
 
     std::wstring MathJaxBundlePath()
     {
-        return winrt::ElMd::AssetPath(std::filesystem::path(L"mathjax") / L"mathjax-quickjs.js").wstring();
+        return winrt::Folia::AssetPath(std::filesystem::path(L"mathjax") / L"mathjax-quickjs.js").wstring();
     }
 
     std::wstring MathJaxFontPath(std::string_view module)
@@ -139,7 +139,7 @@ namespace
     }
 }
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct MathJaxRenderer::State
     {
@@ -240,7 +240,7 @@ namespace winrt::ElMd
                 return false;
             }
             auto global = JS_GetGlobalObject(context);
-            JS_SetPropertyStr(context, global, "ElMdLoadMathJaxModule", JS_NewCFunction(context, LoadFontModule, "ElMdLoadMathJaxModule", 1));
+            JS_SetPropertyStr(context, global, "FoliaLoadMathJaxModule", JS_NewCFunction(context, LoadFontModule, "FoliaLoadMathJaxModule", 1));
             JS_FreeValue(context, global);
             deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
             auto result = JS_Eval(context, bundle.data(), bundle.size(), "mathjax-quickjs.js", JS_EVAL_TYPE_GLOBAL);
@@ -280,7 +280,7 @@ namespace winrt::ElMd
                 return rendered;
             }
             auto global = JS_GetGlobalObject(context);
-            auto api = JS_GetPropertyStr(context, global, "ElMdMathJax");
+            auto api = JS_GetPropertyStr(context, global, "FoliaMathJax");
             auto function = JS_GetPropertyStr(context, api, "render");
             JSValue arguments[] = {
                 JS_NewStringLen(context, request.tex.data(), request.tex.size()),

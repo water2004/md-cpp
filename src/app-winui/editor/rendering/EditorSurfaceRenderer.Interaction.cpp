@@ -2,7 +2,7 @@
 #include "editor/rendering/EditorSurfaceRenderer.h"
 #include "editor/rendering/EditorPreparedDocument.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     void EditorSurfaceRenderer::ScrollBy(float delta) { SetScrollOffset(scrollState.Offset() + delta); }
     void EditorSurfaceRenderer::QueueScrollBy(float delta)
@@ -29,7 +29,7 @@ namespace winrt::ElMd
     std::optional<EditorSurfaceRenderer::TableAction> EditorSurfaceRenderer::TableActionAt(float x, float y) const { return EditorTableInteraction::ActionAt(interactionMap, x, y); }
     std::optional<std::size_t> EditorSurfaceRenderer::TableDropIndexAt(float x, float y, bool rows) const { return EditorTableInteraction::DropIndexAt(interactionMap, draggedTableAction, x, y, rows); }
 
-    bool EditorSurfaceRenderer::ScrollToPosition(elmd::TextPosition position)
+    bool EditorSurfaceRenderer::ScrollToPosition(folia::TextPosition position)
     {
         auto previous = scrollState.Offset();
         if (auto bounds = CaretBounds(position))
@@ -64,18 +64,18 @@ namespace winrt::ElMd
         return false;
     }
 
-    std::optional<elmd::TextPosition> EditorSurfaceRenderer::HitTest(float x, float y) const
+    std::optional<folia::TextPosition> EditorSurfaceRenderer::HitTest(float x, float y) const
     {
         for (auto const& rect : nonInteractiveRegions)
             if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom)
                 return std::nullopt;
         return interactionMap.HitTest(x, y);
     }
-    std::optional<elmd::TextPosition> EditorSurfaceRenderer::TaskCheckboxAt(float x, float y) const { return interactionMap.TaskCheckboxAt(x, y); }
+    std::optional<folia::TextPosition> EditorSurfaceRenderer::TaskCheckboxAt(float x, float y) const { return interactionMap.TaskCheckboxAt(x, y); }
     std::optional<EditorSurfaceRenderer::FootnoteHit> EditorSurfaceRenderer::FootnoteAt(float x, float y) const { return interactionMap.FootnoteAt(x, y); }
-    std::optional<D2D1_RECT_F> EditorSurfaceRenderer::CaretBounds(elmd::TextPosition position) const { return interactionMap.CaretBounds(position, styleSheet.body.lineHeight); }
-    std::optional<elmd::TextPosition> EditorSurfaceRenderer::MoveCaretVertically(elmd::TextPosition position, bool down, float& goalX) const { return interactionMap.MoveCaretVertically(position, down, goalX, styleSheet.body.lineHeight); }
-    std::optional<elmd::TextPosition> EditorSurfaceRenderer::VisualLineStart(elmd::TextPosition position) const { return interactionMap.VisualLineStart(position); }
-    std::optional<elmd::TextPosition> EditorSurfaceRenderer::VisualLineEnd(elmd::TextPosition position) const { return interactionMap.VisualLineEnd(position); }
+    std::optional<D2D1_RECT_F> EditorSurfaceRenderer::CaretBounds(folia::TextPosition position) const { return interactionMap.CaretBounds(position, styleSheet.body.lineHeight); }
+    std::optional<folia::TextPosition> EditorSurfaceRenderer::MoveCaretVertically(folia::TextPosition position, bool down, float& goalX) const { return interactionMap.MoveCaretVertically(position, down, goalX, styleSheet.body.lineHeight); }
+    std::optional<folia::TextPosition> EditorSurfaceRenderer::VisualLineStart(folia::TextPosition position) const { return interactionMap.VisualLineStart(position); }
+    std::optional<folia::TextPosition> EditorSurfaceRenderer::VisualLineEnd(folia::TextPosition position) const { return interactionMap.VisualLineEnd(position); }
 
 }

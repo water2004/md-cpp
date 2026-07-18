@@ -154,7 +154,7 @@ namespace
         }
     }
 
-    std::shared_ptr<winrt::ElMd::GifInitialFrame> DecodeInitialFrame(
+    std::shared_ptr<winrt::Folia::GifInitialFrame> DecodeInitialFrame(
         IWICImagingFactory* factory,
         IWICBitmapDecoder* decoder,
         std::size_t backingBytes,
@@ -185,7 +185,7 @@ namespace
             || canvasPixels > 16ull * 1024ull * 1024ull
             || runtimeBytes > runtimeByteBudget) return {};
 
-        auto result = std::make_shared<winrt::ElMd::GifInitialFrame>();
+        auto result = std::make_shared<winrt::Folia::GifInitialFrame>();
         result->frameCount = frameCount;
         result->width = width;
         result->height = height;
@@ -221,7 +221,7 @@ namespace
     }
 }
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     bool GifInitialDecode::Complete() const
     {

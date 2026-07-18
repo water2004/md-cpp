@@ -1,7 +1,7 @@
 #pragma once
 
-import elmd.platform.editor_interaction;
-import elmd.platform.editor_scroll_state;
+import folia.platform.editor_interaction;
+import folia.platform.editor_scroll_state;
 
 #include "editor/session/EditorRenderFrame.h"
 #include "media/MathJaxRenderer.h"
@@ -13,17 +13,17 @@ import elmd.platform.editor_scroll_state;
 #include "editor/rendering/EditorRenderResources.h"
 #include "editor/interaction/EditorTableInteraction.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
-    using elmd::platform::editor::EditorInteractionMap;
-    using elmd::platform::editor::EditorScrollState;
-    using elmd::platform::editor::EditorFootnoteControlKind;
-    using elmd::platform::editor::EditorVisualBlock;
-    using elmd::platform::editor::EditorVisualFootnoteHit;
-    using elmd::platform::editor::EditorVisualLine;
-    using elmd::platform::editor::EditorVisualMathHit;
-    using elmd::platform::editor::EditorVisualTable;
-    using elmd::platform::editor::EditorVisualTableCell;
+    using folia::platform::editor::EditorInteractionMap;
+    using folia::platform::editor::EditorScrollState;
+    using folia::platform::editor::EditorFootnoteControlKind;
+    using folia::platform::editor::EditorVisualBlock;
+    using folia::platform::editor::EditorVisualFootnoteHit;
+    using folia::platform::editor::EditorVisualLine;
+    using folia::platform::editor::EditorVisualMathHit;
+    using folia::platform::editor::EditorVisualTable;
+    using folia::platform::editor::EditorVisualTableCell;
 
     struct EditorSurfaceRenderer
     {
@@ -53,8 +53,8 @@ namespace winrt::ElMd
             std::wstring const& title,
             detail::EditorRenderFrame const& frame);
         void CancelPdfExport();
-        void SetTheme(elmd::ThemeProfile const& value);
-        elmd::ThemeProfile Theme() const;
+        void SetTheme(folia::ThemeProfile const& value);
+        folia::ThemeProfile Theme() const;
         void SetMathRenderingEnabled(bool enabled);
         bool MathRenderingEnabled() const;
         void ResetDocumentCaches();
@@ -64,13 +64,13 @@ namespace winrt::ElMd
         using TableAction = EditorTableAction;
         using FootnoteHit = EditorVisualFootnoteHit;
 
-        std::optional<elmd::TextPosition> HitTest(float x, float y) const;
-        std::optional<elmd::TextPosition> TaskCheckboxAt(float x, float y) const;
+        std::optional<folia::TextPosition> HitTest(float x, float y) const;
+        std::optional<folia::TextPosition> TaskCheckboxAt(float x, float y) const;
         std::optional<FootnoteHit> FootnoteAt(float x, float y) const;
-        std::optional<D2D1_RECT_F> CaretBounds(elmd::TextPosition position) const;
-        std::optional<elmd::TextPosition> MoveCaretVertically(elmd::TextPosition position, bool down, float& goalX) const;
-        std::optional<elmd::TextPosition> VisualLineStart(elmd::TextPosition position) const;
-        std::optional<elmd::TextPosition> VisualLineEnd(elmd::TextPosition position) const;
+        std::optional<D2D1_RECT_F> CaretBounds(folia::TextPosition position) const;
+        std::optional<folia::TextPosition> MoveCaretVertically(folia::TextPosition position, bool down, float& goalX) const;
+        std::optional<folia::TextPosition> VisualLineStart(folia::TextPosition position) const;
+        std::optional<folia::TextPosition> VisualLineEnd(folia::TextPosition position) const;
         void UpdatePointer(float x, float y);
         void ClearPointer();
         std::optional<TableAction> TableActionAt(float x, float y) const;
@@ -84,7 +84,7 @@ namespace winrt::ElMd
         float MaximumScrollOffset() const;
         float ViewportHeight() const;
         HANDLE FrameLatencyWaitableObject() const;
-        bool ScrollToPosition(elmd::TextPosition position);
+        bool ScrollToPosition(folia::TextPosition position);
 
     private:
         struct PreparedDocument;
@@ -116,7 +116,7 @@ namespace winrt::ElMd
         TreeSitterHighlighter treeSitter;
         std::shared_ptr<InvalidationState> invalidationState = std::make_shared<InvalidationState>();
         std::atomic_bool mathInvalidationQueued = false;
-        elmd::ThemeProfile themeProfile = elmd::default_theme_profile();
+        folia::ThemeProfile themeProfile = folia::default_theme_profile();
         std::uint64_t themeRevision = 1;
         EditorStyleSheet styleSheet = CreateEditorStyleSheet(themeProfile);
         EditorInteractionMap interactionMap;

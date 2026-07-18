@@ -1,16 +1,16 @@
 #include "pch.h"
 
-import elmd.core.render_model;
-import elmd.core.types;
+import folia.core.render_model;
+import folia.core.types;
 
 #include "editor/rendering/EditorContentPreparation.h"
 #include "editor/rendering/EditorTableBlockRenderer.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     std::optional<EditorTableBlockRenderer::PreparedTable> EditorTableBlockRenderer::Prepare(
-        elmd::RenderBlock const& block,
-        elmd::TextPosition caret,
+        folia::RenderBlock const& block,
+        folia::TextPosition caret,
         float tableWidth,
         bool svgSupported,
         bool requestEmbedded,
@@ -41,7 +41,7 @@ namespace winrt::ElMd
         {
             for (std::size_t column = 0; column < table.columnCount; ++column)
             {
-                auto sourceSpan = elmd::TextSpan{block.id, {0, 0}};
+                auto sourceSpan = folia::TextSpan{block.id, {0, 0}};
                 auto rangeIndex = row * table.columnCount + column;
                 if (rangeIndex < special.table_cell_spans.size())
                 {
@@ -51,12 +51,12 @@ namespace winrt::ElMd
                 auto renderCellIndex = row * table.columnCount + column;
                 if (renderCellIndex < special.table_cells.size())
                 {
-                    display = BuildDisplayInlineText(special.table_cells[renderCellIndex], caret, {sourceSpan.container_id, sourceSpan.source_range.end, elmd::TextAffinity::Downstream}, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, (std::max)(1.0f, columnWidth - 20.0f), svgSupported, requestEmbedded);
+                    display = BuildDisplayInlineText(special.table_cells[renderCellIndex], caret, {sourceSpan.container_id, sourceSpan.source_range.end, folia::TextAffinity::Downstream}, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, (std::max)(1.0f, columnWidth - 20.0f), svgSupported, requestEmbedded);
                 }
                 else
                 {
-                    AppendGeneratedText(display, U"\u200B", {sourceSpan.container_id, sourceSpan.source_range.start, elmd::TextAffinity::Downstream}, elmd::InlineStyle::plain());
-                    display.displayToSource.push_back({sourceSpan.container_id, sourceSpan.source_range.end, elmd::TextAffinity::Downstream});
+                    AppendGeneratedText(display, U"\u200B", {sourceSpan.container_id, sourceSpan.source_range.start, folia::TextAffinity::Downstream}, folia::InlineStyle::plain());
+                    display.displayToSource.push_back({sourceSpan.container_id, sourceSpan.source_range.end, folia::TextAffinity::Downstream});
                 }
                 prepared.pendingMath = prepared.pendingMath || display.pendingMath;
                 auto wide = ToWide(display.text);
@@ -68,9 +68,9 @@ namespace winrt::ElMd
                     textLayoutEngine.ApplyStyles(layout.Get(), display.ranges);
                     ApplyMathInlineObjects(layout.Get(), display.mathOverlays);
                     if (row == 0 && special.table_header_row) layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_RANGE{0, static_cast<UINT32>(wide.size())});
-                    auto alignment = column < special.table_aligns.size() ? special.table_aligns[column] : elmd::TableAlignment::None;
-                    if (alignment == elmd::TableAlignment::Center) layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-                    else if (alignment == elmd::TableAlignment::Right) layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
+                    auto alignment = column < special.table_aligns.size() ? special.table_aligns[column] : folia::TableAlignment::None;
+                    if (alignment == folia::TableAlignment::Center) layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                    else if (alignment == folia::TableAlignment::Right) layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
                     else layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
                     DWRITE_TEXT_METRICS metrics{};
                     if (SUCCEEDED(layout->GetMetrics(&metrics)))
@@ -145,9 +145,9 @@ namespace winrt::ElMd
     }
 
     void EditorTableBlockRenderer::Paint(
-        elmd::RenderBlock const& block,
+        folia::RenderBlock const& block,
         PreparedTable const& prepared,
-        elmd::TextSelection selection,
+        folia::TextSelection selection,
         float documentLeft,
         float top,
         float scrollOffset,

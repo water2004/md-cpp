@@ -1,12 +1,12 @@
 #include "pch.h"
 #include "editor/rendering/EditorContentPreparation.h"
 
-import elmd.core.render_model;
-import elmd.core.utf;
+import folia.core.render_model;
+import folia.core.utf;
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
-    DisplayInlineText BuildCodeBlockText(elmd::RenderBlock const& block, elmd::TextPosition caret, TreeSitterHighlighter& highlighter)
+    DisplayInlineText BuildCodeBlockText(folia::RenderBlock const& block, folia::TextPosition caret, TreeSitterHighlighter& highlighter)
     {
         DisplayInlineText display;
         auto const& special = block.special();
@@ -23,7 +23,7 @@ namespace winrt::ElMd
             // LF/CRLF/CR-aware projection as the core render model instead of
             // removing just '\n' (which left a visible DirectWrite line for
             // CRLF documents).
-            auto const lines = elmd::code_presentation_lines(code);
+            auto const lines = folia::code_presentation_lines(code);
             if (!lines.empty()) code.resize(lines.back().content_range.end);
         }
         if (editingRawFence)
@@ -32,7 +32,7 @@ namespace winrt::ElMd
                 display,
                 special.raw_source,
                 {block.id, {0, special.raw_source.size()}},
-                elmd::InlineStyle::plain(),
+                folia::InlineStyle::plain(),
                 false);
         }
         else
@@ -42,31 +42,31 @@ namespace winrt::ElMd
                 code,
                 block.id,
                 special.content_to_source,
-                elmd::InlineStyle::plain());
+                folia::InlineStyle::plain());
         }
         if (special.language && !code.empty())
         {
-            auto highlights = highlighter.Highlight(*special.language, elmd::cps_to_utf8(code));
+            auto highlights = highlighter.Highlight(*special.language, folia::cps_to_utf8(code));
             for (auto const& highlight : highlights)
             {
                 auto start = (std::min)(static_cast<std::size_t>(highlight.start), code.size());
                 auto end = (std::min)(start + static_cast<std::size_t>(highlight.length), code.size());
                 auto displayStart = editingRawFence
-                    ? static_cast<std::uint32_t>(elmd::char_index_to_utf16(
+                    ? static_cast<std::uint32_t>(folia::char_index_to_utf16(
                         special.raw_source,
                         special.content_to_source.empty() ? start : special.content_to_source[start]))
-                    : static_cast<std::uint32_t>(elmd::char_index_to_utf16(code, start));
+                    : static_cast<std::uint32_t>(folia::char_index_to_utf16(code, start));
                 auto displayEnd = editingRawFence
-                    ? static_cast<std::uint32_t>(elmd::char_index_to_utf16(
+                    ? static_cast<std::uint32_t>(folia::char_index_to_utf16(
                         special.raw_source,
                         special.content_to_source.empty() ? end : special.content_to_source[end]))
-                    : static_cast<std::uint32_t>(elmd::char_index_to_utf16(code, end));
+                    : static_cast<std::uint32_t>(folia::char_index_to_utf16(code, end));
                 if (displayStart < displayEnd)
                 {
                     display.ranges.push_back(InlineStyleRange{
                         displayStart,
                         displayEnd - displayStart,
-                        elmd::InlineStyle::plain(),
+                        folia::InlineStyle::plain(),
                         false,
                         highlight.kind,
                     });
@@ -83,17 +83,17 @@ namespace winrt::ElMd
             AppendGeneratedText(
                 display,
                 U"\u200B",
-                {block.id, endpoint, elmd::TextAffinity::Downstream},
-                elmd::InlineStyle::plain(),
+                {block.id, endpoint, folia::TextAffinity::Downstream},
+                folia::InlineStyle::plain(),
                 EditorDisplayPositionKind::Source);
         }
-        display.displayToSource.push_back({block.id, endpoint, elmd::TextAffinity::Downstream});
+        display.displayToSource.push_back({block.id, endpoint, folia::TextAffinity::Downstream});
         return display;
     }
 
     DisplayInlineText BuildMathBlockText(
-        elmd::RenderBlock const& block,
-        elmd::TextPosition caret,
+        folia::RenderBlock const& block,
+        folia::TextPosition caret,
         MathJaxRenderer& mathJax,
         SvgNormalizer& svgNormalizer,
         D2D1_COLOR_F svgColor,
@@ -114,23 +114,23 @@ namespace winrt::ElMd
                     ? special.tex.size()
                     : special.content_to_source.back();
             if (editing)
-                AppendSourceText(display, special.raw_source, {block.id, {0, endpoint}}, elmd::InlineStyle::plain(), false);
+                AppendSourceText(display, special.raw_source, {block.id, {0, endpoint}}, folia::InlineStyle::plain(), false);
             else
-                AppendProjectedSourceText(display, special.tex, block.id, special.content_to_source, elmd::InlineStyle::plain());
+                AppendProjectedSourceText(display, special.tex, block.id, special.content_to_source, folia::InlineStyle::plain());
             if (display.text.empty())
             {
                 AppendGeneratedText(
                     display,
                     U"\u200B",
-                    {block.id, endpoint, elmd::TextAffinity::Downstream},
-                    elmd::InlineStyle::plain(),
+                    {block.id, endpoint, folia::TextAffinity::Downstream},
+                    folia::InlineStyle::plain(),
                     EditorDisplayPositionKind::Source);
             }
-            display.displayToSource.push_back({block.id, endpoint, elmd::TextAffinity::Downstream});
+            display.displayToSource.push_back({block.id, endpoint, folia::TextAffinity::Downstream});
             return display;
         }
 
-        auto rawMath = mathJax.GetOrQueue(elmd::cps_to_utf8(special.tex), true, fontSize, containerWidth, requestMath);
+        auto rawMath = mathJax.GetOrQueue(folia::cps_to_utf8(special.tex), true, fontSize, containerWidth, requestMath);
         auto math = rawMath ? NormalizeMathJaxSvg(*rawMath, svgNormalizer, svgColor, fontSize, requestMath) : std::nullopt;
         display.pendingMath = !rawMath || !math;
         if (editing)
@@ -139,7 +139,7 @@ namespace winrt::ElMd
                 display,
                 special.raw_source,
                 {block.id, {0, special.raw_source.size()}},
-                elmd::InlineStyle::plain(),
+                folia::InlineStyle::plain(),
                 false);
             // The preview is rendered below this editable source as its own
             // non-interactive visual block. It must never enter the source
@@ -158,11 +158,11 @@ namespace winrt::ElMd
                 special.tex,
                 block.id,
                 special.content_to_source,
-                elmd::InlineStyle::plain());
+                folia::InlineStyle::plain());
         }
         else
         {
-            AppendMathFragments(display, *math, span, false, elmd::InlineStyle::plain());
+            AppendMathFragments(display, *math, span, false, folia::InlineStyle::plain());
         }
         const auto endpoint = editing
             ? special.raw_source.size()
@@ -174,11 +174,11 @@ namespace winrt::ElMd
             AppendGeneratedText(
                 display,
                 U"\u200B",
-                {block.id, endpoint, elmd::TextAffinity::Downstream},
-                elmd::InlineStyle::plain(),
+                {block.id, endpoint, folia::TextAffinity::Downstream},
+                folia::InlineStyle::plain(),
                 EditorDisplayPositionKind::Source);
         }
-        display.displayToSource.push_back({block.id, endpoint, elmd::TextAffinity::Downstream});
+        display.displayToSource.push_back({block.id, endpoint, folia::TextAffinity::Downstream});
         return display;
     }
 

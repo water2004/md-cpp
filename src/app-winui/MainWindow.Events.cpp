@@ -1,9 +1,9 @@
 #include "pch.h"
 #include "MainWindow.xaml.h"
 
-import elmd.core.command;
+import folia.core.command;
 
-namespace winrt::ElMd::implementation
+namespace winrt::Folia::implementation
 {
     void MainWindow::AttachControllers()
     {
@@ -17,7 +17,7 @@ namespace winrt::ElMd::implementation
             editorSession,
             editorRenderer,
             textInputController,
-            [this](elmd::Command const& command) { return ExecuteEditorCommand(command); },
+            [this](folia::Command const& command) { return ExecuteEditorCommand(command); },
             [this](winrt::hstring const& status) { SetStatus(status); },
             [this](bool active, std::optional<double> value, bool cancellable)
             {
@@ -39,7 +39,7 @@ namespace winrt::ElMd::implementation
             editorSession,
             editorRenderer,
             textInputController,
-            [this](elmd::Command const& command) { return ExecuteEditorCommand(command); },
+            [this](folia::Command const& command) { return ExecuteEditorCommand(command); },
             [this] { documentController.CopySelection(); },
             [this] { documentController.CutSelection(); },
             [this] { documentController.PasteClipboard(); },
@@ -50,7 +50,7 @@ namespace winrt::ElMd::implementation
             scrollController,
             textInputController,
             EditorSurface(),
-            [this](elmd::Command const& command) { return ExecuteEditorCommand(command); },
+            [this](folia::Command const& command) { return ExecuteEditorCommand(command); },
             [this] { RenderEditorSurface(); },
             [this](std::string href) { documentController.OpenLink(std::move(href)); },
             [this](auto hit, auto position) { ShowFootnoteFlyout(hit, position); },

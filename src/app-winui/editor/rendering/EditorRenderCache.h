@@ -4,7 +4,7 @@
 
 #include "editor/rendering/EditorRenderResources.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct DecodedGifAnimation;
     struct GifInitialDecode;

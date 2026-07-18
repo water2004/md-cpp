@@ -3,7 +3,7 @@
 #include "editor/rendering/EditorRenderCache.h"
 #include "editor/rendering/EditorRenderResources.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct EditorSvgPainter
     {

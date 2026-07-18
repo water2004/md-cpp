@@ -2,14 +2,14 @@
 
 #include "editor/session/EditorRenderFrame.h"
 
-import elmd.core.editor;
-import elmd.core.command;
-import elmd.core.render_model;
-import elmd.core.search;
-import elmd.core.source_editor;
-import elmd.core.theme;
+import folia.core.editor;
+import folia.core.command;
+import folia.core.render_model;
+import folia.core.search;
+import folia.core.source_editor;
+import folia.core.theme;
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct EditorDocumentInteraction
     {
@@ -29,20 +29,20 @@ namespace winrt::ElMd
         {
             struct SearchTarget
             {
-                std::vector<elmd::TextSpan> spans;
-                std::optional<elmd::SourceRange> sourceRange;
+                std::vector<folia::TextSpan> spans;
+                std::optional<folia::SourceRange> sourceRange;
             };
 
-            elmd::Editor editor;
-            std::optional<elmd::SourceEditor> sourceEditor;
-            elmd::RenderModel renderModel;
-            elmd::ThemeProfile theme = elmd::default_theme_profile();
+            folia::Editor editor;
+            std::optional<folia::SourceEditor> sourceEditor;
+            folia::RenderModel renderModel;
+            folia::ThemeProfile theme = folia::default_theme_profile();
             std::wstring baseDirectory;
             std::size_t characterCount = 0;
             std::vector<SearchTarget> searchTargets;
             std::vector<EditorSearchHighlight> searchHighlights;
             std::optional<std::size_t> activeSearchMatch;
-            std::vector<elmd::RenderedSearchFragment> renderedSearchFragments;
+            std::vector<folia::RenderedSearchFragment> renderedSearchFragments;
             std::uint64_t renderedSearchRevision = (std::numeric_limits<std::uint64_t>::max)();
         };
     }
@@ -64,14 +64,14 @@ namespace winrt::ElMd
             LoadProgress progress = {});
         void SaveAs(winrt::Windows::Storage::StorageFile const& file);
         void SetText(winrt::hstring const& text);
-        void SetTheme(elmd::ThemeProfile const& theme);
+        void SetTheme(folia::ThemeProfile const& theme);
         bool IsSourceMode() const;
         bool EnterSourceMode();
         bool ExitSourceMode();
         bool ToggleSourceMode();
-        bool ExecuteCommand(elmd::Command const& command);
-        void SetSelection(elmd::TextPosition anchor, elmd::TextPosition active);
-        void SetSelection(elmd::TextSelection selection);
+        bool ExecuteCommand(folia::Command const& command);
+        void SetSelection(folia::TextPosition anchor, folia::TextPosition active);
+        void SetSelection(folia::TextSelection selection);
         bool HasSelection() const;
         std::string SelectedTextUtf8() const;
         bool HasFile() const;
@@ -81,48 +81,48 @@ namespace winrt::ElMd
         winrt::hstring Path() const;
         uint64_t Revision() const;
         std::size_t CharacterCount() const;
-        std::wstring TextInputTextUtf16(elmd::NodeId containerId) const;
-        std::size_t TextInputAcpOffset(elmd::TextPosition position) const;
-        elmd::TextPosition TextInputPositionFromAcp(
-            elmd::NodeId containerId,
+        std::wstring TextInputTextUtf16(folia::NodeId containerId) const;
+        std::size_t TextInputAcpOffset(folia::TextPosition position) const;
+        folia::TextPosition TextInputPositionFromAcp(
+            folia::NodeId containerId,
             std::size_t offset,
-            elmd::TextAffinity affinity = elmd::TextAffinity::Downstream) const;
-        std::optional<std::u32string> EditableSource(elmd::NodeId id) const;
-        std::optional<EditorDocumentInteraction> InteractionAt(elmd::TextPosition position) const;
-        elmd::TextSelection Selection() const;
-        elmd::RenderModel const& RenderModel() const;
-        elmd::RenderModel BuildPrintRenderModel() const;
-        std::optional<elmd::TextPosition> FootnoteDefinitionTarget(std::string_view label) const;
-        std::optional<elmd::TextPosition> FirstFootnoteReferenceTarget(std::string_view label) const;
+            folia::TextAffinity affinity = folia::TextAffinity::Downstream) const;
+        std::optional<std::u32string> EditableSource(folia::NodeId id) const;
+        std::optional<EditorDocumentInteraction> InteractionAt(folia::TextPosition position) const;
+        folia::TextSelection Selection() const;
+        folia::RenderModel const& RenderModel() const;
+        folia::RenderModel BuildPrintRenderModel() const;
+        std::optional<folia::TextPosition> FootnoteDefinitionTarget(std::string_view label) const;
+        std::optional<folia::TextPosition> FirstFootnoteReferenceTarget(std::string_view label) const;
         std::string FootnotePreview(std::string_view label) const;
         std::wstring const& BaseDirectory() const;
         EditorSearchSummary Search(
             std::u32string_view query,
-            elmd::SearchOptions options = {});
+            folia::SearchOptions options = {});
         bool ActivateSearchMatch(std::size_t index);
         bool ReplaceSearchMatch(
             std::size_t index,
             std::u32string_view query,
             std::u32string_view replacement,
-            elmd::SearchOptions options = {});
+            folia::SearchOptions options = {});
         bool ReplaceAllSearchMatches(
             std::u32string_view query,
             std::u32string_view replacement,
-            elmd::SearchOptions options = {});
+            folia::SearchOptions options = {});
         void ClearSearch();
         detail::EditorRenderFrame RenderFrame();
 
     private:
         void RebuildCore(LoadProgress progress = {});
-        void RebuildRenderModel(elmd::EditorDocumentChange const* change = nullptr);
+        void RebuildRenderModel(folia::EditorDocumentChange const* change = nullptr);
         bool ShouldVirtualizeRenderModel() const;
         void MaterializeRenderBlocks(std::size_t begin, std::size_t end);
         void ReleaseRenderBlocksOutside(std::size_t begin, std::size_t end);
         void RefreshCharacterCount();
-        std::optional<std::u32string_view> TextInputSourceView(elmd::NodeId containerId) const;
+        std::optional<std::u32string_view> TextInputSourceView(folia::NodeId containerId) const;
         void RebuildSearchHighlights();
-        bool CommitRenderedSearchReplacement(std::span<const elmd::RenderedSearchMatch> matches);
-        std::span<const elmd::RenderedSearchFragment> RenderedSearchFragments();
+        bool CommitRenderedSearchReplacement(std::span<const folia::RenderedSearchMatch> matches);
+        std::span<const folia::RenderedSearchFragment> RenderedSearchFragments();
 
         winrt::Windows::Storage::StorageFile file_{ nullptr };
         winrt::hstring text_;

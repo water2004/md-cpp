@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct AppSettings
     {

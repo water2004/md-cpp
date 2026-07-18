@@ -3,9 +3,9 @@
 #include "editor/rendering/EditorPreparedDocument.h"
 #include "export/EditorPdfPrintJob.h"
 
-import elmd.core.layout_plan;
+import folia.core.layout_plan;
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     namespace
     {
@@ -24,7 +24,7 @@ namespace winrt::ElMd
         EditorInteractionMap interaction;
         std::vector<D2D1_RECT_F> nonInteractive;
         float totalHeight = 0.0f;
-        std::vector<elmd::PrintBlockExtent> extents;
+        std::vector<folia::PrintBlockExtent> extents;
         std::size_t nextBlock = 0;
         float nextSourceTop = 0.0f;
         std::size_t completedPages = 0;
@@ -259,9 +259,9 @@ namespace winrt::ElMd
                 };
             }
 
-            auto remaining = std::span<elmd::PrintBlockExtent const>{state->extents}
+            auto remaining = std::span<folia::PrintBlockExtent const>{state->extents}
                 .subspan((std::min)(state->nextBlock, state->extents.size()));
-            auto pageStep = elmd::plan_next_print_page(
+            auto pageStep = folia::plan_next_print_page(
                 remaining,
                 state->nextSourceTop,
                 preparedDocument->totalHeight,

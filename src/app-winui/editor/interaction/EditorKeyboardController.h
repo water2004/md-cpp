@@ -4,13 +4,13 @@
 #include "editor/rendering/EditorSurfaceRenderer.h"
 #include "editor/interaction/EditorTextInputController.h"
 
-import elmd.platform.editor_input_command;
+import folia.platform.editor_input_command;
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct EditorKeyboardController
     {
-        using ExecuteCommand = std::function<bool(elmd::Command const&)>;
+        using ExecuteCommand = std::function<bool(folia::Command const&)>;
         using Action = std::function<void()>;
         using Render = std::function<void()>;
 
@@ -30,7 +30,7 @@ namespace winrt::ElMd
         void ResetCaretGoal();
 
     private:
-        bool DispatchInputAction(elmd::platform::editor::EditorInputAction const& action);
+        bool DispatchInputAction(folia::platform::editor::EditorInputAction const& action);
         bool MoveCaretVerticalStep(bool down, bool extend);
         bool KeyDown(winrt::Windows::System::VirtualKey key) const;
 

@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "editor/interaction/EditorSidebarController.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     void EditorSidebarController::Attach(
         EditorSession& session,
@@ -56,7 +56,7 @@ namespace winrt::ElMd
         if (outlineContentKey_ == contentKey) return;
         auto const flatItems = session_->RenderModel().outline.flat_items();
         std::vector<winrt::Windows::Foundation::IInspectable> labels;
-        std::vector<elmd::TextPosition> positions;
+        std::vector<folia::TextPosition> positions;
         labels.reserve(flatItems.size());
         positions.reserve(flatItems.size());
         for (auto const* item : flatItems)

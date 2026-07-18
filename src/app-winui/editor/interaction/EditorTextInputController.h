@@ -3,11 +3,11 @@
 #include "editor/session/EditorSession.h"
 #include "editor/rendering/EditorSurfaceRenderer.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct EditorTextInputController
     {
-        using ExecuteCommand = std::function<bool(elmd::Command const&)>;
+        using ExecuteCommand = std::function<bool(folia::Command const&)>;
         using Render = std::function<void()>;
         using WindowHandle = std::function<HWND()>;
 
@@ -53,7 +53,7 @@ namespace winrt::ElMd
         winrt::event_token textUpdatingToken_{};
         std::size_t knownLength_ = 0;
         std::uint64_t knownRevision_ = 0;
-        elmd::NodeId activeContainer_{};
+        folia::NodeId activeContainer_{};
         std::wstring knownText_;
         std::shared_ptr<int> lifetime_;
         bool focused_ = false;

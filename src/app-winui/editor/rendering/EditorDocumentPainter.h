@@ -1,15 +1,15 @@
 #pragma once
 
-import elmd.platform.editor_interaction;
+import folia.platform.editor_interaction;
 
 #include "EditorContentPreparation.h"
 #include "EditorRenderResources.h"
 #include "EditorStyleSheet.h"
 #include "editor/session/EditorRenderFrame.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
-    using elmd::platform::editor::EditorInteractionMap;
+    using folia::platform::editor::EditorInteractionMap;
 
     class EditorDocumentPainter
     {
@@ -29,7 +29,7 @@ namespace winrt::ElMd
             std::optional<D2D1_POINT_2F> pointerPosition,
             bool printMode,
             float documentRight,
-            elmd::TextSelection selection,
+            folia::TextSelection selection,
             std::span<const detail::EditorSearchHighlight> searchHighlights,
             std::unordered_map<std::uint64_t, std::size_t> const& editableIndex);
 
@@ -51,11 +51,11 @@ namespace winrt::ElMd
             EditorDisplayMapping const& mapping);
         void ApplyNestedCodeHighlights(
             DisplayInlineText& display,
-            elmd::RenderBlock const& parent);
+            folia::RenderBlock const& parent);
         void DrawFlowDecorations(
             IDWriteTextLayout* layout,
             D2D1_POINT_2F origin,
-            elmd::RenderBlock const& parent,
+            folia::RenderBlock const& parent,
             DisplayInlineText const& display);
 
         static std::vector<PositionedMath> PositionMath(
@@ -64,8 +64,8 @@ namespace winrt::ElMd
             float width);
 
     private:
-        bool PositionLess(elmd::TextPosition left, elmd::TextPosition right) const;
-        bool Selected(elmd::TextPosition position) const;
+        bool PositionLess(folia::TextPosition left, folia::TextPosition right) const;
+        bool Selected(folia::TextPosition position) const;
 
         EditorRenderResources& resources;
         EditorStyleSheet const& styleSheet;
@@ -74,10 +74,10 @@ namespace winrt::ElMd
         std::optional<D2D1_POINT_2F> pointerPosition;
         bool printMode = false;
         float documentRight = 0.0f;
-        elmd::TextSelection selection;
+        folia::TextSelection selection;
         std::span<const detail::EditorSearchHighlight> searchHighlights;
         std::unordered_map<std::uint64_t, std::size_t> const& editableIndex;
-        elmd::TextPosition selectionStart;
-        elmd::TextPosition selectionEnd;
+        folia::TextPosition selectionStart;
+        folia::TextPosition selectionEnd;
     };
 }

@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "editor/rendering/EditorRenderCache.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     ::Microsoft::WRL::ComPtr<IDWriteTextLayout> EditorRenderCache::FindTextLayout(std::uint64_t key)
     {

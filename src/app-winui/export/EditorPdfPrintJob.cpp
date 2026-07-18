@@ -2,7 +2,7 @@
 #include "export/EditorPdfPrintJob.h"
 #include "localization/Localization.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     namespace
     {

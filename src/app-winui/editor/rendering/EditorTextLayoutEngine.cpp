@@ -1,14 +1,14 @@
 #include "pch.h"
 
-import elmd.core.render_model;
-import elmd.core.theme;
-import elmd.core.types;
-import elmd.core.utf;
+import folia.core.render_model;
+import folia.core.theme;
+import folia.core.types;
+import folia.core.utf;
 
 #include "editor/rendering/EditorContentPreparation.h"
 #include "editor/rendering/EditorTextLayoutEngine.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     EditorTextLayoutEngine::EditorTextLayoutEngine(EditorRenderResources& resources, EditorStyleSheet const& styleSheet)
         : resources(resources), styleSheet(styleSheet)
@@ -44,7 +44,7 @@ namespace winrt::ElMd
                 auto contentStart = lineStart;
                 while (contentStart < lineEnd && contentStart < display.displayToSource.size()
                     && display.displayToSource[contentStart].kind == EditorDisplayPositionKind::BoundaryDecoration
-                    && display.displayToSource[contentStart].affinity == elmd::TextAffinity::Downstream)
+                    && display.displayToSource[contentStart].affinity == folia::TextAffinity::Downstream)
                 {
                     ++contentStart;
                 }
@@ -83,14 +83,14 @@ namespace winrt::ElMd
 
         void InsertIndent(DisplayInlineText& display, UINT32 position, float width)
         {
-            const auto textLength = static_cast<UINT32>(elmd::utf16_len(display.text));
+            const auto textLength = static_cast<UINT32>(folia::utf16_len(display.text));
             position = (std::min)(position, textLength);
             EditorDisplayPosition mapping = position < display.displayToSource.size()
                 ? display.displayToSource[position]
                 : display.displayToSource.empty()
                     ? EditorDisplayPosition{}
                     : display.displayToSource.back();
-            mapping.affinity = elmd::TextAffinity::Downstream;
+            mapping.affinity = folia::TextAffinity::Downstream;
             mapping.kind = EditorDisplayPositionKind::BoundaryDecoration;
             display.text.insert(display.text.begin() + static_cast<std::ptrdiff_t>(CodepointIndexAtUtf16(display.text, position)), U'\uFFFC');
             auto mappingIndex = (std::min)(static_cast<std::size_t>(position), display.displayToSource.size());
@@ -103,7 +103,7 @@ namespace winrt::ElMd
         {
             DisplayInlineText result;
             result.pendingMath = source.pendingMath;
-            const auto sourceLength = static_cast<UINT32>(elmd::utf16_len(source.text));
+            const auto sourceLength = static_cast<UINT32>(folia::utf16_len(source.text));
             start = (std::min)(start, sourceLength);
             end = (std::clamp)(end, start, sourceLength);
             const auto beginCodepoint = CodepointIndexAtUtf16(source.text, start);
@@ -183,7 +183,7 @@ namespace winrt::ElMd
             return level;
         }
 
-        D2D1_COLOR_F ToD2D(elmd::Color color)
+        D2D1_COLOR_F ToD2D(folia::Color color)
         {
             constexpr auto scale = 1.0f / 255.0f;
             return D2D1::ColorF(
@@ -193,7 +193,7 @@ namespace winrt::ElMd
                 color.a * scale);
         }
 
-        float BaseFontSize(elmd::InlineStyle const& style, EditorStyleSheet const& styleSheet)
+        float BaseFontSize(folia::InlineStyle const& style, EditorStyleSheet const& styleSheet)
         {
             if (style.heading_level)
             {
@@ -209,7 +209,7 @@ namespace winrt::ElMd
             return style.code ? styleSheet.code.size : styleSheet.body.size;
         }
 
-        float BaseLineHeight(elmd::InlineStyle const& style, EditorStyleSheet const& styleSheet)
+        float BaseLineHeight(folia::InlineStyle const& style, EditorStyleSheet const& styleSheet)
         {
             if (style.heading_level)
             {
@@ -495,13 +495,13 @@ namespace winrt::ElMd
                         layout->SetDrawingEffect(brush.Get(), textRange);
                     }
                 }
-                if (presentation->baseline != elmd::InlineBaseline::Normal)
+                if (presentation->baseline != folia::InlineBaseline::Normal)
                 {
                     ::Microsoft::WRL::ComPtr<IDWriteTypography> typography;
                     if (SUCCEEDED(resources.dwriteFactory->CreateTypography(typography.GetAddressOf())))
                     {
                         DWRITE_FONT_FEATURE feature{
-                            presentation->baseline == elmd::InlineBaseline::Superscript
+                            presentation->baseline == folia::InlineBaseline::Superscript
                                 ? DWRITE_FONT_FEATURE_TAG_SUPERSCRIPT
                                 : DWRITE_FONT_FEATURE_TAG_SUBSCRIPT,
                             1};

@@ -3,7 +3,7 @@
 
 namespace
 {
-    D2D1_COLOR_F ToD2D(elmd::Color color)
+    D2D1_COLOR_F ToD2D(folia::Color color)
     {
         constexpr auto scale = 1.0f / 255.0f;
         return D2D1::ColorF(color.r * scale, color.g * scale, color.b * scale, color.a * scale);
@@ -15,7 +15,7 @@ namespace
         return { value.c_str(), value.size() };
     }
 
-    winrt::ElMd::EditorFontStyle ConvertFont(elmd::ThemeFont const& font)
+    winrt::Folia::EditorFontStyle ConvertFont(folia::ThemeFont const& font)
     {
         return {
             ToWide(font.family),
@@ -27,9 +27,9 @@ namespace
     }
 }
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
-    EditorStyleSheet CreateEditorStyleSheet(elmd::ThemeProfile const& theme)
+    EditorStyleSheet CreateEditorStyleSheet(folia::ThemeProfile const& theme)
     {
         EditorStyleSheet sheet;
         sheet.body = ConvertFont(theme.typography.body);

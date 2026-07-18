@@ -1,9 +1,9 @@
 #include "pch.h"
 #include "MainWindow.xaml.h"
 
-import elmd.core.command;
+import folia.core.command;
 
-namespace winrt::ElMd::implementation
+namespace winrt::Folia::implementation
 {
     void MainWindow::RegisterCommandHandlers()
     {
@@ -34,87 +34,87 @@ namespace winrt::ElMd::implementation
 
         BoldButton().Click([this](auto const&, auto const&)
         {
-            elmd::Command command;
-            command.kind = elmd::CommandKind::ToggleStrong;
+            folia::Command command;
+            command.kind = folia::CommandKind::ToggleStrong;
             ExecuteEditorCommand(command);
         });
 
         ItalicButton().Click([this](auto const&, auto const&)
         {
-            elmd::Command command;
-            command.kind = elmd::CommandKind::ToggleEmphasis;
+            folia::Command command;
+            command.kind = folia::CommandKind::ToggleEmphasis;
             ExecuteEditorCommand(command);
         });
 
         StrikeButton().Click([this](auto const&, auto const&)
         {
-            elmd::Command command;
-            command.kind = elmd::CommandKind::ToggleStrikethrough;
+            folia::Command command;
+            command.kind = folia::CommandKind::ToggleStrikethrough;
             ExecuteEditorCommand(command);
         });
 
         InlineCodeButton().Click([this](auto const&, auto const&)
         {
-            elmd::Command command;
-            command.kind = elmd::CommandKind::ToggleInlineCode;
+            folia::Command command;
+            command.kind = folia::CommandKind::ToggleInlineCode;
             ExecuteEditorCommand(command);
         });
 
         Heading1Button().Click([this](auto const&, auto const&)
         {
-            elmd::Command command;
-            command.kind = elmd::CommandKind::SetHeading;
+            folia::Command command;
+            command.kind = folia::CommandKind::SetHeading;
             command.level = 1;
             ExecuteEditorCommand(command);
         });
 
         Heading2Button().Click([this](auto const&, auto const&)
         {
-            elmd::Command command;
-            command.kind = elmd::CommandKind::SetHeading;
+            folia::Command command;
+            command.kind = folia::CommandKind::SetHeading;
             command.level = 2;
             ExecuteEditorCommand(command);
         });
 
         QuoteButton().Click([this](auto const&, auto const&)
         {
-            elmd::Command command;
-            command.kind = elmd::CommandKind::ToggleBlockQuote;
+            folia::Command command;
+            command.kind = folia::CommandKind::ToggleBlockQuote;
             ExecuteEditorCommand(command);
         });
 
         UnorderedListButton().Click([this](auto const&, auto const&)
         {
-            elmd::Command command;
-            command.kind = elmd::CommandKind::ToggleUnorderedList;
+            folia::Command command;
+            command.kind = folia::CommandKind::ToggleUnorderedList;
             ExecuteEditorCommand(command);
         });
 
         OrderedListButton().Click([this](auto const&, auto const&)
         {
-            elmd::Command command;
-            command.kind = elmd::CommandKind::ToggleOrderedList;
+            folia::Command command;
+            command.kind = folia::CommandKind::ToggleOrderedList;
             ExecuteEditorCommand(command);
         });
 
         TaskListButton().Click([this](auto const&, auto const&)
         {
-            elmd::Command command;
-            command.kind = elmd::CommandKind::ToggleTaskList;
+            folia::Command command;
+            command.kind = folia::CommandKind::ToggleTaskList;
             ExecuteEditorCommand(command);
         });
 
         CodeBlockButton().Click([this](auto const&, auto const&)
         {
-            elmd::Command command;
-            command.kind = elmd::CommandKind::InsertCodeBlock;
+            folia::Command command;
+            command.kind = folia::CommandKind::InsertCodeBlock;
             ExecuteEditorCommand(command);
         });
 
         TableButton().Click([this](auto const&, auto const&)
         {
-            elmd::Command command;
-            command.kind = elmd::CommandKind::InsertTable;
+            folia::Command command;
+            command.kind = folia::CommandKind::InsertTable;
             command.rows = 2;
             command.cols = 3;
             ExecuteEditorCommand(command);
@@ -122,22 +122,22 @@ namespace winrt::ElMd::implementation
 
         InlineMathButton().Click([this](auto const&, auto const&)
         {
-            elmd::Command command;
-            command.kind = elmd::CommandKind::InsertMathInline;
+            folia::Command command;
+            command.kind = folia::CommandKind::InsertMathInline;
             ExecuteEditorCommand(command);
         });
 
         BlockMathButton().Click([this](auto const&, auto const&)
         {
-            elmd::Command command;
-            command.kind = elmd::CommandKind::InsertMathBlock;
+            folia::Command command;
+            command.kind = folia::CommandKind::InsertMathBlock;
             ExecuteEditorCommand(command);
         });
 
         LinkButton().Click([this](auto const&, auto const&)
         {
-            elmd::Command command;
-            command.kind = elmd::CommandKind::InsertLink;
+            folia::Command command;
+            command.kind = folia::CommandKind::InsertLink;
             command.href = U"https://";
             ExecuteEditorCommand(command);
         });
@@ -149,15 +149,15 @@ namespace winrt::ElMd::implementation
 
         FootnoteButton().Click([this](auto const&, auto const&)
         {
-            elmd::Command command;
-            command.kind = elmd::CommandKind::InsertFootnote;
+            folia::Command command;
+            command.kind = folia::CommandKind::InsertFootnote;
             ExecuteEditorCommand(command);
         });
 
         auto toggleCallout = [this](std::u32string kind)
         {
-            elmd::Command command;
-            command.kind = elmd::CommandKind::ToggleCallout;
+            folia::Command command;
+            command.kind = folia::CommandKind::ToggleCallout;
             command.callout_kind = std::move(kind);
             ExecuteEditorCommand(command);
         };
@@ -167,8 +167,8 @@ namespace winrt::ElMd::implementation
 
         TocButton().Click([this](auto const&, auto const&)
         {
-            elmd::Command command;
-            command.kind = elmd::CommandKind::InsertToc;
+            folia::Command command;
+            command.kind = folia::CommandKind::InsertToc;
             ExecuteEditorCommand(command);
         });
 
@@ -189,8 +189,8 @@ namespace winrt::ElMd::implementation
 
         SelectAllMenuItem().Click([this](auto const&, auto const&)
         {
-            elmd::Command command;
-            command.kind = elmd::CommandKind::SelectAll;
+            folia::Command command;
+            command.kind = folia::CommandKind::SelectAll;
             ExecuteEditorCommand(command);
         });
     }

@@ -2,7 +2,7 @@
 
 #include "editor/rendering/EditorStyleSheet.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct EditorResizeResult
     {

@@ -3,7 +3,7 @@
 #include "settings/AppSettings.h"
 #include "theme/ThemeCatalog.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     class SettingsView : public std::enable_shared_from_this<SettingsView>
     {
@@ -13,13 +13,13 @@ namespace winrt::ElMd
         SettingsView(
             AppSettings settings,
             std::shared_ptr<ThemeCatalog> catalog,
-            elmd::Theme systemVariant,
+            folia::Theme systemVariant,
             HWND owner,
             ApplySettings applySettings);
 
         winrt::Microsoft::UI::Xaml::Controls::NavigationView Root() const { return navigation_; }
-        void Reset(AppSettings settings, elmd::Theme systemVariant);
-        void SetSystemVariant(elmd::Theme variant);
+        void Reset(AppSettings settings, folia::Theme systemVariant);
+        void SetSystemVariant(folia::Theme variant);
         void SetNavigationWidth(double width) { navigation_.OpenPaneLength(width); }
         void Detach();
 
@@ -45,7 +45,7 @@ namespace winrt::ElMd
         AppSettings settings_;
         AppSettings appliedSettings_;
         std::shared_ptr<ThemeCatalog> catalog_;
-        elmd::Theme systemVariant_ = elmd::Theme::Dark;
+        folia::Theme systemVariant_ = folia::Theme::Dark;
         HWND owner_ = nullptr;
         ApplySettings applySettings_;
         winrt::Microsoft::UI::Xaml::Controls::NavigationView navigation_;

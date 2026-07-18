@@ -6,11 +6,11 @@
 #include <string_view>
 #include <vector>
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct ThemeEntry
     {
-        elmd::ThemeProfile profile;
+        folia::ThemeProfile profile;
         std::filesystem::path path;
         bool builtIn = false;
     };
@@ -21,7 +21,7 @@ namespace winrt::ElMd
         void Refresh();
         std::vector<ThemeEntry> const& Entries() const { return entries_; }
         std::vector<winrt::hstring> const& Diagnostics() const { return diagnostics_; }
-        ThemeLoadResult Resolve(std::string_view id, elmd::Theme systemVariant) const;
+        ThemeLoadResult Resolve(std::string_view id, folia::Theme systemVariant) const;
         std::optional<winrt::hstring> Import(std::filesystem::path const& source);
         std::optional<winrt::hstring> Remove(std::string_view id);
 

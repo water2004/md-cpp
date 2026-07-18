@@ -1,19 +1,19 @@
 #include "pch.h"
 #include "editor/session/EditorSession.h"
 
-import elmd.core.editor;
-import elmd.core.document_text;
-import elmd.core.document_interaction;
-import elmd.core.document_footnotes;
-import elmd.core.render_builder;
-import elmd.core.render_model;
-import elmd.core.search;
-import elmd.core.serializer;
-import elmd.core.source_editor;
-import elmd.core.source_render;
-import elmd.core.utf;
+import folia.core.editor;
+import folia.core.document_text;
+import folia.core.document_interaction;
+import folia.core.document_footnotes;
+import folia.core.render_builder;
+import folia.core.render_model;
+import folia.core.search;
+import folia.core.serializer;
+import folia.core.source_editor;
+import folia.core.source_render;
+import folia.core.utf;
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     namespace
     {
@@ -64,27 +64,27 @@ namespace winrt::ElMd
         // This remains a boundary projection and never becomes editor state.
         struct SerializedSourceProjection
         {
-            explicit SerializedSourceProjection(elmd::SerializedMarkdownProjection value)
+            explicit SerializedSourceProjection(folia::SerializedMarkdownProjection value)
                 : projection(std::move(value)) {}
 
-            std::size_t SourceOffset(elmd::TextPosition position) const
+            std::size_t SourceOffset(folia::TextPosition position) const
             {
-                return elmd::serialized_offset_for_source_position(projection, position)
+                return folia::serialized_offset_for_source_position(projection, position)
                     .value_or((std::min)(position.source_offset, projection.text.size()));
             }
 
-            elmd::TextPosition Position(std::size_t sourceOffset, elmd::TextAffinity affinity) const
+            folia::TextPosition Position(std::size_t sourceOffset, folia::TextAffinity affinity) const
             {
-                return elmd::source_position_for_serialized_offset(projection, sourceOffset, affinity)
-                    .value_or(elmd::TextPosition{});
+                return folia::source_position_for_serialized_offset(projection, sourceOffset, affinity)
+                    .value_or(folia::TextPosition{});
             }
 
-            elmd::SerializedMarkdownProjection projection;
+            folia::SerializedMarkdownProjection projection;
         };
 
-        bool ExecuteSourceCommand(elmd::SourceEditor& editor, elmd::Command const& command)
+        bool ExecuteSourceCommand(folia::SourceEditor& editor, folia::Command const& command)
         {
-            using elmd::CommandKind;
+            using folia::CommandKind;
             switch (command.kind)
             {
                 case CommandKind::Undo: return editor.undo();
@@ -143,7 +143,7 @@ namespace winrt::ElMd
         RebuildCore();
     }
 
-    void EditorSession::SetTheme(elmd::ThemeProfile const& theme)
+    void EditorSession::SetTheme(folia::ThemeProfile const& theme)
     {
         core_->theme = theme;
         RebuildRenderModel();
@@ -156,26 +156,26 @@ namespace winrt::ElMd
         core_->renderedSearchRevision = (std::numeric_limits<std::uint64_t>::max)();
         core_->baseDirectory = file_ ? std::filesystem::path(file_.Path().c_str()).parent_path().wstring() : std::wstring{};
         core_->sourceEditor.reset();
-        core_->editor = elmd::Editor(
+        core_->editor = folia::Editor(
             winrt::to_string(text_),
-            elmd::default_dialect(),
+            folia::default_dialect(),
             std::move(progress));
         text_ = {};
         RefreshCharacterCount();
         RebuildRenderModel();
     }
 
-    void EditorSession::RebuildRenderModel(elmd::EditorDocumentChange const* change)
+    void EditorSession::RebuildRenderModel(folia::EditorDocumentChange const* change)
     {
         if (core_->sourceEditor)
         {
-            core_->renderModel = elmd::build_source_render_model_incremental(
+            core_->renderModel = folia::build_source_render_model_incremental(
                 *core_->sourceEditor,
                 std::move(core_->renderModel));
         }
         else if (change)
         {
-            elmd::RenderModelUpdate update;
+            folia::RenderModelUpdate update;
             update.structural = change->structural;
             update.structural_locality_known = change->structural_locality_known;
             update.structural_anchors = change->structural_anchors;
@@ -188,7 +188,7 @@ namespace winrt::ElMd
                     update.changed_owners.push_back(edit.container_id);
                 }
             }
-            core_->renderModel = elmd::build_render_model_incremental(
+            core_->renderModel = folia::build_render_model_incremental(
                 core_->editor.document(),
                 core_->editor.outline(),
                 core_->editor.symbols(),
@@ -199,12 +199,12 @@ namespace winrt::ElMd
         else
         {
             core_->renderModel = ShouldVirtualizeRenderModel()
-                ? elmd::build_virtualized_render_model(
+                ? folia::build_virtualized_render_model(
                     core_->editor.document(),
                     core_->editor.outline(),
                     core_->editor.symbols(),
                     core_->theme)
-                : elmd::build_render_model(
+                : folia::build_render_model(
                     core_->editor.document(),
                     core_->editor.outline(),
                     core_->editor.symbols(),
@@ -224,7 +224,7 @@ namespace winrt::ElMd
     void EditorSession::MaterializeRenderBlocks(std::size_t begin, std::size_t end)
     {
         if (!core_ || core_->sourceEditor || !core_->renderModel.virtualized) return;
-        elmd::materialize_render_model_range(
+        folia::materialize_render_model_range(
             core_->renderModel,
             core_->editor.document(),
             core_->editor.symbols(),
@@ -236,7 +236,7 @@ namespace winrt::ElMd
     void EditorSession::ReleaseRenderBlocksOutside(std::size_t begin, std::size_t end)
     {
         if (!core_ || core_->sourceEditor || !core_->renderModel.virtualized) return;
-        elmd::release_render_model_blocks_outside(
+        folia::release_render_model_blocks_outside(
             core_->renderModel,
             core_->editor.document(),
             core_->theme,
@@ -254,9 +254,9 @@ namespace winrt::ElMd
         if (IsSourceMode()) return false;
         ClearSearch();
         core_->renderedSearchFragments.clear();
-        SerializedSourceProjection projection(elmd::serialize_markdown_projection(core_->editor.document()));
+        SerializedSourceProjection projection(folia::serialize_markdown_projection(core_->editor.document()));
         auto richSelection = core_->editor.selection();
-        auto sourceSelection = elmd::SourceSelection{
+        auto sourceSelection = folia::SourceSelection{
             projection.SourceOffset(richSelection.anchor),
             projection.SourceOffset(richSelection.active),
             richSelection.anchor.affinity,
@@ -283,9 +283,9 @@ namespace winrt::ElMd
         auto sourceSelection = core_->sourceEditor->selection();
         if (core_->sourceEditor->dirty())
         {
-            core_->editor = elmd::Editor(elmd::cps_to_utf8(core_->sourceEditor->source()));
+            core_->editor = folia::Editor(folia::cps_to_utf8(core_->sourceEditor->source()));
         }
-        SerializedSourceProjection projection(elmd::serialize_markdown_projection(core_->editor.document()));
+        SerializedSourceProjection projection(folia::serialize_markdown_projection(core_->editor.document()));
         auto anchor = projection.Position(sourceSelection.anchor, sourceSelection.anchor_affinity);
         auto active = projection.Position(sourceSelection.active, sourceSelection.active_affinity);
         core_->sourceEditor.reset();
@@ -305,7 +305,7 @@ namespace winrt::ElMd
         return IsSourceMode() ? ExitSourceMode() : EnterSourceMode();
     }
 
-    bool EditorSession::ExecuteCommand(elmd::Command const& command)
+    bool EditorSession::ExecuteCommand(folia::Command const& command)
     {
         if (core_->sourceEditor)
         {
@@ -318,7 +318,7 @@ namespace winrt::ElMd
             return true;
         }
         auto previousDocumentRevision = core_->editor.revision();
-        if (command.kind == elmd::CommandKind::Undo)
+        if (command.kind == folia::CommandKind::Undo)
         {
             auto undone = core_->editor.undo();
             if (!undone)
@@ -326,7 +326,7 @@ namespace winrt::ElMd
                 return false;
             }
         }
-        else if (command.kind == elmd::CommandKind::Redo)
+        else if (command.kind == folia::CommandKind::Redo)
         {
             auto redone = core_->editor.redo();
             if (!redone)
@@ -334,7 +334,7 @@ namespace winrt::ElMd
                 return false;
             }
         }
-        else if (command.kind == elmd::CommandKind::SelectAll)
+        else if (command.kind == folia::CommandKind::SelectAll)
         {
             return core_->editor.execute_command(command);
         }
@@ -375,7 +375,7 @@ namespace winrt::ElMd
         return true;
     }
 
-    void EditorSession::SetSelection(elmd::TextPosition anchor, elmd::TextPosition active)
+    void EditorSession::SetSelection(folia::TextPosition anchor, folia::TextPosition active)
     {
         if (core_->sourceEditor)
         {
@@ -393,7 +393,7 @@ namespace winrt::ElMd
         core_->editor.set_selection({anchor, active});
     }
 
-    void EditorSession::SetSelection(elmd::TextSelection selection)
+    void EditorSession::SetSelection(folia::TextSelection selection)
     {
         SetSelection(selection.anchor, selection.active);
     }
@@ -407,7 +407,7 @@ namespace winrt::ElMd
 
     std::string EditorSession::SelectedTextUtf8() const
     {
-        return elmd::cps_to_utf8(core_->sourceEditor
+        return folia::cps_to_utf8(core_->sourceEditor
             ? core_->sourceEditor->selected_text()
             : core_->editor.selected_markdown_cps());
     }
@@ -426,7 +426,7 @@ namespace winrt::ElMd
     {
         if (!core_) return text_;
         return winrt::to_hstring(core_->sourceEditor
-            ? elmd::cps_to_utf8(core_->sourceEditor->source())
+            ? folia::cps_to_utf8(core_->sourceEditor->source())
             : core_->editor.markdown_utf8());
     }
 
@@ -449,7 +449,7 @@ namespace winrt::ElMd
     {
         core_->characterCount = core_->sourceEditor
             ? core_->sourceEditor->source().size()
-            : elmd::document_text_character_count(core_->editor.document());
+            : folia::document_text_character_count(core_->editor.document());
     }
 
     std::size_t EditorSession::CharacterCount() const
@@ -457,13 +457,13 @@ namespace winrt::ElMd
         return core_->characterCount;
     }
 
-    std::wstring EditorSession::TextInputTextUtf16(elmd::NodeId containerId) const
+    std::wstring EditorSession::TextInputTextUtf16(folia::NodeId containerId) const
     {
         auto source = TextInputSourceView(containerId);
         return source ? BoundaryWide(*source) : std::wstring{};
     }
 
-    std::size_t EditorSession::TextInputAcpOffset(elmd::TextPosition position) const
+    std::size_t EditorSession::TextInputAcpOffset(folia::TextPosition position) const
     {
         auto source = TextInputSourceView(position.container_id);
         if (!source) return 0;
@@ -471,10 +471,10 @@ namespace winrt::ElMd
         return Utf16OffsetForCodepoint(*source, offset);
     }
 
-    elmd::TextPosition EditorSession::TextInputPositionFromAcp(
-        elmd::NodeId containerId,
+    folia::TextPosition EditorSession::TextInputPositionFromAcp(
+        folia::NodeId containerId,
         std::size_t offset,
-        elmd::TextAffinity affinity) const
+        folia::TextAffinity affinity) const
     {
         auto source = TextInputSourceView(containerId);
         if (!source) return {};
@@ -483,33 +483,33 @@ namespace winrt::ElMd
     }
 
     std::optional<std::u32string_view> EditorSession::TextInputSourceView(
-        elmd::NodeId containerId) const
+        folia::NodeId containerId) const
     {
         if (core_->sourceEditor)
         {
             auto found = std::ranges::find(
-                core_->sourceEditor->lines(), containerId, &elmd::SourceLine::id);
+                core_->sourceEditor->lines(), containerId, &folia::SourceLine::id);
             if (found == core_->sourceEditor->lines().end()) return std::nullopt;
             return std::u32string_view{found->text};
         }
-        return elmd::document_editable_text_view(core_->editor.document(), containerId);
+        return folia::document_editable_text_view(core_->editor.document(), containerId);
     }
 
-    std::optional<std::u32string> EditorSession::EditableSource(elmd::NodeId id) const
+    std::optional<std::u32string> EditorSession::EditableSource(folia::NodeId id) const
     {
         if (core_->sourceEditor)
         {
-            auto found = std::ranges::find(core_->sourceEditor->lines(), id, &elmd::SourceLine::id);
+            auto found = std::ranges::find(core_->sourceEditor->lines(), id, &folia::SourceLine::id);
             if (found == core_->sourceEditor->lines().end()) return std::nullopt;
             return found->text;
         }
         return core_->editor.editable_source(id);
     }
 
-    std::optional<EditorDocumentInteraction> EditorSession::InteractionAt(elmd::TextPosition position) const
+    std::optional<EditorDocumentInteraction> EditorSession::InteractionAt(folia::TextPosition position) const
     {
         if (core_->sourceEditor) return std::nullopt;
-        auto interaction = elmd::document_interaction_at(core_->editor.document(), position);
+        auto interaction = folia::document_interaction_at(core_->editor.document(), position);
         if (!interaction) return std::nullopt;
         return EditorDocumentInteraction{
             std::move(interaction->link),
@@ -517,44 +517,44 @@ namespace winrt::ElMd
         };
     }
 
-    elmd::TextSelection EditorSession::Selection() const
+    folia::TextSelection EditorSession::Selection() const
     {
         return core_->sourceEditor ? core_->sourceEditor->projected_selection() : core_->editor.selection();
     }
 
-    elmd::RenderModel const& EditorSession::RenderModel() const
+    folia::RenderModel const& EditorSession::RenderModel() const
     {
         return core_->renderModel;
     }
 
-    elmd::RenderModel EditorSession::BuildPrintRenderModel() const
+    folia::RenderModel EditorSession::BuildPrintRenderModel() const
     {
         if (core_->sourceEditor) return core_->renderModel;
-        return elmd::build_render_model(
+        return folia::build_render_model(
             core_->editor.document(),
             core_->editor.outline(),
             core_->editor.symbols(),
             core_->theme);
     }
 
-    std::optional<elmd::TextPosition> EditorSession::FootnoteDefinitionTarget(std::string_view label) const
+    std::optional<folia::TextPosition> EditorSession::FootnoteDefinitionTarget(std::string_view label) const
     {
         if (core_->sourceEditor) return std::nullopt;
-        return elmd::footnote_definition_target(
+        return folia::footnote_definition_target(
             core_->editor.document(), core_->editor.symbols(), label);
     }
 
-    std::optional<elmd::TextPosition> EditorSession::FirstFootnoteReferenceTarget(std::string_view label) const
+    std::optional<folia::TextPosition> EditorSession::FirstFootnoteReferenceTarget(std::string_view label) const
     {
         if (core_->sourceEditor) return std::nullopt;
-        return elmd::first_footnote_reference_target(
+        return folia::first_footnote_reference_target(
             core_->editor.symbols(), label);
     }
 
     std::string EditorSession::FootnotePreview(std::string_view label) const
     {
         if (core_->sourceEditor) return {};
-        return elmd::footnote_preview(
+        return folia::footnote_preview(
             core_->editor.document(), core_->editor.symbols(), label, 240);
     }
 
@@ -565,14 +565,14 @@ namespace winrt::ElMd
 
     EditorSearchSummary EditorSession::Search(
         std::u32string_view query,
-        elmd::SearchOptions options)
+        folia::SearchOptions options)
     {
         ClearSearch();
         if (query.empty()) return {};
 
         if (core_->sourceEditor)
         {
-            auto result = elmd::search_text(core_->sourceEditor->source(), query, options);
+            auto result = folia::search_text(core_->sourceEditor->source(), query, options);
             if (!result.valid()) return {0, std::move(result.error)};
             core_->searchTargets.reserve(result.matches.size());
             for (auto const& match : result.matches)
@@ -602,7 +602,7 @@ namespace winrt::ElMd
         }
         else
         {
-            auto result = elmd::search_rendered_fragments(
+            auto result = folia::search_rendered_fragments(
                 RenderedSearchFragments(), query, options);
             if (!result.valid()) return {0, std::move(result.error)};
             core_->searchTargets.reserve(result.matches.size());
@@ -632,22 +632,22 @@ namespace winrt::ElMd
             core_->sourceEditor->set_selection({
                 target.sourceRange->start,
                 target.sourceRange->end,
-                elmd::TextAffinity::Downstream,
-                elmd::TextAffinity::Upstream});
+                folia::TextAffinity::Downstream,
+                folia::TextAffinity::Upstream});
         }
         else
         {
             auto const& first = target.spans.front();
             auto const& last = target.spans.back();
             core_->editor.set_selection({
-                {first.container_id, first.source_range.start, elmd::TextAffinity::Downstream},
-                {last.container_id, last.source_range.end, elmd::TextAffinity::Upstream}});
+                {first.container_id, first.source_range.start, folia::TextAffinity::Downstream},
+                {last.container_id, last.source_range.end, folia::TextAffinity::Upstream}});
         }
         return true;
     }
 
     bool EditorSession::CommitRenderedSearchReplacement(
-        std::span<const elmd::RenderedSearchMatch> matches)
+        std::span<const folia::RenderedSearchMatch> matches)
     {
         auto const revisionBefore = core_->editor.revision();
         if (!core_->editor.execute_document_replace_matches(matches)) return false;
@@ -665,12 +665,12 @@ namespace winrt::ElMd
         std::size_t index,
         std::u32string_view query,
         std::u32string_view replacement,
-        elmd::SearchOptions options)
+        folia::SearchOptions options)
     {
         if (query.empty()) return false;
         if (core_->sourceEditor)
         {
-            auto result = elmd::search_text_for_replacement(
+            auto result = folia::search_text_for_replacement(
                 core_->sourceEditor->source(), query, replacement, options);
             if (!result.valid() || index >= result.matches.size()) return false;
             auto const& match = result.matches[index];
@@ -683,25 +683,25 @@ namespace winrt::ElMd
             return true;
         }
 
-        auto result = elmd::search_rendered_fragments_for_replacement(
+        auto result = folia::search_rendered_fragments_for_replacement(
             RenderedSearchFragments(), query, replacement, options);
         if (!result.valid() || index >= result.matches.size()) return false;
         return CommitRenderedSearchReplacement(
-            std::span<const elmd::RenderedSearchMatch>{&result.matches[index], 1});
+            std::span<const folia::RenderedSearchMatch>{&result.matches[index], 1});
     }
 
     bool EditorSession::ReplaceAllSearchMatches(
         std::u32string_view query,
         std::u32string_view replacement,
-        elmd::SearchOptions options)
+        folia::SearchOptions options)
     {
         if (query.empty()) return false;
         if (core_->sourceEditor)
         {
-            auto result = elmd::search_text_for_replacement(
+            auto result = folia::search_text_for_replacement(
                 core_->sourceEditor->source(), query, replacement, options);
             if (!result.valid() || result.matches.empty()) return false;
-            std::vector<elmd::SourceReplacement> replacements;
+            std::vector<folia::SourceReplacement> replacements;
             replacements.reserve(result.matches.size());
             for (auto const& match : result.matches)
             {
@@ -716,7 +716,7 @@ namespace winrt::ElMd
             return true;
         }
 
-        auto result = elmd::search_rendered_fragments_for_replacement(
+        auto result = folia::search_rendered_fragments_for_replacement(
             RenderedSearchFragments(), query, replacement, options);
         if (!result.valid() || result.matches.empty()) return false;
         return CommitRenderedSearchReplacement(result.matches);
@@ -741,12 +741,12 @@ namespace winrt::ElMd
         core_->activeSearchMatch.reset();
     }
 
-    std::span<const elmd::RenderedSearchFragment> EditorSession::RenderedSearchFragments()
+    std::span<const folia::RenderedSearchFragment> EditorSession::RenderedSearchFragments()
     {
         auto const revision = core_->editor.revision();
         if (core_->renderedSearchRevision != revision)
         {
-            core_->renderedSearchFragments = elmd::rendered_search_fragments(core_->editor.document());
+            core_->renderedSearchFragments = folia::rendered_search_fragments(core_->editor.document());
             core_->renderedSearchRevision = revision;
         }
         return core_->renderedSearchFragments;

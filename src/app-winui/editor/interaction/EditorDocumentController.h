@@ -4,11 +4,11 @@
 #include "editor/rendering/EditorSurfaceRenderer.h"
 #include "editor/interaction/EditorTextInputController.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct EditorDocumentController
     {
-        using ExecuteCommand = std::function<bool(elmd::Command const&)>;
+        using ExecuteCommand = std::function<bool(folia::Command const&)>;
         using SetStatus = std::function<void(winrt::hstring const&)>;
         using SetProgress = std::function<void(
             bool active,

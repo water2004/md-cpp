@@ -7,7 +7,7 @@
 #include <string>
 #include <string_view>
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct MermaidSvg
     {

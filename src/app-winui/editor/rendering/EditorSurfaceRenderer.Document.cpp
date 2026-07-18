@@ -3,9 +3,9 @@
 #include "editor/rendering/EditorPreparedDocument.h"
 #include "localization/Localization.h"
 
-import elmd.core.render_model;
-import elmd.core.utf;
-import elmd.platform.editor_viewport_plan;
+import folia.core.render_model;
+import folia.core.utf;
+import folia.platform.editor_viewport_plan;
 
 #include "editor/rendering/EditorContentPreparation.h"
 #include "editor/rendering/EditorDocumentPainter.h"
@@ -14,16 +14,16 @@ import elmd.platform.editor_viewport_plan;
 #include "editor/rendering/EditorTableBlockRenderer.h"
 #include "editor/rendering/EditorTextLayoutEngine.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
-    using elmd::platform::editor::BuildEditorViewportPlan;
-    using elmd::platform::editor::EditorViewportPolicy;
+    using folia::platform::editor::BuildEditorViewportPlan;
+    using folia::platform::editor::EditorViewportPolicy;
 
     namespace
     {
         bool InlineItemsContain(
-            std::vector<elmd::InlineRenderItem> const& items,
-            elmd::InlineRenderItem::Kind kind)
+            std::vector<folia::InlineRenderItem> const& items,
+            folia::InlineRenderItem::Kind kind)
         {
             for (auto const& item : items)
             {
@@ -33,32 +33,32 @@ namespace winrt::ElMd
             return false;
         }
 
-        bool RenderBlockContainsMath(elmd::RenderBlock const& block)
+        bool RenderBlockContainsMath(folia::RenderBlock const& block)
         {
-            if (block.kind == elmd::RenderBlockKind::Math
-                || InlineItemsContain(block.inline_items, elmd::InlineRenderItem::Kind::Math)) return true;
+            if (block.kind == folia::RenderBlockKind::Math
+                || InlineItemsContain(block.inline_items, folia::InlineRenderItem::Kind::Math)) return true;
             for (auto const& cell : block.special().table_cells)
-                if (InlineItemsContain(cell, elmd::InlineRenderItem::Kind::Math)) return true;
+                if (InlineItemsContain(cell, folia::InlineRenderItem::Kind::Math)) return true;
             for (auto const& child : block.child_blocks)
                 if (RenderBlockContainsMath(child)) return true;
             return false;
         }
 
-        bool RenderBlockContainsImage(elmd::RenderBlock const& block)
+        bool RenderBlockContainsImage(folia::RenderBlock const& block)
         {
-            if (block.kind == elmd::RenderBlockKind::Image
-                || InlineItemsContain(block.inline_items, elmd::InlineRenderItem::Kind::Image)) return true;
+            if (block.kind == folia::RenderBlockKind::Image
+                || InlineItemsContain(block.inline_items, folia::InlineRenderItem::Kind::Image)) return true;
             for (auto const& cell : block.special().table_cells)
-                if (InlineItemsContain(cell, elmd::InlineRenderItem::Kind::Image)) return true;
+                if (InlineItemsContain(cell, folia::InlineRenderItem::Kind::Image)) return true;
             for (auto const& child : block.child_blocks)
                 if (RenderBlockContainsImage(child)) return true;
             return false;
         }
 
         void CollectInlineOwners(
-            std::vector<elmd::InlineRenderItem> const& items,
+            std::vector<folia::InlineRenderItem> const& items,
             std::unordered_set<std::uint64_t>& seen,
-            std::vector<elmd::NodeId>& owners)
+            std::vector<folia::NodeId>& owners)
         {
             for (auto const& item : items)
             {
@@ -69,11 +69,11 @@ namespace winrt::ElMd
         }
 
         void CollectRenderOwners(
-            elmd::RenderBlock const& block,
+            folia::RenderBlock const& block,
             std::unordered_set<std::uint64_t>& seen,
-            std::vector<elmd::NodeId>& owners)
+            std::vector<folia::NodeId>& owners)
         {
-            auto add = [&](elmd::NodeId owner)
+            auto add = [&](folia::NodeId owner)
             {
                 if (owner.v != 0 && seen.insert(owner.v).second) owners.push_back(owner);
             };
@@ -114,7 +114,7 @@ namespace winrt::ElMd
         auto documentWidth = documentRight - documentLeft;
         auto scrollOffset = scrollState.Offset();
         auto y = styleSheet.verticalPadding - scrollOffset;
-        auto selection = printMode ? elmd::TextSelection{} : frame.selection;
+        auto selection = printMode ? folia::TextSelection{} : frame.selection;
         auto caret = selection.active;
 
         ::Microsoft::WRL::ComPtr<ID2D1DeviceContext5> svgContext;
@@ -133,7 +133,7 @@ namespace winrt::ElMd
         auto drawMath = [&](MathJaxSvgFragment const& fragment, D2D1_POINT_2F origin, D2D1_COLOR_F) {
             return fragment.svg && svgPainter.Draw(fragment.renderId, *fragment.svg, fragment.width, fragment.height, origin);
         };
-        auto drawMathFallback = [&](elmd::TextSpan, D2D1_POINT_2F origin) {
+        auto drawMathFallback = [&](folia::TextSpan, D2D1_POINT_2F origin) {
             auto label = Localize(L"Formula");
             resources.d2dContext->DrawTextW(
                 label.c_str(),
@@ -154,50 +154,50 @@ namespace winrt::ElMd
             printMode ? std::span<const detail::EditorSearchHighlight>{} : frame.searchHighlights,
             frame.renderModel.editable_index);
 
-        std::function<DisplayInlineText(elmd::RenderBlock const&, float, bool)> prepare;
-        prepare = [&](elmd::RenderBlock const& block, float width, bool requestEmbedded) -> DisplayInlineText
+        std::function<DisplayInlineText(folia::RenderBlock const&, float, bool)> prepare;
+        prepare = [&](folia::RenderBlock const& block, float width, bool requestEmbedded) -> DisplayInlineText
         {
-            if (block.kind == elmd::RenderBlockKind::Blank)
+            if (block.kind == folia::RenderBlockKind::Blank)
             {
                 DisplayInlineText display;
-                AppendGeneratedText(display, U"\u200B", {block.id, 0, elmd::TextAffinity::Downstream}, elmd::InlineStyle::plain());
-                display.displayToSource.push_back({block.id, 0, elmd::TextAffinity::Downstream});
+                AppendGeneratedText(display, U"\u200B", {block.id, 0, folia::TextAffinity::Downstream}, folia::InlineStyle::plain());
+                display.displayToSource.push_back({block.id, 0, folia::TextAffinity::Downstream});
                 return display;
             }
-            if (block.kind == elmd::RenderBlockKind::Code)
+            if (block.kind == folia::RenderBlockKind::Code)
                 return BuildCodeBlockText(block, caret, treeSitter);
-            if (block.kind == elmd::RenderBlockKind::Math)
+            if (block.kind == folia::RenderBlockKind::Math)
                 return BuildMathBlockText(block, caret, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, width, mathSvgSupported, requestEmbedded);
             if (!block.inline_items.empty())
             {
-                auto sourceEnd = InlineItemsEndPosition(block.inline_items, {block.id, block.content_span.source_range.end, elmd::TextAffinity::Downstream});
+                auto sourceEnd = InlineItemsEndPosition(block.inline_items, {block.id, block.content_span.source_range.end, folia::TextAffinity::Downstream});
                 return BuildDisplayInlineText(block.inline_items, caret, sourceEnd, mathJax, svgNormalizer, styleSheet.textColor, styleSheet.body.size, width, mathSvgSupported, requestEmbedded);
             }
 
             DisplayInlineText display;
-            if (block.kind == elmd::RenderBlockKind::Image)
+            if (block.kind == folia::RenderBlockKind::Image)
             {
                 auto const& special = block.special();
-                auto position = elmd::TextPosition{block.id, 0, elmd::TextAffinity::Downstream};
+                auto position = folia::TextPosition{block.id, 0, folia::TextAffinity::Downstream};
                 auto start = static_cast<std::uint32_t>(display.displayToSource.size());
-                AppendGeneratedText(display, U"\uFFFC", position, elmd::InlineStyle::plain());
+                AppendGeneratedText(display, U"\uFFFC", position, folia::InlineStyle::plain());
                 display.imageOverlays.push_back({start, block.source_span, special.src, special.alt, special.image_width, special.image_height, true});
             }
-            else if (block.kind == elmd::RenderBlockKind::Toc)
+            else if (block.kind == folia::RenderBlockKind::Toc)
             {
                 for (auto const* item : frame.renderModel.outline.flat_items())
                 {
-                    AppendGeneratedText(display, elmd::utf8_to_cps(item->title_plain_text) + U"\n", {block.id, 0, elmd::TextAffinity::Downstream}, elmd::InlineStyle{.link = true});
+                    AppendGeneratedText(display, folia::utf8_to_cps(item->title_plain_text) + U"\n", {block.id, 0, folia::TextAffinity::Downstream}, folia::InlineStyle{.link = true});
                 }
             }
             else
             {
                 auto const& special = block.special();
-                auto raw = elmd::utf8_to_cps(special.raw.empty() ? special.reason_text : special.raw);
-                AppendSourceText(display, raw, {block.id, {0, raw.size()}}, elmd::InlineStyle::plain(), false);
+                auto raw = folia::utf8_to_cps(special.raw.empty() ? special.reason_text : special.raw);
+                AppendSourceText(display, raw, {block.id, {0, raw.size()}}, folia::InlineStyle::plain(), false);
             }
-            if (display.text.empty()) AppendGeneratedText(display, U"\u200B", {block.id, 0, elmd::TextAffinity::Downstream}, elmd::InlineStyle::plain());
-            display.displayToSource.push_back({block.id, block.source_span.source_range.end, elmd::TextAffinity::Downstream});
+            if (display.text.empty()) AppendGeneratedText(display, U"\u200B", {block.id, 0, folia::TextAffinity::Downstream}, folia::InlineStyle::plain());
+            display.displayToSource.push_back({block.id, block.source_span.source_range.end, folia::TextAffinity::Downstream});
             return display;
         };
 
@@ -214,41 +214,41 @@ namespace winrt::ElMd
 
         auto remoteImageGeneration = renderCache.RemoteImageGeneration();
         std::unordered_map<void const*, std::vector<SyntaxHighlightRange>> sourceCodeHighlights;
-        auto initializePreparedMetadata = [&](PreparedDocument::Block& prepared, elmd::RenderBlock const& block)
+        auto initializePreparedMetadata = [&](PreparedDocument::Block& prepared, folia::RenderBlock const& block)
         {
             prepared.sourceId = block.id;
             prepared.presentationKey = block.presentation_key;
             prepared.sourceMode = block.source_mode;
-            prepared.code = block.kind == elmd::RenderBlockKind::Code
-                || block.kind == elmd::RenderBlockKind::Frontmatter
-                || block.kind == elmd::RenderBlockKind::Unsupported;
+            prepared.code = block.kind == folia::RenderBlockKind::Code
+                || block.kind == folia::RenderBlockKind::Frontmatter
+                || block.kind == folia::RenderBlockKind::Unsupported;
         };
-        auto initializePreparedContentMetadata = [&](PreparedDocument::Block& prepared, elmd::RenderBlock const& block)
+        auto initializePreparedContentMetadata = [&](PreparedDocument::Block& prepared, folia::RenderBlock const& block)
         {
             prepared.containsMath = RenderBlockContainsMath(block);
             prepared.containsImage = RenderBlockContainsImage(block);
             std::unordered_set<std::uint64_t> owners;
             CollectRenderOwners(block, owners, prepared.owners);
         };
-        auto estimateBlockHeight = [&](elmd::RenderBlock const& block)
+        auto estimateBlockHeight = [&](folia::RenderBlock const& block)
         {
             auto const& special = block.special();
             auto flowContainer = !block.inline_items.empty()
-                && (block.kind == elmd::RenderBlockKind::Quote
-                    || block.kind == elmd::RenderBlockKind::Callout);
+                && (block.kind == folia::RenderBlockKind::Quote
+                    || block.kind == folia::RenderBlockKind::Callout);
             auto paddingTop = flowContainer ? 0.0f : block.block_style.padding_top;
             auto paddingBottom = flowContainer ? 0.0f : block.block_style.padding_bottom;
             auto paddingLeft = flowContainer ? 0.0f : block.block_style.padding_left;
             auto paddingRight = flowContainer ? 0.0f : block.block_style.padding_right;
             auto contentWidth = (std::max)(1.0f, documentWidth - paddingLeft - paddingRight);
-            if (block.kind == elmd::RenderBlockKind::ThematicBreak) return 40.0f;
-            if (block.kind == elmd::RenderBlockKind::Blank)
+            if (block.kind == folia::RenderBlockKind::ThematicBreak) return 40.0f;
+            if (block.kind == folia::RenderBlockKind::Blank)
                 return styleSheet.body.lineHeight + paddingTop + paddingBottom;
             if (block.source_code)
                 return styleSheet.code.lineHeight + paddingTop + paddingBottom;
-            if (block.kind == elmd::RenderBlockKind::Code
-                || block.kind == elmd::RenderBlockKind::Frontmatter
-                || block.kind == elmd::RenderBlockKind::Unsupported)
+            if (block.kind == folia::RenderBlockKind::Code
+                || block.kind == folia::RenderBlockKind::Frontmatter
+                || block.kind == folia::RenderBlockKind::Unsupported)
             {
                 auto lines = (std::max)(std::size_t{1}, special.line_count);
                 if (special.line_count == 0)
@@ -258,16 +258,16 @@ namespace winrt::ElMd
                 }
                 return static_cast<float>(lines) * styleSheet.code.lineHeight + paddingTop + paddingBottom;
             }
-            if (block.kind == elmd::RenderBlockKind::Math)
+            if (block.kind == folia::RenderBlockKind::Math)
                 return styleSheet.body.lineHeight * 2.0f + paddingTop + paddingBottom;
-            if (block.kind == elmd::RenderBlockKind::Table)
+            if (block.kind == folia::RenderBlockKind::Table)
                 return static_cast<float>((std::max)(
                     std::size_t{1},
                     special.row_count != 0
                         ? special.row_count
                         : static_cast<std::size_t>(block.estimated_line_breaks)))
                     * (styleSheet.body.lineHeight + 16.0f) + paddingTop + paddingBottom;
-            if (block.kind == elmd::RenderBlockKind::Image)
+            if (block.kind == folia::RenderBlockKind::Image)
             {
                 auto requestedWidth = ResolveImageDimension(special.image_width, contentWidth);
                 auto requestedHeight = ResolveImageDimension(special.image_height);
@@ -342,7 +342,7 @@ namespace winrt::ElMd
                     auto const& block = previous->blocks[index];
                     if (block.sourceId.v != 0) previousById.emplace(block.sourceId.v, index);
                 }
-                auto owns = [](PreparedDocument::Block const& block, elmd::NodeId owner)
+                auto owns = [](PreparedDocument::Block const& block, folia::NodeId owner)
                 {
                     return owner.v != 0 && std::ranges::any_of(
                         block.owners,
@@ -365,7 +365,7 @@ namespace winrt::ElMd
                             || owns(candidate, selection.active.container_id))) continue;
                     preparedDocument->blocks[index] = std::move(candidate);
                     if (preparedDocument->blocks[index].valid
-                        && source.kind != elmd::RenderBlockKind::ThematicBreak)
+                        && source.kind != folia::RenderBlockKind::ThematicBreak)
                         preparedDocument->layoutBlocks.insert(index);
                 }
             }
@@ -382,7 +382,7 @@ namespace winrt::ElMd
                 && !frame.renderModel.blocks.empty()
                 && !frame.renderModel.blocks.front().source_mode)
             {
-                auto addOwner = [&](elmd::NodeId owner)
+                auto addOwner = [&](folia::NodeId owner)
                 {
                     auto found = preparedDocument->ownerBlockIndex.find(owner.v);
                     if (found != preparedDocument->ownerBlockIndex.end())
@@ -421,7 +421,7 @@ namespace winrt::ElMd
                 }
                 prepared = {};
                 initializePreparedMetadata(prepared, source);
-                if (source.kind == elmd::RenderBlockKind::ThematicBreak)
+                if (source.kind == folia::RenderBlockKind::ThematicBreak)
                 {
                     prepared.height = 40.0f;
                     prepared.valid = true;
@@ -450,7 +450,7 @@ namespace winrt::ElMd
                 preparedDocument->totalHeight = preparedDocument->geometry.TotalHeight();
         }
         preparedDocument->selection = selection;
-        auto prepareBlock = [&](elmd::RenderBlock const& block, bool requestEmbedded)
+        auto prepareBlock = [&](folia::RenderBlock const& block, bool requestEmbedded)
         {
             PreparedDocument::Block prepared;
             initializePreparedMetadata(prepared, block);
@@ -460,13 +460,13 @@ namespace winrt::ElMd
             prepared.remoteImageGeneration = remoteImageGeneration;
             std::unordered_set<std::uint64_t> owners;
             for (auto owner : prepared.owners) owners.insert(owner.v);
-            auto addOwner = [&](elmd::NodeId id)
+            auto addOwner = [&](folia::NodeId id)
             {
                 if (id.v != 0 && owners.insert(id.v).second) prepared.owners.push_back(id);
             };
             addOwner(block.id);
             addOwner(block.source_span.container_id);
-            if (block.kind == elmd::RenderBlockKind::Table)
+            if (block.kind == folia::RenderBlockKind::Table)
             {
                 prepared.table = EditorTableBlockRenderer::Prepare(
                     block,
@@ -491,8 +491,8 @@ namespace winrt::ElMd
                 }
             }
             auto flowContainer = !block.inline_items.empty()
-                && (block.kind == elmd::RenderBlockKind::Quote
-                    || block.kind == elmd::RenderBlockKind::Callout);
+                && (block.kind == folia::RenderBlockKind::Quote
+                    || block.kind == folia::RenderBlockKind::Callout);
             auto paddingTop = flowContainer ? 0.0f : block.block_style.padding_top;
             auto paddingBottom = flowContainer ? 0.0f : block.block_style.padding_bottom;
             auto paddingLeft = flowContainer ? 0.0f : block.block_style.padding_left;
@@ -510,7 +510,7 @@ namespace winrt::ElMd
                     auto const& context = block.source_code_context
                         ? *block.source_code_context
                         : prepared.display.text;
-                    found->second = treeSitter.Highlight(*block.special().language, elmd::cps_to_utf8(context));
+                    found->second = treeSitter.Highlight(*block.special().language, folia::cps_to_utf8(context));
                 }
                 auto lineStart = block.source_code_context ? block.source_code_context_offset : 0;
                 auto lineEnd = lineStart + prepared.display.text.size();
@@ -522,13 +522,13 @@ namespace winrt::ElMd
                     if (highlightEnd <= lineStart || highlightStart >= lineEnd) continue;
                     auto start = (std::max)(highlightStart, lineStart) - lineStart;
                     auto end = (std::min)(highlightEnd, lineEnd) - lineStart;
-                    auto displayStart = elmd::char_index_to_utf16(prepared.display.text, start);
-                    auto displayEnd = elmd::char_index_to_utf16(prepared.display.text, end);
+                    auto displayStart = folia::char_index_to_utf16(prepared.display.text, start);
+                    auto displayEnd = folia::char_index_to_utf16(prepared.display.text, end);
                     if (displayEnd <= displayStart) continue;
                     prepared.display.ranges.push_back({
                         static_cast<UINT32>(displayStart),
                         static_cast<UINT32>(displayEnd - displayStart),
-                        elmd::InlineStyle::plain(),
+                        folia::InlineStyle::plain(),
                         false,
                         highlight.kind,
                     });
@@ -557,16 +557,16 @@ namespace winrt::ElMd
                 auto alignment = DWRITE_TEXT_ALIGNMENT_LEADING;
                 switch (*block.block_style.text_alignment)
                 {
-                    case elmd::TextAlignment::Start:
+                    case folia::TextAlignment::Start:
                         alignment = DWRITE_TEXT_ALIGNMENT_LEADING;
                         break;
-                    case elmd::TextAlignment::Center:
+                    case folia::TextAlignment::Center:
                         alignment = DWRITE_TEXT_ALIGNMENT_CENTER;
                         break;
-                    case elmd::TextAlignment::End:
+                    case folia::TextAlignment::End:
                         alignment = DWRITE_TEXT_ALIGNMENT_TRAILING;
                         break;
-                    case elmd::TextAlignment::Justify:
+                    case folia::TextAlignment::Justify:
                         alignment = DWRITE_TEXT_ALIGNMENT_JUSTIFIED;
                         break;
                 }
@@ -620,7 +620,7 @@ namespace winrt::ElMd
             {
                 auto const& block = frame.renderModel.blocks[index];
                 auto& prepared = preparedDocument->blocks[index];
-                if (block.kind == elmd::RenderBlockKind::ThematicBreak)
+                if (block.kind == folia::RenderBlockKind::ThematicBreak)
                 {
                     prepared = {};
                     initializePreparedMetadata(prepared, block);
@@ -687,7 +687,7 @@ namespace winrt::ElMd
                 auto placement = preparedDocument->geometry.At(index);
                 auto const& block = frame.renderModel.blocks[index];
                 auto& prepared = preparedDocument->blocks[index];
-                if (block.kind == elmd::RenderBlockKind::ThematicBreak || prepared.valid) return;
+                if (block.kind == folia::RenderBlockKind::ThematicBreak || prepared.valid) return;
                 auto previousHeight = prepared.height;
                 prepared = prepareBlock(block, requestEmbeddedAt(placement.top));
                 preparedDocument->layoutBlocks.insert(index);
@@ -814,7 +814,7 @@ namespace winrt::ElMd
         for (auto index = embeddedBegin; index < embeddedEnd; ++index)
         {
             auto const& block = frame.renderModel.blocks[index];
-            if (block.kind == elmd::RenderBlockKind::ThematicBreak) continue;
+            if (block.kind == folia::RenderBlockKind::ThematicBreak) continue;
             auto& prepared = preparedDocument->blocks[index];
             if (!prepared.valid) continue;
             auto refreshForMath = prepared.pendingMath
@@ -936,7 +936,7 @@ namespace winrt::ElMd
             auto top = placement.top - scrollOffset;
             auto bottom = placement.bottom - scrollOffset;
             auto documentY = placement.top;
-            if (block.kind == elmd::RenderBlockKind::ThematicBreak)
+            if (block.kind == folia::RenderBlockKind::ThematicBreak)
             {
                 auto center = (top + bottom) * 0.5f;
                 resources.d2dContext->DrawLine(D2D1::Point2F(documentLeft, center), D2D1::Point2F(documentRight, center), resources.mutedBrush.Get(), 1.0f);
@@ -974,8 +974,8 @@ namespace winrt::ElMd
                 continue;
             }
             auto flowContainer = !block.inline_items.empty()
-                && (block.kind == elmd::RenderBlockKind::Quote
-                    || block.kind == elmd::RenderBlockKind::Callout);
+                && (block.kind == folia::RenderBlockKind::Quote
+                    || block.kind == folia::RenderBlockKind::Callout);
             auto paddingTop = flowContainer ? 0.0f : block.block_style.padding_top;
             auto paddingLeft = flowContainer ? 0.0f : block.block_style.padding_left;
             auto paddingRight = flowContainer ? 0.0f : block.block_style.padding_right;

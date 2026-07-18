@@ -2,7 +2,7 @@
 #include "MainWindow.xaml.h"
 #include "localization/Localization.h"
 
-namespace winrt::ElMd::implementation
+namespace winrt::Folia::implementation
 {
     void MainWindow::SetDocumentCommandsVisible(bool visible)
     {
@@ -24,9 +24,9 @@ namespace winrt::ElMd::implementation
         SettingsSeparator().Visibility(value);
     }
 
-    std::optional<winrt::hstring> MainWindow::ApplySettings(winrt::ElMd::AppSettings const& settings)
+    std::optional<winrt::hstring> MainWindow::ApplySettings(winrt::Folia::AppSettings const& settings)
     {
-        if (auto saveError = winrt::ElMd::SaveAppSettings(settings))
+        if (auto saveError = winrt::Folia::SaveAppSettings(settings))
         {
             SetStatus(*saveError);
             return saveError;
@@ -62,12 +62,12 @@ namespace winrt::ElMd::implementation
             documentPaneWasOpen = DocumentNavigation().IsPaneOpen();
             if (!settingsView)
             {
-                settingsView = std::make_shared<winrt::ElMd::SettingsView>(
+                settingsView = std::make_shared<winrt::Folia::SettingsView>(
                     appSettings,
                     themeCatalog,
                     CurrentThemeVariant(),
                     WindowHandle(),
-                    [this](winrt::ElMd::AppSettings const& changed) { return ApplySettings(changed); });
+                    [this](winrt::Folia::AppSettings const& changed) { return ApplySettings(changed); });
                 SettingsViewHost().Children().Append(settingsView->Root());
             }
             else

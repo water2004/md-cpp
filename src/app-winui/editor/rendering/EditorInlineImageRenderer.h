@@ -7,7 +7,7 @@
 #include "editor/rendering/EditorSvgPainter.h"
 #include "media/SvgNormalizer.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct EditorInlineImageRenderer
     {

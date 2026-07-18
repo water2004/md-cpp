@@ -1,6 +1,6 @@
 #pragma once
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     // Presents UI-thread animation work at the active display cadence while
     // pacing submissions with the renderer's frame-latency waitable object.

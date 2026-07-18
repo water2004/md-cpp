@@ -1,9 +1,9 @@
 #include "pch.h"
 #include "editor/interaction/EditorSelectionDrag.h"
 
-import elmd.platform.editor_selection_drag_model;
+import folia.platform.editor_selection_drag_model;
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     void EditorSelectionDrag::Attach(
         EditorSession& valueSession,
@@ -35,7 +35,7 @@ namespace winrt::ElMd
         return active;
     }
 
-    void EditorSelectionDrag::Begin(elmd::TextPosition valueAnchor)
+    void EditorSelectionDrag::Begin(folia::TextPosition valueAnchor)
     {
         if (!session) return;
         StopAutoScroll();
@@ -74,7 +74,7 @@ namespace winrt::ElMd
         if (!active || !session || !renderer) return false;
         auto viewportHeight = renderer->ViewportHeight();
         auto width = surface ? static_cast<float>(surface.ActualWidth()) : 0.0f;
-        auto projection = elmd::platform::editor::ProjectEditorSelectionPointer(
+        auto projection = folia::platform::editor::ProjectEditorSelectionPointer(
             x,
             y,
             width,

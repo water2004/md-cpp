@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "editor/interaction/EditorScrollController.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     EditorScrollController::~EditorScrollController()
     {

@@ -17,16 +17,16 @@ namespace
     public:
         Runtime()
         {
-            module = LoadLibraryExW((ModuleDirectory() + L"elmd_svg_normalizer.dll").c_str(), nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+            module = LoadLibraryExW((ModuleDirectory() + L"folia_svg_normalizer.dll").c_str(), nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
             if (!module)
             {
                 error = "SVG normalizer library could not be loaded";
                 return;
             }
-            create = reinterpret_cast<Create>(GetProcAddress(module, "elmd_svg_normalizer_create"));
-            destroy = reinterpret_cast<Destroy>(GetProcAddress(module, "elmd_svg_normalizer_destroy"));
-            normalize = reinterpret_cast<Normalize>(GetProcAddress(module, "elmd_svg_normalize"));
-            freeBuffer = reinterpret_cast<FreeBuffer>(GetProcAddress(module, "elmd_svg_buffer_destroy"));
+            create = reinterpret_cast<Create>(GetProcAddress(module, "folia_svg_normalizer_create"));
+            destroy = reinterpret_cast<Destroy>(GetProcAddress(module, "folia_svg_normalizer_destroy"));
+            normalize = reinterpret_cast<Normalize>(GetProcAddress(module, "folia_svg_normalize"));
+            freeBuffer = reinterpret_cast<FreeBuffer>(GetProcAddress(module, "folia_svg_buffer_destroy"));
             if (!create || !destroy || !normalize || !freeBuffer)
             {
                 error = "SVG normalizer library has an incompatible ABI";
@@ -42,9 +42,9 @@ namespace
             if (module) FreeLibrary(module);
         }
 
-        winrt::ElMd::NormalizedSvg Process(std::string const& source, float fontSize)
+        winrt::Folia::NormalizedSvg Process(std::string const& source, float fontSize)
         {
-            winrt::ElMd::NormalizedSvg result;
+            winrt::Folia::NormalizedSvg result;
             if (!error.empty())
             {
                 result.error = error;
@@ -85,7 +85,7 @@ namespace
     };
 }
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct SvgNormalizer::State
     {

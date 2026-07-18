@@ -2,15 +2,15 @@
 #include "editor/rendering/EditorRenderCache.h"
 #include "media/EditorGifDecoder.h"
 
-import elmd.core.image_metadata;
-import elmd.core.render_model;
-import elmd.core.types;
+import folia.core.image_metadata;
+import folia.core.render_model;
+import folia.core.types;
 
 #include "editor/rendering/EditorContentPreparation.h"
 
 namespace
 {
-    using ImageDimensions = winrt::ElMd::EditorRenderCache::ImageDimensions;
+    using ImageDimensions = winrt::Folia::EditorRenderCache::ImageDimensions;
 
     constexpr std::size_t MaximumEncodedImageBytes = 16u * 1024u * 1024u;
     constexpr std::size_t RemoteMetadataBytes = 64u * 1024u;
@@ -68,7 +68,7 @@ namespace
         std::size_t size)
     {
         if (!bytes) return std::nullopt;
-        auto metadata = elmd::probe_encoded_image_metadata(std::span(bytes, size));
+        auto metadata = folia::probe_encoded_image_metadata(std::span(bytes, size));
         if (!metadata) return std::nullopt;
         return ImageDimensions{
             static_cast<float>(metadata->width),
@@ -83,7 +83,7 @@ namespace
         if (comma == std::string_view::npos) return std::nullopt;
         auto metadata = source.substr(0, comma);
         if (metadata.find(";base64") != std::string_view::npos)
-            return winrt::ElMd::DecodeBase64(source.substr(comma + 1));
+            return winrt::Folia::DecodeBase64(source.substr(comma + 1));
         std::vector<std::uint8_t> decoded;
         decoded.reserve((std::min)(source.size() - comma - 1, MaximumEncodedImageBytes));
         auto payload = source.substr(comma + 1);
@@ -214,7 +214,7 @@ namespace
         return ValidDimensions(width, height);
     }
 }
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     std::optional<EditorRenderCache::ImageDimensions> EditorRenderCache::ProbeImageDimensions(
         EditorRenderResources const& resources,

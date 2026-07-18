@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "editor/rendering/EditorContentPreparation.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     class MathInlineObject final : public ::Microsoft::WRL::RuntimeClass<::Microsoft::WRL::RuntimeClassFlags<::Microsoft::WRL::ClassicCom>, IDWriteInlineObject>
     {

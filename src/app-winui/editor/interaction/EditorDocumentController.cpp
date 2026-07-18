@@ -2,10 +2,10 @@
 #include "editor/interaction/EditorDocumentController.h"
 #include "localization/Localization.h"
 
-import elmd.core.command;
-import elmd.core.utf;
+import folia.core.command;
+import folia.core.utf;
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct PdfExportWork
     {
@@ -174,8 +174,8 @@ namespace winrt::ElMd
     {
         if (!state_->session || !state_->session->HasSelection()) return;
         CopySelection();
-        elmd::Command command;
-        command.kind = elmd::CommandKind::DeleteSelection;
+        folia::Command command;
+        command.kind = folia::CommandKind::DeleteSelection;
         if (state_->executeCommand) state_->executeCommand(command);
     }
 
@@ -598,9 +598,9 @@ namespace winrt::ElMd
                 auto relative = std::filesystem::relative(path, base, error);
                 if (!error && !relative.empty()) path = std::move(relative);
             }
-            elmd::Command command;
-            command.kind = elmd::CommandKind::InsertImage;
-            command.path = elmd::utf8_to_cps(winrt::to_string(winrt::hstring(path.generic_wstring())));
+            folia::Command command;
+            command.kind = folia::CommandKind::InsertImage;
+            command.path = folia::utf8_to_cps(winrt::to_string(winrt::hstring(path.generic_wstring())));
             if (state->executeCommand) state->executeCommand(command);
         }
         catch (winrt::hresult_error const& error)
@@ -649,9 +649,9 @@ namespace winrt::ElMd
             if (!Active(state, generation) || text.empty()) co_return;
             if (state->executeCommand)
             {
-                elmd::Command command;
-                command.kind = elmd::CommandKind::Paste;
-                command.text = elmd::utf8_to_cps(winrt::to_string(text));
+                folia::Command command;
+                command.kind = folia::CommandKind::Paste;
+                command.text = folia::utf8_to_cps(winrt::to_string(text));
                 state->executeCommand(command);
             }
         }

@@ -1,17 +1,17 @@
 #include "pch.h"
 #include "editor/rendering/EditorContentPreparation.h"
 
-import elmd.core.render_model;
-import elmd.core.source_style;
-import elmd.core.utf;
+import folia.core.render_model;
+import folia.core.source_style;
+import folia.core.utf;
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     namespace
     {
-        SyntaxHighlightKind SourceSyntax(elmd::SourceSyntaxKind kind)
+        SyntaxHighlightKind SourceSyntax(folia::SourceSyntaxKind kind)
         {
-            using K = elmd::SourceSyntaxKind;
+            using K = folia::SourceSyntaxKind;
             switch (kind)
             {
                 case K::Marker: return SyntaxHighlightKind::Operator;
@@ -31,20 +31,20 @@ namespace winrt::ElMd
         }
     }
 
-    std::u32string InlineText(elmd::InlineRenderItem const& item)
+    std::u32string InlineText(folia::InlineRenderItem const& item)
     {
         switch (item.kind)
         {
-            case elmd::InlineRenderItem::Kind::Text:
+            case folia::InlineRenderItem::Kind::Text:
                 return item.text;
-            case elmd::InlineRenderItem::Kind::Marker:
+            case folia::InlineRenderItem::Kind::Marker:
                 return item.special().display_text.empty() ? item.text : item.special().display_text;
-            case elmd::InlineRenderItem::Kind::Math:
+            case folia::InlineRenderItem::Kind::Math:
                 return U"$" + item.text + U"$";
-            case elmd::InlineRenderItem::Kind::Image:
+            case folia::InlineRenderItem::Kind::Image:
                 return item.special().semantic().alt.empty()
-                    ? U"image" : elmd::utf8_to_cps(item.special().semantic().alt);
-            case elmd::InlineRenderItem::Kind::Link: {
+                    ? U"image" : folia::utf8_to_cps(item.special().semantic().alt);
+            case folia::InlineRenderItem::Kind::Link: {
                 std::u32string text;
                 for (auto const& child : item.special().semantic().children)
                 {
@@ -52,15 +52,15 @@ namespace winrt::ElMd
                 }
                 return text;
             }
-            case elmd::InlineRenderItem::Kind::FootnoteReference:
+            case folia::InlineRenderItem::Kind::FootnoteReference:
                 return item.special().display_text.empty()
-                    ? elmd::utf8_to_cps(item.special().semantic().footnote_label)
+                    ? folia::utf8_to_cps(item.special().semantic().footnote_label)
                     : item.special().display_text;
         }
         return {};
     }
 
-    std::u32string InlineText(std::vector<elmd::InlineRenderItem> const& items)
+    std::u32string InlineText(std::vector<folia::InlineRenderItem> const& items)
     {
         std::u32string text;
         for (auto const& item : items)
@@ -94,21 +94,21 @@ namespace winrt::ElMd
         return result;
     }
 
-    bool IsStyleMarker(elmd::InlineRenderItem const& item)
+    bool IsStyleMarker(folia::InlineRenderItem const& item)
     {
-        if (item.kind != elmd::InlineRenderItem::Kind::Marker) return false;
-        if (item.special().marker_role == elmd::MarkerRole::Heading) return false;
+        if (item.kind != folia::InlineRenderItem::Kind::Marker) return false;
+        if (item.special().marker_role == folia::MarkerRole::Heading) return false;
         if (item.special().marker_owner) return true;
         bool backticks = !item.text.empty();
         for (char32_t ch : item.text) if (ch != U'`') backticks = false;
         return item.text == U"*" || item.text == U"**" || item.text == U"~~" || backticks;
     }
 
-    bool IsHeadingMarker(elmd::InlineRenderItem const& item)
+    bool IsHeadingMarker(folia::InlineRenderItem const& item)
     {
-        if (item.kind == elmd::InlineRenderItem::Kind::Marker
-            && item.special().marker_role == elmd::MarkerRole::Heading) return true;
-        if (item.kind != elmd::InlineRenderItem::Kind::Marker || item.text.size() < 2 || item.text.back() != U' ')
+        if (item.kind == folia::InlineRenderItem::Kind::Marker
+            && item.special().marker_role == folia::MarkerRole::Heading) return true;
+        if (item.kind != folia::InlineRenderItem::Kind::Marker || item.text.size() < 2 || item.text.back() != U' ')
         {
             return false;
         }
@@ -122,7 +122,7 @@ namespace winrt::ElMd
         return true;
     }
 
-    bool CaretTouchesSpan(elmd::TextPosition caret, elmd::TextSpan const& span)
+    bool CaretTouchesSpan(folia::TextPosition caret, folia::TextSpan const& span)
     {
         if (caret.container_id != span.container_id) return false;
         auto start = span.source_range.start;
@@ -135,26 +135,26 @@ namespace winrt::ElMd
         return (start > 0 && offset == start - 1) || (end < (std::numeric_limits<std::size_t>::max)() && offset == end + 1);
     }
 
-    elmd::TextPosition InlineItemsEndPosition(std::vector<elmd::InlineRenderItem> const& items, elmd::TextPosition fallback)
+    folia::TextPosition InlineItemsEndPosition(std::vector<folia::InlineRenderItem> const& items, folia::TextPosition fallback)
     {
         auto result = fallback;
         for (auto const& item : items)
         {
             if (item.source_span.container_id.v != 0)
             {
-                auto generatedPrefix = item.kind == elmd::InlineRenderItem::Kind::Marker
+                auto generatedPrefix = item.kind == folia::InlineRenderItem::Kind::Marker
                     && item.source_span.source_range.empty();
                 result = {
                     item.source_span.container_id,
                     item.source_span.source_range.end,
-                    generatedPrefix ? elmd::TextAffinity::Downstream : elmd::TextAffinity::Upstream,
+                    generatedPrefix ? folia::TextAffinity::Downstream : folia::TextAffinity::Upstream,
                 };
             }
         }
         return result;
     }
 
-    std::vector<bool> RevealedStyleMarkers(std::vector<elmd::InlineRenderItem> const& items, elmd::TextPosition caret)
+    std::vector<bool> RevealedStyleMarkers(std::vector<folia::InlineRenderItem> const& items, folia::TextPosition caret)
     {
         std::vector<bool> visible(items.size(), true);
         std::vector<std::pair<std::u32string, std::size_t>> stack;
@@ -212,17 +212,17 @@ namespace winrt::ElMd
         return visible;
     }
 
-    void AppendDisplayText(DisplayInlineText& display, std::u32string const& text, elmd::TextSpan sourceSpan, elmd::InlineStyle style, bool marker)
+    void AppendDisplayText(DisplayInlineText& display, std::u32string const& text, folia::TextSpan sourceSpan, folia::InlineStyle style, bool marker)
     {
-        auto start = static_cast<UINT32>(elmd::utf16_len(display.text));
+        auto start = static_cast<UINT32>(folia::utf16_len(display.text));
         display.text += text;
-        auto length = static_cast<UINT32>(elmd::utf16_len(text));
+        auto length = static_cast<UINT32>(folia::utf16_len(text));
         for (std::size_t index = 0; index < text.size(); ++index)
         {
-            auto position = elmd::TextPosition{
+            auto position = folia::TextPosition{
                 sourceSpan.container_id,
                 sourceSpan.source_range.start + (std::min)(index, sourceSpan.source_range.length()),
-                elmd::TextAffinity::Downstream};
+                folia::TextAffinity::Downstream};
             display.displayToSource.push_back(EditorDisplayPosition{
                 position,
                 EditorDisplayPositionKind::Source});
@@ -244,13 +244,13 @@ namespace winrt::ElMd
     void AppendGeneratedText(
         DisplayInlineText& display,
         std::u32string const& text,
-        elmd::TextPosition sourcePosition,
-        elmd::InlineStyle style,
+        folia::TextPosition sourcePosition,
+        folia::InlineStyle style,
         EditorDisplayPositionKind kind)
     {
-        auto start = static_cast<UINT32>(elmd::utf16_len(display.text));
+        auto start = static_cast<UINT32>(folia::utf16_len(display.text));
         display.text += text;
-        auto length = elmd::utf16_len(text);
+        auto length = folia::utf16_len(text);
         display.displayToSource.insert(
             display.displayToSource.end(),
             length,
@@ -260,8 +260,8 @@ namespace winrt::ElMd
 
     void MergeDisplayText(DisplayInlineText& target, DisplayInlineText source)
     {
-        auto offset = static_cast<UINT32>(elmd::utf16_len(target.text));
-        auto characterCount = elmd::utf16_len(source.text);
+        auto offset = static_cast<UINT32>(folia::utf16_len(target.text));
+        auto characterCount = folia::utf16_len(source.text);
         target.text += source.text;
         if (source.displayToSource.size() > characterCount) source.displayToSource.resize(characterCount);
         target.displayToSource.insert(target.displayToSource.end(), source.displayToSource.begin(), source.displayToSource.end());
@@ -302,7 +302,7 @@ namespace winrt::ElMd
         target.pendingMath = target.pendingMath || source.pendingMath;
     }
 
-    void AppendSourceText(DisplayInlineText& display, std::u32string_view sourceText, elmd::TextSpan sourceSpan, elmd::InlineStyle style, bool marker)
+    void AppendSourceText(DisplayInlineText& display, std::u32string_view sourceText, folia::TextSpan sourceSpan, folia::InlineStyle style, bool marker)
     {
         auto length = (std::min)(sourceSpan.source_range.length(), sourceText.size());
         AppendDisplayText(display, std::u32string(sourceText.substr(0, length)), sourceSpan, style, marker);
@@ -311,11 +311,11 @@ namespace winrt::ElMd
     void AppendProjectedSourceText(
         DisplayInlineText& display,
         std::u32string_view text,
-        elmd::NodeId owner,
+        folia::NodeId owner,
         std::vector<std::size_t> const& sourceOffsets,
-        elmd::InlineStyle style)
+        folia::InlineStyle style)
     {
-        auto start = static_cast<UINT32>(elmd::utf16_len(display.text));
+        auto start = static_cast<UINT32>(folia::utf16_len(display.text));
         display.text.append(text);
         for (std::size_t index = 0; index < text.size(); ++index)
         {
@@ -323,7 +323,7 @@ namespace winrt::ElMd
                 ? index
                 : sourceOffsets[(std::min)(index, sourceOffsets.size() - 1)];
             auto mapping = EditorDisplayPosition{
-                {owner, offset, elmd::TextAffinity::Downstream},
+                {owner, offset, folia::TextAffinity::Downstream},
                 EditorDisplayPositionKind::Source};
             display.displayToSource.push_back(mapping);
             if (text[index] > 0xffff) display.displayToSource.push_back(mapping);
@@ -332,16 +332,16 @@ namespace winrt::ElMd
         {
             display.ranges.push_back(InlineStyleRange{
                 start,
-                static_cast<UINT32>(elmd::utf16_len(text)),
+                static_cast<UINT32>(folia::utf16_len(text)),
                 style,
                 false,
                 SyntaxHighlightKind::None});
         }
     }
 
-    void AppendMathPlaceholder(DisplayInlineText& display, std::size_t count, elmd::TextPosition sourcePosition)
+    void AppendMathPlaceholder(DisplayInlineText& display, std::size_t count, folia::TextPosition sourcePosition)
     {
-        auto start = static_cast<UINT32>(elmd::utf16_len(display.text));
+        auto start = static_cast<UINT32>(folia::utf16_len(display.text));
         display.text.append(count, U'\u2007');
         display.displayToSource.insert(
             display.displayToSource.end(),
@@ -349,17 +349,17 @@ namespace winrt::ElMd
             EditorDisplayPosition{sourcePosition, EditorDisplayPositionKind::Generated});
         if (count > 0)
         {
-            display.ranges.push_back(InlineStyleRange{ start, static_cast<UINT32>(count), elmd::InlineStyle::plain(), false, SyntaxHighlightKind::None });
+            display.ranges.push_back(InlineStyleRange{ start, static_cast<UINT32>(count), folia::InlineStyle::plain(), false, SyntaxHighlightKind::None });
         }
     }
 
-    void AppendMathFragments(DisplayInlineText& display, MathJaxSvg const& math, elmd::TextSpan sourceSpan, bool editing, elmd::InlineStyle style)
+    void AppendMathFragments(DisplayInlineText& display, MathJaxSvg const& math, folia::TextSpan sourceSpan, bool editing, folia::InlineStyle style)
     {
         auto sourceStart = sourceSpan.source_range.start;
         auto sourceEnd = sourceSpan.source_range.end;
         if (editing)
         {
-            AppendGeneratedText(display, U"\u2003", {sourceSpan.container_id, sourceEnd, elmd::TextAffinity::Downstream}, style);
+            AppendGeneratedText(display, U"\u2003", {sourceSpan.container_id, sourceEnd, folia::TextAffinity::Downstream}, style);
         }
         float progress = 0.0f;
         for (std::size_t index = 0; index < math.fragments.size(); ++index)
@@ -375,14 +375,14 @@ namespace winrt::ElMd
                 // Keep them in one DirectWrite flow and expose an optional
                 // break; a hard newline would force every fragment onto its
                 // own line even when the remaining width is sufficient.
-                AppendGeneratedText(display, U"\u200B", {sourceSpan.container_id, mappedOffset, elmd::TextAffinity::Downstream}, style);
+                AppendGeneratedText(display, U"\u200B", {sourceSpan.container_id, mappedOffset, folia::TextAffinity::Downstream}, style);
             }
-            auto start = static_cast<UINT32>(elmd::utf16_len(display.text));
+            auto start = static_cast<UINT32>(folia::utf16_len(display.text));
             display.text.push_back(U'\uFFFC');
             display.displayToSource.push_back({
                 sourceSpan.container_id,
                 mappedOffset,
-                elmd::TextAffinity::Downstream,
+                folia::TextAffinity::Downstream,
                 EditorDisplayPositionKind::Generated});
             display.ranges.push_back(InlineStyleRange{ start, 1, style, false, SyntaxHighlightKind::None });
             auto fragmentStart = math.width > 0.0f ? progress / math.width : 0.0f;
@@ -404,7 +404,7 @@ namespace winrt::ElMd
     DisplayInlineText BuildMathPreviewText(DisplayInlineText::MathPreview const& preview)
     {
         DisplayInlineText display;
-        auto style = elmd::InlineStyle::plain();
+        auto style = folia::InlineStyle::plain();
         style.strikethrough = preview.strikethrough;
         AppendMathFragments(
             display,
@@ -415,15 +415,15 @@ namespace winrt::ElMd
         display.displayToSource.push_back({
             preview.contentSpan.container_id,
             preview.contentSpan.source_range.end,
-            elmd::TextAffinity::Downstream,
+            folia::TextAffinity::Downstream,
             EditorDisplayPositionKind::Generated});
         return display;
     }
 
     DisplayInlineText BuildDisplayInlineText(
-        std::vector<elmd::InlineRenderItem> const& items,
-        elmd::TextPosition caret,
-        elmd::TextPosition sourceEnd,
+        std::vector<folia::InlineRenderItem> const& items,
+        folia::TextPosition caret,
+        folia::TextPosition sourceEnd,
         MathJaxRenderer& mathJax,
         SvgNormalizer& svgNormalizer,
         D2D1_COLOR_F svgColor,
@@ -445,7 +445,7 @@ namespace winrt::ElMd
             {
                 continue;
             }
-            if (item.kind == elmd::InlineRenderItem::Kind::Link)
+            if (item.kind == folia::InlineRenderItem::Kind::Link)
             {
                 if (CaretTouchesSpan(caret, item.source_span))
                 {
@@ -453,17 +453,17 @@ namespace winrt::ElMd
                 }
                 else
                 {
-                    MergeDisplayText(display, BuildDisplayInlineText(item.special().semantic().children, caret, {item.source_span.container_id, item.source_span.source_range.end, elmd::TextAffinity::Downstream}, mathJax, svgNormalizer, svgColor, fontSize, containerWidth, svgSupported, requestMath));
+                    MergeDisplayText(display, BuildDisplayInlineText(item.special().semantic().children, caret, {item.source_span.container_id, item.source_span.source_range.end, folia::TextAffinity::Downstream}, mathJax, svgNormalizer, svgColor, fontSize, containerWidth, svgSupported, requestMath));
                 }
                 continue;
             }
-            if (item.kind == elmd::InlineRenderItem::Kind::Image)
+            if (item.kind == folia::InlineRenderItem::Kind::Image)
             {
                 if (CaretTouchesSpan(caret, item.source_span)) AppendSourceText(display, item.special().semantic().source_text, item.source_span, item.style, false);
                 else
                 {
-                    auto displayStart = static_cast<std::uint32_t>(elmd::utf16_len(display.text));
-                    AppendGeneratedText(display, U"\uFFFC", {item.source_span.container_id, item.source_span.source_range.start, elmd::TextAffinity::Downstream}, item.style);
+                    auto displayStart = static_cast<std::uint32_t>(folia::utf16_len(display.text));
+                    AppendGeneratedText(display, U"\uFFFC", {item.source_span.container_id, item.source_span.source_range.start, folia::TextAffinity::Downstream}, item.style);
                     display.imageOverlays.push_back(DisplayInlineText::ImageOverlay{
                         displayStart,
                         item.source_span,
@@ -476,16 +476,16 @@ namespace winrt::ElMd
                 }
                 continue;
             }
-            if (item.kind == elmd::InlineRenderItem::Kind::Math)
+            if (item.kind == folia::InlineRenderItem::Kind::Math)
             {
                 if (!svgSupported)
                 {
                     AppendSourceText(display, item.special().semantic().source_text, item.source_span, item.style, false);
                     continue;
                 }
-                auto displayMath = item.special().display == elmd::MathDisplayMode::Block;
+                auto displayMath = item.special().display == folia::MathDisplayMode::Block;
                 auto rawMath = mathJax.GetOrQueue(
-                    elmd::cps_to_utf8(item.text),
+                    folia::cps_to_utf8(item.text),
                     displayMath,
                     fontSize,
                     containerWidth,
@@ -493,9 +493,9 @@ namespace winrt::ElMd
                 auto math = rawMath ? NormalizeMathJaxSvg(*rawMath, svgNormalizer, svgColor, fontSize, requestMath) : std::nullopt;
                 display.pendingMath = display.pendingMath || !rawMath || !math;
                 auto editing = CaretTouchesSpan(caret, item.source_span);
-                auto delimiterLength = item.special().display == elmd::MathDisplayMode::Block
+                auto delimiterLength = item.special().display == folia::MathDisplayMode::Block
                     ? std::size_t{0}
-                    : item.special().math_delim == elmd::MathDelimiter::InlineParen ? std::size_t{2} : std::size_t{1};
+                    : item.special().math_delim == folia::MathDelimiter::InlineParen ? std::size_t{2} : std::size_t{1};
                 auto contentStart = (std::min)(item.source_span.source_range.start + delimiterLength, item.source_span.source_range.end);
                 auto contentEnd = item.source_span.source_range.end >= delimiterLength
                     ? (std::max)(contentStart, item.source_span.source_range.end - delimiterLength)
@@ -511,7 +511,7 @@ namespace winrt::ElMd
                     AppendSourceText(display, item.special().semantic().source_text, item.source_span, item.style, false);
                     display.mathPreviews.push_back(DisplayInlineText::MathPreview{
                         *math,
-                        elmd::TextSpan{item.source_span.container_id, {contentStart, contentEnd}},
+                        folia::TextSpan{item.source_span.container_id, {contentStart, contentEnd}},
                         item.style.strikethrough,
                     });
                     continue;
@@ -519,20 +519,20 @@ namespace winrt::ElMd
                 AppendMathFragments(display, *math, {item.source_span.container_id, {contentStart, contentEnd}}, false, item.style);
                 continue;
             }
-            if (item.kind == elmd::InlineRenderItem::Kind::FootnoteReference)
+            if (item.kind == folia::InlineRenderItem::Kind::FootnoteReference)
             {
-                auto displayStart = static_cast<std::uint32_t>(elmd::utf16_len(display.text));
+                auto displayStart = static_cast<std::uint32_t>(folia::utf16_len(display.text));
                 auto ordinal = item.special().display_text.empty()
-                    ? elmd::utf8_to_cps(item.special().semantic().footnote_label)
+                    ? folia::utf8_to_cps(item.special().semantic().footnote_label)
                     : item.special().display_text;
                 auto label = FootnoteSuperscript(ordinal);
                 AppendGeneratedText(
                     display,
                     label,
-                    {item.source_span.container_id, item.source_span.source_range.start, elmd::TextAffinity::Downstream},
+                    {item.source_span.container_id, item.source_span.source_range.start, folia::TextAffinity::Downstream},
                     item.style,
                     EditorDisplayPositionKind::BoundaryDecoration);
-                auto displayLength = static_cast<std::uint32_t>(elmd::utf16_len(label));
+                auto displayLength = static_cast<std::uint32_t>(folia::utf16_len(label));
                 if (!display.ranges.empty()) {
                     display.ranges.back().footnoteControl = EditorFootnoteControlKind::Reference;
                 }
@@ -544,14 +544,14 @@ namespace winrt::ElMd
                     EditorFootnoteControlKind::Reference});
                 continue;
             }
-            if (item.kind == elmd::InlineRenderItem::Kind::Marker && item.source_span.source_range.empty())
+            if (item.kind == folia::InlineRenderItem::Kind::Marker && item.source_span.source_range.empty())
             {
-                auto markerPosition = elmd::TextPosition{
+                auto markerPosition = folia::TextPosition{
                     item.source_span.container_id,
                     item.source_span.source_range.start,
-                    item.special().generated_boundary_affinity.value_or(elmd::TextAffinity::Upstream),
+                    item.special().generated_boundary_affinity.value_or(folia::TextAffinity::Upstream),
                 };
-                if (item.special().marker_role == elmd::MarkerRole::TaskCheckbox)
+                if (item.special().marker_role == folia::MarkerRole::TaskCheckbox)
                 {
                     auto const& markerText = item.special().display_text.empty()
                         ? item.text : item.special().display_text;
@@ -568,7 +568,7 @@ namespace winrt::ElMd
                             item.style,
                             EditorDisplayPositionKind::BoundaryDecoration);
                     }
-                    auto displayStart = static_cast<std::uint32_t>(elmd::utf16_len(display.text));
+                    auto displayStart = static_cast<std::uint32_t>(folia::utf16_len(display.text));
                     AppendGeneratedText(
                         display,
                         U"\uFFFC",
@@ -590,16 +590,16 @@ namespace winrt::ElMd
                 }
                 auto const& markerText = item.special().display_text.empty()
                     ? item.text : item.special().display_text;
-                auto displayStart = static_cast<std::uint32_t>(elmd::utf16_len(display.text));
+                auto displayStart = static_cast<std::uint32_t>(folia::utf16_len(display.text));
                 AppendGeneratedText(
                     display,
                     markerText,
                     markerPosition,
                     item.style,
                     EditorDisplayPositionKind::BoundaryDecoration);
-                if (item.special().marker_role == elmd::MarkerRole::FootnoteLabel)
+                if (item.special().marker_role == folia::MarkerRole::FootnoteLabel)
                 {
-                    auto displayLength = static_cast<std::uint32_t>(elmd::utf16_len(markerText));
+                    auto displayLength = static_cast<std::uint32_t>(folia::utf16_len(markerText));
                     if (!display.ranges.empty()) {
                         display.ranges.back().footnoteControl = EditorFootnoteControlKind::DefinitionLabel;
                     }
@@ -614,7 +614,7 @@ namespace winrt::ElMd
             else
             {
                 auto rangeStart = display.ranges.size();
-                AppendDisplayText(display, InlineText(item), item.source_span, item.style, item.kind == elmd::InlineRenderItem::Kind::Marker);
+                AppendDisplayText(display, InlineText(item), item.source_span, item.style, item.kind == folia::InlineRenderItem::Kind::Marker);
                 auto syntax = SourceSyntax(item.source_syntax);
                 for (auto rangeIndex = rangeStart; rangeIndex < display.ranges.size(); ++rangeIndex)
                 {
@@ -622,7 +622,7 @@ namespace winrt::ElMd
                 }
             }
         }
-        if (!display.text.empty() && display.text.back() == U'\n') AppendGeneratedText(display, U"\u200B", sourceEnd, elmd::InlineStyle::plain());
+        if (!display.text.empty() && display.text.back() == U'\n') AppendGeneratedText(display, U"\u200B", sourceEnd, folia::InlineStyle::plain());
         display.displayToSource.push_back(sourceEnd);
         return display;
     }

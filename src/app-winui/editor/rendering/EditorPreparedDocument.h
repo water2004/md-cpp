@@ -1,15 +1,15 @@
 #pragma once
 
-import elmd.platform.editor_geometry;
+import folia.platform.editor_geometry;
 
 #include "editor/rendering/EditorSurfaceRenderer.h"
 #include "editor/rendering/EditorContentPreparation.h"
 #include "editor/rendering/EditorInlineImageRenderer.h"
 #include "editor/rendering/EditorTableBlockRenderer.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
-    using elmd::platform::editor::EditorBlockGeometryIndex;
+    using folia::platform::editor::EditorBlockGeometryIndex;
 
     struct EditorSurfaceRenderer::PreparedDocument
     {
@@ -27,10 +27,10 @@ namespace winrt::ElMd
             std::vector<EditorInlineImageRenderer::ImageDraw> images;
             std::vector<MathPreview> mathPreviews;
             std::optional<EditorTableBlockRenderer::PreparedTable> table;
-            std::vector<elmd::NodeId> owners;
+            std::vector<folia::NodeId> owners;
             float textHeight = 0.0f;
             float height = 0.0f;
-            elmd::NodeId sourceId{};
+            folia::NodeId sourceId{};
             std::uint64_t presentationKey = 0;
             bool sourceMode = false;
             bool code = false;
@@ -71,7 +71,7 @@ namespace winrt::ElMd
         };
 
         std::uint64_t modelRevision = 0;
-        elmd::TextSelection selection{};
+        folia::TextSelection selection{};
         float documentWidth = 0.0f;
         float totalHeight = 0.0f;
         std::uint64_t themeRevision = 0;

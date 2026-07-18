@@ -1,21 +1,21 @@
 #pragma once
 
-import elmd.core.render_model;
-import elmd.core.selection;
-import elmd.core.text_edit;
+import folia.core.render_model;
+import folia.core.selection;
+import folia.core.text_edit;
 
-namespace winrt::ElMd::detail
+namespace winrt::Folia::detail
 {
     struct EditorSearchHighlight
     {
-        elmd::TextSpan span;
+        folia::TextSpan span;
         bool current = false;
     };
 
     struct EditorRenderFrame
     {
-        elmd::RenderModel const& renderModel;
-        elmd::TextSelection selection;
+        folia::RenderModel const& renderModel;
+        folia::TextSelection selection;
         std::span<const EditorSearchHighlight> searchHighlights;
         std::wstring const& baseDirectory;
         std::function<void(std::size_t, std::size_t)> materializeBlocks;

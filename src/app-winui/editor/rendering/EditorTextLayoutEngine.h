@@ -3,7 +3,7 @@
 #include "editor/rendering/EditorRenderResources.h"
 #include "editor/rendering/EditorStyleSheet.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct InlineStyleRange;
     struct DisplayInlineText;

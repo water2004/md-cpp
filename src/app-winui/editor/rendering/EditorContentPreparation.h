@@ -1,29 +1,29 @@
 #pragma once
 
-import elmd.core.ids;
-import elmd.core.image_dimension;
-import elmd.core.render_model;
-import elmd.core.text_edit;
-import elmd.platform.editor_display_mapping;
+import folia.core.ids;
+import folia.core.image_dimension;
+import folia.core.render_model;
+import folia.core.text_edit;
+import folia.platform.editor_display_mapping;
 
 #include "media/MathJaxRenderer.h"
 #include "media/MermaidRenderer.h"
 #include "media/SvgNormalizer.h"
 #include "media/TreeSitterHighlighter.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
-    using elmd::platform::editor::EditorDisplayMapping;
-    using elmd::platform::editor::EditorDisplayPosition;
-    using elmd::platform::editor::EditorDisplayPositionKind;
-    using elmd::platform::editor::EditorFootnoteControlKind;
+    using folia::platform::editor::EditorDisplayMapping;
+    using folia::platform::editor::EditorDisplayPosition;
+    using folia::platform::editor::EditorDisplayPositionKind;
+    using folia::platform::editor::EditorFootnoteControlKind;
 
     inline std::optional<float> ResolveImageDimension(
-        std::optional<elmd::ImageDimension> const& dimension,
+        std::optional<folia::ImageDimension> const& dimension,
         std::optional<float> percentBasis = std::nullopt)
     {
         if (!dimension) return std::nullopt;
-        if (dimension->unit == elmd::ImageDimensionUnit::Pixels) return dimension->value;
+        if (dimension->unit == folia::ImageDimensionUnit::Pixels) return dimension->value;
         if (!percentBasis || *percentBasis <= 0.0f) return std::nullopt;
         return *percentBasis * dimension->value / 100.0f;
     }
@@ -32,7 +32,7 @@ namespace winrt::ElMd
     {
         UINT32 start = 0;
         UINT32 length = 0;
-        elmd::InlineStyle style;
+        folia::InlineStyle style;
         bool marker = false;
         SyntaxHighlightKind syntax = SyntaxHighlightKind::None;
         std::optional<EditorFootnoteControlKind> footnoteControl;
@@ -45,7 +45,7 @@ namespace winrt::ElMd
             std::uint32_t displayStart = 0;
             MathJaxSvgFragment fragment;
             float leadingSpace = 0.0f;
-            elmd::TextSpan sourceSpan;
+            folia::TextSpan sourceSpan;
             float progressStart = 0.0f;
             float progressEnd = 1.0f;
             bool strikethrough = false;
@@ -55,18 +55,18 @@ namespace winrt::ElMd
         struct MathPreview
         {
             MathJaxSvg svg;
-            elmd::TextSpan contentSpan;
+            folia::TextSpan contentSpan;
             bool strikethrough = false;
         };
 
         struct ImageOverlay
         {
             std::uint32_t displayStart = 0;
-            elmd::TextSpan sourceSpan;
+            folia::TextSpan sourceSpan;
             std::string source;
             std::string alt;
-            std::optional<elmd::ImageDimension> width;
-            std::optional<elmd::ImageDimension> height;
+            std::optional<folia::ImageDimension> width;
+            std::optional<folia::ImageDimension> height;
             bool block = false;
         };
 
@@ -79,7 +79,7 @@ namespace winrt::ElMd
         struct TaskCheckboxOverlay
         {
             std::uint32_t displayStart = 0;
-            elmd::TextPosition sourcePosition;
+            folia::TextPosition sourcePosition;
             bool checked = false;
             float advance = 0.0f;
             float height = 0.0f;
@@ -91,7 +91,7 @@ namespace winrt::ElMd
         {
             std::uint32_t displayStart = 0;
             std::uint32_t displayLength = 0;
-            elmd::TextSpan sourceSpan;
+            folia::TextSpan sourceSpan;
             std::string label;
             EditorFootnoteControlKind kind = EditorFootnoteControlKind::Reference;
         };
@@ -112,39 +112,39 @@ namespace winrt::ElMd
     std::optional<std::vector<std::uint8_t>> DecodeBase64(std::string_view source);
     std::optional<MathJaxSvg> NormalizeMathJaxSvg(MathJaxSvg const& source, SvgNormalizer& normalizer, D2D1_COLOR_F color, float fontSize, bool allowQueue);
     std::optional<MermaidSvg> NormalizeMermaidSvg(MermaidSvg const& source, SvgNormalizer& normalizer, bool allowQueue);
-    std::u32string InlineText(std::vector<elmd::InlineRenderItem> const& items);
-    elmd::TextPosition InlineItemsEndPosition(std::vector<elmd::InlineRenderItem> const& items, elmd::TextPosition fallback);
+    std::u32string InlineText(std::vector<folia::InlineRenderItem> const& items);
+    folia::TextPosition InlineItemsEndPosition(std::vector<folia::InlineRenderItem> const& items, folia::TextPosition fallback);
     bool IsMermaidLanguage(std::optional<std::string> const& language);
     void MergeDisplayText(DisplayInlineText& target, DisplayInlineText source);
-    void AppendSourceText(DisplayInlineText& display, std::u32string_view sourceText, elmd::TextSpan sourceSpan, elmd::InlineStyle style, bool marker);
+    void AppendSourceText(DisplayInlineText& display, std::u32string_view sourceText, folia::TextSpan sourceSpan, folia::InlineStyle style, bool marker);
     void AppendProjectedSourceText(
         DisplayInlineText& display,
         std::u32string_view text,
-        elmd::NodeId owner,
+        folia::NodeId owner,
         std::vector<std::size_t> const& sourceOffsets,
-        elmd::InlineStyle style);
+        folia::InlineStyle style);
     void AppendGeneratedText(
         DisplayInlineText& display,
         std::u32string const& text,
-        elmd::TextPosition sourcePosition,
-        elmd::InlineStyle style,
+        folia::TextPosition sourcePosition,
+        folia::InlineStyle style,
         EditorDisplayPositionKind kind = EditorDisplayPositionKind::Generated);
-    void AppendMathPlaceholder(DisplayInlineText& display, std::size_t count, elmd::TextPosition sourcePosition);
+    void AppendMathPlaceholder(DisplayInlineText& display, std::size_t count, folia::TextPosition sourcePosition);
     void AppendMathFragments(
         DisplayInlineText& display,
         MathJaxSvg const& math,
-        elmd::TextSpan sourceSpan,
+        folia::TextSpan sourceSpan,
         bool editing,
-        elmd::InlineStyle style);
+        folia::InlineStyle style);
     void ApplyInlinePlaceholder(IDWriteTextLayout* layout, UINT32 displayStart, float width, float height, float baseline);
     void ApplyMathInlineObjects(IDWriteTextLayout* layout, std::vector<DisplayInlineText::MathOverlay> const& overlays);
     void ApplyIndentInlineObjects(IDWriteTextLayout* layout, std::vector<DisplayInlineText::IndentOverlay> const& overlays);
     void ApplyTaskCheckboxInlineObjects(IDWriteTextLayout* layout, std::vector<DisplayInlineText::TaskCheckboxOverlay> const& overlays);
     DisplayInlineText BuildMathPreviewText(DisplayInlineText::MathPreview const& preview);
     DisplayInlineText BuildDisplayInlineText(
-        std::vector<elmd::InlineRenderItem> const& items,
-        elmd::TextPosition caret,
-        elmd::TextPosition sourceEnd,
+        std::vector<folia::InlineRenderItem> const& items,
+        folia::TextPosition caret,
+        folia::TextPosition sourceEnd,
         MathJaxRenderer& mathJax,
         SvgNormalizer& svgNormalizer,
         D2D1_COLOR_F svgColor,
@@ -152,10 +152,10 @@ namespace winrt::ElMd
         float containerWidth,
         bool svgSupported,
         bool requestMath);
-    DisplayInlineText BuildCodeBlockText(elmd::RenderBlock const& block, elmd::TextPosition caret, TreeSitterHighlighter& highlighter);
+    DisplayInlineText BuildCodeBlockText(folia::RenderBlock const& block, folia::TextPosition caret, TreeSitterHighlighter& highlighter);
     DisplayInlineText BuildMathBlockText(
-        elmd::RenderBlock const& block,
-        elmd::TextPosition caret,
+        folia::RenderBlock const& block,
+        folia::TextPosition caret,
         MathJaxRenderer& mathJax,
         SvgNormalizer& svgNormalizer,
         D2D1_COLOR_F svgColor,

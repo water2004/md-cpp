@@ -2,7 +2,7 @@
 
 #include <filesystem>
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     // FOLIA_ASSETS_DIRECTORY names the Assets directory itself. It can use
     // {LocalAppData} or Windows %ENVIRONMENT_VARIABLE% references. When the

@@ -2,8 +2,8 @@
 #include "editor/interaction/EditorTextInputController.h"
 #include "editor/rendering/EditorContentPreparation.h"
 
-import elmd.core.command;
-import elmd.core.utf;
+import folia.core.command;
+import folia.core.utf;
 
 namespace
 {
@@ -26,7 +26,7 @@ namespace
 
 }
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     EditorTextInputController::~EditorTextInputController()
     {
@@ -349,7 +349,7 @@ namespace winrt::ElMd
             auto start = static_cast<std::size_t>((std::max)(0, range.StartCaretPosition));
             auto end = static_cast<std::size_t>((std::max)(0, range.EndCaretPosition));
             auto incomingHstring = args.Text();
-            auto incoming = elmd::utf8_to_cps(winrt::to_string(incomingHstring));
+            auto incoming = folia::utf8_to_cps(winrt::to_string(incomingHstring));
             auto isIncomingNewline = incoming == U"\r" || incoming == U"\n" || incoming == U"\r\n";
             if (!isIncomingNewline
                 && pendingCharacterUpdate_
@@ -406,9 +406,9 @@ namespace winrt::ElMd
                     session_->TextInputPositionFromAcp(activeContainer_, (std::min)(start, length)),
                     session_->TextInputPositionFromAcp(activeContainer_, (std::min)(end, length)));
             }
-            auto command = elmd::Command::InsertText(incoming);
-            if (isIncomingNewline) command.kind = elmd::CommandKind::InsertNewline;
-            else if (incoming.empty()) command.kind = elmd::CommandKind::DeleteSelection;
+            auto command = folia::Command::InsertText(incoming);
+            if (isIncomingNewline) command.kind = folia::CommandKind::InsertNewline;
+            else if (incoming.empty()) command.kind = folia::CommandKind::DeleteSelection;
             updating_ = true;
             bool executed = false;
             try

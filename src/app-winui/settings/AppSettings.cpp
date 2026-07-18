@@ -22,7 +22,7 @@ namespace
     }
 }
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     SettingsLoadResult LoadAppSettings()
     {

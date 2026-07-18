@@ -1,10 +1,10 @@
 #include "pch.h"
 #include "EditorDocumentPainter.h"
 
-import elmd.core.callout;
-import elmd.core.utf;
+import folia.core.callout;
+import folia.core.utf;
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     EditorDocumentPainter::EditorDocumentPainter(
         EditorRenderResources& resources,
@@ -14,7 +14,7 @@ namespace winrt::ElMd
         std::optional<D2D1_POINT_2F> pointerPosition,
         bool printMode,
         float documentRight,
-        elmd::TextSelection selection,
+        folia::TextSelection selection,
         std::span<const detail::EditorSearchHighlight> searchHighlights,
         std::unordered_map<std::uint64_t, std::size_t> const& editableIndex)
         : resources(resources),
@@ -32,7 +32,7 @@ namespace winrt::ElMd
     {
     }
 
-    bool EditorDocumentPainter::PositionLess(elmd::TextPosition left, elmd::TextPosition right) const
+    bool EditorDocumentPainter::PositionLess(folia::TextPosition left, folia::TextPosition right) const
     {
         if (left.container_id == right.container_id) return left.source_offset < right.source_offset;
         auto leftOrder = editableIndex.find(left.container_id.v);
@@ -42,7 +42,7 @@ namespace winrt::ElMd
         return leftOrder->second < rightOrder->second;
     }
 
-    bool EditorDocumentPainter::Selected(elmd::TextPosition position) const
+    bool EditorDocumentPainter::Selected(folia::TextPosition position) const
     {
         if (selection.is_caret()) return false;
         return !PositionLess(position, selectionStart) && PositionLess(position, selectionEnd);
@@ -163,7 +163,7 @@ namespace winrt::ElMd
             if (FAILED(layout->HitTestTextPosition(overlay.displayStart, FALSE, &x, &lineY, &metrics))) continue;
             positioned.push_back({&overlay, x + overlay.leadingSpace, metrics.top});
         }
-        auto sameSpan = [](elmd::TextSpan const& left, elmd::TextSpan const& right)
+        auto sameSpan = [](folia::TextSpan const& left, folia::TextSpan const& right)
         {
             return left.container_id == right.container_id
                 && left.source_range.start == right.source_range.start
@@ -282,14 +282,14 @@ namespace winrt::ElMd
 
     void EditorDocumentPainter::ApplyNestedCodeHighlights(
         DisplayInlineText& display,
-        elmd::RenderBlock const& parent)
+        folia::RenderBlock const& parent)
     {
-        auto apply = [&](auto& self, elmd::RenderBlock const& block) -> void
+        auto apply = [&](auto& self, folia::RenderBlock const& block) -> void
         {
             auto const& special = block.special();
-            if (block.kind == elmd::RenderBlockKind::Code && special.language && !special.code_text.empty())
+            if (block.kind == folia::RenderBlockKind::Code && special.language && !special.code_text.empty())
             {
-                auto highlights = treeSitter.Highlight(*special.language, elmd::cps_to_utf8(special.code_text));
+                auto highlights = treeSitter.Highlight(*special.language, folia::cps_to_utf8(special.code_text));
                 for (auto const& highlight : highlights)
                 {
                     auto contentStart = (std::min)(static_cast<std::size_t>(highlight.start), special.code_text.size());
@@ -300,10 +300,10 @@ namespace winrt::ElMd
                     auto sourceEnd = special.content_to_source.empty()
                         ? contentEnd
                         : special.content_to_source[(std::min)(contentEnd, special.content_to_source.size() - 1)];
-                    auto start = DisplayPositionForSource(display.displayToSource, {block.id, sourceStart, elmd::TextAffinity::Downstream});
-                    auto end = DisplayPositionForSource(display.displayToSource, {block.id, sourceEnd, elmd::TextAffinity::Downstream});
+                    auto start = DisplayPositionForSource(display.displayToSource, {block.id, sourceStart, folia::TextAffinity::Downstream});
+                    auto end = DisplayPositionForSource(display.displayToSource, {block.id, sourceEnd, folia::TextAffinity::Downstream});
                     if (end <= start) continue;
-                    elmd::InlineStyle style = elmd::InlineStyle::plain();
+                    folia::InlineStyle style = folia::InlineStyle::plain();
                     style.code = true;
                     display.ranges.push_back({
                         static_cast<UINT32>(start),
@@ -322,15 +322,15 @@ namespace winrt::ElMd
     void EditorDocumentPainter::DrawFlowDecorations(
         IDWriteTextLayout* layout,
         D2D1_POINT_2F origin,
-        elmd::RenderBlock const& parent,
+        folia::RenderBlock const& parent,
         DisplayInlineText const& display)
     {
         if (!layout || display.displayToSource.empty()) return;
-        auto displayLimit = (std::min)(display.displayToSource.size(), elmd::utf16_len(display.text));
-        auto displayRange = [&](elmd::RenderBlock const& nested) -> std::optional<std::pair<std::size_t, std::size_t>>
+        auto displayLimit = (std::min)(display.displayToSource.size(), folia::utf16_len(display.text));
+        auto displayRange = [&](folia::RenderBlock const& nested) -> std::optional<std::pair<std::size_t, std::size_t>>
         {
             std::unordered_set<std::uint64_t> owners;
-            auto collectOwners = [&](auto& self, elmd::RenderBlock const& block) -> void
+            auto collectOwners = [&](auto& self, folia::RenderBlock const& block) -> void
             {
                 if (block.source_span.container_id.v != 0) owners.insert(block.source_span.container_id.v);
                 for (auto const& child : block.child_blocks) self(self, child);
@@ -347,7 +347,7 @@ namespace winrt::ElMd
             }
             return first ? std::optional{std::pair{*first, last}} : std::nullopt;
         };
-        auto contentLeftFor = [&](elmd::RenderBlock const& nested, std::pair<std::size_t, std::size_t> range, std::size_t indentColumns) -> std::optional<float>
+        auto contentLeftFor = [&](folia::RenderBlock const& nested, std::pair<std::size_t, std::size_t> range, std::size_t indentColumns) -> std::optional<float>
         {
             std::optional<std::size_t> anchorStart;
             for (std::size_t index = 0; index < displayLimit; ++index)
@@ -383,32 +383,32 @@ namespace winrt::ElMd
         };
         auto calloutBrushes = [&](std::string_view kind)
         {
-            switch (elmd::callout_visual_kind(kind))
+            switch (folia::callout_visual_kind(kind))
             {
-            case elmd::CalloutVisualKind::Tip:
+            case folia::CalloutVisualKind::Tip:
                 return std::pair{
                     resources.calloutTipBackgroundBrush.Get(),
                     resources.calloutTipBorderBrush.Get()};
-            case elmd::CalloutVisualKind::Warning:
+            case folia::CalloutVisualKind::Warning:
                 return std::pair{
                     resources.calloutWarningBackgroundBrush.Get(),
                     resources.calloutWarningBorderBrush.Get()};
-            case elmd::CalloutVisualKind::Note:
+            case folia::CalloutVisualKind::Note:
             default:
                 return std::pair{
                     resources.calloutNoteBackgroundBrush.Get(),
                     resources.calloutNoteBorderBrush.Get()};
             }
         };
-        auto draw = [&](auto& self, elmd::RenderBlock const& nested, bool root, std::size_t parentIndentColumns) -> void
+        auto draw = [&](auto& self, folia::RenderBlock const& nested, bool root, std::size_t parentIndentColumns) -> void
         {
             auto indentColumns = parentIndentColumns + nested.flow_local_indent_columns;
-            auto decorated = nested.kind == elmd::RenderBlockKind::Code
-                || nested.kind == elmd::RenderBlockKind::Quote
-                || nested.kind == elmd::RenderBlockKind::Callout
-                || nested.kind == elmd::RenderBlockKind::Footnote;
-            if (decorated && !(root && (nested.kind == elmd::RenderBlockKind::Code
-                || nested.kind == elmd::RenderBlockKind::Footnote)))
+            auto decorated = nested.kind == folia::RenderBlockKind::Code
+                || nested.kind == folia::RenderBlockKind::Quote
+                || nested.kind == folia::RenderBlockKind::Callout
+                || nested.kind == folia::RenderBlockKind::Footnote;
+            if (decorated && !(root && (nested.kind == folia::RenderBlockKind::Code
+                || nested.kind == folia::RenderBlockKind::Footnote)))
             {
                 auto range = displayRange(nested);
                 if (range)
@@ -421,12 +421,12 @@ namespace winrt::ElMd
                         auto left = (std::clamp)(*contentLeft, origin.x, documentRight);
                         auto rect = D2D1::RectF(left, top - 4.0f, documentRight, bottom + 4.0f);
                         auto calloutPalette = calloutBrushes(nested.special().callout_kind);
-                        auto brush = nested.kind == elmd::RenderBlockKind::Callout
+                        auto brush = nested.kind == folia::RenderBlockKind::Callout
                             ? calloutPalette.first
-                            : nested.kind == elmd::RenderBlockKind::Code
+                            : nested.kind == folia::RenderBlockKind::Code
                                 ? resources.panelBrush.Get()
                                 : resources.nestedQuoteBrush.Get();
-                        if (nested.kind == elmd::RenderBlockKind::Callout)
+                        if (nested.kind == folia::RenderBlockKind::Callout)
                         {
                             resources.d2dContext->FillRoundedRectangle(
                                 D2D1::RoundedRect(rect, 6.0f, 6.0f),
@@ -436,14 +436,14 @@ namespace winrt::ElMd
                         {
                             resources.d2dContext->FillRectangle(rect, brush);
                         }
-                        if (nested.kind == elmd::RenderBlockKind::Quote || nested.kind == elmd::RenderBlockKind::Callout)
+                        if (nested.kind == folia::RenderBlockKind::Quote || nested.kind == folia::RenderBlockKind::Callout)
                         {
                             auto borderWidth = nested.block_style.border_left ? nested.block_style.border_left->width : 3.0f;
                             auto lineX = left + borderWidth * 0.5f;
                             resources.d2dContext->DrawLine(
                                 D2D1::Point2F(lineX, rect.top + 3.0f),
                                 D2D1::Point2F(lineX, rect.bottom - 3.0f),
-                                nested.kind == elmd::RenderBlockKind::Callout
+                                nested.kind == folia::RenderBlockKind::Callout
                                     ? calloutPalette.second
                                     : resources.mutedBrush.Get(),
                                 borderWidth);

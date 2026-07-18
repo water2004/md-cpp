@@ -18,7 +18,7 @@ namespace
             : static_cast<std::int32_t>(std::distance(LanguageIds.begin(), found));
     }
 
-    Xaml::Media::SolidColorBrush Brush(elmd::Color color)
+    Xaml::Media::SolidColorBrush Brush(folia::Color color)
     {
         return Xaml::Media::SolidColorBrush(winrt::Windows::UI::Color{ color.a, color.r, color.g, color.b });
     }
@@ -108,7 +108,7 @@ namespace
     }
 }
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     using namespace Microsoft::UI::Xaml;
     using namespace Microsoft::UI::Xaml::Controls;
@@ -116,7 +116,7 @@ namespace winrt::ElMd
     SettingsView::SettingsView(
         AppSettings settings,
         std::shared_ptr<ThemeCatalog> catalog,
-        elmd::Theme systemVariant,
+        folia::Theme systemVariant,
         HWND owner,
         ApplySettings applySettings)
         : settings_(std::move(settings)),
@@ -552,8 +552,8 @@ namespace winrt::ElMd
         preview.Children().Append(quote);
 
         auto metadata = Text(
-            profile.variant == elmd::Theme::Light ? Localize(L"LightProfile")
-                : profile.variant == elmd::Theme::HighContrast ? Localize(L"HighContrastProfile")
+            profile.variant == folia::Theme::Light ? Localize(L"LightProfile")
+                : profile.variant == folia::Theme::HighContrast ? Localize(L"HighContrastProfile")
                 : Localize(L"DarkProfile"),
             12);
         metadata.Foreground(Brush(colors.muted_fg));
@@ -705,7 +705,7 @@ namespace winrt::ElMd
         removeThemeButton_.IsEnabled(removable);
     }
 
-    void SettingsView::Reset(AppSettings settings, elmd::Theme systemVariant)
+    void SettingsView::Reset(AppSettings settings, folia::Theme systemVariant)
     {
         settings_ = std::move(settings);
         appliedSettings_ = settings_;
@@ -718,7 +718,7 @@ namespace winrt::ElMd
         SetGeneralStatus({});
     }
 
-    void SettingsView::SetSystemVariant(elmd::Theme variant)
+    void SettingsView::SetSystemVariant(folia::Theme variant)
     {
         if (systemVariant_ == variant) return;
         systemVariant_ = variant;

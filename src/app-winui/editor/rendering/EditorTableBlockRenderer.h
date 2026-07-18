@@ -1,6 +1,6 @@
 #pragma once
 
-import elmd.platform.editor_interaction;
+import folia.platform.editor_interaction;
 
 #include "editor/rendering/EditorEmbeddedDraw.h"
 #include "editor/rendering/EditorInlineImageRenderer.h"
@@ -10,18 +10,18 @@ import elmd.platform.editor_interaction;
 #include "media/MathJaxRenderer.h"
 #include "media/SvgNormalizer.h"
 
-namespace elmd
+namespace folia
 {
     struct RenderBlock;
 }
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
-    using elmd::platform::editor::EditorInteractionMap;
-    using elmd::platform::editor::EditorVisualBlock;
-    using elmd::platform::editor::EditorVisualMathHit;
-    using elmd::platform::editor::EditorVisualTable;
-    using elmd::platform::editor::EditorVisualTableCell;
+    using folia::platform::editor::EditorInteractionMap;
+    using folia::platform::editor::EditorVisualBlock;
+    using folia::platform::editor::EditorVisualMathHit;
+    using folia::platform::editor::EditorVisualTable;
+    using folia::platform::editor::EditorVisualTableCell;
 
     struct EditorTableBlockRenderer
     {
@@ -45,8 +45,8 @@ namespace winrt::ElMd
         };
 
         static std::optional<PreparedTable> Prepare(
-            elmd::RenderBlock const& block,
-            elmd::TextPosition caret,
+            folia::RenderBlock const& block,
+            folia::TextPosition caret,
             float tableWidth,
             bool svgSupported,
             bool requestEmbedded,
@@ -58,9 +58,9 @@ namespace winrt::ElMd
             SvgNormalizer& svgNormalizer);
 
         static void Paint(
-            elmd::RenderBlock const& block,
+            folia::RenderBlock const& block,
             PreparedTable const& prepared,
-            elmd::TextSelection selection,
+            folia::TextSelection selection,
             float documentLeft,
             float top,
             float scrollOffset,

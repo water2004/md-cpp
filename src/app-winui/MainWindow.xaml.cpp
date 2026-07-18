@@ -6,19 +6,19 @@
 #include "MainWindow.g.cpp"
 #endif
 
-import elmd.core.command;
-import elmd.core.utf;
+import folia.core.command;
+import folia.core.utf;
 
-namespace winrt::ElMd::implementation
+namespace winrt::Folia::implementation
 {
     namespace
     {
-        Windows::UI::Color UiColor(elmd::Color color)
+        Windows::UI::Color UiColor(folia::Color color)
         {
             return Windows::UI::Color{ color.a, color.r, color.g, color.b };
         }
 
-        Microsoft::UI::Xaml::Media::SolidColorBrush Brush(elmd::Color color)
+        Microsoft::UI::Xaml::Media::SolidColorBrush Brush(folia::Color color)
         {
             return Microsoft::UI::Xaml::Media::SolidColorBrush(UiColor(color));
         }
@@ -26,7 +26,7 @@ namespace winrt::ElMd::implementation
         void UpdateBrushResource(
             Microsoft::UI::Xaml::ResourceDictionary const& resources,
             wchar_t const* name,
-            elmd::Color color)
+            folia::Color color)
         {
             auto key = winrt::box_value(name);
             if (resources.HasKey(key))
@@ -41,7 +41,7 @@ namespace winrt::ElMd::implementation
             resources.Insert(key, Brush(color));
         }
 
-        Windows::Foundation::IReference<Windows::UI::Color> ColorReference(elmd::Color color)
+        Windows::Foundation::IReference<Windows::UI::Color> ColorReference(folia::Color color)
         {
             return winrt::box_value(UiColor(color))
                 .as<Windows::Foundation::IReference<Windows::UI::Color>>();
@@ -57,9 +57,9 @@ namespace winrt::ElMd::implementation
     {
         InitializeComponent();
         LocalizeShell();
-        auto iconPath = winrt::ElMd::AssetPath(std::filesystem::path(L"branding") / L"Folia.ico");
+        auto iconPath = winrt::Folia::AssetPath(std::filesystem::path(L"branding") / L"Folia.ico");
         if (std::filesystem::exists(iconPath)) AppWindow().SetIcon(winrt::hstring(iconPath.c_str()));
-        auto loadedSettings = winrt::ElMd::LoadAppSettings();
+        auto loadedSettings = winrt::Folia::LoadAppSettings();
         appSettings = std::move(loadedSettings.settings);
         themeCatalog->Refresh();
         editorRenderer.SetMathRenderingEnabled(appSettings.mathRenderingEnabled);
@@ -206,13 +206,13 @@ namespace winrt::ElMd::implementation
             editorSession,
             editorRenderer,
             EditorSurface(),
-            [this](elmd::Command const& command) { return ExecuteEditorCommand(command); },
+            [this](folia::Command const& command) { return ExecuteEditorCommand(command); },
             [this] { RenderEditorSurface(); },
             [this] { return WindowHandle(); });
 
     }
 
-    bool MainWindow::ExecuteEditorCommand(elmd::Command const& command)
+    bool MainWindow::ExecuteEditorCommand(folia::Command const& command)
     {
         keyboardController.ResetCaretGoal();
         auto oldRevision = editorSession.Revision();
@@ -234,7 +234,7 @@ namespace winrt::ElMd::implementation
         return true;
     }
 
-    void MainWindow::NavigateToFootnote(elmd::TextPosition position)
+    void MainWindow::NavigateToFootnote(folia::TextPosition position)
     {
         editorSession.SetSelection(position, position);
         textInputController.NotifySelectionChanged();
@@ -244,7 +244,7 @@ namespace winrt::ElMd::implementation
     }
 
     void MainWindow::ShowFootnoteFlyout(
-        winrt::ElMd::EditorSurfaceRenderer::FootnoteHit const& hit,
+        winrt::Folia::EditorSurfaceRenderer::FootnoteHit const& hit,
         Windows::Foundation::Point position)
     {
         using namespace Microsoft::UI::Xaml;
@@ -263,7 +263,7 @@ namespace winrt::ElMd::implementation
         heading.FontWeight(Windows::UI::Text::FontWeights::SemiBold());
         panel.Children().Append(heading);
 
-        const auto isReference = hit.kind == winrt::ElMd::EditorFootnoteControlKind::Reference;
+        const auto isReference = hit.kind == winrt::Folia::EditorFootnoteControlKind::Reference;
         auto target = isReference
             ? editorSession.FootnoteDefinitionTarget(hit.label)
             : editorSession.FirstFootnoteReferenceTarget(hit.label);
@@ -299,8 +299,8 @@ namespace winrt::ElMd::implementation
             action.Click([this, label = hit.label](auto const&, auto const&)
             {
                 if (footnoteFlyout) footnoteFlyout.Hide();
-                elmd::Command command;
-                command.kind = elmd::CommandKind::CreateFootnoteDefinition;
+                folia::Command command;
+                command.kind = folia::CommandKind::CreateFootnoteDefinition;
                 command.footnote_label = label;
                 ExecuteEditorCommand(command);
             });
@@ -395,14 +395,14 @@ namespace winrt::ElMd::implementation
         }
     }
 
-    elmd::Theme MainWindow::CurrentThemeVariant()
+    folia::Theme MainWindow::CurrentThemeVariant()
     {
         if (Windows::UI::ViewManagement::AccessibilitySettings().HighContrast())
-            return elmd::Theme::HighContrast;
+            return folia::Theme::HighContrast;
         auto background = Windows::UI::ViewManagement::UISettings().GetColorValue(
             Windows::UI::ViewManagement::UIColorType::Background);
         auto luminance = 0.2126 * background.R + 0.7152 * background.G + 0.0722 * background.B;
-        return luminance < 128.0 ? elmd::Theme::Dark : elmd::Theme::Light;
+        return luminance < 128.0 ? folia::Theme::Dark : folia::Theme::Light;
     }
 
     void MainWindow::ApplyShellTheme()
@@ -412,15 +412,15 @@ namespace winrt::ElMd::implementation
         // ThemeResource bindings retain the object returned by the dictionary. Mutating
         // stable brushes updates every existing binding; replacing them leaves controls
         // holding colors from the previous theme until another resource pass occurs.
-        UpdateBrushResource(resources, L"ElMdShellBackgroundBrush", colors.shell_bg);
-        UpdateBrushResource(resources, L"ElMdShellLayerBrush", colors.shell_layer_bg);
-        UpdateBrushResource(resources, L"ElMdShellBorderBrush", colors.shell_border);
-        UpdateBrushResource(resources, L"ElMdShellForegroundBrush", colors.shell_fg);
-        UpdateBrushResource(resources, L"ElMdShellMutedForegroundBrush", colors.shell_muted_fg);
-        UpdateBrushResource(resources, L"ElMdShellAccentBrush", colors.shell_accent);
-        resources.Insert(winrt::box_value(L"ElMdUiFontFamily"), Font(themeProfile.typography.ui.family));
-        resources.Insert(winrt::box_value(L"ElMdUiFontSize"), winrt::box_value(static_cast<double>(themeProfile.typography.ui.size)));
-        resources.Insert(winrt::box_value(L"ElMdMonoFontFamily"), Font(themeProfile.typography.ui_monospace.family));
+        UpdateBrushResource(resources, L"FoliaShellBackgroundBrush", colors.shell_bg);
+        UpdateBrushResource(resources, L"FoliaShellLayerBrush", colors.shell_layer_bg);
+        UpdateBrushResource(resources, L"FoliaShellBorderBrush", colors.shell_border);
+        UpdateBrushResource(resources, L"FoliaShellForegroundBrush", colors.shell_fg);
+        UpdateBrushResource(resources, L"FoliaShellMutedForegroundBrush", colors.shell_muted_fg);
+        UpdateBrushResource(resources, L"FoliaShellAccentBrush", colors.shell_accent);
+        resources.Insert(winrt::box_value(L"FoliaUiFontFamily"), Font(themeProfile.typography.ui.family));
+        resources.Insert(winrt::box_value(L"FoliaUiFontSize"), winrt::box_value(static_cast<double>(themeProfile.typography.ui.size)));
+        resources.Insert(winrt::box_value(L"FoliaMonoFontFamily"), Font(themeProfile.typography.ui_monospace.family));
 
         Root().Background(Brush(colors.shell_bg));
         AppTitleBar().Background(Brush(colors.shell_bg));
@@ -467,10 +467,10 @@ namespace winrt::ElMd::implementation
         themeProfile = std::move(loaded.profile);
         ApplyShellTheme();
         using Microsoft::UI::Xaml::ElementTheme;
-        if (appSettings.themeId == "system" || themeProfile.variant == elmd::Theme::HighContrast)
+        if (appSettings.themeId == "system" || themeProfile.variant == folia::Theme::HighContrast)
             Root().RequestedTheme(ElementTheme::Default);
         else
-            Root().RequestedTheme(themeProfile.variant == elmd::Theme::Dark
+            Root().RequestedTheme(themeProfile.variant == folia::Theme::Dark
                 ? ElementTheme::Dark
                 : ElementTheme::Light);
         editorSession.SetTheme(themeProfile);

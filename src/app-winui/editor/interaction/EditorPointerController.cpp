@@ -1,9 +1,9 @@
 #include "pch.h"
 #include "editor/interaction/EditorPointerController.h"
 
-import elmd.core.command;
+import folia.core.command;
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     void EditorPointerController::Attach(
         EditorSession& session,
@@ -94,21 +94,21 @@ namespace winrt::ElMd
 
             session_->SetSelection(action->sourcePosition, action->sourcePosition);
             if (textInput_) textInput_->NotifySelectionChanged();
-            elmd::Command command;
+            folia::Command command;
             command.table_index = action->index;
             switch (action->kind)
             {
                 case EditorSurfaceRenderer::TableActionKind::InsertRow:
-                    command.kind = elmd::CommandKind::InsertTableRowAt;
+                    command.kind = folia::CommandKind::InsertTableRowAt;
                     break;
                 case EditorSurfaceRenderer::TableActionKind::InsertColumn:
-                    command.kind = elmd::CommandKind::InsertTableColumnAt;
+                    command.kind = folia::CommandKind::InsertTableColumnAt;
                     break;
                 case EditorSurfaceRenderer::TableActionKind::DeleteRow:
-                    command.kind = elmd::CommandKind::DeleteTableRow;
+                    command.kind = folia::CommandKind::DeleteTableRow;
                     break;
                 case EditorSurfaceRenderer::TableActionKind::DeleteColumn:
-                    command.kind = elmd::CommandKind::DeleteTableColumn;
+                    command.kind = folia::CommandKind::DeleteTableColumn;
                     break;
                 default:
                     return;
@@ -122,8 +122,8 @@ namespace winrt::ElMd
         {
             session_->SetSelection(*checkbox, *checkbox);
             if (textInput_) textInput_->NotifySelectionChanged();
-            elmd::Command command;
-            command.kind = elmd::CommandKind::ToggleTaskCheckbox;
+            folia::Command command;
+            command.kind = folia::CommandKind::ToggleTaskCheckbox;
             if (executeCommand_) executeCommand_(command);
             args.Handled(true);
             return;
@@ -211,10 +211,10 @@ namespace winrt::ElMd
             {
                 session_->SetSelection(action.sourcePosition, action.sourcePosition);
                 if (textInput_) textInput_->NotifySelectionChanged();
-                elmd::Command command;
+                folia::Command command;
                 command.kind = action.kind == EditorSurfaceRenderer::TableActionKind::DragRow
-                    ? elmd::CommandKind::MoveTableRowTo
-                    : elmd::CommandKind::MoveTableColumnTo;
+                    ? folia::CommandKind::MoveTableRowTo
+                    : folia::CommandKind::MoveTableColumnTo;
                 command.table_index = *dropIndex;
                 if (executeCommand_) executeCommand_(command);
             }
@@ -274,7 +274,7 @@ namespace winrt::ElMd
         }
     }
 
-    bool EditorPointerController::SelectWordAt(elmd::TextPosition position)
+    bool EditorPointerController::SelectWordAt(folia::TextPosition position)
     {
         if (!session_) return false;
         auto source = session_->EditableSource(position.container_id);
@@ -293,8 +293,8 @@ namespace winrt::ElMd
         auto end = offset + 1;
         while (end < text.size() && isWordChar(text[end])) ++end;
         session_->SetSelection(
-            {position.container_id, start, elmd::TextAffinity::Downstream},
-            {position.container_id, end, elmd::TextAffinity::Downstream});
+            {position.container_id, start, folia::TextAffinity::Downstream},
+            {position.container_id, end, folia::TextAffinity::Downstream});
         if (textInput_) textInput_->NotifySelectionChanged();
         return true;
     }
@@ -308,7 +308,7 @@ namespace winrt::ElMd
         linkCursorActive_ = link;
     }
 
-    std::optional<std::string> EditorPointerController::LinkAtPosition(elmd::TextPosition position) const
+    std::optional<std::string> EditorPointerController::LinkAtPosition(folia::TextPosition position) const
     {
         if (!session_) return std::nullopt;
         auto interaction = session_->InteractionAt(position);

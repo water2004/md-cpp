@@ -17,16 +17,16 @@ namespace
     public:
         Runtime()
         {
-            module = LoadLibraryExW((ModuleDirectory() + L"elmd_svg_normalizer.dll").c_str(), nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+            module = LoadLibraryExW((ModuleDirectory() + L"folia_svg_normalizer.dll").c_str(), nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
             if (!module)
             {
                 error = "Native Mermaid library could not be loaded";
                 return;
             }
-            create = reinterpret_cast<Create>(GetProcAddress(module, "elmd_svg_normalizer_create"));
-            destroy = reinterpret_cast<Destroy>(GetProcAddress(module, "elmd_svg_normalizer_destroy"));
-            render = reinterpret_cast<Render>(GetProcAddress(module, "elmd_mermaid_render"));
-            freeBuffer = reinterpret_cast<FreeBuffer>(GetProcAddress(module, "elmd_svg_buffer_destroy"));
+            create = reinterpret_cast<Create>(GetProcAddress(module, "folia_svg_normalizer_create"));
+            destroy = reinterpret_cast<Destroy>(GetProcAddress(module, "folia_svg_normalizer_destroy"));
+            render = reinterpret_cast<Render>(GetProcAddress(module, "folia_mermaid_render"));
+            freeBuffer = reinterpret_cast<FreeBuffer>(GetProcAddress(module, "folia_svg_buffer_destroy"));
             if (!create || !destroy || !render || !freeBuffer)
             {
                 error = "Native Mermaid library has an incompatible ABI";
@@ -42,9 +42,9 @@ namespace
             if (module) FreeLibrary(module);
         }
 
-        winrt::ElMd::MermaidSvg Process(std::string const& source, bool dark, std::uint64_t id)
+        winrt::Folia::MermaidSvg Process(std::string const& source, bool dark, std::uint64_t id)
         {
-            winrt::ElMd::MermaidSvg result;
+            winrt::Folia::MermaidSvg result;
             result.renderId = id;
             if (!error.empty())
             {
@@ -86,7 +86,7 @@ namespace
     };
 }
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct MermaidRenderer::State
     {

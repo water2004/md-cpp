@@ -1,6 +1,6 @@
 #pragma once
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     enum class SyntaxHighlightKind
     {

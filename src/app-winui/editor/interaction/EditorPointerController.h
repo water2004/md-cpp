@@ -6,11 +6,11 @@
 #include "editor/interaction/EditorSelectionDrag.h"
 #include "editor/interaction/EditorTextInputController.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct EditorPointerController
     {
-        using ExecuteCommand = std::function<bool(elmd::Command const&)>;
+        using ExecuteCommand = std::function<bool(folia::Command const&)>;
         using Render = std::function<void()>;
         using OpenLink = std::function<void(std::string)>;
         using OpenFootnote = std::function<void(EditorSurfaceRenderer::FootnoteHit, winrt::Windows::Foundation::Point)>;
@@ -36,9 +36,9 @@ namespace winrt::ElMd
         void DoubleTapped(winrt::Microsoft::UI::Xaml::Input::DoubleTappedRoutedEventArgs const& args);
 
     private:
-        bool SelectWordAt(elmd::TextPosition position);
+        bool SelectWordAt(folia::TextPosition position);
         void SetLinkCursor(bool link);
-        std::optional<std::string> LinkAtPosition(elmd::TextPosition position) const;
+        std::optional<std::string> LinkAtPosition(folia::TextPosition position) const;
 
         EditorSession* session_ = nullptr;
         EditorSurfaceRenderer* renderer_ = nullptr;
@@ -55,7 +55,7 @@ namespace winrt::ElMd
         ResetCaretGoal resetCaretGoal_;
         bool linkCursorActive_ = false;
         std::optional<std::string> hoverTooltip_;
-        std::optional<elmd::TextPosition> hoverTaskCheckbox_;
+        std::optional<folia::TextPosition> hoverTaskCheckbox_;
         std::optional<EditorSurfaceRenderer::TableAction> hoverTableAction_;
         std::optional<EditorSurfaceRenderer::TableAction> tableDrag_;
         std::optional<std::size_t> tableDropIndex_;

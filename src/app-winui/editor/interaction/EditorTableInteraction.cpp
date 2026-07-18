@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "editor/interaction/EditorTableInteraction.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     void EditorTableInteraction::Paint(EditorRenderResources& resources, EditorInteractionMap const& interactionMap, std::optional<D2D1_POINT_2F> pointerPosition, std::optional<EditorTableAction> const& draggedAction, std::optional<std::size_t> dropIndex)
     {
@@ -133,13 +133,13 @@ namespace winrt::ElMd
             {
                 auto index = (std::min)(row, table.rowCount - 1) * table.columnCount;
                 auto span = index < table.cells.size() ? table.cells[index].sourceSpan : table.sourceSpans.front();
-                return elmd::TextPosition{span.container_id, span.source_range.start, elmd::TextAffinity::Downstream};
+                return folia::TextPosition{span.container_id, span.source_range.start, folia::TextAffinity::Downstream};
             };
             auto sourceForColumn = [&](std::size_t column)
             {
                 auto index = (std::min)(column, table.columnCount - 1);
                 auto span = index < table.cells.size() ? table.cells[index].sourceSpan : table.sourceSpans.front();
-                return elmd::TextPosition{span.container_id, span.source_range.start, elmd::TextAffinity::Downstream};
+                return folia::TextPosition{span.container_id, span.source_range.start, folia::TextAffinity::Downstream};
             };
             for (std::size_t boundary = 0; boundary < table.rowBoundaries.size(); ++boundary)
             {

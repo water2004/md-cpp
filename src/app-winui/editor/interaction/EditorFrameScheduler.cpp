@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "editor/interaction/EditorFrameScheduler.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     namespace
     {

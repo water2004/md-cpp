@@ -7,7 +7,7 @@
 using namespace winrt;
 using namespace winrt::Microsoft::UI::Xaml;
 
-namespace winrt::ElMd::implementation
+namespace winrt::Folia::implementation
 {
     App::App()
     {

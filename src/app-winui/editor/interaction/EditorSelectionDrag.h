@@ -5,7 +5,7 @@
 #include "editor/interaction/EditorScrollController.h"
 #include "editor/interaction/EditorTextInputController.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     // Owns the complete lifetime of one pointer-driven text selection.
     struct EditorSelectionDrag
@@ -18,7 +18,7 @@ namespace winrt::ElMd
             winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel const& surface);
         void Detach();
         bool Active() const;
-        void Begin(elmd::TextPosition anchor);
+        void Begin(folia::TextPosition anchor);
         bool Update(float x, float y);
         bool Finish(float x, float y);
         void Cancel();
@@ -32,7 +32,7 @@ namespace winrt::ElMd
         EditorScrollController* scroll = nullptr;
         EditorTextInputController* textInput = nullptr;
         winrt::Microsoft::UI::Xaml::Controls::SwapChainPanel surface{ nullptr };
-        elmd::TextPosition anchor{};
+        folia::TextPosition anchor{};
         float pointerX = 0.0f;
         float pointerY = 0.0f;
         bool active = false;

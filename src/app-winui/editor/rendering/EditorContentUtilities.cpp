@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "editor/rendering/EditorContentPreparation.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     std::wstring ToWide(std::u32string_view text)
     {

@@ -2,7 +2,7 @@
 
 #include "App.xaml.g.h"
 
-namespace winrt::ElMd::implementation
+namespace winrt::Folia::implementation
 {
     struct App : AppT<App>
     {

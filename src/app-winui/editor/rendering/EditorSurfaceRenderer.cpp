@@ -2,7 +2,7 @@
 #include "editor/rendering/EditorSurfaceRenderer.h"
 #include "editor/rendering/EditorPreparedDocument.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     EditorSurfaceRenderer::EditorSurfaceRenderer() = default;
 
@@ -17,7 +17,7 @@ namespace winrt::ElMd
         invalidationState->callback = {};
     }
 
-    void EditorSurfaceRenderer::SetTheme(elmd::ThemeProfile const& value)
+    void EditorSurfaceRenderer::SetTheme(folia::ThemeProfile const& value)
     {
         themeProfile = value;
         ++themeRevision;
@@ -29,7 +29,7 @@ namespace winrt::ElMd
         ClearPreparedDocument();
     }
 
-    elmd::ThemeProfile EditorSurfaceRenderer::Theme() const
+    folia::ThemeProfile EditorSurfaceRenderer::Theme() const
     {
         return themeProfile;
     }

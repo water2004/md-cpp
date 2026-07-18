@@ -4,7 +4,7 @@
 #include "editor/rendering/EditorSurfaceRenderer.h"
 #include "editor/interaction/EditorTextInputController.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct EditorSidebarController
     {
@@ -30,7 +30,7 @@ namespace winrt::ElMd
         winrt::Windows::Foundation::Collections::IObservableVector<
             winrt::Windows::Foundation::IInspectable> outlineItems_{ nullptr };
         Render render_;
-        std::vector<elmd::TextPosition> outlinePositions_;
+        std::vector<folia::TextPosition> outlinePositions_;
         std::optional<std::uint64_t> outlineContentKey_;
     };
 }

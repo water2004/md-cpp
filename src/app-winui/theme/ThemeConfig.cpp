@@ -7,13 +7,13 @@ namespace
 {
     using winrt::Windows::Data::Json::JsonObject;
 
-    std::wstring ThemeFileName(elmd::Theme variant)
+    std::wstring ThemeFileName(folia::Theme variant)
     {
         switch (variant)
         {
-        case elmd::Theme::Light: return L"light.json";
-        case elmd::Theme::HighContrast: return L"high-contrast.json";
-        case elmd::Theme::Dark:
+        case folia::Theme::Light: return L"light.json";
+        case folia::Theme::HighContrast: return L"high-contrast.json";
+        case folia::Theme::Dark:
         default: return L"dark.json";
         }
     }
@@ -38,7 +38,7 @@ namespace
         return static_cast<std::uint8_t>((HexDigit(value[offset]) << 4u) | HexDigit(value[offset + 1]));
     }
 
-    elmd::Color ParseColor(winrt::hstring const& encoded)
+    folia::Color ParseColor(winrt::hstring const& encoded)
     {
         std::wstring_view value(encoded);
         if ((value.size() != 7 && value.size() != 9) || value.front() != L'#')
@@ -51,11 +51,11 @@ namespace
         };
     }
 
-    elmd::Theme ParseVariant(winrt::hstring const& encoded)
+    folia::Theme ParseVariant(winrt::hstring const& encoded)
     {
-        if (encoded == L"light") return elmd::Theme::Light;
-        if (encoded == L"dark") return elmd::Theme::Dark;
-        if (encoded == L"high-contrast") return elmd::Theme::HighContrast;
+        if (encoded == L"light") return folia::Theme::Light;
+        if (encoded == L"dark") return folia::Theme::Dark;
+        if (encoded == L"high-contrast") return folia::Theme::HighContrast;
         throw std::runtime_error("theme variant must be light, dark, or high-contrast");
     }
 
@@ -67,9 +67,9 @@ namespace
         return value;
     }
 
-    elmd::ThemeFont ParseFont(JsonObject const& object)
+    folia::ThemeFont ParseFont(JsonObject const& object)
     {
-        elmd::ThemeFont font;
+        folia::ThemeFont font;
         font.family = winrt::to_string(object.GetNamedString(L"family"));
         font.size = Number(object, L"size");
         font.line_height = Number(object, L"lineHeight");
@@ -81,9 +81,9 @@ namespace
         return font;
     }
 
-    elmd::ThemeTypography ParseTypography(JsonObject const& object)
+    folia::ThemeTypography ParseTypography(JsonObject const& object)
     {
-        elmd::ThemeTypography typography;
+        folia::ThemeTypography typography;
         typography.body = ParseFont(object.GetNamedObject(L"body"));
         typography.heading1 = ParseFont(object.GetNamedObject(L"heading1"));
         typography.heading2 = ParseFont(object.GetNamedObject(L"heading2"));
@@ -94,34 +94,34 @@ namespace
         return typography;
     }
 
-    elmd::ThemeColors ParseColors(JsonObject const& object)
+    folia::ThemeColors ParseColors(JsonObject const& object)
     {
-        elmd::ThemeColors colors;
-        struct Field { wchar_t const* name; elmd::Color elmd::ThemeColors::* value; };
+        folia::ThemeColors colors;
+        struct Field { wchar_t const* name; folia::Color folia::ThemeColors::* value; };
         static constexpr Field fields[] = {
-            {L"background", &elmd::ThemeColors::bg}, {L"foreground", &elmd::ThemeColors::fg},
-            {L"mutedForeground", &elmd::ThemeColors::muted_fg}, {L"accent", &elmd::ThemeColors::accent_fg},
-            {L"heading", &elmd::ThemeColors::heading_fg}, {L"strong", &elmd::ThemeColors::strong_fg},
-            {L"emphasis", &elmd::ThemeColors::emphasis_fg}, {L"inlineCodeBackground", &elmd::ThemeColors::inline_code_bg},
-            {L"inlineCodeForeground", &elmd::ThemeColors::inline_code_fg}, {L"codeBlockBackground", &elmd::ThemeColors::code_block_bg},
-            {L"codeBlockForeground", &elmd::ThemeColors::code_block_fg}, {L"blockquoteBorder", &elmd::ThemeColors::blockquote_border},
-            {L"blockquoteBackground", &elmd::ThemeColors::blockquote_bg}, {L"nestedQuoteBackground", &elmd::ThemeColors::nested_quote_bg},
-            {L"link", &elmd::ThemeColors::link_fg}, {L"imageBorder", &elmd::ThemeColors::image_border},
-            {L"selectionBackground", &elmd::ThemeColors::selection_bg}, {L"selectionForeground", &elmd::ThemeColors::selection_fg},
-            {L"caret", &elmd::ThemeColors::caret_fg}, {L"marker", &elmd::ThemeColors::marker_fg},
-            {L"mathBackground", &elmd::ThemeColors::math_bg}, {L"mathForeground", &elmd::ThemeColors::math_fg},
-            {L"calloutNoteBackground", &elmd::ThemeColors::callout_note_bg}, {L"calloutNoteBorder", &elmd::ThemeColors::callout_note_border},
-            {L"calloutWarningBackground", &elmd::ThemeColors::callout_warning_bg}, {L"calloutWarningBorder", &elmd::ThemeColors::callout_warning_border},
-            {L"calloutTipBackground", &elmd::ThemeColors::callout_tip_bg}, {L"calloutTipBorder", &elmd::ThemeColors::callout_tip_border},
-            {L"calloutImportantBackground", &elmd::ThemeColors::callout_important_bg}, {L"calloutImportantBorder", &elmd::ThemeColors::callout_important_border},
-            {L"calloutCautionBackground", &elmd::ThemeColors::callout_caution_bg}, {L"calloutCautionBorder", &elmd::ThemeColors::callout_caution_border},
-            {L"frontmatterBackground", &elmd::ThemeColors::frontmatter_bg}, {L"frontmatterForeground", &elmd::ThemeColors::frontmatter_fg},
-            {L"tableBorder", &elmd::ThemeColors::table_border}, {L"tableHeaderBackground", &elmd::ThemeColors::table_header_bg},
-            {L"lineNumber", &elmd::ThemeColors::line_number_fg}, {L"strikethrough", &elmd::ThemeColors::strikethrough_fg},
-            {L"unsupportedBackground", &elmd::ThemeColors::unsupported_bg}, {L"unsupportedForeground", &elmd::ThemeColors::unsupported_fg},
-            {L"shellBackground", &elmd::ThemeColors::shell_bg}, {L"shellLayerBackground", &elmd::ThemeColors::shell_layer_bg},
-            {L"shellBorder", &elmd::ThemeColors::shell_border}, {L"shellForeground", &elmd::ThemeColors::shell_fg},
-            {L"shellMutedForeground", &elmd::ThemeColors::shell_muted_fg}, {L"shellAccent", &elmd::ThemeColors::shell_accent},
+            {L"background", &folia::ThemeColors::bg}, {L"foreground", &folia::ThemeColors::fg},
+            {L"mutedForeground", &folia::ThemeColors::muted_fg}, {L"accent", &folia::ThemeColors::accent_fg},
+            {L"heading", &folia::ThemeColors::heading_fg}, {L"strong", &folia::ThemeColors::strong_fg},
+            {L"emphasis", &folia::ThemeColors::emphasis_fg}, {L"inlineCodeBackground", &folia::ThemeColors::inline_code_bg},
+            {L"inlineCodeForeground", &folia::ThemeColors::inline_code_fg}, {L"codeBlockBackground", &folia::ThemeColors::code_block_bg},
+            {L"codeBlockForeground", &folia::ThemeColors::code_block_fg}, {L"blockquoteBorder", &folia::ThemeColors::blockquote_border},
+            {L"blockquoteBackground", &folia::ThemeColors::blockquote_bg}, {L"nestedQuoteBackground", &folia::ThemeColors::nested_quote_bg},
+            {L"link", &folia::ThemeColors::link_fg}, {L"imageBorder", &folia::ThemeColors::image_border},
+            {L"selectionBackground", &folia::ThemeColors::selection_bg}, {L"selectionForeground", &folia::ThemeColors::selection_fg},
+            {L"caret", &folia::ThemeColors::caret_fg}, {L"marker", &folia::ThemeColors::marker_fg},
+            {L"mathBackground", &folia::ThemeColors::math_bg}, {L"mathForeground", &folia::ThemeColors::math_fg},
+            {L"calloutNoteBackground", &folia::ThemeColors::callout_note_bg}, {L"calloutNoteBorder", &folia::ThemeColors::callout_note_border},
+            {L"calloutWarningBackground", &folia::ThemeColors::callout_warning_bg}, {L"calloutWarningBorder", &folia::ThemeColors::callout_warning_border},
+            {L"calloutTipBackground", &folia::ThemeColors::callout_tip_bg}, {L"calloutTipBorder", &folia::ThemeColors::callout_tip_border},
+            {L"calloutImportantBackground", &folia::ThemeColors::callout_important_bg}, {L"calloutImportantBorder", &folia::ThemeColors::callout_important_border},
+            {L"calloutCautionBackground", &folia::ThemeColors::callout_caution_bg}, {L"calloutCautionBorder", &folia::ThemeColors::callout_caution_border},
+            {L"frontmatterBackground", &folia::ThemeColors::frontmatter_bg}, {L"frontmatterForeground", &folia::ThemeColors::frontmatter_fg},
+            {L"tableBorder", &folia::ThemeColors::table_border}, {L"tableHeaderBackground", &folia::ThemeColors::table_header_bg},
+            {L"lineNumber", &folia::ThemeColors::line_number_fg}, {L"strikethrough", &folia::ThemeColors::strikethrough_fg},
+            {L"unsupportedBackground", &folia::ThemeColors::unsupported_bg}, {L"unsupportedForeground", &folia::ThemeColors::unsupported_fg},
+            {L"shellBackground", &folia::ThemeColors::shell_bg}, {L"shellLayerBackground", &folia::ThemeColors::shell_layer_bg},
+            {L"shellBorder", &folia::ThemeColors::shell_border}, {L"shellForeground", &folia::ThemeColors::shell_fg},
+            {L"shellMutedForeground", &folia::ThemeColors::shell_muted_fg}, {L"shellAccent", &folia::ThemeColors::shell_accent},
         };
         for (auto const& field : fields) colors.*field.value = ParseColor(object.GetNamedString(field.name));
         colors.line_number_bg = object.HasKey(L"lineNumberBackground")
@@ -135,40 +135,40 @@ namespace
         return colors;
     }
 
-    elmd::ThemeLayout ParseLayout(JsonObject const& object)
+    folia::ThemeLayout ParseLayout(JsonObject const& object)
     {
-        elmd::ThemeLayout layout;
-        struct Field { wchar_t const* name; float elmd::ThemeLayout::* value; };
+        folia::ThemeLayout layout;
+        struct Field { wchar_t const* name; float folia::ThemeLayout::* value; };
         static constexpr Field fields[] = {
-            {L"documentHorizontalPadding", &elmd::ThemeLayout::document_horizontal_padding},
-            {L"documentVerticalPadding", &elmd::ThemeLayout::document_vertical_padding},
-            {L"blockGap", &elmd::ThemeLayout::block_gap},
-            {L"paragraphMarginBottom", &elmd::ThemeLayout::paragraph_margin_bottom},
-            {L"listMarginBottom", &elmd::ThemeLayout::list_margin_bottom}, {L"listPaddingLeft", &elmd::ThemeLayout::list_padding_left},
-            {L"thematicBreakMargin", &elmd::ThemeLayout::thematic_break_margin}, {L"headingMarginBottom", &elmd::ThemeLayout::heading_margin_bottom},
-            {L"codeMargin", &elmd::ThemeLayout::code_margin}, {L"codePaddingVertical", &elmd::ThemeLayout::code_padding_vertical},
-            {L"codePaddingHorizontal", &elmd::ThemeLayout::code_padding_horizontal}, {L"quoteMargin", &elmd::ThemeLayout::quote_margin},
-            {L"quotePaddingVertical", &elmd::ThemeLayout::quote_padding_vertical}, {L"quotePaddingLeft", &elmd::ThemeLayout::quote_padding_left},
-            {L"quotePaddingRight", &elmd::ThemeLayout::quote_padding_right}, {L"quoteBorderWidth", &elmd::ThemeLayout::quote_border_width},
-            {L"mathMargin", &elmd::ThemeLayout::math_margin}, {L"mathPaddingVertical", &elmd::ThemeLayout::math_padding_vertical},
-            {L"mathPaddingHorizontal", &elmd::ThemeLayout::math_padding_horizontal}, {L"tableMargin", &elmd::ThemeLayout::table_margin},
-            {L"imageMargin", &elmd::ThemeLayout::image_margin}, {L"tocMargin", &elmd::ThemeLayout::toc_margin},
-            {L"tocPaddingLeft", &elmd::ThemeLayout::toc_padding_left}, {L"tocBorderWidth", &elmd::ThemeLayout::toc_border_width},
-            {L"calloutMargin", &elmd::ThemeLayout::callout_margin}, {L"calloutPaddingVertical", &elmd::ThemeLayout::callout_padding_vertical},
-            {L"calloutPaddingLeft", &elmd::ThemeLayout::callout_padding_left}, {L"calloutBorderWidth", &elmd::ThemeLayout::callout_border_width},
-            {L"frontmatterMarginBottom", &elmd::ThemeLayout::frontmatter_margin_bottom},
-            {L"frontmatterPaddingVertical", &elmd::ThemeLayout::frontmatter_padding_vertical},
-            {L"frontmatterPaddingHorizontal", &elmd::ThemeLayout::frontmatter_padding_horizontal},
-            {L"footnoteMargin", &elmd::ThemeLayout::footnote_margin}, {L"footnotePaddingVertical", &elmd::ThemeLayout::footnote_padding_vertical},
-            {L"footnotePaddingHorizontal", &elmd::ThemeLayout::footnote_padding_horizontal},
-            {L"unsupportedMargin", &elmd::ThemeLayout::unsupported_margin},
-            {L"unsupportedPaddingVertical", &elmd::ThemeLayout::unsupported_padding_vertical},
-            {L"unsupportedPaddingLeft", &elmd::ThemeLayout::unsupported_padding_left},
-            {L"extensionMargin", &elmd::ThemeLayout::extension_margin}, {L"titleBarHeight", &elmd::ThemeLayout::title_bar_height},
-            {L"navigationOpenWidth", &elmd::ThemeLayout::navigation_open_width},
-            {L"scrollbarWidth", &elmd::ThemeLayout::scrollbar_width}, {L"statusBarMinHeight", &elmd::ThemeLayout::status_bar_min_height},
-            {L"footnotePreviewWidth", &elmd::ThemeLayout::footnote_preview_width},
-            {L"footnotePreviewSpacing", &elmd::ThemeLayout::footnote_preview_spacing},
+            {L"documentHorizontalPadding", &folia::ThemeLayout::document_horizontal_padding},
+            {L"documentVerticalPadding", &folia::ThemeLayout::document_vertical_padding},
+            {L"blockGap", &folia::ThemeLayout::block_gap},
+            {L"paragraphMarginBottom", &folia::ThemeLayout::paragraph_margin_bottom},
+            {L"listMarginBottom", &folia::ThemeLayout::list_margin_bottom}, {L"listPaddingLeft", &folia::ThemeLayout::list_padding_left},
+            {L"thematicBreakMargin", &folia::ThemeLayout::thematic_break_margin}, {L"headingMarginBottom", &folia::ThemeLayout::heading_margin_bottom},
+            {L"codeMargin", &folia::ThemeLayout::code_margin}, {L"codePaddingVertical", &folia::ThemeLayout::code_padding_vertical},
+            {L"codePaddingHorizontal", &folia::ThemeLayout::code_padding_horizontal}, {L"quoteMargin", &folia::ThemeLayout::quote_margin},
+            {L"quotePaddingVertical", &folia::ThemeLayout::quote_padding_vertical}, {L"quotePaddingLeft", &folia::ThemeLayout::quote_padding_left},
+            {L"quotePaddingRight", &folia::ThemeLayout::quote_padding_right}, {L"quoteBorderWidth", &folia::ThemeLayout::quote_border_width},
+            {L"mathMargin", &folia::ThemeLayout::math_margin}, {L"mathPaddingVertical", &folia::ThemeLayout::math_padding_vertical},
+            {L"mathPaddingHorizontal", &folia::ThemeLayout::math_padding_horizontal}, {L"tableMargin", &folia::ThemeLayout::table_margin},
+            {L"imageMargin", &folia::ThemeLayout::image_margin}, {L"tocMargin", &folia::ThemeLayout::toc_margin},
+            {L"tocPaddingLeft", &folia::ThemeLayout::toc_padding_left}, {L"tocBorderWidth", &folia::ThemeLayout::toc_border_width},
+            {L"calloutMargin", &folia::ThemeLayout::callout_margin}, {L"calloutPaddingVertical", &folia::ThemeLayout::callout_padding_vertical},
+            {L"calloutPaddingLeft", &folia::ThemeLayout::callout_padding_left}, {L"calloutBorderWidth", &folia::ThemeLayout::callout_border_width},
+            {L"frontmatterMarginBottom", &folia::ThemeLayout::frontmatter_margin_bottom},
+            {L"frontmatterPaddingVertical", &folia::ThemeLayout::frontmatter_padding_vertical},
+            {L"frontmatterPaddingHorizontal", &folia::ThemeLayout::frontmatter_padding_horizontal},
+            {L"footnoteMargin", &folia::ThemeLayout::footnote_margin}, {L"footnotePaddingVertical", &folia::ThemeLayout::footnote_padding_vertical},
+            {L"footnotePaddingHorizontal", &folia::ThemeLayout::footnote_padding_horizontal},
+            {L"unsupportedMargin", &folia::ThemeLayout::unsupported_margin},
+            {L"unsupportedPaddingVertical", &folia::ThemeLayout::unsupported_padding_vertical},
+            {L"unsupportedPaddingLeft", &folia::ThemeLayout::unsupported_padding_left},
+            {L"extensionMargin", &folia::ThemeLayout::extension_margin}, {L"titleBarHeight", &folia::ThemeLayout::title_bar_height},
+            {L"navigationOpenWidth", &folia::ThemeLayout::navigation_open_width},
+            {L"scrollbarWidth", &folia::ThemeLayout::scrollbar_width}, {L"statusBarMinHeight", &folia::ThemeLayout::status_bar_min_height},
+            {L"footnotePreviewWidth", &folia::ThemeLayout::footnote_preview_width},
+            {L"footnotePreviewSpacing", &folia::ThemeLayout::footnote_preview_spacing},
         };
         for (auto const& field : fields) layout.*field.value = Number(object, field.name);
 
@@ -193,10 +193,10 @@ namespace
         });
     }
 
-    elmd::ThemeProfile ParseProfile(std::string const& source)
+    folia::ThemeProfile ParseProfile(std::string const& source)
     {
         auto root = JsonObject::Parse(winrt::to_hstring(source));
-        elmd::ThemeProfile profile;
+        folia::ThemeProfile profile;
         auto schema = root.GetNamedNumber(L"schemaVersion");
         if (schema != 1.0) throw std::runtime_error("unsupported theme schema version");
         profile.schema_version = 1;
@@ -212,7 +212,7 @@ namespace
     }
 }
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     std::filesystem::path BuiltinThemeDirectory()
     {
@@ -238,7 +238,7 @@ namespace winrt::ElMd
         }
     }
 
-    ThemeLoadResult LoadThemeProfile(elmd::Theme variant)
+    ThemeLoadResult LoadThemeProfile(folia::Theme variant)
     {
         auto loaded = LoadThemeFile(BuiltinThemeDirectory() / ThemeFileName(variant));
         if (loaded.profile && loaded.profile->variant == variant)
@@ -249,6 +249,6 @@ namespace winrt::ElMd
             ? Localize(L"ThemeVariantMismatch")
             : loaded.diagnostic;
         auto diagnostic = LocalizeFormat(L"ThemeFallback", { reason });
-        return { elmd::default_theme_profile(variant), false, std::move(diagnostic) };
+        return { folia::default_theme_profile(variant), false, std::move(diagnostic) };
     }
 }

@@ -1,11 +1,11 @@
 #include "pch.h"
 
-import elmd.core.render_model;
-import elmd.core.types;
+import folia.core.render_model;
+import folia.core.types;
 
 #include "editor/rendering/EditorInlineImageRenderer.h"
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     EditorInlineImageRenderer::EditorInlineImageRenderer(
         EditorRenderResources& resources,

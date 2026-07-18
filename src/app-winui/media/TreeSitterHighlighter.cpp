@@ -84,9 +84,9 @@ namespace
         });
     }
 
-    winrt::ElMd::SyntaxHighlightKind ClassifyLeaf(TSNode node, winrt::ElMd::SyntaxHighlightKind inherited)
+    winrt::Folia::SyntaxHighlightKind ClassifyLeaf(TSNode node, winrt::Folia::SyntaxHighlightKind inherited)
     {
-        using Kind = winrt::ElMd::SyntaxHighlightKind;
+        using Kind = winrt::Folia::SyntaxHighlightKind;
         if (inherited != Kind::None) return inherited;
         std::string_view type = ts_node_type(node);
         if (Contains(type, "comment")) return Kind::Comment;
@@ -109,9 +109,9 @@ namespace
         return Kind::None;
     }
 
-    winrt::ElMd::SyntaxHighlightKind InheritedKind(TSNode node, winrt::ElMd::SyntaxHighlightKind inherited)
+    winrt::Folia::SyntaxHighlightKind InheritedKind(TSNode node, winrt::Folia::SyntaxHighlightKind inherited)
     {
-        using Kind = winrt::ElMd::SyntaxHighlightKind;
+        using Kind = winrt::Folia::SyntaxHighlightKind;
         if (inherited != Kind::None) return inherited;
         std::string_view type = ts_node_type(node);
         if (Contains(type, "comment")) return Kind::Comment;
@@ -120,7 +120,7 @@ namespace
         return Kind::None;
     }
 
-    void Collect(TSNode node, winrt::ElMd::SyntaxHighlightKind inherited, std::vector<winrt::ElMd::SyntaxHighlightRange>& ranges, std::vector<std::uint32_t> const& byteToCodepoint)
+    void Collect(TSNode node, winrt::Folia::SyntaxHighlightKind inherited, std::vector<winrt::Folia::SyntaxHighlightRange>& ranges, std::vector<std::uint32_t> const& byteToCodepoint)
     {
         inherited = InheritedKind(node, inherited);
         auto childCount = ts_node_child_count(node);
@@ -130,7 +130,7 @@ namespace
             auto endByte = (std::min)(static_cast<std::size_t>(ts_node_end_byte(node)), byteToCodepoint.size() - 1);
             auto start = byteToCodepoint[startByte];
             auto end = byteToCodepoint[endByte];
-            if (kind != winrt::ElMd::SyntaxHighlightKind::None && start < end) ranges.push_back({start, end - start, kind});
+            if (kind != winrt::Folia::SyntaxHighlightKind::None && start < end) ranges.push_back({start, end - start, kind});
             return;
         }
         for (std::uint32_t index = 0; index < childCount; ++index) Collect(ts_node_child(node, index), inherited, ranges, byteToCodepoint);
@@ -153,7 +153,7 @@ namespace
     }
 }
 
-namespace winrt::ElMd
+namespace winrt::Folia
 {
     struct TreeSitterHighlighter::State
     {
