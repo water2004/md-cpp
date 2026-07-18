@@ -99,7 +99,7 @@ namespace winrt::Folia
         SvgNormalizer svgNormalizer;
         TreeSitterHighlighter treeSitter;
         std::shared_ptr<InvalidationState> invalidationState = std::make_shared<InvalidationState>();
-        std::atomic_bool mathInvalidationQueued = false;
+        std::atomic_bool embeddedCompletionPending = false;
         folia::ThemeProfile themeProfile = folia::default_theme_profile();
         std::uint64_t themeRevision = 1;
         EditorStyleSheet styleSheet = CreateEditorStyleSheet(themeProfile);

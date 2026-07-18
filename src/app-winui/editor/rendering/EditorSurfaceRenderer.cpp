@@ -88,13 +88,11 @@ namespace winrt::Folia
         renderCache.Attach(dispatcher, [this] { Invalidate(); });
         auto completion = [this, dispatcher]
         {
-            if (mathInvalidationQueued.exchange(true)) return;
+            if (embeddedCompletionPending.exchange(true)) return;
             if (!dispatcher.TryEnqueue([this]
                 {
-                    mathInvalidationQueued = false;
-                    ++embeddedGeneration;
                     Invalidate();
-                })) mathInvalidationQueued = false;
+                })) embeddedCompletionPending = false;
         };
         mathJax.SetCompletionCallback(completion);
         svgNormalizer.SetCompletionCallback(completion);
@@ -147,6 +145,11 @@ namespace winrt::Folia
         }
         rendering = true;
         struct Reset { EditorSurfaceRenderer& owner; ~Reset() { owner.rendering = false; if (owner.deferredInvalidate.exchange(false)) owner.Invalidate(); } } reset{*this};
+        // Background workers can complete several formulas and SVG fragments
+        // while the physical-refresh scheduler is waiting to present. Consume
+        // them as one epoch at the frame boundary so pending blocks are not
+        // rebuilt repeatedly for results that will share the same frame.
+        if (embeddedCompletionPending.exchange(false)) ++embeddedGeneration;
         resources.EnsureFrameResources(styleSheet);
         resources.d2dContext->BeginDraw();
         resources.d2dContext->Clear(styleSheet.canvasColor);
