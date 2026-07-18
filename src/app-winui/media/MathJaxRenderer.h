@@ -69,7 +69,6 @@ namespace winrt::Folia
         bool AnyCompletedAfter(
             std::span<AsyncWorkDependency const> dependencies) const;
         void SetCompletionCallback(std::function<void()> callback);
-        void SetBackgroundPaused(bool paused);
         void Clear();
 
     private:

@@ -44,7 +44,6 @@ namespace winrt::Folia
         bool AnyGroupCompletedAfter(
             std::span<AsyncWorkDependencyGroup const> groups) const;
         void SetCompletionCallback(std::function<void()> callback);
-        void SetBackgroundPaused(bool paused);
 
     private:
         struct State;

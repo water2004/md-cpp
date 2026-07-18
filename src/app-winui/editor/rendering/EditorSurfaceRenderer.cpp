@@ -149,11 +149,9 @@ namespace winrt::Folia
         struct Reset { EditorSurfaceRenderer& owner; ~Reset() { owner.rendering = false; if (owner.deferredInvalidate.exchange(false)) owner.Invalidate(); } } reset{*this};
         // Background workers can complete several formulas and SVG fragments
         // while the physical-refresh scheduler is waiting to present. Consume
-        // them as one epoch only after the viewport is stable. Advancing the
-        // global embedded generation during scrolling would rebuild every
-        // visible pending formula even when an off-screen prefetch completed.
-        // Keep the pending flag set and request a stable follow-up frame so the
-        // last completion cannot be stranded when scrolling stops.
+        // them as one epoch only after the viewport is stable. The workers keep
+        // running while the viewport moves so newly visible formulas continue
+        // to make progress; only layout consumption is deferred.
         auto viewportMoved = preparedDocument
             && preparedDocument->hasLastViewportOffset
             && folia::platform::editor::EditorViewportMoved(
@@ -161,8 +159,6 @@ namespace winrt::Folia
                 preparedDocument->lastViewportOffset,
                 scrollState.Offset());
         auto viewportActive = viewportMoved || scrollState.Animating();
-        mathJax.SetBackgroundPaused(viewportActive);
-        svgNormalizer.SetBackgroundPaused(viewportActive);
         if (embeddedCompletionPending.load(std::memory_order_acquire))
         {
             if (viewportActive)

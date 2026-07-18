@@ -181,7 +181,6 @@ namespace winrt::Folia
         std::uint64_t generation = 0;
         std::uint64_t nextCompletionRevision = 1;
         std::function<void()> completion;
-        bool backgroundPaused = false;
         JSRuntime* runtime = nullptr;
         JSContext* context = nullptr;
         std::chrono::steady_clock::time_point deadline{};
@@ -422,9 +421,9 @@ namespace winrt::Folia
                 {
                     std::unique_lock lock(mutex);
                     if (!ready.wait(lock, stop, [&] {
-                            return requestQueue.Ready(!backgroundPaused);
+                            return requestQueue.Ready(true);
                         })) break;
-                    auto queued = requestQueue.Pop(!backgroundPaused);
+                    auto queued = requestQueue.Pop(true);
                     if (!queued) continue;
                     ticket = queued->ticket;
                     request = std::move(queued->work);
@@ -528,21 +527,6 @@ namespace winrt::Folia
     {
         std::scoped_lock lock(state->mutex);
         state->completion = std::move(callback);
-    }
-
-    void MathJaxRenderer::SetBackgroundPaused(bool paused)
-    {
-        if (!state) return;
-        {
-            std::scoped_lock lock(state->mutex);
-            if (state->backgroundPaused == paused) return;
-            state->backgroundPaused = paused;
-            if (state->worker.joinable())
-                SetThreadPriority(
-                    state->worker.native_handle(),
-                    paused ? THREAD_PRIORITY_BELOW_NORMAL : THREAD_PRIORITY_NORMAL);
-        }
-        if (!paused) state->ready.notify_one();
     }
 
     std::shared_ptr<MathJaxSvg const> MathJaxRenderer::GetOrQueue(
