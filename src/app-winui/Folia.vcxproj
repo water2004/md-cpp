@@ -198,6 +198,9 @@
     <ClCompile Include="..\core\parsing\block_source.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\core\parsing\block_line_recognizer.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\core\parsing\html_cst.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <AdditionalIncludeDirectories>..\..\third_party\tree-sitter\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>

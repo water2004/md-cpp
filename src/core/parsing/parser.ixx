@@ -27,6 +27,7 @@ import elmd.core.symbols;
 import elmd.core.ast;
 import elmd.core.block_source;
 import elmd.core.block_tree;
+import elmd.core.block_line_recognizer;
 import elmd.core.callout;
 import elmd.core.document;
 import elmd.core.document_symbols;
@@ -382,16 +383,15 @@ public:
     }
     char32_t ch_at(std::size_t i) const { return (i < cps.size()) ? cps[i] : 0; }
     void skip_ws_inline() { while (peek1() == ' ' || peek1() == '\t') advance(); }
+    BlockLineRecognizer line_recognizer() const { return BlockLineRecognizer(cps); }
     static bool is_line_ending_character(char32_t value) {
-        return value == U'\r' || value == U'\n';
+        return BlockLineRecognizer::is_line_ending_character(value);
     }
     std::size_t line_ending_length(std::size_t at) const {
-        if (at >= cps.size() || !is_line_ending_character(cps[at])) return 0;
-        return cps[at] == U'\r' && at + 1 < cps.size() && cps[at + 1] == U'\n' ? 2u : 1u;
+        return line_recognizer().line_ending_length(at);
     }
     std::size_t line_content_end(std::size_t at) const {
-        while (at < cps.size() && !is_line_ending_character(cps[at])) ++at;
-        return at;
+        return line_recognizer().line_content_end(at);
     }
     bool consume_line_ending() {
         const auto length = line_ending_length(pos);
@@ -400,13 +400,10 @@ public:
         return true;
     }
     std::size_t next_line_start(std::size_t line_end) const {
-        return line_end + line_ending_length(line_end);
+        return line_recognizer().next_line_start(line_end);
     }
     bool is_line_start_at(std::size_t at) const {
-        if (at == 0) return true;
-        if (cps[at - 1] == U'\n') return true;
-        return cps[at - 1] == U'\r'
-            && (at >= cps.size() || cps[at] != U'\n');
+        return line_recognizer().is_line_start_at(at);
     }
     bool peek_line_start() const {
         return is_line_start_at(pos);
@@ -420,105 +417,26 @@ public:
         return true;
     }
     bool line_starts_fenced_code(std::size_t at) const {
-        std::size_t i = at;
-        std::size_t indentation = 0;
-        while (i < cps.size() && cps[i] == U' ' && indentation < 4) {
-            ++i;
-            ++indentation;
-        }
-        if (indentation > 3) return false;
-        auto marker = ch_at(i);
-        if (marker != U'`' && marker != U'~') return false;
-        while (i < cps.size() && cps[i] == marker) ++i;
-        return i - at - indentation >= 3;
+        return line_recognizer().line_starts_fenced_code(at);
     }
     bool line_starts_fenced_code() const {
         return peek_line_start() && line_starts_fenced_code(pos);
     }
     bool line_is_thematic_break(std::size_t start, std::size_t* end = nullptr) const {
-        const auto line_end = line_content_end(start);
-        std::size_t cursor = start;
-        std::size_t leading_spaces = 0;
-        while (cursor < line_end && cps[cursor] == U' ' && leading_spaces < 4) {
-            ++cursor;
-            ++leading_spaces;
-        }
-        if (leading_spaces > 3 || cursor >= line_end) return false;
-        auto marker = cps[cursor];
-        if (marker != U'-' && marker != U'*' && marker != U'_') return false;
-        std::size_t count = 0;
-        while (cursor < line_end && cps[cursor] == marker) { ++count; ++cursor; }
-        while (cursor < line_end && (cps[cursor] == U' ' || cps[cursor] == U'\t')) ++cursor;
-        if (cursor != line_end) return false;
-        if (count < 3) return false;
-        if (end) *end = line_end;
-        return true;
+        return line_recognizer().line_is_thematic_break(start, end);
     }
-    struct SetextUnderline {
-        std::uint8_t level = 2;
-        std::size_t line_end = 0;
-    };
+    using SetextUnderline = BlockLineRecognizer::SetextUnderline;
     std::optional<SetextUnderline> setext_underline_at(std::size_t start) const {
-        const auto line_end = line_content_end(start);
-        std::size_t cursor = start;
-        std::size_t leading_spaces = 0;
-        while (cursor < line_end && cps[cursor] == U' ' && leading_spaces < 4) { ++cursor; ++leading_spaces; }
-        if (leading_spaces > 3 || cursor >= line_end) return std::nullopt;
-        auto marker = cps[cursor];
-        if (marker != U'=' && marker != U'-') return std::nullopt;
-        std::size_t count = 0;
-        while (cursor < line_end && cps[cursor] == marker) { ++cursor; ++count; }
-        while (cursor < line_end && (cps[cursor] == U' ' || cps[cursor] == U'\t')) ++cursor;
-        if (count == 0 || cursor != line_end) return std::nullopt;
-        return SetextUnderline{static_cast<std::uint8_t>(marker == U'=' ? 1 : 2), line_end};
+        return line_recognizer().setext_underline_at(start);
     }
     bool line_starts_block_html(std::size_t at) const {
-        if (ch_at(at) != U'<') return false;
-        auto cursor = at + 1;
-        if (cursor >= cps.size() || cps[cursor] == U'/') return false;
-        const auto name_start = cursor;
-        while (cursor < cps.size()
-            && (is_alnum_(cps[cursor]) || cps[cursor] == U'-')) {
-            ++cursor;
-        }
-        if (cursor == name_start) return false;
-        if (cursor < cps.size()
-            && cps[cursor] != U' ' && cps[cursor] != U'\t'
-            && cps[cursor] != U'\r' && cps[cursor] != U'\n'
-            && cps[cursor] != U'>' && cps[cursor] != U'/') {
-            return false;
-        }
-        auto name = cps_to_utf8(std::u32string_view(cps).substr(
-            name_start,
-            cursor - name_start));
-        std::ranges::transform(name, name.begin(), [](unsigned char value) {
-            return static_cast<char>(std::tolower(value));
-        });
-        return html_is_block_element(name);
+        return line_recognizer().line_starts_block_html(at);
     }
     bool line_starts_block_html() const {
         return peek_line_start() && line_starts_block_html(pos);
     }
     bool line_starts_interrupting_block(std::size_t at) const {
-        if (setext_underline_at(at)) return true;
-        if (line_is_thematic_break(at)) return true;
-        if (line_starts_block_html(at)) return true;
-        if (ch_at(at) == U'>' || line_starts_fenced_code(at)) return true;
-        if (ch_at(at) == U'#') {
-            std::size_t cursor = at;
-            while (cursor < cps.size() && cps[cursor] == U'#' && cursor - at < 6) ++cursor;
-            if (cursor < cps.size() && cps[cursor] == U' ') return true;
-        }
-        if ((ch_at(at) == U'$' && ch_at(at + 1) == U'$')
-            || (ch_at(at) == U'\\' && ch_at(at + 1) == U'[')) return true;
-        if ((ch_at(at) == U'-' || ch_at(at) == U'+' || ch_at(at) == U'*')
-            && ch_at(at + 1) == U' ') return true;
-        if (is_ascii_digit_(ch_at(at))) {
-            std::size_t cursor = at;
-            while (cursor < cps.size() && is_ascii_digit_(cps[cursor])) ++cursor;
-            if (cursor + 1 < cps.size() && (cps[cursor] == U'.' || cps[cursor] == U')') && cps[cursor + 1] == U' ') return true;
-        }
-        return false;
+        return line_recognizer().line_starts_interrupting_block(at);
     }
     bool line_starts_interrupting_block() const {
         return peek_line_start() && line_starts_interrupting_block(pos);
