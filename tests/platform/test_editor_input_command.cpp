@@ -52,14 +52,15 @@ suite editor_input_command_tests = [] {
 };
 
 "semantic newline acknowledgements include consecutive empty lines"_test = [] {
-    expect(IsAppliedSemanticNewlineUpdate(L"$$\n$$", 2, true, 3));
-    expect(IsAppliedSemanticNewlineUpdate(L"$$\n\n$$", 3, true, 4));
-    expect(IsAppliedSemanticNewlineUpdate(L"quote\n\nnext", 6, true, 7));
+    expect(IsAppliedSemanticNewlineUpdate(L"$$\n$$", 2));
+    expect(IsAppliedSemanticNewlineUpdate(L"$$\n\n$$", 2));
+    expect(IsAppliedSemanticNewlineUpdate(L"$$\n\n$$", 3));
+    expect(IsAppliedSemanticNewlineUpdate(L"quote\n\nnext", 5));
+    expect(IsAppliedSemanticNewlineUpdate(L"quote\n\nnext", 6));
 
-    expect(!IsAppliedSemanticNewlineUpdate(L"$$\n\n$$", 2, true, 4));
-    expect(!IsAppliedSemanticNewlineUpdate(L"$$\n\n$$", 3, false, 4));
-    expect(!IsAppliedSemanticNewlineUpdate(L"$$\n\n$$", 3, true, 3));
-    expect(!IsAppliedSemanticNewlineUpdate(L"plain", 5, true, 6));
+    expect(!IsAppliedSemanticNewlineUpdate(L"$$\n\n$$", 1));
+    expect(!IsAppliedSemanticNewlineUpdate(L"$$\n\n$$", 4));
+    expect(!IsAppliedSemanticNewlineUpdate(L"plain", 5));
 };
 
 }; // suite editor_input_command_tests

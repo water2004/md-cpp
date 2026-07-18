@@ -87,7 +87,7 @@ namespace winrt::Folia
         forceFullSynchronization_ = false;
         pendingCharacterUpdate_.reset();
         committedCoreTextUpdate_.reset();
-        pendingSemanticLineBreakUpdate_.reset();
+        pendingSemanticLineBreakUpdates_.clear();
         lifetime_.reset();
     }
 
@@ -144,12 +144,15 @@ namespace winrt::Folia
     {
         pendingCharacterUpdate_.reset();
         committedCoreTextUpdate_.reset();
-        pendingSemanticLineBreakUpdate_.reset();
+        auto const now = std::chrono::steady_clock::now();
+        std::erase_if(pendingSemanticLineBreakUpdates_, [&](auto const& update)
+        {
+            return now - update.recordedAt >= std::chrono::seconds(1);
+        });
     }
 
     void EditorTextInputController::RecordSemanticLineBreakUpdate()
     {
-        pendingSemanticLineBreakUpdate_.reset();
         if (!session_) return;
         auto const selection = session_->Selection();
         if (!selection.is_caret()) return;
@@ -158,12 +161,20 @@ namespace winrt::Folia
         auto const activeAcp = session_->TextInputAcpOffset(selection.active);
         if (activeAcp == 0 || activeAcp > text.size() || text[activeAcp - 1] != L'\n')
             return;
-        pendingSemanticLineBreakUpdate_ = SemanticLineBreakUpdate{
+        auto const now = std::chrono::steady_clock::now();
+        std::erase_if(pendingSemanticLineBreakUpdates_, [&](auto const& update)
+        {
+            return now - update.recordedAt >= std::chrono::seconds(1);
+        });
+        pendingSemanticLineBreakUpdates_.push_back(SemanticLineBreakUpdate{
             .container = container,
             .start = activeAcp - 1,
             .revision = session_->Revision(),
-            .recordedAt = std::chrono::steady_clock::now(),
-        };
+            .recordedAt = now,
+        });
+        constexpr std::size_t maximumPendingUpdates = 32;
+        while (pendingSemanticLineBreakUpdates_.size() > maximumPendingUpdates)
+            pendingSemanticLineBreakUpdates_.pop_front();
     }
 
     bool EditorTextInputController::ConsumeCommittedCoreTextCharacter(std::u32string_view text)
@@ -393,29 +404,35 @@ namespace winrt::Folia
             auto activeAcp = selection.active.container_id == activeContainer_
                 ? session_->TextInputAcpOffset(selection.active)
                 : 0u;
-            auto const acknowledgesSemanticLineBreak = isIncomingNewline
-                && pendingSemanticLineBreakUpdate_
-                && pendingSemanticLineBreakUpdate_->container == activeContainer_
-                && pendingSemanticLineBreakUpdate_->revision == session_->Revision()
-                && pendingSemanticLineBreakUpdate_->start == start
-                && std::chrono::steady_clock::now()
-                        - pendingSemanticLineBreakUpdate_->recordedAt
-                    < std::chrono::milliseconds(250)
-                && folia::platform::editor::IsAppliedSemanticNewlineUpdate(
-                    text,
-                    start,
-                    selection.is_caret(),
-                    activeAcp);
-            pendingSemanticLineBreakUpdate_.reset();
+            auto const now = std::chrono::steady_clock::now();
+            std::erase_if(pendingSemanticLineBreakUpdates_, [&](auto const& update)
+            {
+                return now - update.recordedAt >= std::chrono::seconds(1);
+            });
+            auto acknowledged = pendingSemanticLineBreakUpdates_.end();
+            if (isIncomingNewline
+                && folia::platform::editor::IsAppliedSemanticNewlineUpdate(text, start))
+            {
+                acknowledged = std::ranges::find_if(
+                    pendingSemanticLineBreakUpdates_,
+                    [&](auto const& update)
+                    {
+                        return update.container == activeContainer_
+                            && update.start == start
+                            && update.revision <= session_->Revision();
+                    });
+            }
+            auto const acknowledgesSemanticLineBreak =
+                acknowledged != pendingSemanticLineBreakUpdates_.end();
             if (acknowledgesSemanticLineBreak)
             {
+                pendingSemanticLineBreakUpdates_.erase(acknowledged);
                 // Enter is handled as a semantic structure command by the key
                 // controller. The requested text is already present, so this
                 // callback is an acknowledgement rather than a failed edit.
-                // Reporting failure makes CoreText retry/resynchronize an
-                // update whose post-edit selection it already observes; in
-                // consecutive empty lines that can violate the text-store
-                // range invariant and make TextInputFramework fail-fast.
+                // More hardware edits may have advanced the caret before
+                // CoreText reports this update; the ordered pending ledger,
+                // not the current caret, identifies the acknowledgement.
                 args.Result(winrt::Windows::UI::Text::Core::CoreTextTextUpdatingResult::Succeeded);
                 QueueSynchronization();
                 return;

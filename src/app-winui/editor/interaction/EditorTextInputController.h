@@ -78,6 +78,6 @@ namespace winrt::Folia
             std::uint64_t revision = 0;
             std::chrono::steady_clock::time_point recordedAt;
         };
-        std::optional<SemanticLineBreakUpdate> pendingSemanticLineBreakUpdate_;
+        std::deque<SemanticLineBreakUpdate> pendingSemanticLineBreakUpdates_;
     };
 }
