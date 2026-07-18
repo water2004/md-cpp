@@ -207,4 +207,56 @@
   <data name="ShortcutTableMoveColumnRight" xml:space="preserve"><value>Move table column right</value></data>
   <data name="ShortcutTableDeleteRow" xml:space="preserve"><value>Delete table row</value></data>
   <data name="ShortcutTableDeleteColumn" xml:space="preserve"><value>Delete table column</value></data>
+  <data name="LatexCommands" xml:space="preserve"><value>LaTeX commands</value></data>
+  <data name="LatexCommandsDescription" xml:space="preserve"><value>Complete LaTeX commands inside math content using built-in and personal templates.</value></data>
+  <data name="LatexSuggestionsToggle" xml:space="preserve"><value>LaTeX command suggestions</value></data>
+  <data name="Enabled" xml:space="preserve"><value>Enabled</value></data>
+  <data name="Disabled" xml:space="preserve"><value>Disabled</value></data>
+  <data name="LatexRankingDescription" xml:space="preserve"><value>Accepted commands are ranked with a 14-day usage decay. Typing and browsing candidates are not counted.</value></data>
+  <data name="ResetLatexUsage" xml:space="preserve"><value>Reset recent usage</value></data>
+  <data name="CustomLatexCommand" xml:space="preserve"><value>Custom command</value></data>
+  <data name="LatexTemplateHelp" xml:space="preserve"><value>Use $1, $2, … for Tab stops, $0 for the final caret, and $$ for a literal dollar sign.</value></data>
+  <data name="LatexCommand" xml:space="preserve"><value>Command</value></data>
+  <data name="Description" xml:space="preserve"><value>Description</value></data>
+  <data name="LatexDescriptionExample" xml:space="preserve"><value>Insert a custom operator</value></data>
+  <data name="AddCommand" xml:space="preserve"><value>Add command</value></data>
+  <data name="SaveCommand" xml:space="preserve"><value>Save command</value></data>
+  <data name="LatexRecentScore" xml:space="preserve"><value>Recent score {0}</value></data>
+  <data name="LatexNotRecentlyUsed" xml:space="preserve"><value>Not used recently</value></data>
+  <data name="LatexCommandSaved" xml:space="preserve"><value>Custom command saved</value></data>
+  <data name="LatexCommandAdded" xml:space="preserve"><value>Custom command added</value></data>
+  <data name="LatexCommandRemoved" xml:space="preserve"><value>Custom command removed</value></data>
+  <data name="LatexUsageReset" xml:space="preserve"><value>Recent LaTeX command usage was reset</value></data>
+  <data name="LatexDescriptionFrac" xml:space="preserve"><value>Fraction</value></data>
+  <data name="LatexDescriptionDfrac" xml:space="preserve"><value>Display-style fraction</value></data>
+  <data name="LatexDescriptionSqrt" xml:space="preserve"><value>Square root</value></data>
+  <data name="LatexDescriptionText" xml:space="preserve"><value>Text inside math</value></data>
+  <data name="LatexDescriptionOperator" xml:space="preserve"><value>Named operator</value></data>
+  <data name="LatexDescriptionSum" xml:space="preserve"><value>Summation with limits</value></data>
+  <data name="LatexDescriptionProd" xml:space="preserve"><value>Product with limits</value></data>
+  <data name="LatexDescriptionIntegral" xml:space="preserve"><value>Integral with bounds</value></data>
+  <data name="LatexDescriptionLimit" xml:space="preserve"><value>Limit expression</value></data>
+  <data name="LatexDescriptionOverline" xml:space="preserve"><value>Overline accent</value></data>
+  <data name="LatexDescriptionUnderline" xml:space="preserve"><value>Underline accent</value></data>
+  <data name="LatexDescriptionHat" xml:space="preserve"><value>Hat accent</value></data>
+  <data name="LatexDescriptionVector" xml:space="preserve"><value>Vector accent</value></data>
+  <data name="LatexDescriptionAlpha" xml:space="preserve"><value>Greek alpha</value></data>
+  <data name="LatexDescriptionBeta" xml:space="preserve"><value>Greek beta</value></data>
+  <data name="LatexDescriptionGamma" xml:space="preserve"><value>Greek gamma</value></data>
+  <data name="LatexDescriptionDelta" xml:space="preserve"><value>Greek delta</value></data>
+  <data name="LatexDescriptionTheta" xml:space="preserve"><value>Greek theta</value></data>
+  <data name="LatexDescriptionLambda" xml:space="preserve"><value>Greek lambda</value></data>
+  <data name="LatexDescriptionPi" xml:space="preserve"><value>Greek pi</value></data>
+  <data name="LatexDescriptionInfinity" xml:space="preserve"><value>Infinity symbol</value></data>
+  <data name="LatexDescriptionLeq" xml:space="preserve"><value>Less than or equal</value></data>
+  <data name="LatexDescriptionGeq" xml:space="preserve"><value>Greater than or equal</value></data>
+  <data name="LatexDescriptionNeq" xml:space="preserve"><value>Not equal</value></data>
+  <data name="LatexDescriptionApprox" xml:space="preserve"><value>Approximately equal</value></data>
+  <data name="LatexDescriptionTo" xml:space="preserve"><value>Right arrow</value></data>
+  <data name="LatexDescriptionRightArrow" xml:space="preserve"><value>Long-form right arrow</value></data>
+  <data name="LatexDescriptionLeftArrow" xml:space="preserve"><value>Left arrow</value></data>
+  <data name="LatexDescriptionMatrix" xml:space="preserve"><value>Matrix environment</value></data>
+  <data name="LatexDescriptionPmatrix" xml:space="preserve"><value>Parenthesized matrix</value></data>
+  <data name="LatexDescriptionCases" xml:space="preserve"><value>Piecewise cases</value></data>
+  <data name="LatexDescriptionAligned" xml:space="preserve"><value>Aligned equations</value></data>
 </root>

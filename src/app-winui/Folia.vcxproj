@@ -147,6 +147,7 @@
     <ClInclude Include="settings\AppSettings.h" />
     <ClInclude Include="settings\SettingsView.h" />
     <ClInclude Include="settings\SettingsViewSupport.h" />
+    <ClInclude Include="settings\LatexCommandCatalog.h" />
     <ClInclude Include="theme\ThemeConfig.h" />
     <ClInclude Include="theme\ThemeCatalog.h" />
     <ClInclude Include="editor\session\EditorSession.h" />
@@ -303,6 +304,9 @@
     <ClCompile Include="..\core\query\document_content_context.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\core\query\latex_completion.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\platform\windows\editor\geometry\editor_geometry.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
@@ -443,10 +447,12 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="settings\AppSettings.cpp" />
+    <ClCompile Include="settings\LatexCommandCatalog.cpp" />
     <ClCompile Include="localization\Localization.cpp" />
     <ClCompile Include="settings\SettingsView.cpp" />
     <ClCompile Include="settings\SettingsView.General.cpp" />
     <ClCompile Include="settings\SettingsView.Shortcuts.cpp" />
+    <ClCompile Include="settings\SettingsView.Latex.cpp" />
     <ClCompile Include="settings\SettingsView.Themes.cpp" />
     <ClCompile Include="settings\SettingsView.Licenses.cpp" />
     <ClCompile Include="storage\AssetPaths.cpp">
@@ -559,6 +565,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="Assets\themes\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Assets\latex\commands.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="Assets\mathjax\mathjax-quickjs.js">

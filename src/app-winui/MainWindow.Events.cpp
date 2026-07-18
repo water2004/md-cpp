@@ -77,6 +77,7 @@ namespace winrt::Folia::implementation
     {
         Closed([this](auto const&, auto const&)
         {
+            if (latexCommandCatalog) latexCommandCatalog->Flush();
             if (settingsView) settingsView->Detach();
             documentController.Detach();
             sidebarController.Detach();

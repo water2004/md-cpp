@@ -10,6 +10,7 @@
 #include "editor/interaction/EditorSidebarController.h"
 #include "settings/AppSettings.h"
 #include "settings/SettingsView.h"
+#include "settings/LatexCommandCatalog.h"
 #include "theme/ThemeCatalog.h"
 #include "theme/ThemeConfig.h"
 #include "MainWindow.g.h"
@@ -72,6 +73,8 @@ namespace winrt::Folia::implementation
         winrt::Microsoft::UI::Xaml::Controls::Flyout footnoteFlyout{ nullptr };
         winrt::Folia::AppSettings appSettings;
         std::shared_ptr<winrt::Folia::ThemeCatalog> themeCatalog = std::make_shared<winrt::Folia::ThemeCatalog>();
+        std::shared_ptr<winrt::Folia::LatexCommandCatalog> latexCommandCatalog =
+            std::make_shared<winrt::Folia::LatexCommandCatalog>();
         std::shared_ptr<winrt::Folia::SettingsView> settingsView;
         folia::ThemeProfile themeProfile = folia::default_theme_profile();
         bool updatingTheme = false;

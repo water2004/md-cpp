@@ -141,10 +141,13 @@ namespace winrt::Folia
         {
             auto root = Windows::Data::Json::JsonObject::Parse(winrt::to_hstring(ReadUtf8(path)));
             auto schemaVersion = root.GetNamedNumber(L"schemaVersion");
-            if (schemaVersion != 1.0 && schemaVersion != 2.0 && schemaVersion != 3.0)
+            if (schemaVersion != 1.0 && schemaVersion != 2.0
+                && schemaVersion != 3.0 && schemaVersion != 4.0)
                 throw std::runtime_error("unsupported settings schema version");
             AppSettings settings;
             settings.mathRenderingEnabled = root.GetNamedBoolean(L"mathRenderingEnabled");
+            if (schemaVersion >= 4.0)
+                settings.latexSuggestionsEnabled = root.GetNamedBoolean(L"latexSuggestionsEnabled", true);
             settings.themeId = winrt::to_string(root.GetNamedString(L"themeId"));
             if (schemaVersion >= 2.0)
                 settings.languageId = winrt::to_string(root.GetNamedString(L"languageId"));
@@ -172,8 +175,9 @@ namespace winrt::Folia
             auto directory = AssetsDirectory();
             std::filesystem::create_directories(directory);
             Windows::Data::Json::JsonObject root;
-            root.Insert(L"schemaVersion", Windows::Data::Json::JsonValue::CreateNumberValue(3));
+            root.Insert(L"schemaVersion", Windows::Data::Json::JsonValue::CreateNumberValue(4));
             root.Insert(L"mathRenderingEnabled", Windows::Data::Json::JsonValue::CreateBooleanValue(settings.mathRenderingEnabled));
+            root.Insert(L"latexSuggestionsEnabled", Windows::Data::Json::JsonValue::CreateBooleanValue(settings.latexSuggestionsEnabled));
             root.Insert(L"themeId", Windows::Data::Json::JsonValue::CreateStringValue(winrt::to_hstring(settings.themeId)));
             root.Insert(L"languageId", Windows::Data::Json::JsonValue::CreateStringValue(winrt::to_hstring(settings.languageId)));
             Windows::Data::Json::JsonArray shortcuts;

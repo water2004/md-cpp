@@ -13,12 +13,14 @@ namespace winrt::Folia
     SettingsView::SettingsView(
         AppSettings settings,
         std::shared_ptr<ThemeCatalog> catalog,
+        std::shared_ptr<LatexCommandCatalog> latexCatalog,
         folia::Theme systemVariant,
         HWND owner,
         ApplySettings applySettings)
         : settings_(std::move(settings)),
           appliedSettings_(settings_),
           catalog_(std::move(catalog)),
+          latexCatalog_(std::move(latexCatalog)),
           systemVariant_(systemVariant),
           owner_(owner),
           applySettings_(std::move(applySettings))
@@ -43,17 +45,20 @@ namespace winrt::Folia
 
         auto general = NavigationItem(Localize(L"General"), L"general", L"\xE713");
         auto shortcuts = NavigationItem(Localize(L"Shortcuts"), L"shortcuts", L"\xE765");
+        auto latex = NavigationItem(Localize(L"LatexCommands"), L"latex", L"\xE943");
         auto themes = NavigationItem(Localize(L"Themes"), L"themes", L"\xE790");
         auto licenses = NavigationItem(Localize(L"Licenses"), L"licenses", L"\xE8A5");
         auto about = NavigationItem(Localize(L"About"), L"about", L"\xE946");
         navigation_.MenuItems().Append(general);
         navigation_.MenuItems().Append(shortcuts);
+        navigation_.MenuItems().Append(latex);
         navigation_.MenuItems().Append(themes);
         navigation_.MenuItems().Append(licenses);
         navigation_.MenuItems().Append(about);
 
         generalPage_ = BuildGeneralPage();
         shortcutsPage_ = BuildShortcutsPage();
+        latexPage_ = BuildLatexPage();
         themesPage_ = BuildThemesPage();
         licensesPage_ = BuildLicensesPage();
         aboutPage_ = BuildAboutPage();
@@ -70,6 +75,11 @@ namespace winrt::Folia
     void SettingsView::Navigate(hstring const& page)
     {
         if (page == L"themes") navigation_.Content(themesPage_);
+        else if (page == L"latex")
+        {
+            navigation_.Content(latexPage_);
+            RefreshLatexCommandList();
+        }
         else if (page == L"shortcuts")
         {
             navigation_.Content(shortcutsPage_);
@@ -92,10 +102,13 @@ namespace winrt::Folia
         systemVariant_ = systemVariant;
         refreshing_ = true;
         mathToggle_.IsOn(settings_.mathRenderingEnabled);
+        latexSuggestionsToggle_.IsOn(settings_.latexSuggestionsEnabled);
         languageCombo_.SelectedIndex(LanguageIndex(settings_.languageId));
         refreshing_ = false;
         ResetSnippetForm();
+        ResetLatexForm();
         RefreshShortcutList();
+        RefreshLatexCommandList();
         RefreshThemeList();
         SetGeneralStatus({});
     }

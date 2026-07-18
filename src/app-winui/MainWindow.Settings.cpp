@@ -67,6 +67,7 @@ namespace winrt::Folia::implementation
                 settingsView = std::make_shared<winrt::Folia::SettingsView>(
                     appSettings,
                     themeCatalog,
+                    latexCommandCatalog,
                     CurrentThemeVariant(),
                     WindowHandle(),
                     [this](winrt::Folia::AppSettings const& changed) { return ApplySettings(changed); });
