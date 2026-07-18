@@ -482,6 +482,7 @@
     <ClCompile Include="theme\ThemeConfig.cpp" />
     <ClCompile Include="theme\ThemeCatalog.cpp" />
     <ClCompile Include="editor\session\EditorSession.cpp" />
+    <ClCompile Include="editor\session\EditorSession.Search.cpp" />
     <ClCompile Include="MainWindow.Search.cpp">
       <DependentUpon>MainWindow.xaml</DependentUpon>
     </ClCompile>
