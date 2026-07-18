@@ -4,6 +4,7 @@
 #include "localization/Localization.h"
 
 import folia.core.utf;
+import folia.core.snippet_template;
 
 namespace
 {
@@ -25,99 +26,7 @@ namespace winrt::Folia
     using namespace Microsoft::UI::Xaml;
     using namespace Microsoft::UI::Xaml::Controls;
     using settings_ui::Brush;
-    using settings_ui::Card;
     using settings_ui::Text;
-
-    FrameworkElement LatexCommandEditorForm::Build(Submit submit)
-    {
-        submit_ = std::move(submit);
-        if (root_) return root_;
-
-        StackPanel content;
-        content.Spacing(8);
-        auto heading = Text(Localize(L"CustomLatexCommand"), 18);
-        heading.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
-        content.Children().Append(heading);
-        content.Children().Append(Text(Localize(L"LatexTemplateHelp"), 12));
-
-        Grid fields;
-        fields.ColumnSpacing(10);
-        for (auto width : {0.65, 1.6, 1.0})
-        {
-            ColumnDefinition column;
-            column.Width(GridLengthHelper::FromValueAndType(width, GridUnitType::Star));
-            fields.ColumnDefinitions().Append(column);
-        }
-        triggerBox_.Header(box_value(Localize(L"LatexCommand")));
-        triggerBox_.PlaceholderText(LR"(frac)");
-        fields.Children().Append(triggerBox_);
-        templateBox_.Header(box_value(Localize(L"InsertionTemplate")));
-        templateBox_.PlaceholderText(LR"(\frac{$1}{$2}$0)");
-        templateBox_.AcceptsReturn(true);
-        templateBox_.TextWrapping(TextWrapping::Wrap);
-        templateBox_.MinHeight(88);
-        templateBox_.MaxHeight(160);
-        ScrollViewer::SetVerticalScrollBarVisibility(
-            templateBox_, ScrollBarVisibility::Auto);
-        Grid::SetColumn(templateBox_, 1);
-        fields.Children().Append(templateBox_);
-        descriptionBox_.Header(box_value(Localize(L"Description")));
-        descriptionBox_.PlaceholderText(Localize(L"LatexDescriptionExample"));
-        Grid::SetColumn(descriptionBox_, 2);
-        fields.Children().Append(descriptionBox_);
-        content.Children().Append(fields);
-
-        StackPanel buttons;
-        buttons.Orientation(Orientation::Horizontal);
-        buttons.Spacing(8);
-        saveButton_.Content(box_value(Localize(L"AddCommand")));
-        saveButton_.Click([this](auto const&, auto const&)
-        {
-            if (!submit_) return;
-            LatexCommandFormSubmission submission{
-                .editingId = editingId_,
-                .trigger = folia::utf8_to_cps(winrt::to_string(triggerBox_.Text())),
-                .snippet = folia::utf8_to_cps(winrt::to_string(templateBox_.Text())),
-                .description = winrt::to_string(descriptionBox_.Text()),
-            };
-            if (submit_(std::move(submission))) Reset();
-        });
-        cancelButton_.Content(box_value(Localize(L"Cancel")));
-        cancelButton_.Visibility(Visibility::Collapsed);
-        cancelButton_.Click([this](auto const&, auto const&) { Reset(); });
-        buttons.Children().Append(saveButton_);
-        buttons.Children().Append(cancelButton_);
-        content.Children().Append(buttons);
-
-        root_ = Card(content);
-        return root_;
-    }
-
-    void LatexCommandEditorForm::BeginEdit(folia::LatexCommandDefinition const& command)
-    {
-        editingId_ = command.id;
-        triggerBox_.Text(winrt::to_hstring(folia::cps_to_utf8(command.trigger)));
-        templateBox_.Text(winrt::to_hstring(folia::cps_to_utf8(command.snippet)));
-        descriptionBox_.Text(winrt::to_hstring(command.description));
-        saveButton_.Content(box_value(Localize(L"SaveCommand")));
-        cancelButton_.Visibility(Visibility::Visible);
-        triggerBox_.Focus(FocusState::Programmatic);
-    }
-
-    void LatexCommandEditorForm::Reset()
-    {
-        editingId_.reset();
-        triggerBox_.Text({});
-        templateBox_.Text({});
-        descriptionBox_.Text({});
-        saveButton_.Content(box_value(Localize(L"AddCommand")));
-        cancelButton_.Visibility(Visibility::Collapsed);
-    }
-
-    bool LatexCommandEditorForm::Editing(std::string_view id) const
-    {
-        return editingId_ && *editingId_ == id;
-    }
 
     FrameworkElement BuildLatexCommandSettingsRow(
         folia::LatexCommandDefinition const& command,
@@ -126,15 +35,18 @@ namespace winrt::Folia
         std::function<void(std::string)> remove)
     {
         Grid row;
-        row.MinHeight(68);
-        row.Padding(Thickness{10, 7, 8, 7});
+        row.MinHeight(54);
+        row.Padding(Thickness{10, 6, 8, 6});
         row.ColumnSpacing(12);
-        for (auto width : {0.75, 1.15, 1.8, 0.65})
+        for (auto width : {0.75, 1.15, 1.8})
         {
             ColumnDefinition column;
             column.Width(GridLengthHelper::FromValueAndType(width, GridUnitType::Star));
             row.ColumnDefinitions().Append(column);
         }
+        ColumnDefinition actionColumn;
+        actionColumn.Width(GridLengthHelper::Auto());
+        row.ColumnDefinitions().Append(actionColumn);
 
         StackPanel identity;
         identity.Spacing(4);
@@ -166,38 +78,44 @@ namespace winrt::Folia
         Grid::SetColumn(detail, 1);
         row.Children().Append(detail);
 
-        auto snippet = Text(winrt::to_hstring(folia::cps_to_utf8(command.snippet)), 12);
+        auto snippetLiteral = folia::encode_snippet_literal(command.snippet);
+        auto snippet = Text(winrt::to_hstring(folia::cps_to_utf8(snippetLiteral)), 12);
         snippet.FontFamily(Media::FontFamily(L"Cascadia Mono"));
         snippet.TextTrimming(TextTrimming::CharacterEllipsis);
-        snippet.MaxLines(2);
+        snippet.MaxLines(1);
         snippet.VerticalAlignment(VerticalAlignment::Center);
         Grid::SetColumn(snippet, 2);
         row.Children().Append(snippet);
 
-        StackPanel actions;
-        actions.Orientation(Orientation::Horizontal);
-        actions.Spacing(6);
-        actions.HorizontalAlignment(HorizontalAlignment::Right);
-        actions.VerticalAlignment(VerticalAlignment::Center);
         if (!command.built_in)
         {
-            Button editButton;
-            editButton.Content(box_value(Localize(L"Edit")));
-            editButton.Click([edit = std::move(edit), id = command.id](auto const&, auto const&)
+            Button more;
+            FontIcon icon;
+            icon.Glyph(L"\xE712");
+            more.Content(icon);
+            more.Padding(Thickness{8, 4, 8, 4});
+            ToolTipService::SetToolTip(more, box_value(Localize(L"MoreActions")));
+            MenuFlyout menu;
+            MenuFlyoutItem editItem;
+            editItem.Text(Localize(L"Edit"));
+            editItem.Click([edit = std::move(edit), id = command.id](auto const&, auto const&)
             {
                 if (edit) edit(id);
             });
-            actions.Children().Append(editButton);
-            Button removeButton;
-            removeButton.Content(box_value(Localize(L"Remove")));
-            removeButton.Click([remove = std::move(remove), id = command.id](auto const&, auto const&)
+            menu.Items().Append(editItem);
+            MenuFlyoutItem removeItem;
+            removeItem.Text(Localize(L"Remove"));
+            removeItem.Click([remove = std::move(remove), id = command.id](auto const&, auto const&)
             {
                 if (remove) remove(id);
             });
-            actions.Children().Append(removeButton);
+            menu.Items().Append(removeItem);
+            more.Flyout(menu);
+            more.HorizontalAlignment(HorizontalAlignment::Right);
+            more.VerticalAlignment(VerticalAlignment::Center);
+            Grid::SetColumn(more, 3);
+            row.Children().Append(more);
         }
-        Grid::SetColumn(actions, 3);
-        row.Children().Append(actions);
 
         Border separator;
         separator.BorderThickness(Thickness{0, 0, 0, 1});

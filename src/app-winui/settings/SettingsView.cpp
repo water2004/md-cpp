@@ -105,8 +105,6 @@ namespace winrt::Folia
         latexSuggestionsToggle_.IsOn(settings_.latexSuggestionsEnabled);
         languageCombo_.SelectedIndex(LanguageIndex(settings_.languageId));
         refreshing_ = false;
-        ResetSnippetForm();
-        latexCommandEditor_.Reset();
         RefreshShortcutList();
         RefreshLatexCommandList();
         RefreshThemeList();

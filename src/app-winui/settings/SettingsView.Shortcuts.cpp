@@ -4,6 +4,7 @@
 #include "localization/Localization.h"
 
 import folia.core.utf;
+import folia.core.snippet_template;
 
 namespace
 {
@@ -137,39 +138,48 @@ namespace winrt::Folia
     using namespace Microsoft::UI::Xaml;
     using namespace Microsoft::UI::Xaml::Controls;
     using settings_ui::Brush;
-    using settings_ui::Card;
     using settings_ui::PageHeading;
     using settings_ui::Text;
 
     UIElement SettingsView::BuildShortcutsPage()
     {
-        Grid page;
-        page.Margin(Thickness{24, 18, 24, 24});
-        page.RowSpacing(12);
-        for (auto index = 0; index < 6; ++index)
-        {
-            RowDefinition row;
-            row.Height(index == 3
-                ? GridLengthHelper::FromValueAndType(1, GridUnitType::Star)
-                : GridLengthHelper::Auto());
-            page.RowDefinitions().Append(row);
-        }
+        StackPanel page = settings_ui::PagePanel();
 
         auto heading = PageHeading(Localize(L"Shortcuts"));
-        Grid::SetRow(heading, 0);
         page.Children().Append(heading);
         auto description = Text(Localize(L"ShortcutsDescription"));
-        Grid::SetRow(description, 1);
         page.Children().Append(description);
+
+        Grid listHeader;
+        listHeader.ColumnDefinitions().Append(ColumnDefinition{});
+        ColumnDefinition addColumn;
+        addColumn.Width(GridLengthHelper::Auto());
+        listHeader.ColumnDefinitions().Append(addColumn);
+        auto listTitle = Text(Localize(L"ShortcutBindings"), 18);
+        listTitle.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
+        listTitle.VerticalAlignment(VerticalAlignment::Center);
+        listHeader.Children().Append(listTitle);
+        Button addAction;
+        addAction.Content(box_value(Localize(L"AddInsertionAction")));
+        addAction.Click([this](auto const&, auto const&)
+        {
+            ShowSnippetEditorAsync(std::nullopt);
+        });
+        Grid::SetColumn(addAction, 1);
+        listHeader.Children().Append(addAction);
+        page.Children().Append(listHeader);
 
         Grid tableHeader;
         tableHeader.ColumnSpacing(12);
-        for (auto width : {2.0, 1.0, 1.2, 0.8})
+        for (auto width : {2.0, 1.0, 1.2})
         {
             ColumnDefinition column;
             column.Width(GridLengthHelper::FromValueAndType(width, GridUnitType::Star));
             tableHeader.ColumnDefinitions().Append(column);
         }
+        ColumnDefinition operationsColumn;
+        operationsColumn.Width(GridLengthHelper::Auto());
+        tableHeader.ColumnDefinitions().Append(operationsColumn);
         auto appendHeader = [&](hstring const& label, int column)
         {
             auto text = Text(label, 12);
@@ -181,70 +191,22 @@ namespace winrt::Folia
         appendHeader(Localize(L"ShortcutScope"), 1);
         appendHeader(Localize(L"ShortcutKeys"), 2);
         appendHeader(Localize(L"ShortcutOperations"), 3);
-        Grid::SetRow(tableHeader, 2);
         page.Children().Append(tableHeader);
 
-        shortcutList_.SelectionMode(ListViewSelectionMode::None);
-        shortcutList_.HorizontalContentAlignment(HorizontalAlignment::Stretch);
-        Grid::SetRow(shortcutList_, 3);
+        shortcutList_.Spacing(0);
         page.Children().Append(shortcutList_);
 
-        StackPanel snippetCard;
-        snippetCard.Spacing(8);
-        auto snippetHeading = Text(Localize(L"CustomInsertionAction"), 18);
-        snippetHeading.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
-        snippetCard.Children().Append(snippetHeading);
-        snippetCard.Children().Append(Text(Localize(L"SnippetPlaceholderDescription")));
-        Grid form;
-        form.ColumnSpacing(8);
-        for (auto width : {1.0, 2.0, 0.8})
-        {
-            ColumnDefinition column;
-            column.Width(GridLengthHelper::FromValueAndType(width, GridUnitType::Star));
-            form.ColumnDefinitions().Append(column);
-        }
-        snippetNameBox_.Header(box_value(Localize(L"ActionName")));
-        snippetNameBox_.PlaceholderText(Localize(L"ActionNameExample"));
-        form.Children().Append(snippetNameBox_);
-        snippetTemplateBox_.Header(box_value(Localize(L"InsertionTemplate")));
-        snippetTemplateBox_.PlaceholderText(LR"(\frac{$1}{$2}$0)");
-        snippetTemplateBox_.AcceptsReturn(true);
-        snippetTemplateBox_.TextWrapping(TextWrapping::Wrap);
-        snippetTemplateBox_.MinHeight(88);
-        snippetTemplateBox_.MaxHeight(160);
-        ScrollViewer::SetVerticalScrollBarVisibility(
-            snippetTemplateBox_, ScrollBarVisibility::Auto);
-        Grid::SetColumn(snippetTemplateBox_, 1);
-        form.Children().Append(snippetTemplateBox_);
-        snippetScopeBox_.Header(box_value(Localize(L"ShortcutScope")));
-        snippetScopeBox_.Items().Append(box_value(Localize(L"ShortcutScopeGlobal")));
-        snippetScopeBox_.Items().Append(box_value(Localize(L"ShortcutScopeCode")));
-        snippetScopeBox_.Items().Append(box_value(Localize(L"ShortcutScopeMath")));
-        snippetScopeBox_.SelectedIndex(0);
-        Grid::SetColumn(snippetScopeBox_, 2);
-        form.Children().Append(snippetScopeBox_);
-        snippetCard.Children().Append(form);
-
-        StackPanel snippetButtons;
-        snippetButtons.Orientation(Orientation::Horizontal);
-        snippetButtons.Spacing(8);
-        saveSnippetButton_.Content(box_value(Localize(L"AddInsertionAction")));
-        saveSnippetButton_.Click([this](auto const&, auto const&) { SaveSnippet(); });
-        cancelSnippetButton_.Content(box_value(Localize(L"Cancel")));
-        cancelSnippetButton_.Visibility(Visibility::Collapsed);
-        cancelSnippetButton_.Click([this](auto const&, auto const&) { ResetSnippetForm(); });
-        snippetButtons.Children().Append(saveSnippetButton_);
-        snippetButtons.Children().Append(cancelSnippetButton_);
-        snippetCard.Children().Append(snippetButtons);
-        auto card = Card(snippetCard);
-        Grid::SetRow(card, 4);
-        page.Children().Append(card);
-
         shortcutStatus_.TextWrapping(TextWrapping::Wrap);
-        Grid::SetRow(shortcutStatus_, 5);
         page.Children().Append(shortcutStatus_);
         RefreshShortcutList();
-        return page;
+
+        ScrollViewer scroll;
+        scroll.HorizontalScrollMode(ScrollMode::Disabled);
+        scroll.HorizontalScrollBarVisibility(ScrollBarVisibility::Disabled);
+        scroll.VerticalScrollMode(ScrollMode::Enabled);
+        scroll.VerticalScrollBarVisibility(ScrollBarVisibility::Auto);
+        scroll.Content(page);
+        return scroll;
     }
 
     void SettingsView::SetShortcutStatus(hstring const& message, bool error)
@@ -259,7 +221,7 @@ namespace winrt::Folia
         struct ResetRefreshing { bool& value; ~ResetRefreshing() { value = false; } } reset{refreshing_};
         capturingShortcut_.reset();
         shortcutButtons_.clear();
-        shortcutList_.Items().Clear();
+        shortcutList_.Children().Clear();
         auto const& bindings = shortcutModel_.Bindings();
         shortcutButtons_.reserve(bindings.size());
 
@@ -269,12 +231,15 @@ namespace winrt::Folia
             Grid row;
             row.Padding(Thickness{4, 4, 4, 4});
             row.ColumnSpacing(12);
-            for (auto width : {2.0, 1.0, 1.2, 0.8})
+            for (auto width : {2.0, 1.0, 1.2})
             {
                 ColumnDefinition column;
                 column.Width(GridLengthHelper::FromValueAndType(width, GridUnitType::Star));
                 row.ColumnDefinitions().Append(column);
             }
+            ColumnDefinition operationsColumn;
+            operationsColumn.Width(GridLengthHelper::Auto());
+            row.ColumnDefinitions().Append(operationsColumn);
 
             auto action = Text(ActionLabel(binding));
             action.VerticalAlignment(VerticalAlignment::Center);
@@ -306,32 +271,50 @@ namespace winrt::Folia
             row.Children().Append(capture);
             shortcutButtons_.push_back(capture);
 
-            StackPanel operations;
-            operations.Orientation(Orientation::Horizontal);
-            operations.Spacing(6);
-            Button clear;
-            clear.Content(box_value(Localize(L"Clear")));
+            Button more;
+            FontIcon moreIcon;
+            moreIcon.Glyph(L"\xE712");
+            more.Content(moreIcon);
+            more.Padding(Thickness{8, 4, 8, 4});
+            more.HorizontalAlignment(HorizontalAlignment::Right);
+            more.VerticalAlignment(VerticalAlignment::Center);
+            ToolTipService::SetToolTip(more, box_value(Localize(L"MoreActions")));
+            MenuFlyout menu;
+            MenuFlyoutItem clear;
+            clear.Text(Localize(L"Clear"));
             clear.Click([this, index](auto const&, auto const&) { ClearShortcut(index); });
-            operations.Children().Append(clear);
+            menu.Items().Append(clear);
             if (binding.action_kind
                 == folia::platform::editor::EditorShortcutActionKind::InsertSnippet)
             {
-                Button edit;
-                edit.Content(box_value(Localize(L"Edit")));
-                edit.Click([this, index](auto const&, auto const&) { EditSnippet(index); });
-                operations.Children().Append(edit);
-                Button remove;
-                remove.Content(box_value(Localize(L"Remove")));
+                MenuFlyoutItem edit;
+                edit.Text(Localize(L"Edit"));
+                edit.Click([this, index](auto const&, auto const&)
+                {
+                    ShowSnippetEditorAsync(index);
+                });
+                menu.Items().Append(edit);
+                MenuFlyoutItem remove;
+                remove.Text(Localize(L"Remove"));
                 remove.Click([this, index](auto const&, auto const&) { RemoveSnippet(index); });
-                operations.Children().Append(remove);
+                menu.Items().Append(remove);
             }
-            Grid::SetColumn(operations, 3);
-            row.Children().Append(operations);
+            else
+            {
+                MenuFlyoutItem resetDefault;
+                resetDefault.Text(Localize(L"ResetDefault"));
+                resetDefault.Click([this, index](auto const&, auto const&) { ResetShortcut(index); });
+                menu.Items().Append(resetDefault);
+            }
+            more.Flyout(menu);
+            Grid::SetColumn(more, 3);
+            row.Children().Append(more);
 
-            ListViewItem item;
-            item.HorizontalContentAlignment(HorizontalAlignment::Stretch);
-            item.Content(row);
-            shortcutList_.Items().Append(item);
+            Border separator;
+            separator.BorderThickness(Thickness{0, 0, 0, 1});
+            separator.BorderBrush(Brush({128, 128, 128, 40}));
+            separator.Child(row);
+            shortcutList_.Children().Append(separator);
         }
     }
 
@@ -406,6 +389,20 @@ namespace winrt::Folia
         if (ApplyShortcutSettings()) RefreshShortcutList();
     }
 
+    void SettingsView::ResetShortcut(std::size_t index)
+    {
+        auto const& bindings = shortcutModel_.Bindings();
+        if (index >= bindings.size()) return;
+        auto defaults = folia::platform::editor::default_editor_shortcuts();
+        auto found = std::ranges::find(
+            defaults, bindings[index].id, &ShortcutBinding::id);
+        if (found == defaults.end()) return;
+        auto result = shortcutModel_.ResetBuiltIn(index, *found);
+        if (!HandleShortcutResult(result, found->gesture)) return;
+        capturingShortcut_.reset();
+        if (ApplyShortcutSettings()) RefreshShortcutList();
+    }
+
     void SettingsView::ChangeShortcutScope(std::size_t index, std::int32_t selectedIndex)
     {
         auto const& bindings = shortcutModel_.Bindings();
@@ -467,73 +464,198 @@ namespace winrt::Folia
         return true;
     }
 
-    void SettingsView::EditSnippet(std::size_t index)
+    fire_and_forget SettingsView::ShowSnippetEditorAsync(
+        std::optional<std::size_t> index)
     {
-        auto const& bindings = shortcutModel_.Bindings();
-        if (index >= bindings.size()) return;
-        auto const& binding = bindings[index];
-        if (binding.action_kind
-            != folia::platform::editor::EditorShortcutActionKind::InsertSnippet) return;
-        editingSnippet_ = index;
-        snippetNameBox_.Text(winrt::to_hstring(binding.custom_name));
-        snippetTemplateBox_.Text(winrt::to_hstring(folia::cps_to_utf8(binding.snippet)));
-        snippetScopeBox_.SelectedIndex(ScopeIndex(binding.scope));
-        saveSnippetButton_.Content(box_value(Localize(L"SaveInsertionAction")));
-        cancelSnippetButton_.Visibility(Visibility::Visible);
-    }
+        auto lifetime = shared_from_this();
+        if (editorDialogOpen_) co_return;
+        std::optional<ShortcutBinding> existing;
+        if (index)
+        {
+            auto const& bindings = shortcutModel_.Bindings();
+            if (*index >= bindings.size()
+                || bindings[*index].action_kind
+                    != folia::platform::editor::EditorShortcutActionKind::InsertSnippet)
+                co_return;
+            existing = bindings[*index];
+        }
 
-    void SettingsView::SaveSnippet()
-    {
-        auto name = winrt::to_string(snippetNameBox_.Text());
-        auto source = winrt::to_string(snippetTemplateBox_.Text());
-        auto scope = ScopeFromIndex(snippetScopeBox_.SelectedIndex());
-        folia::platform::editor::ShortcutSettingsResult result;
-        std::optional<EditorKeyGesture> gesture;
-        if (editingSnippet_ && *editingSnippet_ < shortcutModel_.Bindings().size())
+        editorDialogOpen_ = true;
+        struct DialogGuard
         {
-            gesture = shortcutModel_.Bindings()[*editingSnippet_].gesture;
-            result = shortcutModel_.UpdateSnippet(
-                *editingSnippet_, std::move(name), folia::utf8_to_cps(source), scope);
+            bool& open;
+            ~DialogGuard() { open = false; }
+        } guard{editorDialogOpen_};
+
+        ContentDialog dialog;
+        dialog.XamlRoot(navigation_.XamlRoot());
+        dialog.Title(box_value(Localize(existing
+            ? L"EditInsertionAction" : L"CustomInsertionAction")));
+        dialog.PrimaryButtonText(Localize(existing
+            ? L"SaveInsertionAction" : L"AddInsertionAction"));
+        dialog.CloseButtonText(Localize(L"Cancel"));
+        dialog.DefaultButton(ContentDialogButton::Primary);
+
+        StackPanel fields;
+        fields.Spacing(10);
+        fields.MinWidth(560);
+        fields.Children().Append(Text(Localize(L"SnippetPlaceholderDescription"), 12));
+        TextBox name;
+        name.Header(box_value(Localize(L"ActionName")));
+        name.PlaceholderText(Localize(L"ActionNameExample"));
+        if (existing) name.Text(winrt::to_hstring(existing->custom_name));
+        fields.Children().Append(name);
+        TextBox snippet;
+        snippet.Header(box_value(Localize(L"InsertionTemplate")));
+        snippet.PlaceholderText(LR"(\\frac{${1}}{${2}}$0)");
+        snippet.AcceptsReturn(false);
+        snippet.TextWrapping(TextWrapping::NoWrap);
+        if (existing)
+        {
+            auto literal = folia::encode_snippet_literal(existing->snippet);
+            snippet.Text(winrt::to_hstring(folia::cps_to_utf8(literal)));
         }
-        else
+        fields.Children().Append(snippet);
+
+        Grid assignment;
+        assignment.ColumnSpacing(10);
+        assignment.ColumnDefinitions().Append(ColumnDefinition{});
+        assignment.ColumnDefinitions().Append(ColumnDefinition{});
+        ComboBox scope;
+        scope.Header(box_value(Localize(L"ShortcutScope")));
+        scope.Items().Append(box_value(Localize(L"ShortcutScopeGlobal")));
+        scope.Items().Append(box_value(Localize(L"ShortcutScopeCode")));
+        scope.Items().Append(box_value(Localize(L"ShortcutScopeMath")));
+        scope.SelectedIndex(existing ? ScopeIndex(existing->scope) : 0);
+        assignment.Children().Append(scope);
+        StackPanel gestureField;
+        gestureField.Spacing(4);
+        gestureField.Children().Append(Text(Localize(L"ShortcutKeys"), 12));
+        Button gestureButton;
+        std::optional<EditorKeyGesture> gesture = existing
+            ? existing->gesture : std::nullopt;
+        gestureButton.Content(box_value(GestureLabel(gesture)));
+        gestureButton.HorizontalAlignment(HorizontalAlignment::Stretch);
+        gestureButton.HorizontalContentAlignment(HorizontalAlignment::Center);
+        bool capturing = false;
+        gestureButton.Click([&gestureButton, &capturing](auto const&, auto const&)
         {
-            auto id = std::string("snippet.") + std::to_string(GetTickCount64());
-            while (std::ranges::find(shortcutModel_.Bindings(), id, &ShortcutBinding::id)
-                != shortcutModel_.Bindings().end()) id.push_back('x');
-            result = shortcutModel_.AddSnippet({
-                .id = id,
-                .custom_name = std::move(name),
-                .scope = scope,
-                .snippet = folia::utf8_to_cps(source),
-            });
-        }
-        if (!HandleShortcutResult(result, gesture)) return;
-        if (ApplyShortcutSettings())
+            capturing = true;
+            gestureButton.Content(box_value(Localize(L"PressShortcut")));
+            gestureButton.Focus(FocusState::Programmatic);
+        });
+        gestureButton.KeyDown([&gestureButton, &gesture, &capturing](
+            auto const&, Input::KeyRoutedEventArgs const& args)
         {
-            ResetSnippetForm();
+            if (!capturing) return;
+            auto key = args.Key();
+            if (key == Windows::System::VirtualKey::Escape)
+            {
+                capturing = false;
+                gestureButton.Content(box_value(GestureLabel(gesture)));
+                args.Handled(true);
+                return;
+            }
+            if (IsModifierKey(key))
+            {
+                args.Handled(true);
+                return;
+            }
+            auto candidate = EditorKeyGesture{
+                .key = static_cast<EditorKey>(static_cast<std::uint32_t>(key)),
+                .control = ModifierDown(Windows::System::VirtualKey::Control)
+                    || ModifierDown(Windows::System::VirtualKey::LeftControl)
+                    || ModifierDown(Windows::System::VirtualKey::RightControl),
+                .shift = ModifierDown(Windows::System::VirtualKey::Shift)
+                    || ModifierDown(Windows::System::VirtualKey::LeftShift)
+                    || ModifierDown(Windows::System::VirtualKey::RightShift),
+                .alt = ModifierDown(Windows::System::VirtualKey::Menu)
+                    || ModifierDown(Windows::System::VirtualKey::LeftMenu)
+                    || ModifierDown(Windows::System::VirtualKey::RightMenu),
+            };
+            if ((key == Windows::System::VirtualKey::Back
+                    || key == Windows::System::VirtualKey::Delete)
+                && !candidate.control && !candidate.shift && !candidate.alt)
+                gesture.reset();
+            else
+                gesture = candidate;
+            capturing = false;
+            gestureButton.Content(box_value(GestureLabel(gesture)));
+            args.Handled(true);
+        });
+        gestureField.Children().Append(gestureButton);
+        Grid::SetColumn(gestureField, 1);
+        assignment.Children().Append(gestureField);
+        fields.Children().Append(assignment);
+
+        TextBlock error;
+        error.TextWrapping(TextWrapping::Wrap);
+        error.Foreground(Brush({196, 43, 28, 255}));
+        fields.Children().Append(error);
+        dialog.Content(fields);
+
+        dialog.PrimaryButtonClick([this, &name, &snippet, &scope, &gesture, &error, index](
+            auto const&, ContentDialogButtonClickEventArgs const& args)
+        {
+            auto literal = folia::utf8_to_cps(winrt::to_string(snippet.Text()));
+            auto decoded = folia::decode_snippet_literal(literal);
+            if (!decoded)
+            {
+                error.Text(LocalizeFormat(L"SnippetLiteralError", {
+                    winrt::to_hstring(decoded.error_offset.value_or(0) + 1)}));
+                args.Cancel(true);
+                return;
+            }
+
+            auto candidate = shortcutModel_;
+            folia::platform::editor::ShortcutSettingsResult result;
+            if (index)
+            {
+                result = candidate.SetGesture(*index, std::nullopt);
+                if (result)
+                    result = candidate.UpdateSnippet(
+                        *index,
+                        winrt::to_string(name.Text()),
+                        std::move(decoded.value),
+                        ScopeFromIndex(scope.SelectedIndex()));
+                if (result) result = candidate.SetGesture(*index, gesture);
+            }
+            else
+            {
+                auto id = std::string("snippet.") + std::to_string(GetTickCount64());
+                while (std::ranges::find(candidate.Bindings(), id, &ShortcutBinding::id)
+                    != candidate.Bindings().end()) id.push_back('x');
+                result = candidate.AddSnippet({
+                    .id = std::move(id),
+                    .custom_name = winrt::to_string(name.Text()),
+                    .scope = ScopeFromIndex(scope.SelectedIndex()),
+                    .gesture = gesture,
+                    .snippet = std::move(decoded.value),
+                });
+            }
+            if (!HandleShortcutResult(result, gesture))
+            {
+                error.Text(shortcutStatus_.Text());
+                args.Cancel(true);
+                return;
+            }
+            shortcutModel_ = std::move(candidate);
+            if (!ApplyShortcutSettings())
+            {
+                error.Text(shortcutStatus_.Text());
+                args.Cancel(true);
+                return;
+            }
             RefreshShortcutList();
-        }
+        });
+
+        co_await dialog.ShowAsync();
     }
 
     void SettingsView::RemoveSnippet(std::size_t index)
     {
         auto result = shortcutModel_.RemoveSnippet(index);
         if (!HandleShortcutResult(result)) return;
-        if (editingSnippet_)
-        {
-            if (*editingSnippet_ == index) ResetSnippetForm();
-            else if (*editingSnippet_ > index) --*editingSnippet_;
-        }
         if (ApplyShortcutSettings()) RefreshShortcutList();
-    }
-
-    void SettingsView::ResetSnippetForm()
-    {
-        editingSnippet_.reset();
-        snippetNameBox_.Text({});
-        snippetTemplateBox_.Text({});
-        snippetScopeBox_.SelectedIndex(0);
-        saveSnippetButton_.Content(box_value(Localize(L"AddInsertionAction")));
-        cancelSnippetButton_.Visibility(Visibility::Collapsed);
     }
 }

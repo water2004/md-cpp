@@ -178,7 +178,12 @@
   <data name="ShortcutCaptureHint" xml:space="preserve"><value>按下所需组合键；按 Esc 取消，或直接按 Backspace/Delete 禁用此快捷键。</value></data>
   <data name="ShortcutConflict" xml:space="preserve"><value>{0} 已在此范围内分配给“{1}”。</value></data>
   <data name="CustomInsertionAction" xml:space="preserve"><value>自定义插入动作</value></data>
-  <data name="SnippetPlaceholderDescription" xml:space="preserve"><value>模板可包含多行。使用 $1 或 ${1:默认内容} 定义 Tab 跳位，$0 定义最终光标，${TM_SELECTED_TEXT} 插入选区，$$ 插入普通美元符号；${1:${TM_SELECTED_TEXT}} 会插入并选中原选区。</value></data>
+  <data name="SnippetPlaceholderDescription" xml:space="preserve"><value>模板只输入一行：使用 \\ 表示反斜杠、\n 表示换行、\t 表示制表符。使用 $1 或 ${1:默认内容} 定义 Tab 跳位，$0 定义最终光标，${TM_SELECTED_TEXT} 插入选区，$$ 插入普通美元符号；${1:${TM_SELECTED_TEXT}} 会插入并选中原选区。</value></data>
+  <data name="ShortcutBindings" xml:space="preserve"><value>动作列表</value></data>
+  <data name="MoreActions" xml:space="preserve"><value>更多操作</value></data>
+  <data name="ResetDefault" xml:space="preserve"><value>恢复默认值</value></data>
+  <data name="EditInsertionAction" xml:space="preserve"><value>编辑插入动作</value></data>
+  <data name="SnippetLiteralError" xml:space="preserve"><value>模板第 {0} 个字符处的转义无效；仅支持 \\、\n、\r 和 \t。</value></data>
   <data name="ActionName" xml:space="preserve"><value>动作名称</value></data>
   <data name="ActionNameExample" xml:space="preserve"><value>插入分数</value></data>
   <data name="InsertionTemplate" xml:space="preserve"><value>插入模板</value></data>
@@ -215,7 +220,9 @@
   <data name="LatexRankingDescription" xml:space="preserve"><value>仅接受候选时计入使用情况，并按 14 天半衰期排序；输入和浏览不会计数。</value></data>
   <data name="ResetLatexUsage" xml:space="preserve"><value>重置近期使用</value></data>
   <data name="CustomLatexCommand" xml:space="preserve"><value>自定义命令</value></data>
-  <data name="LatexTemplateHelp" xml:space="preserve"><value>模板可包含多行。使用 $1 或 ${1:默认内容} 定义 Tab 跳位，$0 定义最终光标，${TM_SELECTED_TEXT} 插入选区，$$ 插入普通美元符号。</value></data>
+  <data name="LatexTemplateHelp" xml:space="preserve"><value>模板只输入一行：LaTeX 反斜杠写为 \\，换行写为 \n，制表符写为 \t。使用 $1 或 ${1:默认内容} 定义 Tab 跳位，$0 定义最终光标。</value></data>
+  <data name="LatexCommandList" xml:space="preserve"><value>命令列表</value></data>
+  <data name="EditLatexCommand" xml:space="preserve"><value>编辑 LaTeX 命令</value></data>
   <data name="LatexCommand" xml:space="preserve"><value>命令</value></data>
   <data name="Description" xml:space="preserve"><value>说明</value></data>
   <data name="LatexDescriptionExample" xml:space="preserve"><value>插入自定义运算符</value></data>

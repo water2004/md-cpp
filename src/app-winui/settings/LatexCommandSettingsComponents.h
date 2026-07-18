@@ -12,27 +12,6 @@ namespace winrt::Folia
         std::string description;
     };
 
-    class LatexCommandEditorForm
-    {
-    public:
-        using Submit = std::function<bool(LatexCommandFormSubmission)>;
-
-        Microsoft::UI::Xaml::FrameworkElement Build(Submit submit);
-        void BeginEdit(folia::LatexCommandDefinition const& command);
-        void Reset();
-        bool Editing(std::string_view id) const;
-
-    private:
-        Microsoft::UI::Xaml::FrameworkElement root_{nullptr};
-        Microsoft::UI::Xaml::Controls::TextBox triggerBox_;
-        Microsoft::UI::Xaml::Controls::TextBox templateBox_;
-        Microsoft::UI::Xaml::Controls::TextBox descriptionBox_;
-        Microsoft::UI::Xaml::Controls::Button saveButton_;
-        Microsoft::UI::Xaml::Controls::Button cancelButton_;
-        Submit submit_;
-        std::optional<std::string> editingId_;
-    };
-
     Microsoft::UI::Xaml::FrameworkElement BuildLatexCommandSettingsRow(
         folia::LatexCommandDefinition const& command,
         double recentScore,

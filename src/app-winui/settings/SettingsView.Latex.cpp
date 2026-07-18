@@ -3,6 +3,9 @@
 #include "settings/SettingsViewSupport.h"
 #include "localization/Localization.h"
 
+import folia.core.snippet_template;
+import folia.core.utf;
+
 namespace winrt::Folia
 {
     using namespace Microsoft::UI::Xaml;
@@ -14,23 +17,11 @@ namespace winrt::Folia
 
     UIElement SettingsView::BuildLatexPage()
     {
-        Grid page;
-        page.Margin(Thickness{24, 18, 24, 24});
-        page.RowSpacing(12);
-        for (int index = 0; index < 7; ++index)
-        {
-            RowDefinition row;
-            row.Height(index == 3
-                ? GridLengthHelper::FromValueAndType(1, GridUnitType::Star)
-                : GridLengthHelper::Auto());
-            page.RowDefinitions().Append(row);
-        }
+        StackPanel page = settings_ui::PagePanel();
 
         auto heading = PageHeading(Localize(L"LatexCommands"));
-        Grid::SetRow(heading, 0);
         page.Children().Append(heading);
         auto description = Text(Localize(L"LatexCommandsDescription"));
-        Grid::SetRow(description, 1);
         page.Children().Append(description);
 
         Grid overview;
@@ -53,58 +44,164 @@ namespace winrt::Folia
         togglePanel.Children().Append(latexSuggestionsToggle_);
         togglePanel.Children().Append(Text(Localize(L"LatexRankingDescription"), 12));
         overview.Children().Append(togglePanel);
-        Button resetUsage;
-        resetUsage.Content(box_value(Localize(L"ResetLatexUsage")));
-        resetUsage.VerticalAlignment(VerticalAlignment::Center);
+        Button overviewMenu;
+        FontIcon overviewIcon;
+        overviewIcon.Glyph(L"\xE712");
+        overviewMenu.Content(overviewIcon);
+        overviewMenu.Padding(Thickness{8, 4, 8, 4});
+        overviewMenu.VerticalAlignment(VerticalAlignment::Center);
+        ToolTipService::SetToolTip(
+            overviewMenu, box_value(Localize(L"MoreActions")));
+        MenuFlyout overviewFlyout;
+        MenuFlyoutItem resetUsage;
+        resetUsage.Text(Localize(L"ResetLatexUsage"));
         resetUsage.Click([this](auto const&, auto const&) { ResetLatexUsage(); });
-        Grid::SetColumn(resetUsage, 1);
-        overview.Children().Append(resetUsage);
+        overviewFlyout.Items().Append(resetUsage);
+        overviewMenu.Flyout(overviewFlyout);
+        Grid::SetColumn(overviewMenu, 1);
+        overview.Children().Append(overviewMenu);
         auto overviewCard = Card(overview);
-        Grid::SetRow(overviewCard, 2);
         page.Children().Append(overviewCard);
 
-        latexCommandList_.SelectionMode(ListViewSelectionMode::None);
-        latexCommandList_.HorizontalContentAlignment(HorizontalAlignment::Stretch);
-        latexCommandList_.Padding(Thickness{0, 4, 0, 4});
-        Grid::SetRow(latexCommandList_, 3);
+        Grid listHeader;
+        listHeader.ColumnDefinitions().Append(ColumnDefinition{});
+        ColumnDefinition addColumn;
+        addColumn.Width(GridLengthHelper::Auto());
+        listHeader.ColumnDefinitions().Append(addColumn);
+        auto listTitle = Text(Localize(L"LatexCommandList"), 18);
+        listTitle.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
+        listTitle.VerticalAlignment(VerticalAlignment::Center);
+        listHeader.Children().Append(listTitle);
+        Button addCommand;
+        addCommand.Content(box_value(Localize(L"AddCommand")));
+        addCommand.Click([this](auto const&, auto const&)
+        {
+            ShowLatexCommandEditorAsync(std::nullopt);
+        });
+        Grid::SetColumn(addCommand, 1);
+        listHeader.Children().Append(addCommand);
+        page.Children().Append(listHeader);
+
+        latexCommandList_.Spacing(0);
         page.Children().Append(latexCommandList_);
 
-        auto form = latexCommandEditor_.Build(
-            [this](LatexCommandFormSubmission submission)
-            {
-                return SaveLatexCommand(std::move(submission));
-            });
-        Grid::SetRow(form, 4);
-        page.Children().Append(form);
-
         latexStatus_.TextWrapping(TextWrapping::Wrap);
-        Grid::SetRow(latexStatus_, 5);
         page.Children().Append(latexStatus_);
         RefreshLatexCommandList();
-        return page;
+
+        ScrollViewer scroll;
+        scroll.HorizontalScrollMode(ScrollMode::Disabled);
+        scroll.HorizontalScrollBarVisibility(ScrollBarVisibility::Disabled);
+        scroll.VerticalScrollMode(ScrollMode::Enabled);
+        scroll.VerticalScrollBarVisibility(ScrollBarVisibility::Auto);
+        scroll.Content(page);
+        return scroll;
     }
 
     void SettingsView::RefreshLatexCommandList()
     {
         if (!latexCatalog_ || !latexCommandList_) return;
-        latexCommandList_.Items().Clear();
+        latexCommandList_.Children().Clear();
         for (auto const& command : latexCatalog_->Commands())
         {
-            latexCommandList_.Items().Append(BuildLatexCommandSettingsRow(
+            latexCommandList_.Children().Append(BuildLatexCommandSettingsRow(
                 command,
                 latexCatalog_->RecentScore(command.id),
-                [this](std::string id) { EditLatexCommand(std::move(id)); },
+                [this](std::string id)
+                {
+                    ShowLatexCommandEditorAsync(std::move(id));
+                },
                 [this](std::string id) { RemoveLatexCommand(std::move(id)); }));
         }
     }
 
-    void SettingsView::EditLatexCommand(std::string id)
+    fire_and_forget SettingsView::ShowLatexCommandEditorAsync(
+        std::optional<std::string> id)
     {
-        if (!latexCatalog_) return;
-        auto found = std::ranges::find(latexCatalog_->CustomCommands(), id,
-            &folia::LatexCommandDefinition::id);
-        if (found == latexCatalog_->CustomCommands().end()) return;
-        latexCommandEditor_.BeginEdit(*found);
+        auto lifetime = shared_from_this();
+        if (!latexCatalog_ || editorDialogOpen_) co_return;
+        std::optional<folia::LatexCommandDefinition> command;
+        if (id)
+        {
+            auto found = std::ranges::find(
+                latexCatalog_->CustomCommands(), *id,
+                &folia::LatexCommandDefinition::id);
+            if (found == latexCatalog_->CustomCommands().end()) co_return;
+            command = *found;
+        }
+
+        editorDialogOpen_ = true;
+        struct DialogGuard
+        {
+            bool& open;
+            ~DialogGuard() { open = false; }
+        } guard{editorDialogOpen_};
+
+        ContentDialog dialog;
+        dialog.XamlRoot(navigation_.XamlRoot());
+        dialog.Title(box_value(Localize(command ? L"EditLatexCommand" : L"CustomLatexCommand")));
+        dialog.PrimaryButtonText(Localize(command ? L"SaveCommand" : L"AddCommand"));
+        dialog.CloseButtonText(Localize(L"Cancel"));
+        dialog.DefaultButton(ContentDialogButton::Primary);
+
+        StackPanel fields;
+        fields.Spacing(10);
+        fields.MinWidth(560);
+        fields.Children().Append(Text(Localize(L"LatexTemplateHelp"), 12));
+        TextBox trigger;
+        trigger.Header(box_value(Localize(L"LatexCommand")));
+        trigger.PlaceholderText(L"frac");
+        if (command)
+            trigger.Text(winrt::to_hstring(folia::cps_to_utf8(command->trigger)));
+        fields.Children().Append(trigger);
+        TextBox snippet;
+        snippet.Header(box_value(Localize(L"InsertionTemplate")));
+        snippet.PlaceholderText(LR"(\\frac{${1}}{${2}}$0)");
+        snippet.AcceptsReturn(false);
+        snippet.TextWrapping(TextWrapping::NoWrap);
+        if (command)
+        {
+            auto literal = folia::encode_snippet_literal(command->snippet);
+            snippet.Text(winrt::to_hstring(folia::cps_to_utf8(literal)));
+        }
+        fields.Children().Append(snippet);
+        TextBox description;
+        description.Header(box_value(Localize(L"Description")));
+        description.PlaceholderText(Localize(L"LatexDescriptionExample"));
+        if (command) description.Text(winrt::to_hstring(command->description));
+        fields.Children().Append(description);
+        TextBlock error;
+        error.TextWrapping(TextWrapping::Wrap);
+        error.Foreground(Brush({196, 43, 28, 255}));
+        fields.Children().Append(error);
+        dialog.Content(fields);
+
+        dialog.PrimaryButtonClick([this, &trigger, &snippet, &description, &error, id](
+            auto const&, ContentDialogButtonClickEventArgs const& args)
+        {
+            auto literal = folia::utf8_to_cps(winrt::to_string(snippet.Text()));
+            auto decoded = folia::decode_snippet_literal(literal);
+            if (!decoded)
+            {
+                error.Text(LocalizeFormat(L"SnippetLiteralError", {
+                    winrt::to_hstring(decoded.error_offset.value_or(0) + 1)}));
+                args.Cancel(true);
+                return;
+            }
+            LatexCommandFormSubmission submission{
+                .editingId = id,
+                .trigger = folia::utf8_to_cps(winrt::to_string(trigger.Text())),
+                .snippet = std::move(decoded.value),
+                .description = winrt::to_string(description.Text()),
+            };
+            if (!SaveLatexCommand(std::move(submission)))
+            {
+                error.Text(latexStatus_.Text());
+                args.Cancel(true);
+            }
+        });
+
+        co_await dialog.ShowAsync();
     }
 
     bool SettingsView::SaveLatexCommand(LatexCommandFormSubmission submission)
@@ -140,7 +237,6 @@ namespace winrt::Folia
             SetLatexStatus(*error, true);
             return;
         }
-        if (latexCommandEditor_.Editing(id)) latexCommandEditor_.Reset();
         SetLatexStatus(Localize(L"LatexCommandRemoved"));
         RefreshLatexCommandList();
     }
