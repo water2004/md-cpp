@@ -11,11 +11,37 @@ Source ownership:
 - `editor/interaction/` translates WinUI routed events into platform input
   actions and core commands; it also owns text input, scrolling, document
   actions, frame scheduling, and sidebar controllers.
-- `editor/rendering/` owns Direct2D/DirectWrite preparation and drawing. Lifecycle, image, text-layout, and SVG caches are separate translation units.
+- `editor/rendering/` owns Direct2D/DirectWrite materialization and drawing.
+  `EditorSurfaceRenderer` is the stateful facade; document work is delegated to
+  a preparation pass, a one-block resource preparer, and a render pass. Native
+  layouts, COM resources, image handles, and the prepared-document cache stay
+  here because they are application rendering state rather than portable
+  policy.
 - `media/` owns GIF decoding and MathJax, Mermaid, and SVG integration.
-- `export/` owns Windows PDF/print integration.
+- `export/` owns Windows PDF/print integration and the value types used to
+  report export progress across UI controllers.
 
-Large rendering files are acceptable when they form one pipeline or state machine. In particular, the document renderer remains a coupled prepare/layout/draw traversal, and GIF decoding keeps its shared canvas, disposal, and worker state together. New UI commands and Markdown behavior should not be added to those files.
+The document pipeline has three app-owned stages:
+
+1. `EditorDocumentPreparationPass` reconciles cached blocks and executes the
+   viewport/prefetch/retention plans supplied by `folia_platform`.
+2. `EditorDocumentBlockPreparer` turns one core `RenderBlock` into DWrite/D2D,
+   math, SVG, and image resources without rewalking the document.
+3. `EditorDocumentRenderPass` paints already-prepared visible blocks and
+   populates the interaction map.
+
+These are concrete collaborators, not virtual plug-ins. The hot path keeps the
+same prepared cache, incremental work budget, and one visible-range traversal;
+the split must not add per-block heap objects, callbacks, or a second document
+scan. Large files remain appropriate for cohesive state machines such as GIF
+decoding and PDF page recording. New UI commands and Markdown behavior do not
+belong in rendering files.
+
+Do not create another top-level presentation library merely to move code. A
+new shared presentation target is justified only when a second UI backend needs
+the same platform-neutral presentation API. Until then, deterministic native
+geometry and scheduling policy belongs in `platform`, while resource ownership
+and orchestration remain in this application.
 
 Build notes:
 
@@ -24,7 +50,7 @@ Build notes:
 - Keep CMake for `folia_core`, `folia_platform`, and tests; do not configure `-DFOLIA_BUILD_WINUI=ON`.
 - Run `build_platform_test.bat` for deterministic Windows editor tests. These
   tests cover block geometry, DirectWrite hit testing/caret coordinates,
-  viewport planning, scroll state, key gestures, and selection drag projection
-  without UI automation.
+  table action/drop policy, preparation invalidation, viewport planning, scroll
+  state, key gestures, and selection drag projection without UI automation.
 - The editor area is a `SwapChainPanel`; the WinUI rendering layer consumes the core `RenderModel` and maps DirectWrite positions to block-local `TextPosition` values.
 - Do not replace this with WebView2, RichEditBox, TextBox, RichTextBlock, or an HTML renderer.
