@@ -327,6 +327,9 @@
     <ClCompile Include="..\platform\windows\editor\interaction\editor_shortcut_settings.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\platform\windows\editor\interaction\editor_snippet_session.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\platform\windows\editor\interaction\editor_selection_drag_model.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>

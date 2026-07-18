@@ -6,6 +6,7 @@
 
 import folia.platform.editor_input_command;
 import folia.platform.editor_shortcuts;
+import folia.platform.editor_snippet_session;
 
 namespace winrt::Folia
 {
@@ -53,13 +54,7 @@ namespace winrt::Folia
         ApplicationAction applicationAction_;
         std::vector<folia::platform::editor::EditorShortcutBinding> shortcuts_;
         Render render_;
-        struct SnippetSession
-        {
-            folia::NodeId container;
-            std::vector<std::size_t> offsets;
-            std::size_t current = 0;
-        };
-        std::optional<SnippetSession> snippetSession_;
+        folia::platform::editor::EditorSnippetSession snippetSession_;
         float caretGoalX_ = -1.0f;
         std::optional<char16_t> pendingHighSurrogate_;
     };

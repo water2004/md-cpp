@@ -4,6 +4,7 @@
 import folia.platform.editor_input_command;
 import folia.core.snippet_template;
 import folia.platform.editor_shortcuts;
+import folia.platform.editor_snippet_session;
 
 namespace winrt::Folia
 {
@@ -252,15 +253,9 @@ namespace winrt::Folia
         auto after = session_->Selection();
         if (after.active.container_id != container) return true;
 
-        SnippetSession snippet;
-        snippet.container = container;
-        snippet.offsets.reserve(parsed.tab_stops.size());
-        for (auto const& stop : parsed.tab_stops)
-            snippet.offsets.push_back(base + stop.range.start);
-        snippetSession_ = std::move(snippet);
-        auto position = folia::TextPosition{
-            container, snippetSession_->offsets.front(), folia::TextAffinity::Downstream};
-        session_->SetSelection(position, position);
+        auto position = snippetSession_.Start(container, base, parsed.tab_stops);
+        if (!position) return true;
+        session_->SetSelection(*position, *position);
         if (textInput_) textInput_->NotifySelectionChanged();
         if (render_) render_();
         return true;
@@ -268,47 +263,11 @@ namespace winrt::Folia
 
     bool EditorKeyboardController::MoveSnippetTabStop(bool backward)
     {
-        if (!snippetSession_ || !session_) return false;
-        auto selection = session_->Selection();
-        auto& snippet = *snippetSession_;
-        if (selection.active.container_id != snippet.container
-            || selection.anchor.container_id != snippet.container)
-        {
-            CancelSnippetSession();
-            return false;
-        }
-
-        auto currentOffset = snippet.offsets[snippet.current];
-        auto caret = selection.active.source_offset;
-        auto delta = static_cast<std::ptrdiff_t>(caret)
-            - static_cast<std::ptrdiff_t>(currentOffset);
-        if (delta != 0)
-        {
-            for (std::size_t index = snippet.current + 1; index < snippet.offsets.size(); ++index)
-            {
-                auto shifted = static_cast<std::ptrdiff_t>(snippet.offsets[index]) + delta;
-                snippet.offsets[index] = static_cast<std::size_t>((std::max)(shifted, std::ptrdiff_t{0}));
-            }
-            snippet.offsets[snippet.current] = caret;
-        }
-
-        if (backward)
-        {
-            if (snippet.current == 0) return true;
-            --snippet.current;
-        }
-        else
-        {
-            if (snippet.current + 1 >= snippet.offsets.size())
-            {
-                CancelSnippetSession();
-                return true;
-            }
-            ++snippet.current;
-        }
-        auto position = folia::TextPosition{
-            snippet.container, snippet.offsets[snippet.current], folia::TextAffinity::Downstream};
-        session_->SetSelection(position, position);
+        if (!session_) return false;
+        auto result = snippetSession_.Navigate(session_->Selection(), backward);
+        if (!result.Handled()) return false;
+        if (!result.position) return true;
+        session_->SetSelection(*result.position, *result.position);
         if (textInput_) textInput_->NotifySelectionChanged();
         if (render_) render_();
         return true;
@@ -321,7 +280,7 @@ namespace winrt::Folia
 
     void EditorKeyboardController::CancelSnippetSession()
     {
-        snippetSession_.reset();
+        snippetSession_.Cancel();
     }
 
     bool EditorKeyboardController::MoveCaretVerticalStep(bool down, bool extend)
