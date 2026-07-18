@@ -146,6 +146,7 @@
     <ClInclude Include="localization\Localization.h" />
     <ClInclude Include="settings\AppSettings.h" />
     <ClInclude Include="settings\SettingsView.h" />
+    <ClInclude Include="settings\SettingsViewSupport.h" />
     <ClInclude Include="theme\ThemeConfig.h" />
     <ClInclude Include="theme\ThemeCatalog.h" />
     <ClInclude Include="editor\session\EditorSession.h" />
@@ -323,6 +324,9 @@
     <ClCompile Include="..\platform\windows\editor\interaction\editor_shortcuts.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\platform\windows\editor\interaction\editor_shortcut_settings.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\platform\windows\editor\interaction\editor_selection_drag_model.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
@@ -438,6 +442,10 @@
     <ClCompile Include="settings\AppSettings.cpp" />
     <ClCompile Include="localization\Localization.cpp" />
     <ClCompile Include="settings\SettingsView.cpp" />
+    <ClCompile Include="settings\SettingsView.General.cpp" />
+    <ClCompile Include="settings\SettingsView.Shortcuts.cpp" />
+    <ClCompile Include="settings\SettingsView.Themes.cpp" />
+    <ClCompile Include="settings\SettingsView.Licenses.cpp" />
     <ClCompile Include="storage\AssetPaths.cpp">
       <PreprocessorDefinitions>FOLIA_ASSETS_DIRECTORY=LR&quot;FOLIA($(FoliaAssetsDirectory))FOLIA&quot;;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>

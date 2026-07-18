@@ -3,6 +3,8 @@
 #include "settings/AppSettings.h"
 #include "theme/ThemeCatalog.h"
 
+import folia.platform.editor_shortcut_settings;
+
 namespace winrt::Folia
 {
     class SettingsView : public std::enable_shared_from_this<SettingsView>
@@ -53,6 +55,9 @@ namespace winrt::Folia
         void SaveSnippet();
         void RemoveSnippet(std::size_t index);
         void ResetSnippetForm();
+        bool HandleShortcutResult(
+            folia::platform::editor::ShortcutSettingsResult const& result,
+            std::optional<folia::platform::editor::EditorKeyGesture> gesture = std::nullopt);
         winrt::fire_and_forget ImportThemeAsync();
         void RemoveSelectedTheme();
 
@@ -89,6 +94,7 @@ namespace winrt::Folia
         winrt::Microsoft::UI::Xaml::Controls::ComboBox snippetScopeBox_;
         winrt::Microsoft::UI::Xaml::Controls::Button saveSnippetButton_;
         winrt::Microsoft::UI::Xaml::Controls::Button cancelSnippetButton_;
+        folia::platform::editor::ShortcutSettingsModel shortcutModel_;
         std::vector<std::string> themeIds_;
         std::int32_t loadedLicenseIndex_ = -1;
         std::optional<std::size_t> capturingShortcut_;
