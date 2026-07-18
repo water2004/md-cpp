@@ -39,14 +39,23 @@ namespace
     winrt::hstring ActionLabel(ShortcutBinding const& binding)
     {
         if (!binding.custom_name.empty()) return winrt::to_hstring(binding.custom_name);
-        constexpr std::array<std::pair<std::string_view, std::wstring_view>, 34> Labels{{
+        constexpr std::array<std::pair<std::string_view, std::wstring_view>, 49> Labels{{
             {"file.open", L"Open"}, {"file.save", L"Save"},
+            {"file.save_as", L"ShortcutSaveAs"}, {"file.export_pdf", L"Pdf"},
             {"search.find", L"Find"}, {"search.replace", L"Replace"},
             {"edit.copy", L"Copy"}, {"edit.cut", L"Cut"},
             {"edit.paste", L"Paste"}, {"edit.select_all", L"SelectAll"},
             {"history.undo", L"ShortcutUndo"}, {"history.redo", L"ShortcutRedo"},
             {"format.strong", L"Bold"}, {"format.emphasis", L"Italic"},
+            {"format.strikethrough", L"Strikethrough"},
+            {"format.inline_code", L"InlineCode"},
             {"block.quote", L"Quote"}, {"block.table", L"Table"},
+            {"block.code", L"CodeBlock"}, {"math.inline", L"InlineMath"},
+            {"math.block", L"MathBlock"}, {"insert.link", L"Link"},
+            {"insert.image", L"Image"}, {"insert.footnote", L"Footnote"},
+            {"insert.toc", L"TableOfContents"}, {"callout.note", L"Note"},
+            {"callout.tip", L"Tip"}, {"callout.warning", L"Warning"},
+            {"view.source_mode", L"SourceMode"},
             {"block.heading1", L"Heading1"}, {"block.heading2", L"Heading2"},
             {"block.ordered_list", L"NumberedList"},
             {"block.unordered_list", L"BulletedList"},

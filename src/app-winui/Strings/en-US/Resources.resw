@@ -192,6 +192,7 @@
   <data name="SnippetFieldsRequired" xml:space="preserve"><value>Enter both an action name and an insertion template.</value></data>
   <data name="ShortcutUndo" xml:space="preserve"><value>Undo</value></data>
   <data name="ShortcutRedo" xml:space="preserve"><value>Redo</value></data>
+  <data name="ShortcutSaveAs" xml:space="preserve"><value>Save as</value></data>
   <data name="ShortcutDocumentStart" xml:space="preserve"><value>Move to document start</value></data>
   <data name="ShortcutSelectDocumentStart" xml:space="preserve"><value>Select to document start</value></data>
   <data name="ShortcutDocumentEnd" xml:space="preserve"><value>Move to document end</value></data>

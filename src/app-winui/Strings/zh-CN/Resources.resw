@@ -192,6 +192,7 @@
   <data name="SnippetFieldsRequired" xml:space="preserve"><value>请同时填写动作名称和插入模板。</value></data>
   <data name="ShortcutUndo" xml:space="preserve"><value>撤销</value></data>
   <data name="ShortcutRedo" xml:space="preserve"><value>重做</value></data>
+  <data name="ShortcutSaveAs" xml:space="preserve"><value>另存为</value></data>
   <data name="ShortcutDocumentStart" xml:space="preserve"><value>移至文档开头</value></data>
   <data name="ShortcutSelectDocumentStart" xml:space="preserve"><value>选择至文档开头</value></data>
   <data name="ShortcutDocumentEnd" xml:space="preserve"><value>移至文档结尾</value></data>

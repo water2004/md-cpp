@@ -47,8 +47,12 @@ namespace winrt::Folia::implementation
             {
                 if (action == "file.open") documentController.OpenDocument();
                 else if (action == "file.save") documentController.SaveDocument();
+                else if (action == "file.save_as") documentController.SaveDocumentAs();
+                else if (action == "file.export_pdf") documentController.ExportPdf();
                 else if (action == "search.find") ShowFindBar(false);
                 else if (action == "search.replace") ShowFindBar(true);
+                else if (action == "insert.image") documentController.InsertImage();
+                else if (action == "view.source_mode") ToggleSourceMode();
             },
             appSettings.shortcutBindings,
             [this] { RenderEditorSurface(); });

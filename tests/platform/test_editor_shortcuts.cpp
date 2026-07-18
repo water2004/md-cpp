@@ -56,6 +56,12 @@ suite editor_shortcut_tests = [] {
     expect(editor_shortcut_input_action(bindings[*copy].action_id).kind
         == EditorInputActionKind::Copy);
     expect(editor_shortcut_input_action("block.heading2").command.level == 2_u);
+    auto inlineMath = std::ranges::find(
+        bindings, std::string{"math.inline"}, &EditorShortcutBinding::action_id);
+    expect(fatal(inlineMath != bindings.end()));
+    expect(!inlineMath->gesture);
+    expect(editor_shortcut_input_action(inlineMath->action_id).command.kind
+        == folia::CommandKind::InsertMathInline);
     expect(!TranslateEditorKeyGesture({EditorKey::C, true}).Handled());
 };
 

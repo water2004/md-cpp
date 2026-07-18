@@ -73,6 +73,18 @@ inline EditorShortcutBinding built_in_shortcut(
     };
 }
 
+inline EditorShortcutBinding unassigned_shortcut(
+    std::string id,
+    std::string action_id,
+    EditorShortcutScope scope = EditorShortcutScope::Global) {
+    return {
+        .id = std::move(id),
+        .action_id = std::move(action_id),
+        .scope = scope,
+        .gesture = std::nullopt,
+    };
+}
+
 inline std::vector<EditorShortcutBinding> default_editor_shortcuts() {
     using K = EditorKey;
     using S = EditorShortcutScope;
@@ -82,6 +94,8 @@ inline std::vector<EditorShortcutBinding> default_editor_shortcuts() {
     return {
         built_in_shortcut("file.open", "file.open", ctrl(K::O)),
         built_in_shortcut("file.save", "file.save", ctrl(K::S)),
+        unassigned_shortcut("file.save_as", "file.save_as"),
+        unassigned_shortcut("file.export_pdf", "file.export_pdf"),
         built_in_shortcut("search.find", "search.find", ctrl(K::F)),
         built_in_shortcut("search.replace", "search.replace", ctrl(K::H)),
         built_in_shortcut("edit.copy", "edit.copy", ctrl(K::C)),
@@ -93,8 +107,21 @@ inline std::vector<EditorShortcutBinding> default_editor_shortcuts() {
         built_in_shortcut("history.redo_y", "history.redo", ctrl(K::Y)),
         built_in_shortcut("format.strong", "format.strong", ctrl(K::B)),
         built_in_shortcut("format.emphasis", "format.emphasis", ctrl(K::I)),
+        unassigned_shortcut("format.strikethrough", "format.strikethrough"),
+        unassigned_shortcut("format.inline_code", "format.inline_code"),
         built_in_shortcut("block.quote", "block.quote", ctrl(K::Q)),
         built_in_shortcut("block.table", "block.table", ctrl(K::T)),
+        unassigned_shortcut("block.code", "block.code"),
+        unassigned_shortcut("math.inline", "math.inline"),
+        unassigned_shortcut("math.block", "math.block"),
+        unassigned_shortcut("insert.link", "insert.link"),
+        unassigned_shortcut("insert.image", "insert.image"),
+        unassigned_shortcut("insert.footnote", "insert.footnote"),
+        unassigned_shortcut("insert.toc", "insert.toc"),
+        unassigned_shortcut("callout.note", "callout.note"),
+        unassigned_shortcut("callout.tip", "callout.tip"),
+        unassigned_shortcut("callout.warning", "callout.warning"),
+        unassigned_shortcut("view.source_mode", "view.source_mode"),
         built_in_shortcut("block.heading1", "block.heading1", ctrl(K::Number1)),
         built_in_shortcut("block.heading2", "block.heading2", ctrl(K::Number2)),
         built_in_shortcut("block.ordered_list", "block.ordered_list", ctrl(K::Number7)),
@@ -131,10 +158,17 @@ inline EditorInputAction editor_shortcut_input_action(std::string_view action_id
     if (action_id == "history.redo") return execute(folia::CommandKind::Redo);
     if (action_id == "format.strong") return execute(folia::CommandKind::ToggleStrong);
     if (action_id == "format.emphasis") return execute(folia::CommandKind::ToggleEmphasis);
+    if (action_id == "format.strikethrough") return execute(folia::CommandKind::ToggleStrikethrough);
+    if (action_id == "format.inline_code") return execute(folia::CommandKind::ToggleInlineCode);
     if (action_id == "block.quote") return execute(folia::CommandKind::ToggleBlockQuote);
+    if (action_id == "block.code") return execute(folia::CommandKind::InsertCodeBlock);
     if (action_id == "block.ordered_list") return execute(folia::CommandKind::ToggleOrderedList);
     if (action_id == "block.unordered_list") return execute(folia::CommandKind::ToggleUnorderedList);
     if (action_id == "block.task_list") return execute(folia::CommandKind::ToggleTaskList);
+    if (action_id == "math.inline") return execute(folia::CommandKind::InsertMathInline);
+    if (action_id == "math.block") return execute(folia::CommandKind::InsertMathBlock);
+    if (action_id == "insert.footnote") return execute(folia::CommandKind::InsertFootnote);
+    if (action_id == "insert.toc") return execute(folia::CommandKind::InsertToc);
     if (action_id == "table.row_above") return execute(folia::CommandKind::InsertTableRowAbove);
     if (action_id == "table.row_below") return execute(folia::CommandKind::InsertTableRowBelow);
     if (action_id == "table.column_left") return execute(folia::CommandKind::InsertTableColumnLeft);
@@ -147,7 +181,15 @@ inline EditorInputAction editor_shortcut_input_action(std::string_view action_id
     if (action_id == "table.column_delete") return execute(folia::CommandKind::DeleteTableColumn);
 
     auto action = EditorInputAction{};
-    if (action_id == "block.table") {
+    if (action_id == "insert.link") {
+        action = execute(folia::CommandKind::InsertLink);
+        action.command.href = U"https://";
+    } else if (action_id == "callout.note" || action_id == "callout.tip"
+        || action_id == "callout.warning") {
+        action = execute(folia::CommandKind::ToggleCallout);
+        action.command.callout_kind = action_id == "callout.note" ? U"NOTE"
+            : action_id == "callout.tip" ? U"TIP" : U"WARNING";
+    } else if (action_id == "block.table") {
         action = execute(folia::CommandKind::InsertTable);
         action.command.rows = 2;
         action.command.cols = 3;
