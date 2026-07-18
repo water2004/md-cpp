@@ -74,6 +74,7 @@ namespace winrt::Folia
         bool invalidateRequested = false;
         bool scrollingForward = true;
         bool viewportMoved = false;
+        bool viewportActive = false;
         static constexpr folia::platform::editor::EditorViewportPolicy viewportPolicy{};
     };
 }

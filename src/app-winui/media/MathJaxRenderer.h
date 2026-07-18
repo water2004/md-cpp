@@ -63,6 +63,7 @@ namespace winrt::Folia
             bool allowQueue = true,
             bool highPriority = false);
         void SetCompletionCallback(std::function<void()> callback);
+        void SetBackgroundPaused(bool paused);
         void Clear();
 
     private:

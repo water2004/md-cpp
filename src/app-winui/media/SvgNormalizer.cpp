@@ -126,10 +126,10 @@ namespace winrt::Folia
                 {
                     std::unique_lock lock(mutex);
                     wake.wait(lock, [this] {
-                        return stopping || requestQueue.Ready();
+                        return stopping || requestQueue.Ready(!backgroundPaused);
                     });
                     if (stopping) return;
-                    auto queued = requestQueue.Pop();
+                    auto queued = requestQueue.Pop(!backgroundPaused);
                     if (!queued) continue;
                     highPriority = queued->priority == EditorWorkPriority::Visible;
                     ticket = queued->ticket;
@@ -186,6 +186,7 @@ namespace winrt::Folia
         std::size_t cacheBytes = 0;
         std::uint64_t nextId = 1;
         std::function<void()> completion;
+        bool backgroundPaused = false;
     };
 
     SvgNormalizer::SvgNormalizer() : state(std::make_unique<State>()) {}
@@ -218,5 +219,15 @@ namespace winrt::Folia
     {
         std::scoped_lock lock(state->mutex);
         state->completion = std::move(callback);
+    }
+
+    void SvgNormalizer::SetBackgroundPaused(bool paused)
+    {
+        {
+            std::scoped_lock lock(state->mutex);
+            if (state->backgroundPaused == paused) return;
+            state->backgroundPaused = paused;
+        }
+        if (!paused) state->wake.notify_one();
     }
 }

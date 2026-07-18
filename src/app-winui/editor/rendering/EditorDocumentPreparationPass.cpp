@@ -340,6 +340,7 @@ namespace winrt::Folia
             preparedDocument->hasLastViewportOffset,
             preparedDocument->lastViewportOffset,
             scrollOffset);
+        viewportActive = viewportMoved || scrollState.Animating();
         scrollingForward = !preparedDocument->hasLastViewportOffset
             || scrollOffset >= preparedDocument->lastViewportOffset;
         auto viewportPlan = BuildEditorViewportPlan(
@@ -355,7 +356,7 @@ namespace winrt::Folia
         // fast scroll can continuously feed obsolete MathJax/SVG work even
         // though visible requests are correctly prioritized.
         if (!printMode
-            && !viewportMoved
+            && !viewportActive
             && !needsAnotherFrame
             && !viewportPlan.prefetch.Empty())
         {
@@ -426,8 +427,11 @@ namespace winrt::Folia
                 && (prepared.remoteImageGeneration != remoteImageGeneration
                     || (prepared.pendingImage
                         && prepared.embeddedGeneration != embeddedGeneration));
+            auto highPriority = index >= embeddedPlan.visible.begin
+                && index < embeddedPlan.visible.end;
             auto enteredEmbeddedBand = !prepared.embeddedRequested
-                && (prepared.containsMath || prepared.containsImage);
+                && (prepared.containsMath || prepared.containsImage)
+                && (!viewportActive || highPriority);
             if (!refreshForMath && !refreshForImages && !enteredEmbeddedBand) return true;
             if (!withinBudget())
             {
@@ -435,8 +439,6 @@ namespace winrt::Folia
                 return false;
             }
             auto previousHeight = prepared.height;
-            auto highPriority = index >= embeddedPlan.visible.begin
-                && index < embeddedPlan.visible.end;
             prepared = blockPreparer.Prepare(block, true, highPriority);
             ++refreshes;
             preparedDocument->layoutBlocks.insert(index);
@@ -534,7 +536,7 @@ namespace winrt::Folia
                 if (fragment.renderId == 0 || !fragment.svg || fragment.svg->empty()
                     || fragment.width <= 0.0f || fragment.height <= 0.0f) continue;
                 if (svgPainter.Prepared(fragment.renderId)) continue;
-                if (viewportMoved
+                if (viewportActive
                     || creations >= maximumCreations
                     || (creations != 0 && std::chrono::steady_clock::now() >= deadline))
                 {

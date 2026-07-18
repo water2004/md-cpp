@@ -160,9 +160,12 @@ namespace winrt::Folia
                 true,
                 preparedDocument->lastViewportOffset,
                 scrollState.Offset());
+        auto viewportActive = viewportMoved || scrollState.Animating();
+        mathJax.SetBackgroundPaused(viewportActive);
+        svgNormalizer.SetBackgroundPaused(viewportActive);
         if (embeddedCompletionPending.load(std::memory_order_acquire))
         {
-            if (viewportMoved)
+            if (viewportActive)
             {
                 deferredInvalidate = true;
             }

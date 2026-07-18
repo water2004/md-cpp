@@ -15,6 +15,7 @@ export namespace folia::platform::editor
 
         float Offset() const noexcept { return offset_; }
         float Target() const noexcept { return target_; }
+        bool Animating() const noexcept { return std::fabs(target_ - offset_) >= 0.1f; }
         Snapshot Save() const noexcept { return {offset_, target_}; }
 
         void Set(float value, float maximum)

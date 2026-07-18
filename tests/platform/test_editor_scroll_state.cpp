@@ -39,6 +39,17 @@ suite editor_scroll_state_tests = [] {
     expect(std::fabs(state.Target() - (visible - 100.0f)) < 0.01f);
 };
 
+"animation state covers queued motion until it settles"_test = [] {
+    EditorScrollState state;
+    expect(!state.Animating());
+    state.Queue(240.0f, 1000.0f);
+    expect(state.Animating());
+    for (auto frame = 0; frame < 240 && state.Animating(); ++frame)
+        state.Advance(1.0f / 120.0f);
+    expect(!state.Advance(1.0f / 120.0f));
+    expect(!state.Animating());
+};
+
 "extent changes and anchor shifts clamp offset and target together"_test = [] {
     EditorScrollState state;
     state.Set(900.0f, 1000.0f);
