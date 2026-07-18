@@ -6,6 +6,7 @@ import folia.platform.editor_preparation_plan;
 namespace winrt::Folia
 {
     using folia::platform::editor::BuildEditorPreparationInvalidationPlan;
+    using folia::platform::editor::BuildEditorPrioritizedTraversal;
     using folia::platform::editor::BuildEditorViewportPlan;
     using folia::platform::editor::EditorBlockGeometryIndex;
     using folia::platform::editor::EditorPreparationCacheView;
@@ -381,12 +382,23 @@ namespace winrt::Folia
             true,
             viewportPolicy);
         auto geometryChanged = false;
-        for (auto index = embeddedPlan.embedded.begin; index < embeddedPlan.embedded.end; ++index)
+        auto deadline = std::chrono::steady_clock::now()
+            + (printMode ? std::chrono::hours{24} : std::chrono::milliseconds{1});
+        constexpr std::size_t maximumRefreshes = 4;
+        auto refreshes = std::size_t{0};
+        auto workRemaining = false;
+        auto withinBudget = [&]
+        {
+            return printMode || refreshes == 0
+                || (refreshes < maximumRefreshes
+                    && std::chrono::steady_clock::now() < deadline);
+        };
+        auto refreshIndex = [&](std::size_t index)
         {
             auto const& block = frame.renderModel.blocks[index];
-            if (block.kind == folia::RenderBlockKind::ThematicBreak) continue;
+            if (block.kind == folia::RenderBlockKind::ThematicBreak) return true;
             auto& prepared = preparedDocument->blocks[index];
-            if (!prepared.valid) continue;
+            if (!prepared.valid) return true;
             auto refreshForMath = prepared.pendingMath
                 && prepared.embeddedRequested
                 && prepared.embeddedGeneration != embeddedGeneration;
@@ -397,15 +409,45 @@ namespace winrt::Folia
                         && prepared.embeddedGeneration != embeddedGeneration));
             auto enteredEmbeddedBand = !prepared.embeddedRequested
                 && (prepared.containsMath || prepared.containsImage);
-            if (!refreshForMath && !refreshForImages && !enteredEmbeddedBand) continue;
+            if (!refreshForMath && !refreshForImages && !enteredEmbeddedBand) return true;
+            if (!withinBudget())
+            {
+                workRemaining = true;
+                return false;
+            }
             auto previousHeight = prepared.height;
             prepared = blockPreparer.Prepare(block, true);
+            ++refreshes;
             preparedDocument->layoutBlocks.insert(index);
             preparedDocument->embeddedBlocks.insert(index);
             if (prepared.height != previousHeight)
             {
                 preparedDocument->geometry.UpdateHeight(index, prepared.height);
                 geometryChanged = true;
+            }
+            return true;
+        };
+        auto traversal = BuildEditorPrioritizedTraversal(
+            embeddedPlan.visible,
+            embeddedPlan.embedded,
+            scrollingForward);
+        for (std::size_t segmentIndex = 0;
+             segmentIndex < traversal.count && !workRemaining;
+             ++segmentIndex)
+        {
+            auto const& segment = traversal.segments[segmentIndex];
+            if (segment.reverse)
+            {
+                for (auto index = segment.range.end; index > segment.range.begin;)
+                {
+                    --index;
+                    if (!refreshIndex(index)) break;
+                }
+            }
+            else
+            {
+                for (auto index = segment.range.begin; index < segment.range.end; ++index)
+                    if (!refreshIndex(index)) break;
             }
         }
 
@@ -435,6 +477,7 @@ namespace winrt::Folia
         }
         if (geometryChanged)
             preparedDocument->totalHeight = preparedDocument->geometry.TotalHeight();
+        invalidateRequested = invalidateRequested || workRemaining;
     }
 
     void EditorDocumentPreparationPass::WarmMathDocuments()
