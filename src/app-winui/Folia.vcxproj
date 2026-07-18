@@ -148,6 +148,7 @@
     <ClInclude Include="settings\SettingsView.h" />
     <ClInclude Include="settings\SettingsViewSupport.h" />
     <ClInclude Include="settings\LatexCommandCatalog.h" />
+    <ClInclude Include="settings\LatexCommandSettingsComponents.h" />
     <ClInclude Include="settings\LatexCommandStore.h" />
     <ClInclude Include="editor\interaction\EditorLatexCompletionController.h" />
     <ClInclude Include="theme\ThemeConfig.h" />
@@ -456,6 +457,7 @@
     </ClCompile>
     <ClCompile Include="settings\AppSettings.cpp" />
     <ClCompile Include="settings\LatexCommandCatalog.cpp" />
+    <ClCompile Include="settings\LatexCommandSettingsComponents.cpp" />
     <ClCompile Include="settings\LatexCommandStore.cpp" />
     <ClCompile Include="localization\Localization.cpp" />
     <ClCompile Include="settings\SettingsView.cpp" />

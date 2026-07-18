@@ -1,5 +1,7 @@
 #pragma once
 
+import folia.core.theme;
+
 namespace winrt::Folia::settings_ui
 {
     namespace Xaml = Microsoft::UI::Xaml;

@@ -2,6 +2,7 @@
 
 #include "settings/AppSettings.h"
 #include "settings/LatexCommandCatalog.h"
+#include "settings/LatexCommandSettingsComponents.h"
 #include "theme/ThemeCatalog.h"
 
 import folia.platform.editor_shortcut_settings;
@@ -62,9 +63,8 @@ namespace winrt::Folia
         void ResetSnippetForm();
         void RefreshLatexCommandList();
         void EditLatexCommand(std::string id);
-        void SaveLatexCommand();
+        bool SaveLatexCommand(LatexCommandFormSubmission submission);
         void RemoveLatexCommand(std::string id);
-        void ResetLatexForm();
         void ResetLatexUsage();
         bool HandleShortcutResult(
             folia::platform::editor::ShortcutSettingsResult const& result,
@@ -104,11 +104,7 @@ namespace winrt::Folia
         winrt::Microsoft::UI::Xaml::Controls::TextBlock shortcutStatus_;
         winrt::Microsoft::UI::Xaml::Controls::ListView latexCommandList_;
         winrt::Microsoft::UI::Xaml::Controls::TextBlock latexStatus_;
-        winrt::Microsoft::UI::Xaml::Controls::TextBox latexTriggerBox_;
-        winrt::Microsoft::UI::Xaml::Controls::TextBox latexTemplateBox_;
-        winrt::Microsoft::UI::Xaml::Controls::TextBox latexDescriptionBox_;
-        winrt::Microsoft::UI::Xaml::Controls::Button saveLatexButton_;
-        winrt::Microsoft::UI::Xaml::Controls::Button cancelLatexButton_;
+        LatexCommandEditorForm latexCommandEditor_;
         std::vector<winrt::Microsoft::UI::Xaml::Controls::Button> shortcutButtons_;
         winrt::Microsoft::UI::Xaml::Controls::TextBox snippetNameBox_;
         winrt::Microsoft::UI::Xaml::Controls::TextBox snippetTemplateBox_;
@@ -120,7 +116,6 @@ namespace winrt::Folia
         std::int32_t loadedLicenseIndex_ = -1;
         std::optional<std::size_t> capturingShortcut_;
         std::optional<std::size_t> editingSnippet_;
-        std::optional<std::string> editingLatexCommand_;
         bool refreshing_ = false;
         bool detached_ = false;
     };
