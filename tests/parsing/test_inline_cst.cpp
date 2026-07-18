@@ -9,16 +9,16 @@
 #include <vector>
 
 #include "support/folia_test.hpp"
-import elmd.core.dialect;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
-import elmd.core.inline_parser;
-import elmd.core.inline_source_edit;
-import elmd.core.selection;
-import elmd.core.text_edit;
-import elmd.core.utf;
+import folia.core.dialect;
+import folia.core.inline_cst;
+import folia.core.inline_document;
+import folia.core.inline_parser;
+import folia.core.inline_source_edit;
+import folia.core.selection;
+import folia.core.text_edit;
+import folia.core.utf;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 namespace {

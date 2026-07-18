@@ -5,28 +5,28 @@
 #include <vector>
 
 #include "support/folia_test.hpp"
-import elmd.core.ast;
-import elmd.core.block_source;
-import elmd.core.block_tree;
-import elmd.core.command;
-import elmd.core.dialect;
-import elmd.core.document;
-import elmd.core.document_edit;
-import elmd.core.document_ids;
-import elmd.core.document_text;
-import elmd.core.editor;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
-import elmd.core.instrumentation;
-import elmd.core.input;
-import elmd.core.render_builder;
-import elmd.core.render_model;
-import elmd.core.serializer;
-import elmd.core.text_edit;
-import elmd.core.theme;
-import elmd.core.utf;
+import folia.core.ast;
+import folia.core.block_source;
+import folia.core.block_tree;
+import folia.core.command;
+import folia.core.dialect;
+import folia.core.document;
+import folia.core.document_edit;
+import folia.core.document_ids;
+import folia.core.document_text;
+import folia.core.editor;
+import folia.core.inline_cst;
+import folia.core.inline_document;
+import folia.core.instrumentation;
+import folia.core.input;
+import folia.core.render_builder;
+import folia.core.render_model;
+import folia.core.serializer;
+import folia.core.text_edit;
+import folia.core.theme;
+import folia.core.utf;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 #include "support/editor_test_support.hpp"

@@ -4,10 +4,10 @@
 #include <vector>
 
 #include "support/folia_test.hpp"
-import elmd.core.ids;
-import elmd.core.layout_plan;
+import folia.core.ids;
+import folia.core.layout_plan;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 

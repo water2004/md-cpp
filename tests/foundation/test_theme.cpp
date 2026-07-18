@@ -1,9 +1,9 @@
 #include "support/folia_test.hpp"
-import elmd.core.theme;
-import elmd.core.parser;
-import elmd.core.render_builder;
+import folia.core.theme;
+import folia.core.parser;
+import folia.core.render_builder;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 suite theme_tests = [] {

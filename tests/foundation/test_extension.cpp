@@ -3,14 +3,14 @@
 #include <string_view>
 
 #include "support/folia_test.hpp"
-import elmd.core.extension;
-import elmd.core.dialect;
-import elmd.core.editor;
-import elmd.core.ast;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
+import folia.core.extension;
+import folia.core.dialect;
+import folia.core.editor;
+import folia.core.ast;
+import folia.core.inline_cst;
+import folia.core.inline_document;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 

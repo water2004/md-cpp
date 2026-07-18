@@ -1,7 +1,7 @@
 #include "support/folia_test.hpp"
-import elmd.core.scheduler;
+import folia.core.scheduler;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 

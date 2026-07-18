@@ -1,11 +1,11 @@
 #include "support/folia_test.hpp"
-import elmd.core.types;
-import elmd.core.theme;
-import elmd.core.utf;
-import elmd.core.render_model;
-import elmd.core.math_renderer;
+import folia.core.types;
+import folia.core.theme;
+import folia.core.utf;
+import folia.core.render_model;
+import folia.core.math_renderer;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 

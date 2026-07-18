@@ -33,42 +33,42 @@ std::optional<MaterializedTransaction> materialize_transaction(
 std::optional<MaterializedTransaction> document_insert_text(
     EditorDocument document, const TextSelection& selection, std::u32string_view text) {
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_insert_text(working, selection, text);
+        return folia::document_insert_text(working, selection, text);
     });
 }
 
 std::optional<MaterializedTransaction> document_enter(
     EditorDocument document, const TextSelection& selection) {
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_enter(working, selection);
+        return folia::document_enter(working, selection);
     });
 }
 
 std::optional<MaterializedTransaction> document_delete_backward(
     EditorDocument document, const TextSelection& selection) {
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_delete_backward(working, selection);
+        return folia::document_delete_backward(working, selection);
     });
 }
 
 std::optional<MaterializedTransaction> document_delete_forward(
     EditorDocument document, const TextSelection& selection) {
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_delete_forward(working, selection);
+        return folia::document_delete_forward(working, selection);
     });
 }
 
 std::optional<MaterializedTransaction> document_delete_selection(
     EditorDocument document, const TextSelection& selection) {
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_delete_selection(working, selection);
+        return folia::document_delete_selection(working, selection);
     });
 }
 
 std::optional<MaterializedTransaction> document_toggle_inline_format(
     EditorDocument document, const TextSelection& selection, InlineFormat format) {
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_toggle_inline_format(working, selection, format);
+        return folia::document_toggle_inline_format(working, selection, format);
     });
 }
 
@@ -76,14 +76,14 @@ std::optional<MaterializedTransaction> document_insert_link(
     EditorDocument document, const TextSelection& selection, std::string href,
     std::optional<std::string> title = std::nullopt) {
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_insert_link(working, selection, std::move(href), std::move(title));
+        return folia::document_insert_link(working, selection, std::move(href), std::move(title));
     });
 }
 
 std::optional<MaterializedTransaction> document_insert_image(
     EditorDocument document, const TextSelection& selection, std::string path, std::string alt) {
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_insert_image(working, selection, std::move(path), std::move(alt));
+        return folia::document_insert_image(working, selection, std::move(path), std::move(alt));
     });
 }
 
@@ -91,7 +91,7 @@ std::optional<MaterializedTransaction> document_insert_footnote(
     EditorDocument document, const TextSelection& selection) {
     auto symbols = build_document_symbol_index(document);
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_insert_footnote(working, symbols, selection);
+        return folia::document_insert_footnote(working, symbols, selection);
     });
 }
 
@@ -99,7 +99,7 @@ std::optional<MaterializedTransaction> document_create_footnote_definition(
     EditorDocument document, const TextSelection& selection, std::string label) {
     auto symbols = build_document_symbol_index(document);
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_create_footnote_definition(
+        return folia::document_create_footnote_definition(
             working, symbols, selection, std::move(label));
     });
 }
@@ -107,56 +107,56 @@ std::optional<MaterializedTransaction> document_create_footnote_definition(
 std::optional<MaterializedTransaction> document_paste_text(
     EditorDocument document, const TextSelection& selection, std::u32string_view text) {
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_paste_text(working, selection, text);
+        return folia::document_paste_text(working, selection, text);
     });
 }
 
 std::optional<MaterializedTransaction> document_set_heading(
     EditorDocument document, const TextSelection& selection, std::uint8_t level) {
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_set_heading(working, selection, level);
+        return folia::document_set_heading(working, selection, level);
     });
 }
 
 std::optional<MaterializedTransaction> document_toggle_block_quote(
     EditorDocument document, const TextSelection& selection) {
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_toggle_block_quote(working, selection);
+        return folia::document_toggle_block_quote(working, selection);
     });
 }
 
 std::optional<MaterializedTransaction> document_toggle_callout(
     EditorDocument document, const TextSelection& selection, std::string kind) {
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_toggle_callout(working, selection, std::move(kind));
+        return folia::document_toggle_callout(working, selection, std::move(kind));
     });
 }
 
 std::optional<MaterializedTransaction> document_toggle_list(
     EditorDocument document, const TextSelection& selection, ListStyle style) {
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_toggle_list(working, selection, style);
+        return folia::document_toggle_list(working, selection, style);
     });
 }
 
 std::optional<MaterializedTransaction> document_indent_list_item(
     EditorDocument document, const TextSelection& selection) {
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_indent_list_item(working, selection);
+        return folia::document_indent_list_item(working, selection);
     });
 }
 
 std::optional<MaterializedTransaction> document_outdent_list_item(
     EditorDocument document, const TextSelection& selection) {
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_outdent_list_item(working, selection);
+        return folia::document_outdent_list_item(working, selection);
     });
 }
 
 std::optional<MaterializedTransaction> document_insert_atomic_block(
     EditorDocument document, const TextSelection& selection, BlockNode block) {
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_insert_atomic_block(working, selection, std::move(block));
+        return folia::document_insert_atomic_block(working, selection, std::move(block));
     });
 }
 
@@ -167,7 +167,7 @@ std::optional<MaterializedTransaction> document_edit_table(
     TableAlignment alignment = TableAlignment::None,
     std::size_t argument = 0) {
     return materialize_transaction(std::move(document), [&](auto& working) {
-        return elmd::document_edit_table(working, selection, edit, alignment, argument);
+        return folia::document_edit_table(working, selection, edit, alignment, argument);
     });
 }
 

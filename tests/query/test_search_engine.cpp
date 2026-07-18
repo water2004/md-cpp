@@ -2,10 +2,10 @@
 #include <vector>
 
 #include "support/folia_test.hpp"
-import elmd.core.search;
-import elmd.core.source_editor;
+import folia.core.search;
+import folia.core.source_editor;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 namespace {

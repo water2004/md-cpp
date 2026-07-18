@@ -8,23 +8,23 @@
 #include <vector>
 
 #include "support/folia_test.hpp"
-import elmd.core.ast;
-import elmd.core.block_source;
-import elmd.core.block_tree;
-import elmd.core.document;
-import elmd.core.document_edit;
-import elmd.core.document_history;
-import elmd.core.document_ids;
-import elmd.core.document_operation_apply;
-import elmd.core.document_symbols;
-import elmd.core.document_text;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
-import elmd.core.parser;
-import elmd.core.serializer;
-import elmd.core.text_edit;
+import folia.core.ast;
+import folia.core.block_source;
+import folia.core.block_tree;
+import folia.core.document;
+import folia.core.document_edit;
+import folia.core.document_history;
+import folia.core.document_ids;
+import folia.core.document_operation_apply;
+import folia.core.document_symbols;
+import folia.core.document_text;
+import folia.core.inline_cst;
+import folia.core.inline_document;
+import folia.core.parser;
+import folia.core.serializer;
+import folia.core.text_edit;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 #include "support/document_edit_test_support.hpp"
@@ -51,7 +51,7 @@ suite document_boundary_tests = [] {
         expect(fatal(bool(forward->after.root.children.size() == 2u)));
         expect(fatal(bool(forward->after.root.children[0].inline_content.source == U"alpha")));
         expect(fatal(bool(forward->after.root.children[1].inline_content.source == U"beta")));
-        expect(fatal(bool(elmd::find_block(forward->after.root, blank_id) == nullptr)));
+        expect(fatal(bool(folia::find_block(forward->after.root, blank_id) == nullptr)));
         expect(fatal(bool(serialize_markdown(forward->after) == "alpha\nbeta")));
     }
 };
@@ -81,7 +81,7 @@ suite document_boundary_tests = [] {
         expect(fatal(bool(forward->after.root.children.size() == 1u)));
         expect(fatal(bool(forward->after.root.children[0].kind == BlockKind::Heading)));
         expect(fatal(bool(forward->after.root.children[0].inline_content.source == U"alphabeta")));
-        expect(fatal(bool(elmd::find_block(forward->after.root, paragraph_id) == nullptr)));
+        expect(fatal(bool(folia::find_block(forward->after.root, paragraph_id) == nullptr)));
         expect(fatal(bool(serialize_markdown(forward->after) == "# alphabeta")));
     }
 };

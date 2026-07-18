@@ -3,10 +3,10 @@
 #include <vector>
 
 #include "support/folia_test.hpp"
-import elmd.core.image_metadata;
+import folia.core.image_metadata;
 
 using namespace boost::ut;
-using namespace elmd;
+using namespace folia;
 
 suite image_metadata_tests = [] {
 

@@ -1,9 +1,9 @@
 #include "support/folia_test.hpp"
-import elmd.core.parser;
-import elmd.core.serializer;
-import elmd.core.text_edit;
+import folia.core.parser;
+import folia.core.serializer;
+import folia.core.text_edit;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 suite serializer_projection_tests = [] {

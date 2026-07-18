@@ -2,13 +2,13 @@
 #include <vector>
 
 #include "support/folia_test.hpp"
-import elmd.core.slug;
-import elmd.core.outline;
-import elmd.core.ast;
-import elmd.core.ids;
-import elmd.core.parser;
+import folia.core.slug;
+import folia.core.outline;
+import folia.core.ast;
+import folia.core.ids;
+import folia.core.parser;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 

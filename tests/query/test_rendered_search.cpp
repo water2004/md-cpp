@@ -1,11 +1,11 @@
 #include <string>
 
 #include "support/folia_test.hpp"
-import elmd.core.editor;
-import elmd.core.search;
-import elmd.core.utf;
+import folia.core.editor;
+import folia.core.search;
+import folia.core.utf;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 namespace {

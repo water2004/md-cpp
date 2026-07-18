@@ -5,18 +5,18 @@
 #include <vector>
 
 #include "support/folia_test.hpp"
-import elmd.core.parser;
-import elmd.core.ast;
-import elmd.core.block_source;
-import elmd.core.block_tree;
-import elmd.core.document_text;
-import elmd.core.image_dimension;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
-import elmd.core.serializer;
-import elmd.core.utf;
+import folia.core.parser;
+import folia.core.ast;
+import folia.core.block_source;
+import folia.core.block_tree;
+import folia.core.document_text;
+import folia.core.image_dimension;
+import folia.core.inline_cst;
+import folia.core.inline_document;
+import folia.core.serializer;
+import folia.core.utf;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 #include "support/parser_test_support.hpp"

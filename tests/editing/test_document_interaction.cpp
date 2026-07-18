@@ -2,14 +2,14 @@
 #include <string_view>
 
 #include "support/folia_test.hpp"
-import elmd.core.ast;
-import elmd.core.block_tree;
-import elmd.core.document_interaction;
-import elmd.core.editor;
-import elmd.core.instrumentation;
-import elmd.core.text_edit;
+import folia.core.ast;
+import folia.core.block_tree;
+import folia.core.document_interaction;
+import folia.core.editor;
+import folia.core.instrumentation;
+import folia.core.text_edit;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 namespace {

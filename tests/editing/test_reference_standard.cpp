@@ -2,13 +2,13 @@
 #include <string>
 
 #include "support/folia_test.hpp"
-import elmd.core.parser;
-import elmd.core.ast;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
-import elmd.core.utf;
+import folia.core.parser;
+import folia.core.ast;
+import folia.core.inline_cst;
+import folia.core.inline_document;
+import folia.core.utf;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 static bool reference_inline_kind(InlineDocument const& document, InlineCstKind kind) {

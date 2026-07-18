@@ -9,24 +9,24 @@
 #include <vector>
 
 #include "support/folia_test.hpp"
-import elmd.core.parser;
-import elmd.core.document_edit;
-import elmd.core.document;
-import elmd.core.document_symbols;
-import elmd.core.inline_parser;
-import elmd.core.render_builder;
-import elmd.core.render_model;
-import elmd.core.ast;
-import elmd.core.block_source;
-import elmd.core.block_tree;
-import elmd.core.callout;
-import elmd.core.text_measurer;
-import elmd.core.block_layout;
-import elmd.core.hit_test;
-import elmd.core.selection_geometry;
-import elmd.core.selection;
+import folia.core.parser;
+import folia.core.document_edit;
+import folia.core.document;
+import folia.core.document_symbols;
+import folia.core.inline_parser;
+import folia.core.render_builder;
+import folia.core.render_model;
+import folia.core.ast;
+import folia.core.block_source;
+import folia.core.block_tree;
+import folia.core.callout;
+import folia.core.text_measurer;
+import folia.core.block_layout;
+import folia.core.hit_test;
+import folia.core.selection_geometry;
+import folia.core.selection;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 #include "support/render_layout_test_support.hpp"

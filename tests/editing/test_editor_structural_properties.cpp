@@ -4,17 +4,17 @@
 #include <vector>
 
 #include "support/folia_test.hpp"
-import elmd.core.document;
-import elmd.core.block_tree;
-import elmd.core.document_edit;
-import elmd.core.document_text;
-import elmd.core.editor;
-import elmd.core.instrumentation;
-import elmd.core.serializer;
-import elmd.core.text_edit;
-import elmd.core.utf;
+import folia.core.document;
+import folia.core.block_tree;
+import folia.core.document_edit;
+import folia.core.document_text;
+import folia.core.editor;
+import folia.core.instrumentation;
+import folia.core.serializer;
+import folia.core.text_edit;
+import folia.core.utf;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 namespace {

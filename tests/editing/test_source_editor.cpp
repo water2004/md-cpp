@@ -3,11 +3,11 @@
 #include <string>
 
 #include "support/folia_test.hpp"
-import elmd.core.source_editor;
-import elmd.core.source_render;
-import elmd.core.source_style;
+import folia.core.source_editor;
+import folia.core.source_render;
+import folia.core.source_style;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 suite source_editor_tests = [] {

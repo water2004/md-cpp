@@ -3,10 +3,10 @@
 
 #include "support/folia_test.hpp"
 
-import elmd.core.utf;
+import folia.core.utf;
 
 using namespace boost::ut;
-using namespace elmd;
+using namespace folia;
 
 suite utf_boundary_tests = [] {
     "utf16_offsets_are_explicit_at_platform_boundaries"_test = [] {

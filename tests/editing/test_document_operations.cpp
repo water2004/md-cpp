@@ -8,23 +8,23 @@
 #include <vector>
 
 #include "support/folia_test.hpp"
-import elmd.core.ast;
-import elmd.core.block_source;
-import elmd.core.block_tree;
-import elmd.core.document;
-import elmd.core.document_edit;
-import elmd.core.document_history;
-import elmd.core.document_ids;
-import elmd.core.document_operation_apply;
-import elmd.core.document_symbols;
-import elmd.core.document_text;
-import elmd.core.inline_cst;
-import elmd.core.inline_document;
-import elmd.core.parser;
-import elmd.core.serializer;
-import elmd.core.text_edit;
+import folia.core.ast;
+import folia.core.block_source;
+import folia.core.block_tree;
+import folia.core.document;
+import folia.core.document_edit;
+import folia.core.document_history;
+import folia.core.document_ids;
+import folia.core.document_operation_apply;
+import folia.core.document_symbols;
+import folia.core.document_text;
+import folia.core.inline_cst;
+import folia.core.inline_document;
+import folia.core.parser;
+import folia.core.serializer;
+import folia.core.text_edit;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 #include "support/document_edit_test_support.hpp"
@@ -36,7 +36,7 @@ suite document_operation_tests = [] {
     const auto revision_before = document.revision;
     const auto selection = caret(document.root.children[0], 2);
 
-    auto transaction = elmd::document_insert_text(document, selection, U"X");
+    auto transaction = folia::document_insert_text(document, selection, U"X");
 
     expect(fatal(bool(transaction.has_value())));
     if (!transaction) return;
@@ -172,7 +172,7 @@ suite document_operation_tests = [] {
     expect(fatal(cell != nullptr));
     if (!cell) return;
     auto selection = caret(*cell, cell->inline_content.source.size());
-    auto transaction = elmd::document_insert_text(document, selection, U"!");
+    auto transaction = folia::document_insert_text(document, selection, U"!");
     expect(fatal(transaction.has_value()));
     if (!transaction) return;
     selection = transaction->selection_after;
@@ -198,7 +198,7 @@ suite document_operation_tests = [] {
     expect(fatal(cell != nullptr));
     if (!cell) return;
     auto selection = caret(*cell);
-    auto transaction = elmd::document_edit_table(
+    auto transaction = folia::document_edit_table(
         document,
         selection,
         DocumentTableEdit::InsertColumnRight);

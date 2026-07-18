@@ -3,11 +3,11 @@
 #include <unordered_map>
 
 #include "support/folia_test.hpp"
-import elmd.core.html_inline_presentation;
-import elmd.core.render_model;
-import elmd.core.theme;
+import folia.core.html_inline_presentation;
+import folia.core.render_model;
+import folia.core.theme;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 suite html_inline_presentation_tests = [] {

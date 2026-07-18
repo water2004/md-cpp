@@ -1,10 +1,10 @@
 #include <string>
 
 #include "support/folia_test.hpp"
-import elmd.core.editor;
-import elmd.core.search;
+import folia.core.editor;
+import folia.core.search;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 namespace {

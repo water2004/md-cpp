@@ -1,14 +1,14 @@
 #include <string>
 
 #include "support/folia_test.hpp"
-import elmd.core.exporter;
-import elmd.core.parser;
-import elmd.core.ast;
-import elmd.core.document;
-import elmd.core.settings;
-import elmd.core.utf;
+import folia.core.exporter;
+import folia.core.parser;
+import folia.core.ast;
+import folia.core.document;
+import folia.core.settings;
+import folia.core.utf;
 
-using namespace elmd;
+using namespace folia;
 using namespace boost::ut;
 
 

@@ -1,10 +1,10 @@
 #include "support/folia_test.hpp"
 
-import elmd.core.html_cst;
-import elmd.core.utf;
+import folia.core.html_cst;
+import folia.core.utf;
 
 using namespace boost::ut;
-using namespace elmd;
+using namespace folia;
 
 namespace {
 
