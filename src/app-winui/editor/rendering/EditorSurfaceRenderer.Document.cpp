@@ -60,9 +60,15 @@ namespace winrt::Folia
             !printMode);
         auto drawMath = [&](MathJaxSvgFragment const& fragment, D2D1_POINT_2F origin, D2D1_COLOR_F) {
             if (!fragment.svg) return false;
-            return svgPainter.Draw(
+            if (printMode)
+                return svgPainter.Draw(
+                    fragment.renderId,
+                    *fragment.svg,
+                    fragment.width,
+                    fragment.height,
+                    origin);
+            return svgPainter.DrawCached(
                 fragment.renderId,
-                *fragment.svg,
                 fragment.width,
                 fragment.height,
                 origin);
@@ -121,6 +127,7 @@ namespace winrt::Folia
             resources,
             styleSheet,
             inlineImages,
+            svgPainter,
             blockPreparer,
             scrollState,
             preparedDocument,

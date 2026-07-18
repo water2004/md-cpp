@@ -58,6 +58,18 @@ export namespace folia::platform::editor
         std::size_t count = 0;
     };
 
+    inline bool EditorViewportMoved(
+        bool hasPreviousOffset,
+        float previousOffset,
+        float currentOffset,
+        float threshold = 0.01f) noexcept
+    {
+        if (!hasPreviousOffset) return false;
+        if (!std::isfinite(previousOffset) || !std::isfinite(currentOffset)) return true;
+        threshold = std::isfinite(threshold) ? (std::max)(0.0f, threshold) : 0.0f;
+        return std::abs(currentOffset - previousOffset) > threshold;
+    }
+
     // Split a larger work band into non-overlapping traversal segments. The
     // visible intersection always comes first, followed by work in the scroll
     // direction and finally work behind it. This lets resource preparation

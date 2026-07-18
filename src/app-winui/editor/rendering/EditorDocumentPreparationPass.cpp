@@ -8,6 +8,7 @@ namespace winrt::Folia
     using folia::platform::editor::BuildEditorPreparationInvalidationPlan;
     using folia::platform::editor::BuildEditorPrioritizedTraversal;
     using folia::platform::editor::BuildEditorViewportPlan;
+    using folia::platform::editor::EditorViewportMoved;
     using folia::platform::editor::EditorBlockGeometryIndex;
     using folia::platform::editor::EditorPreparationCacheView;
 
@@ -16,6 +17,7 @@ namespace winrt::Folia
         EditorRenderResources& valueResources,
         EditorStyleSheet const& valueStyleSheet,
         EditorInlineImageRenderer& valueInlineImages,
+        EditorSvgPainter& valueSvgPainter,
         EditorDocumentBlockPreparer& valueBlockPreparer,
         folia::platform::editor::EditorScrollState& valueScrollState,
         std::unique_ptr<EditorPreparedDocument>& valuePreparedDocument,
@@ -30,6 +32,7 @@ namespace winrt::Folia
           resources(valueResources),
           styleSheet(valueStyleSheet),
           inlineImages(valueInlineImages),
+          svgPainter(valueSvgPainter),
           blockPreparer(valueBlockPreparer),
           scrollState(valueScrollState),
           preparedDocument(valuePreparedDocument),
@@ -330,6 +333,10 @@ namespace winrt::Folia
             }
         };
 
+        viewportMoved = EditorViewportMoved(
+            preparedDocument->hasLastViewportOffset,
+            preparedDocument->lastViewportOffset,
+            scrollOffset);
         scrollingForward = !preparedDocument->hasLastViewportOffset
             || scrollOffset >= preparedDocument->lastViewportOffset;
         auto viewportPlan = BuildEditorViewportPlan(
@@ -478,6 +485,76 @@ namespace winrt::Folia
         invalidateRequested = invalidateRequested || workRemaining;
     }
 
+    void EditorDocumentPreparationPass::MaterializeVisibleMathDocuments()
+    {
+        if (printMode || !svgPainter.Supported()) return;
+
+        // MathJax and SVG normalization are background work. ID2D1SvgDocument
+        // creation is device-context work and therefore remains on the UI
+        // thread, but never in the paint loop and never while the viewport is
+        // moving. A bounded stable-viewport slice makes formulas appear
+        // progressively without turning a dense math screen into one long
+        // presentation frame.
+        auto plan = BuildEditorViewportPlan(
+            preparedDocument->geometry,
+            scrollOffset,
+            resources.surfaceHeightDip,
+            false,
+            scrollingForward,
+            viewportPolicy);
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{1};
+        constexpr std::size_t maximumCreations = 4;
+        auto creations = std::size_t{0};
+        auto workRemaining = false;
+
+        auto materializeDisplay = [&](DisplayInlineText const& display)
+        {
+            for (auto const& overlay : display.mathOverlays)
+            {
+                auto const& fragment = overlay.fragment;
+                if (fragment.renderId == 0 || !fragment.svg || fragment.svg->empty()
+                    || fragment.width <= 0.0f || fragment.height <= 0.0f) continue;
+                if (svgPainter.Prepared(fragment.renderId)) continue;
+                if (viewportMoved
+                    || creations >= maximumCreations
+                    || (creations != 0 && std::chrono::steady_clock::now() >= deadline))
+                {
+                    workRemaining = true;
+                    return false;
+                }
+                svgPainter.Prepare(
+                    fragment.renderId,
+                    *fragment.svg,
+                    fragment.width,
+                    fragment.height);
+                ++creations;
+            }
+            return true;
+        };
+        auto materializeBlock = [&](EditorPreparedDocument::Block const& block)
+        {
+            if (!materializeDisplay(block.display)) return false;
+            for (auto const& preview : block.mathPreviews)
+                if (!materializeDisplay(preview.display)) return false;
+            if (!block.table) return true;
+            for (auto const& display : block.table->displays)
+                if (!materializeDisplay(display)) return false;
+            for (auto const& cellPreviews : block.table->mathPreviews)
+                for (auto const& preview : cellPreviews)
+                    if (!materializeDisplay(preview.display)) return false;
+            return true;
+        };
+
+        for (auto index = plan.visible.begin; index < plan.visible.end; ++index)
+        {
+            if (index >= preparedDocument->blocks.size()) break;
+            auto const& block = preparedDocument->blocks[index];
+            if (!block.valid || !block.containsMath) continue;
+            if (!materializeBlock(block)) break;
+        }
+        invalidateRequested = invalidateRequested || workRemaining;
+    }
+
     void EditorDocumentPreparationPass::ReleaseOutsideRetention()
     {
         auto retentionPlan = BuildEditorViewportPlan(
@@ -513,6 +590,7 @@ namespace winrt::Folia
         if (!preparedDocument->geometry.Initialized()) InitializeGeometry();
         PrepareViewport();
         RefreshEmbeddedContent();
+        MaterializeVisibleMathDocuments();
         ReleaseOutsideRetention();
 
         auto paintPlan = BuildEditorViewportPlan(

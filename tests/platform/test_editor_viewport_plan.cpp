@@ -20,6 +20,15 @@ namespace
 }
 
 suite editor_viewport_plan_tests = [] {
+    "viewport motion ignores first frame and subpixel jitter"_test = [] {
+        expect(!EditorViewportMoved(false, 0.0f, 120.0f));
+        expect(!EditorViewportMoved(true, 120.0f, 120.0f));
+        expect(!EditorViewportMoved(true, 120.0f, 120.005f));
+        expect(EditorViewportMoved(true, 120.0f, 120.02f));
+        expect(EditorViewportMoved(true, 120.0f, 119.98f));
+        expect(EditorViewportMoved(true, 0.0f, 0.001f, 0.0f));
+    };
+
 
 "viewport plan separates visible and directional prefetch work"_test = [] {
     auto geometry = UniformGeometry(100, 100.0f);
