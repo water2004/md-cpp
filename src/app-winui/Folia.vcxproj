@@ -158,6 +158,7 @@
     <ClInclude Include="editor\rendering\EditorStyleSheet.h" />
     <ClInclude Include="editor\rendering\EditorContentPreparation.h" />
     <ClInclude Include="editor\rendering\EditorDocumentBlockPreparer.h" />
+    <ClInclude Include="editor\rendering\EditorEmbeddedContentUpdater.h" />
     <ClInclude Include="editor\rendering\EditorDocumentPainter.h" />
     <ClInclude Include="editor\rendering\EditorDocumentPreparationPass.h" />
     <ClInclude Include="editor\rendering\EditorViewportMaterializer.h" />
@@ -184,6 +185,7 @@
     <ClInclude Include="editor\rendering\EditorSurfaceRenderer.h" />
       <ClInclude Include="editor\rendering\EditorPreparedDocument.h" />
       <ClInclude Include="editor\rendering\EditorPreparedDocumentCache.h" />
+      <ClInclude Include="editor\rendering\EditorPreparedDocumentRetention.h" />
     <ClInclude Include="media\AsyncWorkDependency.h" />
     <ClInclude Include="media\MathJaxRenderer.h" />
     <ClInclude Include="media\MermaidRenderer.h" />
@@ -488,10 +490,12 @@
     </ClCompile>
     <ClCompile Include="editor\rendering\EditorContentPreparation.cpp" />
     <ClCompile Include="editor\rendering\EditorDocumentBlockPreparer.cpp" />
+    <ClCompile Include="editor\rendering\EditorEmbeddedContentUpdater.cpp" />
     <ClCompile Include="editor\rendering\EditorDocumentPainter.cpp" />
       <ClCompile Include="editor\rendering\EditorDocumentPreparationPass.cpp" />
       <ClCompile Include="editor\rendering\EditorViewportMaterializer.cpp" />
       <ClCompile Include="editor\rendering\EditorPreparedDocumentCache.cpp" />
+      <ClCompile Include="editor\rendering\EditorPreparedDocumentRetention.cpp" />
     <ClCompile Include="editor\rendering\EditorDocumentRenderPass.cpp" />
     <ClCompile Include="editor\rendering\EditorContentUtilities.cpp" />
     <ClCompile Include="editor\rendering\EditorInlineObjects.cpp" />

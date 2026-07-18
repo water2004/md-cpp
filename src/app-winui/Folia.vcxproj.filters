@@ -345,6 +345,9 @@
     <ClCompile Include="editor\rendering\EditorDocumentBlockPreparer.cpp">
       <Filter>Editor\Rendering</Filter>
     </ClCompile>
+    <ClCompile Include="editor\rendering\EditorEmbeddedContentUpdater.cpp">
+      <Filter>Editor\Rendering</Filter>
+    </ClCompile>
     <ClCompile Include="editor\rendering\EditorDocumentPainter.cpp">
       <Filter>Editor\Rendering</Filter>
     </ClCompile>
@@ -355,6 +358,9 @@
       <Filter>Editor\Rendering</Filter>
     </ClCompile>
     <ClCompile Include="editor\rendering\EditorPreparedDocumentCache.cpp">
+      <Filter>Editor\Rendering</Filter>
+    </ClCompile>
+    <ClCompile Include="editor\rendering\EditorPreparedDocumentRetention.cpp">
       <Filter>Editor\Rendering</Filter>
     </ClCompile>
     <ClCompile Include="editor\rendering\EditorDocumentRenderPass.cpp">
@@ -512,6 +518,9 @@
     <ClInclude Include="editor\rendering\EditorDocumentBlockPreparer.h">
       <Filter>Editor\Rendering</Filter>
     </ClInclude>
+    <ClInclude Include="editor\rendering\EditorEmbeddedContentUpdater.h">
+      <Filter>Editor\Rendering</Filter>
+    </ClInclude>
     <ClInclude Include="editor\rendering\EditorDocumentPainter.h">
       <Filter>Editor\Rendering</Filter>
     </ClInclude>
@@ -588,6 +597,9 @@
       <Filter>Editor\Rendering</Filter>
     </ClInclude>
     <ClInclude Include="editor\rendering\EditorPreparedDocumentCache.h">
+      <Filter>Editor\Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\rendering\EditorPreparedDocumentRetention.h">
       <Filter>Editor\Rendering</Filter>
     </ClInclude>
     <ClInclude Include="media\AsyncWorkDependency.h">
