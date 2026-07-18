@@ -154,6 +154,7 @@
     <ClInclude Include="editor\interaction\EditorInteractionMap.h" />
     <ClInclude Include="editor\session\EditorDisplayMapping.h" />
     <ClInclude Include="editor\rendering\EditorContentPreparation.h" />
+    <ClInclude Include="editor\rendering\EditorDocumentPainter.h" />
     <ClInclude Include="editor\rendering\EditorRenderResources.h" />
     <ClInclude Include="media\EditorGifDecoder.h" />
     <ClInclude Include="editor\rendering\EditorRenderCache.h" />
@@ -400,6 +401,7 @@
     <ClCompile Include="editor\rendering\EditorStyleSheet.cpp" />
     <ClCompile Include="editor\interaction\EditorInteractionMap.cpp" />
     <ClCompile Include="editor\rendering\EditorContentPreparation.cpp" />
+    <ClCompile Include="editor\rendering\EditorDocumentPainter.cpp" />
     <ClCompile Include="editor\rendering\EditorContentUtilities.cpp" />
     <ClCompile Include="editor\rendering\EditorInlineObjects.cpp" />
     <ClCompile Include="editor\rendering\EditorBlockContentPreparation.cpp" />

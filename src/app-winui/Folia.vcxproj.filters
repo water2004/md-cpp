@@ -297,6 +297,9 @@
     <ClCompile Include="editor\rendering\EditorContentPreparation.cpp">
       <Filter>Editor\Rendering</Filter>
     </ClCompile>
+    <ClCompile Include="editor\rendering\EditorDocumentPainter.cpp">
+      <Filter>Editor\Rendering</Filter>
+    </ClCompile>
     <ClCompile Include="editor\rendering\EditorContentUtilities.cpp">
       <Filter>Editor\Rendering</Filter>
     </ClCompile>
@@ -447,6 +450,9 @@
       <Filter>Editor\Session</Filter>
     </ClInclude>
     <ClInclude Include="editor\rendering\EditorContentPreparation.h">
+      <Filter>Editor\Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="editor\rendering\EditorDocumentPainter.h">
       <Filter>Editor\Rendering</Filter>
     </ClInclude>
     <ClInclude Include="editor\rendering\EditorRenderResources.h">
