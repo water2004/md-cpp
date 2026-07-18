@@ -153,4 +153,15 @@
   <data name="ThemeVariantMismatch" xml:space="preserve"><value>Built-in theme variant does not match its file.</value></data>
   <data name="ThemeFallback" xml:space="preserve"><value>Theme fallback: {0}</value></data>
   <data name="PdfExportJobName" xml:space="preserve"><value>Folia PDF export</value></data>
+  <data name="Find" xml:space="preserve"><value>Find</value></data>
+  <data name="Replace" xml:space="preserve"><value>Replace</value></data>
+  <data name="ReplaceAll" xml:space="preserve"><value>Replace all</value></data>
+  <data name="RegularExpression" xml:space="preserve"><value>Regular expression</value></data>
+  <data name="MatchCase" xml:space="preserve"><value>Match case</value></data>
+  <data name="PreviousMatch" xml:space="preserve"><value>Previous match</value></data>
+  <data name="NextMatch" xml:space="preserve"><value>Next match</value></data>
+  <data name="Close" xml:space="preserve"><value>Close</value></data>
+  <data name="FindNoResults" xml:space="preserve"><value>No results</value></data>
+  <data name="FindResultCount" xml:space="preserve"><value>{0} of {1}</value></data>
+  <data name="FindError" xml:space="preserve"><value>Invalid pattern: {0}</value></data>
 </root>

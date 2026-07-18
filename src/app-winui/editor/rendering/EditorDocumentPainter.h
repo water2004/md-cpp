@@ -4,6 +4,7 @@
 #include "EditorRenderResources.h"
 #include "EditorStyleSheet.h"
 #include "editor/interaction/EditorInteractionMap.h"
+#include "editor/session/EditorRenderFrame.h"
 
 namespace winrt::ElMd
 {
@@ -26,6 +27,7 @@ namespace winrt::ElMd
             bool printMode,
             float documentRight,
             elmd::TextSelection selection,
+            std::span<const detail::EditorSearchHighlight> searchHighlights,
             std::unordered_map<std::uint64_t, std::size_t> const& editableIndex);
 
         void DrawTaskCheckboxes(
@@ -37,6 +39,10 @@ namespace winrt::ElMd
             D2D1_POINT_2F origin,
             std::vector<DisplayInlineText::FootnoteOverlay> const& overlays);
         void DrawSelection(
+            IDWriteTextLayout* layout,
+            D2D1_POINT_2F origin,
+            EditorDisplayMapping const& mapping);
+        void DrawSearchHighlights(
             IDWriteTextLayout* layout,
             D2D1_POINT_2F origin,
             EditorDisplayMapping const& mapping);
@@ -66,6 +72,7 @@ namespace winrt::ElMd
         bool printMode = false;
         float documentRight = 0.0f;
         elmd::TextSelection selection;
+        std::span<const detail::EditorSearchHighlight> searchHighlights;
         std::unordered_map<std::uint64_t, std::size_t> const& editableIndex;
         elmd::TextPosition selectionStart;
         elmd::TextPosition selectionEnd;

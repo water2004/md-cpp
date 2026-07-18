@@ -40,6 +40,13 @@ namespace winrt::ElMd::implementation
         void ToggleSourceMode();
         void UpdateSourceModeUi();
         void UpdateDocumentInfo();
+        void ShowFindBar(bool replace);
+        void HideFindBar();
+        void RefreshSearch(bool activateMatch = false);
+        void NavigateSearch(int direction);
+        void ReplaceCurrentSearchMatch();
+        void ReplaceAllSearchMatches();
+        elmd::SearchOptions CurrentSearchOptions();
         bool ExecuteEditorCommand(elmd::Command const& command);
         void ShowFootnoteFlyout(
             winrt::ElMd::EditorSurfaceRenderer::FootnoteHit const& hit,
@@ -70,6 +77,9 @@ namespace winrt::ElMd::implementation
         bool updatingTheme = false;
         bool settingsMode = false;
         bool documentPaneWasOpen = true;
+        std::optional<std::size_t> activeSearchMatch;
+        std::size_t searchMatchCount = 0;
+        bool updatingSearch = false;
     };
 }
 

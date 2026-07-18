@@ -5,6 +5,7 @@
 import elmd.core.editor;
 import elmd.core.command;
 import elmd.core.render_model;
+import elmd.core.search;
 import elmd.core.source_editor;
 import elmd.core.theme;
 
@@ -16,16 +17,33 @@ namespace winrt::ElMd
         std::optional<std::string> tooltip;
     };
 
+    struct EditorSearchSummary
+    {
+        std::size_t matchCount = 0;
+        std::optional<std::string> error;
+    };
+
     namespace detail
     {
         struct EditorSessionCore
         {
+            struct SearchTarget
+            {
+                std::vector<elmd::TextSpan> spans;
+                std::optional<elmd::SourceRange> sourceRange;
+            };
+
             elmd::Editor editor;
             std::optional<elmd::SourceEditor> sourceEditor;
             elmd::RenderModel renderModel;
             elmd::ThemeProfile theme = elmd::default_theme_profile();
             std::wstring baseDirectory;
             std::size_t characterCount = 0;
+            std::vector<SearchTarget> searchTargets;
+            std::vector<EditorSearchHighlight> searchHighlights;
+            std::optional<std::size_t> activeSearchMatch;
+            std::vector<elmd::RenderedSearchFragment> renderedSearchFragments;
+            std::uint64_t renderedSearchRevision = (std::numeric_limits<std::uint64_t>::max)();
         };
     }
 
@@ -78,6 +96,20 @@ namespace winrt::ElMd
         std::optional<elmd::TextPosition> FirstFootnoteReferenceTarget(std::string_view label) const;
         std::string FootnotePreview(std::string_view label) const;
         std::wstring const& BaseDirectory() const;
+        EditorSearchSummary Search(
+            std::u32string_view query,
+            elmd::SearchOptions options = {});
+        bool ActivateSearchMatch(std::size_t index);
+        bool ReplaceSearchMatch(
+            std::size_t index,
+            std::u32string_view query,
+            std::u32string_view replacement,
+            elmd::SearchOptions options = {});
+        bool ReplaceAllSearchMatches(
+            std::u32string_view query,
+            std::u32string_view replacement,
+            elmd::SearchOptions options = {});
+        void ClearSearch();
         detail::EditorRenderFrame RenderFrame();
 
     private:
@@ -88,10 +120,14 @@ namespace winrt::ElMd
         void ReleaseRenderBlocksOutside(std::size_t begin, std::size_t end);
         void RefreshCharacterCount();
         std::optional<std::u32string_view> TextInputSourceView(elmd::NodeId containerId) const;
+        void RebuildSearchHighlights();
+        bool CommitRenderedSearchReplacement(std::span<const elmd::RenderedSearchMatch> matches);
+        std::span<const elmd::RenderedSearchFragment> RenderedSearchFragments();
 
         winrt::Windows::Storage::StorageFile file_{ nullptr };
         winrt::hstring text_;
         uint64_t revision_ = 0;
         std::unique_ptr<detail::EditorSessionCore> core_;
     };
+
 }

@@ -133,6 +133,15 @@ namespace winrt::ElMd::implementation
         SelectAllMenuItem().Text(Localize(L"SelectAll"));
         tooltip(CancelOperationButton(), L"CancelOperation");
         tooltip(SourceModeButton(), L"SourceMode");
+        FindQueryBox().PlaceholderText(Localize(L"Find"));
+        ReplaceTextBox().PlaceholderText(Localize(L"Replace"));
+        ReplaceCurrentButton().Content(winrt::box_value(Localize(L"Replace")));
+        ReplaceAllButton().Content(winrt::box_value(Localize(L"ReplaceAll")));
+        tooltip(FindRegexButton(), L"RegularExpression");
+        tooltip(FindCaseButton(), L"MatchCase");
+        tooltip(FindPreviousButton(), L"PreviousMatch");
+        tooltip(FindNextButton(), L"NextMatch");
+        tooltip(CloseFindButton(), L"Close");
         SetStatus(Localize(L"Ready"));
     }
 
@@ -182,9 +191,13 @@ namespace winrt::ElMd::implementation
         SetStatus(Localize(editorSession.IsSourceMode() ? L"SourceMode" : L"RenderedMode"));
         sidebarController.Refresh();
         textInputController.NotifyTextChanged();
-        RenderEditorSurface();
+        if (FindReplaceBar().Visibility() == Microsoft::UI::Xaml::Visibility::Visible)
+            RefreshSearch(true);
+        else
+            RenderEditorSurface();
         if (editorRenderer.ScrollToPosition(editorSession.Selection().active)) RenderEditorSurface();
-        EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Programmatic);
+        if (FindReplaceBar().Visibility() != Microsoft::UI::Xaml::Visibility::Visible)
+            EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Programmatic);
     }
 
     void MainWindow::InitializeTextInput()
@@ -210,7 +223,11 @@ namespace winrt::ElMd::implementation
 
         if (editorSession.Revision() != oldRevision) UpdateDocumentInfo();
         sidebarController.Refresh();
-        RenderEditorSurface();
+        if (editorSession.Revision() != oldRevision
+            && FindReplaceBar().Visibility() == Microsoft::UI::Xaml::Visibility::Visible)
+            RefreshSearch(true);
+        else
+            RenderEditorSurface();
         if (editorRenderer.ScrollToPosition(editorSession.Selection().active)) RenderEditorSurface();
         if (editorSession.Revision() != oldRevision) textInputController.NotifyTextChanged();
         else textInputController.NotifySelectionChanged();

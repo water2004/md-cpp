@@ -11,7 +11,7 @@
         <MicaBackdrop Kind="Base"/>
     </Window.SystemBackdrop>
 
-    <Grid x:Name="Root" RowDefinitions="40,Auto,*,Auto">
+    <Grid x:Name="Root" RowDefinitions="40,Auto,Auto,*,Auto">
         <Grid.Resources>
             <SolidColorBrush x:Key="ElMdShellBackgroundBrush" Color="#121419"/>
             <SolidColorBrush x:Key="ElMdShellLayerBrush" Color="#191C23"/>
@@ -128,7 +128,67 @@
                 ToolTipService.ToolTip="Settings"/>
         </CommandBar>
 
-        <Grid x:Name="WorkspaceHost" Grid.Row="2">
+        <Border
+            x:Name="FindReplaceBar"
+            Grid.Row="2"
+            Padding="10,8"
+            Background="{ThemeResource ElMdShellLayerBrush}"
+            BorderBrush="{ThemeResource ElMdShellBorderBrush}"
+            BorderThickness="0,0,0,1"
+            Visibility="Collapsed">
+            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBox
+                        x:Name="FindQueryBox"
+                        Width="320"
+                        MinWidth="180"
+                        PlaceholderText="Find"/>
+                    <ToggleButton
+                        x:Name="FindRegexButton"
+                        MinWidth="36"
+                        Content=".*"
+                        FontFamily="{ThemeResource ElMdMonoFontFamily}"
+                        ToolTipService.ToolTip="Regular expression"/>
+                    <ToggleButton
+                        x:Name="FindCaseButton"
+                        MinWidth="36"
+                        Content="Aa"
+                        ToolTipService.ToolTip="Match case"/>
+                    <TextBlock
+                        x:Name="FindMatchCountText"
+                        MinWidth="72"
+                        VerticalAlignment="Center"
+                        Foreground="{ThemeResource ElMdShellMutedForegroundBrush}"
+                        Text="0 results"/>
+                    <Button x:Name="FindPreviousButton" MinWidth="36" Content="↑" ToolTipService.ToolTip="Previous match"/>
+                    <Button x:Name="FindNextButton" MinWidth="36" Content="↓" ToolTipService.ToolTip="Next match"/>
+                </StackPanel>
+                <Button
+                    x:Name="CloseFindButton"
+                    Grid.Column="1"
+                    MinWidth="36"
+                    Content="&#xE711;"
+                    FontFamily="Segoe Fluent Icons"
+                    ToolTipService.ToolTip="Close"/>
+                <StackPanel
+                    x:Name="ReplaceControls"
+                    Grid.Row="1"
+                    Margin="0,6,0,0"
+                    Orientation="Horizontal"
+                    Spacing="6"
+                    Visibility="Collapsed">
+                    <TextBox
+                        x:Name="ReplaceTextBox"
+                        Width="320"
+                        MinWidth="180"
+                        PlaceholderText="Replace"/>
+                    <Button x:Name="ReplaceCurrentButton" Content="Replace"/>
+                    <Button x:Name="ReplaceAllButton" Content="Replace all"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid x:Name="WorkspaceHost" Grid.Row="3">
             <NavigationView
                 x:Name="DocumentNavigation"
                 AlwaysShowHeader="False"
@@ -194,7 +254,7 @@
 
         <Grid
             x:Name="StatusBar"
-            Grid.Row="3"
+            Grid.Row="4"
             MinHeight="32"
             Padding="10,3,8,3"
             Background="{ThemeResource ElMdShellLayerBrush}"

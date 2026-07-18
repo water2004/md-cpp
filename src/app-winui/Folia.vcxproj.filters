@@ -408,6 +408,9 @@
     <ClCompile Include="MainWindow.Events.cpp">
       <Filter>Application Shell</Filter>
     </ClCompile>
+    <ClCompile Include="MainWindow.Search.cpp">
+      <Filter>Application Shell</Filter>
+    </ClCompile>
     <ClCompile Include="MainWindow.Commands.cpp">
       <Filter>Application Shell</Filter>
     </ClCompile>

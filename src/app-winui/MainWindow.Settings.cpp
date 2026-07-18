@@ -58,6 +58,7 @@ namespace winrt::ElMd::implementation
         SetDocumentCommandsVisible(!enabled);
         if (enabled)
         {
+            HideFindBar();
             documentPaneWasOpen = DocumentNavigation().IsPaneOpen();
             if (!settingsView)
             {

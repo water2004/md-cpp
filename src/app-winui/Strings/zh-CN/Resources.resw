@@ -153,4 +153,15 @@
   <data name="ThemeVariantMismatch" xml:space="preserve"><value>内置主题的变体与文件不匹配。</value></data>
   <data name="ThemeFallback" xml:space="preserve"><value>主题已回退：{0}</value></data>
   <data name="PdfExportJobName" xml:space="preserve"><value>折笺 PDF 导出</value></data>
+  <data name="Find" xml:space="preserve"><value>查找</value></data>
+  <data name="Replace" xml:space="preserve"><value>替换</value></data>
+  <data name="ReplaceAll" xml:space="preserve"><value>全部替换</value></data>
+  <data name="RegularExpression" xml:space="preserve"><value>正则表达式</value></data>
+  <data name="MatchCase" xml:space="preserve"><value>区分大小写</value></data>
+  <data name="PreviousMatch" xml:space="preserve"><value>上一个匹配</value></data>
+  <data name="NextMatch" xml:space="preserve"><value>下一个匹配</value></data>
+  <data name="Close" xml:space="preserve"><value>关闭</value></data>
+  <data name="FindNoResults" xml:space="preserve"><value>无匹配结果</value></data>
+  <data name="FindResultCount" xml:space="preserve"><value>第 {0} 项，共 {1} 项</value></data>
+  <data name="FindError" xml:space="preserve"><value>表达式无效：{0}</value></data>
 </root>

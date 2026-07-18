@@ -444,6 +444,7 @@ namespace winrt::ElMd
                         detail::EditorRenderFrame frame{
                             renderModel,
                             {},
+                            {},
                             baseDirectory,
                             {},
                             {},

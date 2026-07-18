@@ -28,7 +28,10 @@ namespace winrt::ElMd::implementation
                 UpdateSourceModeUi();
                 UpdateDocumentInfo();
                 sidebarController.Refresh();
-                RenderEditorSurface();
+                if (FindReplaceBar().Visibility() == Microsoft::UI::Xaml::Visibility::Visible)
+                    RefreshSearch(true);
+                else
+                    RenderEditorSurface();
             },
             [this] { RenderEditorSurface(); },
             [this] { return WindowHandle(); });
@@ -115,6 +118,63 @@ namespace winrt::ElMd::implementation
             args.Handled(keyboardController.InsertNewline());
         });
         EditorSurface().KeyboardAccelerators().Append(enterAccelerator);
+
+        auto registerSearchAccelerator = [this](
+            winrt::Windows::System::VirtualKey key,
+            winrt::Windows::System::VirtualKeyModifiers modifiers,
+            bool replace)
+        {
+            auto accelerator = Microsoft::UI::Xaml::Input::KeyboardAccelerator();
+            accelerator.Key(key);
+            accelerator.Modifiers(modifiers);
+            accelerator.Invoked([this, replace](auto const&, auto const& args)
+            {
+                ShowFindBar(replace);
+                args.Handled(true);
+            });
+            Root().KeyboardAccelerators().Append(accelerator);
+        };
+        registerSearchAccelerator(
+            winrt::Windows::System::VirtualKey::F,
+            winrt::Windows::System::VirtualKeyModifiers::Control,
+            false);
+        registerSearchAccelerator(
+            winrt::Windows::System::VirtualKey::H,
+            winrt::Windows::System::VirtualKeyModifiers::Control,
+            true);
+
+        auto escapeAccelerator = Microsoft::UI::Xaml::Input::KeyboardAccelerator();
+        escapeAccelerator.Key(winrt::Windows::System::VirtualKey::Escape);
+        escapeAccelerator.Invoked([this](auto const&, auto const& args)
+        {
+            if (FindReplaceBar().Visibility() != Microsoft::UI::Xaml::Visibility::Visible) return;
+            HideFindBar();
+            args.Handled(true);
+        });
+        Root().KeyboardAccelerators().Append(escapeAccelerator);
+
+        FindQueryBox().TextChanged([this](auto const&, auto const&) { RefreshSearch(true); });
+        FindRegexButton().Click([this](auto const&, auto const&) { RefreshSearch(true); });
+        FindCaseButton().Click([this](auto const&, auto const&) { RefreshSearch(true); });
+        FindPreviousButton().Click([this](auto const&, auto const&) { NavigateSearch(-1); });
+        FindNextButton().Click([this](auto const&, auto const&) { NavigateSearch(1); });
+        CloseFindButton().Click([this](auto const&, auto const&) { HideFindBar(); });
+        ReplaceCurrentButton().Click([this](auto const&, auto const&) { ReplaceCurrentSearchMatch(); });
+        ReplaceAllButton().Click([this](auto const&, auto const&) { ReplaceAllSearchMatches(); });
+        FindQueryBox().KeyDown([this](auto const&, Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args)
+        {
+            if (args.Key() != winrt::Windows::System::VirtualKey::Enter) return;
+            auto shift = Microsoft::UI::Input::InputKeyboardSource::GetKeyStateForCurrentThread(
+                winrt::Windows::System::VirtualKey::Shift);
+            NavigateSearch((static_cast<std::uint32_t>(shift) & 0x1u) != 0 ? -1 : 1);
+            args.Handled(true);
+        });
+        ReplaceTextBox().KeyDown([this](auto const&, Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args)
+        {
+            if (args.Key() != winrt::Windows::System::VirtualKey::Enter) return;
+            ReplaceCurrentSearchMatch();
+            args.Handled(true);
+        });
 
         EditorSurface().PointerPressed([this](auto const&, Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
         {

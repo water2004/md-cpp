@@ -15,6 +15,7 @@ namespace winrt::ElMd
         bool printMode,
         float documentRight,
         elmd::TextSelection selection,
+        std::span<const detail::EditorSearchHighlight> searchHighlights,
         std::unordered_map<std::uint64_t, std::size_t> const& editableIndex)
         : resources(resources),
           styleSheet(styleSheet),
@@ -24,6 +25,7 @@ namespace winrt::ElMd
           printMode(printMode),
           documentRight(documentRight),
           selection(selection),
+          searchHighlights(searchHighlights),
           editableIndex(editableIndex),
           selectionStart(PositionLess(selection.active, selection.anchor) ? selection.active : selection.anchor),
           selectionEnd(PositionLess(selection.active, selection.anchor) ? selection.anchor : selection.active)
@@ -228,6 +230,52 @@ namespace winrt::ElMd
                 resources.d2dContext->FillRectangle(
                     D2D1::RectF(metric.left, metric.top, metric.left + metric.width, metric.top + metric.height),
                     resources.selectionBrush.Get());
+            }
+        }
+    }
+
+    void EditorDocumentPainter::DrawSearchHighlights(
+        IDWriteTextLayout* layout,
+        D2D1_POINT_2F origin,
+        EditorDisplayMapping const& mapping)
+    {
+        if (!layout || mapping.empty() || searchHighlights.empty()) return;
+        for (auto const& highlight : searchHighlights)
+        {
+            auto const& span = highlight.span;
+            if (span.source_range.empty()) continue;
+            std::size_t index = 0;
+            while (index + 1 < mapping.size())
+            {
+                while (index + 1 < mapping.size()
+                    && !(mapping[index].container_id == span.container_id
+                        && span.source_range.contains(mapping[index].source_offset))) ++index;
+                auto const start = index;
+                while (index + 1 < mapping.size()
+                    && mapping[index].container_id == span.container_id
+                    && span.source_range.contains(mapping[index].source_offset)) ++index;
+                if (index <= start) continue;
+                UINT32 count = 0;
+                auto const length = static_cast<UINT32>(index - start);
+                if (layout->HitTestTextRange(
+                        static_cast<UINT32>(start), length, origin.x, origin.y,
+                        nullptr, 0, &count) != E_NOT_SUFFICIENT_BUFFER || count == 0) continue;
+                std::vector<DWRITE_HIT_TEST_METRICS> metrics(count);
+                if (FAILED(layout->HitTestTextRange(
+                        static_cast<UINT32>(start), length, origin.x, origin.y,
+                        metrics.data(), count, &count))) continue;
+                for (UINT32 metricIndex = 0; metricIndex < count; ++metricIndex)
+                {
+                    auto const& metric = metrics[metricIndex];
+                    auto const rect = D2D1::RectF(
+                        metric.left,
+                        metric.top,
+                        metric.left + metric.width,
+                        metric.top + metric.height);
+                    resources.d2dContext->FillRectangle(rect, resources.selectionBrush.Get());
+                    if (highlight.current)
+                        resources.d2dContext->DrawRectangle(rect, resources.accentBrush.Get(), 1.5f);
+                }
             }
         }
     }

@@ -277,6 +277,9 @@
     <ClCompile Include="..\core\editing\document_transaction.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\core\editing\document_search_replace.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\core\editing\document_operation_apply.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
@@ -291,6 +294,13 @@
     </ClCompile>
     <ClCompile Include="..\core\query\document_text.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\core\query\search.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\core\query\search_regex.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <AdditionalIncludeDirectories>..\..\third_party\srell;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <ClCompile Include="..\core\query\document_interaction.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
@@ -400,6 +410,9 @@
     <ClCompile Include="theme\ThemeConfig.cpp" />
     <ClCompile Include="theme\ThemeCatalog.cpp" />
     <ClCompile Include="editor\session\EditorSession.cpp" />
+    <ClCompile Include="MainWindow.Search.cpp">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </ClCompile>
     <ClCompile Include="media\EditorGifDecoder.cpp" />
     <ClCompile Include="editor\rendering\EditorStyleSheet.cpp" />
     <ClCompile Include="editor\interaction\EditorInteractionMap.cpp" />

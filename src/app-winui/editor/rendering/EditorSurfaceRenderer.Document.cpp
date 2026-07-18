@@ -146,6 +146,7 @@ namespace winrt::ElMd
             printMode,
             documentRight,
             selection,
+            printMode ? std::span<const detail::EditorSearchHighlight>{} : frame.searchHighlights,
             frame.renderModel.editable_index);
 
         std::function<DisplayInlineText(elmd::RenderBlock const&, float, bool)> prepare;
@@ -1036,6 +1037,8 @@ namespace winrt::ElMd
                 origin,
                 prepared.display.ranges);
             documentPainter.DrawSelection(prepared.layout.Get(), origin, prepared.display.displayToSource);
+            documentPainter.DrawSearchHighlights(
+                prepared.layout.Get(), origin, prepared.display.displayToSource);
             if (prepared.layout)
                 resources.d2dContext->DrawTextLayout(
                     origin,
