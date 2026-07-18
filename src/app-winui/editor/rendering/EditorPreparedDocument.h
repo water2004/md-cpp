@@ -42,6 +42,7 @@ namespace winrt::Folia
             bool pendingImage = false;
             bool valid = false;
             std::uint64_t embeddedGeneration = 0;
+            std::uint64_t dependencyCheckGeneration = 0;
             std::uint64_t remoteImageGeneration = 0;
 
             // Drop heavyweight DirectWrite/D2D/image state while retaining

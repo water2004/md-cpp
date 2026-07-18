@@ -331,6 +331,7 @@ namespace winrt::Folia
         InitializeContentMetadata(prepared, block);
         prepared.embeddedRequested = requestEmbedded;
         prepared.embeddedGeneration = embeddedGeneration;
+        prepared.dependencyCheckGeneration = embeddedGeneration;
         prepared.remoteImageGeneration = remoteImageGeneration;
         std::unordered_set<std::uint64_t> owners;
         for (auto owner : prepared.owners) owners.insert(owner.v);

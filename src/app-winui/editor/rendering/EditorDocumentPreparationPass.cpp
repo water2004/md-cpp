@@ -417,12 +417,23 @@ namespace winrt::Folia
             if (block.kind == folia::RenderBlockKind::ThematicBreak) return true;
             auto& prepared = preparedDocument->blocks[index];
             if (!prepared.valid) return true;
-            auto refreshForMath = prepared.pendingMath
+            auto refreshForMath = false;
+            if (prepared.pendingMath
                 && prepared.embeddedRequested
-                && (mathJax.AnyCompletedAfter(
+                && prepared.dependencyCheckGeneration != embeddedGeneration)
+            {
+                refreshForMath = mathJax.AnyCompletedAfter(
                         prepared.pendingMathJaxDependencies)
                     || svgNormalizer.AnyGroupCompletedAfter(
-                        prepared.pendingSvgDependencyGroups));
+                        prepared.pendingSvgDependencyGroups);
+                // A completion elsewhere in the document must not make this
+                // block reacquire both worker locks on every animation frame.
+                // If none of its own dependencies completed, this generation
+                // has been fully observed and can be skipped until the next
+                // coalesced completion callback advances it again.
+                if (!refreshForMath)
+                    prepared.dependencyCheckGeneration = embeddedGeneration;
+            }
             auto refreshForImages = prepared.containsImage
                 && prepared.embeddedRequested
                 && (prepared.remoteImageGeneration != remoteImageGeneration
