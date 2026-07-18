@@ -13,7 +13,7 @@
 - Core modules under `src/core` are platform-independent and must not include Windows, WinRT, Direct2D, DirectWrite, DXGI, or TSF headers.
 - Windows and rendering APIs belong in `src/platform` or the WinUI application layer.
 - The application shell remains WinUI 3 with C++/WinRT; do not introduce a Win32 WndProc shell.
-- Tests use the repository's forked Boost.UT C++23 module through `tests/folia_test.hpp`, which performs `import boost.ut;`. Test translation units deliberately do not `import std;`; they include the shared test header and then import the required `elmd.core.*` modules. Do not replace this with the header-only `<boost/ut.hpp>` path. A single `tests/main.cpp` provides `main()` and passes `argc`/`argv` to `boost::ut::cfg<>.run()`; use a positional pattern such as `FoliaTests.exe "*name*"` to filter tests (`-t` lists tags).
+- Tests use the repository's forked Boost.UT C++23 module through `tests/folia_test.hpp`, which performs `import boost.ut;`. Test translation units deliberately do not `import std;`; they include the shared test header and then import the required `folia.core.*` modules. Do not replace this with the header-only `<boost/ut.hpp>` path. A single `tests/main.cpp` provides `main()` and passes `argc`/`argv` to `boost::ut::cfg<>.run()`; use a positional pattern such as `FoliaTests.exe "*name*"` to filter tests (`-t` lists tags).
 - Prefer semantic fixes and focused tests. Do not add source-text special cases to make one example pass.
 
 ## Document model — block tree plus block-local lossless source

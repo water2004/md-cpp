@@ -3325,7 +3325,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Rust crate: elmd-native-svg 0.1.0 — LICENSE-MIT
+Rust crate: folia-native-svg 0.1.0 — LICENSE-MIT
 ==============================================================================
 
 Copyright 2017 the Resvg Authors
