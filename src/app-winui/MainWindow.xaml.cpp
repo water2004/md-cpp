@@ -319,7 +319,11 @@ namespace winrt::Folia::implementation
 
     void MainWindow::HandlePointerWheel(Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args)
     {
-        latexCompletionController.Cancel();
+        // Wheel input can arrive much faster than the presentation cadence.
+        // Clearing an already inactive suggestion ListView on every pulse
+        // needlessly invalidates the XAML tree and makes a continuous wheel
+        // gesture compete with the editor frame scheduler.
+        if (latexCompletionController.Active()) latexCompletionController.Cancel();
         auto delta = args.GetCurrentPoint(EditorSurface()).Properties().MouseWheelDelta();
         auto scrollDelta = static_cast<float>(-delta);
         if (args.Pointer().PointerDeviceType() == Microsoft::UI::Input::PointerDeviceType::Touchpad)
