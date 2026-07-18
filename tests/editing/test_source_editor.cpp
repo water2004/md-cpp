@@ -2,7 +2,7 @@
 #include <random>
 #include <string>
 
-#include "elmd_test.hpp"
+#include "support/folia_test.hpp"
 import elmd.core.source_editor;
 import elmd.core.source_render;
 import elmd.core.source_style;

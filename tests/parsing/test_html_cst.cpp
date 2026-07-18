@@ -1,4 +1,4 @@
-#include "elmd_test.hpp"
+#include "support/folia_test.hpp"
 
 import elmd.core.html_cst;
 import elmd.core.utf;

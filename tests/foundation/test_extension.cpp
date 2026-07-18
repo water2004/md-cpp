@@ -2,7 +2,7 @@
 #include <string>
 #include <string_view>
 
-#include "elmd_test.hpp"
+#include "support/folia_test.hpp"
 import elmd.core.extension;
 import elmd.core.dialect;
 import elmd.core.editor;

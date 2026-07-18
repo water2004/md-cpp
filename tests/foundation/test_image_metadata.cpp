@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "elmd_test.hpp"
+#include "support/folia_test.hpp"
 import elmd.core.image_metadata;
 
 using namespace boost::ut;

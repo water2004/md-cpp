@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-#include "elmd_test.hpp"
+#include "support/folia_test.hpp"
 import elmd.core.parser;
 import elmd.core.document_edit;
 import elmd.core.document;

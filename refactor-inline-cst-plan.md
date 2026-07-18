@@ -42,8 +42,8 @@
 
 - 2026-07-12 基线提交 ecadd1b (AGENTS.md 新纲领)
 - 2026-07-12 测试框架迁移到仓库 fork 的 Boost.UT C++23 module (`third_party/ut`):
-  - CMake: `cmake_minimum_required(VERSION 4.0)`、`file(GLOB)` 收集 `tests/*.cpp`，`FoliaTests` 链接 `Boost::ut_module`
-  - `tests/elmd_test.hpp` 使用 `import boost.ut;`；测试 TU 不再 `import std;`
+  - CMake: `cmake_minimum_required(VERSION 4.0)`、`file(GLOB_RECURSE)` 递归收集 `tests/*.cpp`，`FoliaTests` 链接 `Boost::ut_module`
+  - `tests/folia_test.hpp` 使用 `import boost.ut;`；测试 TU 不再 `import std;`
   - `tests/main.cpp` 将 `argc`/`argv` 传给 `boost::ut::cfg<>.run()`；测试名过滤使用位置参数（例如 `FoliaTests.exe "*name*"`），`-t` 用于列出标签
   - fork 包含 MSVC module linkage 与命令行初始化修复；不得退回 `<boost/ut.hpp>` header-only 路径
   - 删除旧的 `tests/test_framework.h`

@@ -141,10 +141,12 @@ target_compile_features(FoliaTests PRIVATE cxx_std_23)
 set_target_properties(FoliaTests PROPERTIES
     CXX_MODULE_STD ON
     CXX_SCAN_FOR_MODULES ON)
-file(GLOB ELMD_TEST_SRC CONFIGURE_DEPENDS
+file(GLOB_RECURSE ELMD_TEST_SRC CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp)
 target_sources(FoliaTests PRIVATE
     ${ELMD_TEST_SRC})
+target_include_directories(FoliaTests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests)
 target_link_libraries(FoliaTests PRIVATE elmd_core Boost::ut_module)
 # Boost.UT parses positional test-name patterns and CLI options. For example,
 # `FoliaTests.exe "*name*"` filters by name; `-t` lists tags.

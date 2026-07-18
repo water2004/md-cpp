@@ -1,7 +1,7 @@
 #include <cstddef>
 #include <string>
 
-#include "elmd_test.hpp"
+#include "support/folia_test.hpp"
 
 import elmd.core.utf;
 

@@ -1,6 +1,6 @@
 #include <string>
 
-#include "elmd_test.hpp"
+#include "support/folia_test.hpp"
 import elmd.core.exporter;
 import elmd.core.parser;
 import elmd.core.ast;

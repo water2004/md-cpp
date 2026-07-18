@@ -1,4 +1,4 @@
-#include "elmd_test.hpp"
+#include "support/folia_test.hpp"
 import elmd.core.theme;
 import elmd.core.parser;
 import elmd.core.render_builder;

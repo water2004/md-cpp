@@ -3,7 +3,7 @@
 #include <string_view>
 #include <vector>
 
-#include "elmd_test.hpp"
+#include "support/folia_test.hpp"
 import elmd.core.document;
 import elmd.core.block_tree;
 import elmd.core.document_edit;

@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-#include "elmd_test.hpp"
+#include "support/folia_test.hpp"
 import elmd.core.ast;
 import elmd.core.block_source;
 import elmd.core.block_tree;

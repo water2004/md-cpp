@@ -3,7 +3,7 @@
 #include <random>
 #include <vector>
 
-#include "elmd_test.hpp"
+#include "support/folia_test.hpp"
 import elmd.core.ids;
 import elmd.core.layout_plan;
 

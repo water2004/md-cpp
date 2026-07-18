@@ -1,7 +1,7 @@
 #include <string>
 #include <string_view>
 
-#include "elmd_test.hpp"
+#include "support/folia_test.hpp"
 import elmd.core.ast;
 import elmd.core.block_tree;
 import elmd.core.document_interaction;

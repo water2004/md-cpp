@@ -2,7 +2,7 @@
 #include <string>
 #include <unordered_map>
 
-#include "elmd_test.hpp"
+#include "support/folia_test.hpp"
 import elmd.core.html_inline_presentation;
 import elmd.core.render_model;
 import elmd.core.theme;

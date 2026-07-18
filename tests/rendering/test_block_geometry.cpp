@@ -1,5 +1,5 @@
 #include "../src/app-winui/editor/rendering/EditorBlockGeometryIndex.h"
-#include "elmd_test.hpp"
+#include "support/folia_test.hpp"
 
 using namespace boost::ut;
 
