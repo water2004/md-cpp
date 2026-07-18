@@ -71,6 +71,17 @@ namespace
         return ParseLength(svg.substr(start, end - start), em);
     }
 
+    std::optional<std::string> AttributeText(std::string_view markup, std::string_view attribute)
+    {
+        auto marker = std::string(attribute) + "=\"";
+        auto start = markup.find(marker);
+        if (start == std::string_view::npos) return std::nullopt;
+        start += marker.size();
+        auto end = markup.find('"', start);
+        if (end == std::string_view::npos) return std::nullopt;
+        return std::string(markup.substr(start, end - start));
+    }
+
     float VerticalAlignment(std::string_view svg, float em)
     {
         auto marker = std::string_view("vertical-align:");
@@ -277,6 +288,7 @@ namespace winrt::Folia
             if (!InitializeRuntime())
             {
                 rendered.error = "MathJax runtime could not be initialized";
+                rendered.errorKind = MathJaxErrorKind::Infrastructure;
                 return rendered;
             }
             auto global = JS_GetGlobalObject(context);
@@ -297,6 +309,7 @@ namespace winrt::Folia
             if (JS_IsException(result))
             {
                 rendered.error = ExceptionText();
+                rendered.errorKind = MathJaxErrorKind::Infrastructure;
                 JS_FreeValue(context, result);
                 if (RetryableFailure(rendered.error))
                 {
@@ -313,6 +326,12 @@ namespace winrt::Folia
                 JS_FreeCString(context, svg);
             }
             JS_FreeValue(context, result);
+
+            if (auto diagnostic = AttributeText(output, "data-mjx-error"))
+            {
+                rendered.error = std::move(*diagnostic);
+                rendered.errorKind = MathJaxErrorKind::Formula;
+            }
 
             std::size_t cursor = 0;
             std::size_t previousEnd = 0;
@@ -348,7 +367,11 @@ namespace winrt::Folia
             }
             rendered.height = ascent + descent;
             rendered.verticalAlign = -descent;
-            if (!rendered) rendered.error = "MathJax returned an invalid SVG";
+            if (!rendered)
+            {
+                rendered.error = "MathJax returned an invalid SVG";
+                rendered.errorKind = MathJaxErrorKind::Infrastructure;
+            }
             return rendered;
         }
 

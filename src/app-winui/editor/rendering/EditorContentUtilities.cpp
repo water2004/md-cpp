@@ -85,6 +85,7 @@ namespace winrt::Folia
             {
                 result.fragments.clear();
                 result.error = normalized->error;
+                result.errorKind = MathJaxErrorKind::Infrastructure;
                 return result;
             }
             fragment.renderId = normalized->id;

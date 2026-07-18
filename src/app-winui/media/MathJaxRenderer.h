@@ -10,6 +10,13 @@
 
 namespace winrt::Folia
 {
+    enum class MathJaxErrorKind
+    {
+        None,
+        Formula,
+        Infrastructure,
+    };
+
     struct MathJaxSvgFragment
     {
         std::uint64_t renderId = 0;
@@ -25,12 +32,17 @@ namespace winrt::Folia
     {
         std::vector<MathJaxSvgFragment> fragments;
         std::string error;
+        MathJaxErrorKind errorKind = MathJaxErrorKind::None;
         float width = 0.0f;
         float height = 0.0f;
         float verticalAlign = 0.0f;
         bool display = false;
 
-        explicit operator bool() const { return error.empty() && !fragments.empty() && width > 0.0f && height > 0.0f; }
+        explicit operator bool() const
+        {
+            return errorKind != MathJaxErrorKind::Infrastructure
+                && !fragments.empty() && width > 0.0f && height > 0.0f;
+        }
     };
 
     class MathJaxRenderer
