@@ -423,6 +423,9 @@
     <ClCompile Include="editor\interaction\EditorKeyboardController.cpp">
       <Filter>Editor\Interaction</Filter>
     </ClCompile>
+    <ClCompile Include="editor\interaction\EditorKeyboardController.Snippets.cpp">
+      <Filter>Editor\Interaction</Filter>
+    </ClCompile>
     <ClCompile Include="editor\interaction\EditorDocumentController.cpp">
       <Filter>Editor\Interaction</Filter>
     </ClCompile>

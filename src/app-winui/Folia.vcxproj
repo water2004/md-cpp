@@ -518,6 +518,7 @@
     <ClCompile Include="editor\interaction\EditorTextInputController.cpp" />
     <ClCompile Include="editor\interaction\EditorPointerController.cpp" />
     <ClCompile Include="editor\interaction\EditorKeyboardController.cpp" />
+    <ClCompile Include="editor\interaction\EditorKeyboardController.Snippets.cpp" />
     <ClCompile Include="editor\interaction\EditorLatexCompletionController.cpp" />
     <ClCompile Include="editor\interaction\EditorDocumentController.cpp" />
     <ClCompile Include="export\EditorPdfPrintJob.cpp" />
