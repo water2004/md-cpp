@@ -33,7 +33,9 @@ the user did not change.
 - **Source faithful** — preserves marker spelling, escapes, whitespace, link
   syntax, and temporarily incomplete editing states.
 - **Native editing** — WYSIWYG and monospaced source modes, outline navigation,
-  transactional history, and semantic copy/paste are implemented in native C++.
+  transactional history, semantic copy/paste, and regular-expression
+  find/replace are implemented in native C++. Rendered-mode search operates on
+  visible text while source mode searches the exact Markdown buffer.
 - **Rich rendering** — MathJax, Mermaid, Tree-sitter syntax highlighting,
   native SVG, animated GIFs, Windows image codecs (PNG, JPEG, BMP, TIFF, ICO,
   and installed WebP/HEIF codecs), tables, footnotes, callouts, and recursively

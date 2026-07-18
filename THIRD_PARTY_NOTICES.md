@@ -5,6 +5,10 @@ license notices distributed with the application are generated at:
 
 `src/app-winui/Assets/licenses/THIRD-PARTY-NOTICES.txt`
 
+The search engine uses the vendored, header-only SRELL regular-expression
+library under the BSD 2-Clause License; that license is included in the
+generated notice bundle.
+
 Regenerate the file after changing native, NuGet, Cargo, or npm dependencies:
 
 ```powershell
