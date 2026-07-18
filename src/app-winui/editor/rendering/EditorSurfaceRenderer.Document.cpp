@@ -5,6 +5,7 @@
 
 import elmd.core.render_model;
 import elmd.core.utf;
+import elmd.platform.editor_viewport_plan;
 
 #include "editor/rendering/EditorContentPreparation.h"
 #include "editor/rendering/EditorDocumentPainter.h"
@@ -15,6 +16,9 @@ import elmd.core.utf;
 
 namespace winrt::ElMd
 {
+    using elmd::platform::editor::BuildEditorViewportPlan;
+    using elmd::platform::editor::EditorViewportPolicy;
+
     namespace
     {
         bool InlineItemsContain(
@@ -598,17 +602,13 @@ namespace winrt::ElMd
             return prepared;
         };
 
-        constexpr float viewportOverscan = 240.0f;
-        constexpr float embeddedOverscanBefore = 1200.0f;
-        constexpr float embeddedOverscanAfter = 800.0f;
-        constexpr float embeddedUnloadBefore = 2400.0f;
-        constexpr float embeddedUnloadAfter = 2000.0f;
+        constexpr EditorViewportPolicy viewportPolicy{};
         auto requestEmbeddedAt = [&](float documentTop)
         {
             if (printMode) return true;
             auto screenTop = documentTop - scrollOffset;
-            return screenTop < resources.surfaceHeightDip + embeddedOverscanAfter
-                && screenTop > -embeddedOverscanBefore;
+            return screenTop < resources.surfaceHeightDip + viewportPolicy.embeddedAfter
+                && screenTop > -viewportPolicy.embeddedBefore;
         };
         auto initializeGeometry = [&]
         {
@@ -664,11 +664,6 @@ namespace winrt::ElMd
         };
         if (!preparedDocument->geometry.Initialized()) initializeGeometry();
 
-        auto firstIntersecting = [&](float documentTop)
-        {
-            return preparedDocument->geometry.FirstIntersecting(documentTop);
-        };
-
         // Refine estimated blocks incrementally. DirectWrite layout and render
         // model materialization both run on the UI thread, so a fixed amount of
         // first-visit work is admitted per frame. The viewport is prepared
@@ -678,7 +673,7 @@ namespace winrt::ElMd
         if (!frame.renderModel.blocks.empty())
         {
             auto anchorIndex = (std::min)(
-                firstIntersecting(scrollOffset),
+                preparedDocument->geometry.FirstIntersecting(scrollOffset),
                 frame.renderModel.blocks.size() - 1);
             auto anchorTop = preparedDocument->geometry.At(anchorIndex).top;
             auto geometryChanged = false;
@@ -760,51 +755,29 @@ namespace winrt::ElMd
                 }
             };
 
-            if (printMode)
+            // PDF export is a streaming viewport. Screen rendering prepares
+            // the visible band first, then one directional look-ahead band.
+            // The deterministic planner is shared with platform tests; this
+            // method only enforces the per-frame preparation budget.
+            auto scrollingForward = !preparedDocument->hasLastViewportOffset
+                || scrollOffset >= preparedDocument->lastViewportOffset;
+            auto viewportPlan = BuildEditorViewportPlan(
+                preparedDocument->geometry,
+                scrollOffset,
+                resources.surfaceHeightDip,
+                printMode,
+                scrollingForward,
+                viewportPolicy);
+            prepareForward(viewportPlan.visible.begin, viewportPlan.visible.end);
+            if (!printMode && !needsAnotherFrame && !viewportPlan.prefetch.Empty())
             {
-                // PDF export is a streaming viewport. Preparing every block
-                // here retained the entire document's DirectWrite layouts and
-                // also required every MathJax result to coexist in a bounded
-                // cache. Refine only the current page and a small look-ahead;
-                // ExportPdfStep retries when corrected geometry exposes a new
-                // block at the page boundary.
-                auto pageTop = (std::max)(0.0f, scrollOffset - viewportOverscan);
-                auto pageBottom = scrollOffset + resources.surfaceHeightDip + viewportOverscan;
-                auto pageBegin = firstIntersecting(pageTop);
-                auto pageEnd = pageBegin;
-                while (pageEnd < frame.renderModel.blocks.size()
-                    && preparedDocument->geometry.At(pageEnd).top <= pageBottom)
-                    ++pageEnd;
-                prepareForward(pageBegin, pageEnd);
+                if (scrollingForward)
+                    prepareForward(viewportPlan.prefetch.begin, viewportPlan.prefetch.end);
+                else
+                    prepareBackward(viewportPlan.prefetch.begin, viewportPlan.prefetch.end);
             }
-            else
+            if (!printMode)
             {
-                auto viewportTop = scrollOffset - viewportOverscan;
-                auto viewportBottom = scrollOffset + resources.surfaceHeightDip + viewportOverscan;
-                auto visibleBegin = firstIntersecting(viewportTop);
-                auto visibleEnd = visibleBegin;
-                while (visibleEnd < frame.renderModel.blocks.size()
-                    && preparedDocument->geometry.At(visibleEnd).top <= viewportBottom)
-                    ++visibleEnd;
-                prepareForward(visibleBegin, visibleEnd);
-
-                auto scrollingForward = !preparedDocument->hasLastViewportOffset
-                    || scrollOffset >= preparedDocument->lastViewportOffset;
-                auto prefetchDistance = (std::max)(480.0f, resources.surfaceHeightDip * 0.75f);
-                if (!needsAnotherFrame && scrollingForward)
-                {
-                    auto prefetchEnd = visibleEnd;
-                    auto prefetchBottom = viewportBottom + prefetchDistance;
-                    while (prefetchEnd < frame.renderModel.blocks.size()
-                        && preparedDocument->geometry.At(prefetchEnd).top <= prefetchBottom)
-                        ++prefetchEnd;
-                    prepareForward(visibleEnd, prefetchEnd);
-                }
-                else if (!needsAnotherFrame && visibleBegin > 0)
-                {
-                    auto prefetchBegin = firstIntersecting(viewportTop - prefetchDistance);
-                    prepareBackward(prefetchBegin, visibleBegin);
-                }
                 preparedDocument->lastViewportOffset = scrollOffset;
                 preparedDocument->hasLastViewportOffset = true;
             }
@@ -828,13 +801,15 @@ namespace winrt::ElMd
             if (needsAnotherFrame) Invalidate();
         }
 
-        auto embeddedTop = scrollOffset - embeddedOverscanBefore;
-        auto embeddedBottom = scrollOffset + resources.surfaceHeightDip + embeddedOverscanAfter;
-        auto embeddedBegin = firstIntersecting(embeddedTop);
-        auto embeddedEnd = embeddedBegin;
-        while (embeddedEnd < frame.renderModel.blocks.size()
-            && preparedDocument->geometry.At(embeddedEnd).top <= embeddedBottom)
-            ++embeddedEnd;
+        auto embeddedPlan = BuildEditorViewportPlan(
+            preparedDocument->geometry,
+            scrollOffset,
+            resources.surfaceHeightDip,
+            printMode,
+            true,
+            viewportPolicy);
+        auto embeddedBegin = embeddedPlan.embedded.begin;
+        auto embeddedEnd = embeddedPlan.embedded.end;
         auto geometryChanged = false;
         for (auto index = embeddedBegin; index < embeddedEnd; ++index)
         {
@@ -863,8 +838,8 @@ namespace winrt::ElMd
             }
         }
 
-        auto unloadTop = scrollOffset - embeddedUnloadBefore;
-        auto unloadBottom = scrollOffset + resources.surfaceHeightDip + embeddedUnloadAfter;
+        auto unloadTop = embeddedPlan.embeddedKeepTop;
+        auto unloadBottom = embeddedPlan.embeddedKeepBottom;
         auto activeEmbedded = std::vector<std::size_t>(
             preparedDocument->embeddedBlocks.begin(),
             preparedDocument->embeddedBlocks.end());
@@ -902,29 +877,23 @@ namespace winrt::ElMd
 
         {
             // Screen rendering keeps a multi-viewport cache for responsive
-            // reverse scrolling. Printing intentionally keeps only the page
-            // being emitted plus its measurement look-ahead.
-            auto retentionBefore = printMode
-                ? 1.0f
-                : (std::max)(2400.0f, resources.surfaceHeightDip * 2.5f);
-            auto retentionAfter = printMode
-                ? viewportOverscan
-                : (std::max)(3200.0f, resources.surfaceHeightDip * 3.0f);
-            auto retentionTop = scrollOffset - retentionBefore;
-            auto retentionBottom = scrollOffset + resources.surfaceHeightDip + retentionAfter;
-            auto retentionBegin = firstIntersecting(retentionTop);
-            auto retentionEnd = retentionBegin;
-            while (retentionEnd < frame.renderModel.blocks.size()
-                && preparedDocument->geometry.At(retentionEnd).top <= retentionBottom)
-                ++retentionEnd;
+            // reverse scrolling. Printing keeps only its page-local band.
+            auto retentionPlan = BuildEditorViewportPlan(
+                preparedDocument->geometry,
+                scrollOffset,
+                resources.surfaceHeightDip,
+                printMode,
+                true,
+                viewportPolicy);
+            auto retentionBegin = retentionPlan.retention.begin;
+            auto retentionEnd = retentionPlan.retention.end;
             auto activeLayouts = std::vector<std::size_t>(
                 preparedDocument->layoutBlocks.begin(),
                 preparedDocument->layoutBlocks.end());
             for (auto index : activeLayouts)
             {
                 if (index >= frame.renderModel.blocks.size()) continue;
-                auto placement = preparedDocument->geometry.At(index);
-                if (placement.bottom >= retentionTop && placement.top <= retentionBottom) continue;
+                if (retentionPlan.retention.Contains(index)) continue;
                 auto& prepared = preparedDocument->blocks[index];
                 std::vector<std::string> imageSources;
                 for (auto const& image : prepared.images)
@@ -944,13 +913,15 @@ namespace winrt::ElMd
                 frame.releaseBlocksOutside(retentionBegin, retentionEnd);
         }
 
-        auto viewportTop = scrollOffset - viewportOverscan;
-        auto viewportBottom = scrollOffset + resources.surfaceHeightDip + viewportOverscan;
-        auto viewportBegin = firstIntersecting(viewportTop);
-        auto viewportEnd = viewportBegin;
-        while (viewportEnd < frame.renderModel.blocks.size()
-            && preparedDocument->geometry.At(viewportEnd).top <= viewportBottom)
-            ++viewportEnd;
+        auto paintPlan = BuildEditorViewportPlan(
+            preparedDocument->geometry,
+            scrollOffset,
+            resources.surfaceHeightDip,
+            printMode,
+            true,
+            viewportPolicy);
+        auto viewportBegin = paintPlan.visible.begin;
+        auto viewportEnd = paintPlan.visible.end;
         if (sourceGutterWidth > 0.0f && resources.lineNumberBackgroundBrush)
         {
             resources.d2dContext->FillRectangle(
