@@ -2,8 +2,6 @@
 #include "editor/rendering/EditorSurfaceRenderer.h"
 #include "editor/rendering/EditorPreparedDocument.h"
 
-import folia.platform.editor_viewport_plan;
-
 namespace winrt::Folia
 {
     EditorSurfaceRenderer::EditorSurfaceRenderer() = default;
@@ -93,6 +91,8 @@ namespace winrt::Folia
             if (embeddedCompletionPending.exchange(true)) return;
             if (!dispatcher.TryEnqueue([this]
                 {
+                    embeddedCompletionPending = false;
+                    ++embeddedGeneration;
                     Invalidate();
                 })) embeddedCompletionPending = false;
         };
@@ -147,31 +147,6 @@ namespace winrt::Folia
         }
         rendering = true;
         struct Reset { EditorSurfaceRenderer& owner; ~Reset() { owner.rendering = false; if (owner.deferredInvalidate.exchange(false)) owner.Invalidate(); } } reset{*this};
-        // Background workers can complete several formulas and SVG fragments
-        // while the physical-refresh scheduler is waiting to present. Consume
-        // them as one epoch only after the viewport is stable. The workers keep
-        // running while the viewport moves so newly visible formulas continue
-        // to make progress; only layout consumption is deferred.
-        auto viewportMoved = preparedDocument
-            && preparedDocument->hasLastViewportOffset
-            && folia::platform::editor::EditorViewportMoved(
-                true,
-                preparedDocument->lastViewportOffset,
-                scrollState.Offset());
-        auto viewportActive = viewportMoved || scrollState.Animating();
-        if (embeddedCompletionPending.load(std::memory_order_acquire))
-        {
-            if (viewportActive)
-            {
-                deferredInvalidate = true;
-            }
-            else if (embeddedCompletionPending.exchange(
-                         false,
-                         std::memory_order_acq_rel))
-            {
-                ++embeddedGeneration;
-            }
-        }
         resources.EnsureFrameResources(styleSheet);
         resources.d2dContext->BeginDraw();
         resources.d2dContext->Clear(styleSheet.canvasColor);

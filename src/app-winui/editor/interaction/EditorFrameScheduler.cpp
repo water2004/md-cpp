@@ -304,20 +304,7 @@ namespace winrt::Folia
             ? nominalFrameInterval
             : std::chrono::duration<float>(now - lastFrame).count();
         lastFrame = now;
-        auto continueAnimation = frameCallback && frameCallback(elapsed);
-        if (continueAnimation)
-        {
-            RequestFrame();
-            return;
-        }
-
-        // The callback may complete the wheel animation and, while rendering
-        // that final position, enqueue a new frame for an asynchronous math,
-        // image, or layout completion. That request owns the next frame. Do
-        // not cancel it merely because the motion itself has ended.
-        if (dispatchState
-            && dispatchState->outstandingFrameId.load(
-                std::memory_order_acquire) != 0) return;
-        Stop();
+        if (frameCallback && frameCallback(elapsed)) RequestFrame();
+        else Stop();
     }
 }

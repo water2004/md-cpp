@@ -367,11 +367,7 @@ namespace winrt::Folia::implementation
         UpdateTheme();
         editorRenderer.Initialize(EditorSurface());
         scrollController.Attach(editorRenderer, EditorScrollBar(), EditorScrollBarColumn(), WindowHandle(), [this] { RenderEditorSurface(); });
-        // MathJax, SVG normalization, remote images, and Mermaid complete on
-        // background workers. Route their repaint through the same physical-
-        // refresh scheduler as scrolling so completions cannot inject extra
-        // full document frames between scroll presentations.
-        editorRenderer.SetInvalidateCallback([this] { scrollController.RequestFrame(); });
+        editorRenderer.SetInvalidateCallback([this] { RenderEditorSurface(); });
         RenderEditorSurface();
         EditorSurface().Focus(Microsoft::UI::Xaml::FocusState::Programmatic);
     }
