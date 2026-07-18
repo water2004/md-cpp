@@ -333,6 +333,9 @@
     <ClCompile Include="editor\session\EditorSession.cpp">
       <Filter>Editor\Session</Filter>
     </ClCompile>
+    <ClCompile Include="editor\session\EditorSession.Editing.cpp">
+      <Filter>Editor\Session</Filter>
+    </ClCompile>
     <ClCompile Include="editor\session\EditorSession.Search.cpp">
       <Filter>Editor\Session</Filter>
     </ClCompile>
