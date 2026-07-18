@@ -79,8 +79,7 @@ namespace winrt::ElMd
         resources.d2dContext->GetTransform(&originalTransform);
         auto originalWidth = resources.surfaceWidthDip;
         auto originalHeight = resources.surfaceHeightDip;
-        auto originalScroll = scrollOffset;
-        auto originalScrollTarget = scrollTarget;
+        auto originalScroll = scrollState.Save();
         auto originalTotalHeight = totalDocumentHeight;
         auto originalPrepared = std::move(preparedDocument);
         auto originalInteraction = std::move(interactionMap);
@@ -107,9 +106,8 @@ namespace winrt::ElMd
             resources.d2dContext->SetTransform(originalTransform);
             resources.surfaceWidthDip = originalWidth;
             resources.surfaceHeightDip = originalHeight;
-            scrollOffset = originalScroll;
-            scrollTarget = originalScrollTarget;
             totalDocumentHeight = originalTotalHeight;
+            scrollState.Restore(originalScroll, MaximumScrollOffset());
             printMode = false;
             preparedDocument = std::move(originalPrepared);
             interactionMap = std::move(originalInteraction);
@@ -142,8 +140,7 @@ namespace winrt::ElMd
                         PdfContentWidth,
                         (std::max)(1.0f, clipHeight)),
                     D2D1_ANTIALIAS_MODE_ALIASED);
-                scrollOffset = sourceTop;
-                scrollTarget = sourceTop;
+                scrollState.Set(sourceTop, MaximumScrollOffset());
                 DrawDocument(frame);
                 resources.d2dContext->PopAxisAlignedClip();
                 auto result = resources.d2dContext->EndDraw();

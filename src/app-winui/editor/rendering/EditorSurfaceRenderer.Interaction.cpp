@@ -4,38 +4,22 @@
 
 namespace winrt::ElMd
 {
-    void EditorSurfaceRenderer::ScrollBy(float delta) { SetScrollOffset(scrollOffset + delta); }
+    void EditorSurfaceRenderer::ScrollBy(float delta) { SetScrollOffset(scrollState.Offset() + delta); }
     void EditorSurfaceRenderer::QueueScrollBy(float delta)
     {
-        if (!std::isfinite(delta) || delta == 0.0f) return;
-        auto pendingDistance = scrollTarget - scrollOffset;
-        if (pendingDistance * delta < 0.0f) scrollTarget = scrollOffset;
-        scrollTarget = (std::clamp)(scrollTarget + delta, 0.0f, MaximumScrollOffset());
+        scrollState.Queue(delta, MaximumScrollOffset());
     }
 
     bool EditorSurfaceRenderer::AdvanceScrollAnimation(float elapsedSeconds)
     {
-        auto distance = scrollTarget - scrollOffset;
-        auto elapsed = (std::max)(0.0f, elapsedSeconds);
-        if (std::fabs(distance) < 0.1f)
-        {
-            scrollOffset = scrollTarget;
-            return false;
-        }
-        // Actual elapsed time and an analytic exponential response give each
-        // completed wheel gesture one monotonically decelerating phase.
-        constexpr float responseHalfLifeSeconds = 0.075f;
-        auto response = 1.0f - std::exp2(-elapsed / responseHalfLifeSeconds);
-        scrollOffset += distance * response;
-        return true;
+        return scrollState.Advance(elapsedSeconds);
     }
 
     void EditorSurfaceRenderer::SetScrollOffset(float value)
     {
-        scrollOffset = (std::clamp)(value, 0.0f, MaximumScrollOffset());
-        scrollTarget = scrollOffset;
+        scrollState.Set(value, MaximumScrollOffset());
     }
-    float EditorSurfaceRenderer::ScrollOffset() const { return scrollOffset; }
+    float EditorSurfaceRenderer::ScrollOffset() const { return scrollState.Offset(); }
     float EditorSurfaceRenderer::MaximumScrollOffset() const { return (std::max)(0.0f, totalDocumentHeight - resources.surfaceHeightDip); }
     float EditorSurfaceRenderer::ViewportHeight() const { return resources.surfaceHeightDip; }
     HANDLE EditorSurfaceRenderer::FrameLatencyWaitableObject() const { return resources.frameLatencyWaitableObject; }
@@ -47,14 +31,15 @@ namespace winrt::ElMd
 
     bool EditorSurfaceRenderer::ScrollToPosition(elmd::TextPosition position)
     {
-        auto previous = scrollOffset;
+        auto previous = scrollState.Offset();
         if (auto bounds = CaretBounds(position))
         {
             auto margin = styleSheet.verticalPadding;
-            if (bounds->top < margin) scrollOffset = (std::max)(0.0f, scrollOffset - (margin - bounds->top));
-            else if (bounds->bottom > resources.surfaceHeightDip - margin) scrollOffset = (std::min)(MaximumScrollOffset(), scrollOffset + bounds->bottom - (resources.surfaceHeightDip - margin));
-            scrollTarget = scrollOffset;
-            return scrollOffset != previous;
+            auto next = previous;
+            if (bounds->top < margin) next = (std::max)(0.0f, previous - (margin - bounds->top));
+            else if (bounds->bottom > resources.surfaceHeightDip - margin) next = (std::min)(MaximumScrollOffset(), previous + bounds->bottom - (resources.surfaceHeightDip - margin));
+            scrollState.Set(next, MaximumScrollOffset());
+            return scrollState.Offset() != previous;
         }
         if (preparedDocument)
         {
@@ -63,21 +48,18 @@ namespace winrt::ElMd
                 && owner->second < preparedDocument->geometry.Size())
             {
                 auto placement = preparedDocument->geometry.At(owner->second);
-                scrollOffset = (std::clamp)(
+                scrollState.Set(
                     placement.top - styleSheet.verticalPadding,
-                    0.0f,
                     MaximumScrollOffset());
-                scrollTarget = scrollOffset;
-                return scrollOffset != previous;
+                return scrollState.Offset() != previous;
             }
         }
         for (auto const& block : interactionMap.blocks)
         {
             auto mapped = std::any_of(block.displayToSource.begin(), block.displayToSource.end(), [&](auto value) { return value.container_id == position.container_id; });
             if (block.sourceSpan.container_id != position.container_id && !mapped) continue;
-            scrollOffset = (std::clamp)(block.documentY - styleSheet.verticalPadding, 0.0f, MaximumScrollOffset());
-            scrollTarget = scrollOffset;
-            return scrollOffset != previous;
+            scrollState.Set(block.documentY - styleSheet.verticalPadding, MaximumScrollOffset());
+            return scrollState.Offset() != previous;
         }
         return false;
     }

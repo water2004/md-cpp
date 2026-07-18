@@ -1,8 +1,11 @@
-#pragma once
+// elmd.platform.editor_display_mapping — source/display coordinate bridge.
+export module elmd.platform.editor_display_mapping;
+import std;
+export import elmd.core.ids;
+export import elmd.core.selection;
+export import elmd.core.text_edit;
 
-import elmd.core.text_edit;
-
-namespace winrt::ElMd
+export namespace elmd::platform::editor
 {
     enum class EditorDisplayPositionKind
     {

@@ -108,6 +108,7 @@ namespace winrt::ElMd
         auto documentLeft = sourceGutterWidth > 0.0f ? sourceGutterWidth + 8.0f : padding;
         auto documentRight = (std::max)(documentLeft + 1.0f, resources.surfaceWidthDip - padding - 14.0f);
         auto documentWidth = documentRight - documentLeft;
+        auto scrollOffset = scrollState.Offset();
         auto y = styleSheet.verticalPadding - scrollOffset;
         auto selection = printMode ? elmd::TextSelection{} : frame.selection;
         auto caret = selection.active;
@@ -816,8 +817,10 @@ namespace winrt::ElMd
                     auto shift = preparedDocument->geometry.At(anchorIndex).top - anchorTop;
                     if (shift != 0.0f)
                     {
-                        scrollOffset = (std::max)(0.0f, scrollOffset + shift);
-                        scrollTarget = (std::max)(0.0f, scrollTarget + shift);
+                        scrollState.Shift(
+                            shift,
+                            (std::numeric_limits<float>::max)());
+                        scrollOffset = scrollState.Offset();
                     }
                 }
                 needsAnotherFrame = !printMode;
@@ -1113,8 +1116,7 @@ namespace winrt::ElMd
 
         EditorTableInteraction::Paint(resources, interactionMap, printMode ? std::nullopt : pointerPosition, draggedTableAction, tableDropIndex);
         totalDocumentHeight = preparedDocument->totalHeight;
-        scrollOffset = (std::min)(scrollOffset, MaximumScrollOffset());
-        scrollTarget = (std::min)(scrollTarget, MaximumScrollOffset());
+        scrollState.Clamp(MaximumScrollOffset());
         if (!printMode && selection.is_caret())
         {
             if (auto rect = CaretBounds(caret))

@@ -2,8 +2,8 @@
 #
 # Build design:
 #   - C++23 with C++ modules (CMake FILE_SET CXX_MODULES) + `import std;`.
-#   - Core library `elmd_core` is PURE C++: no Windows / DirectX / WinUI deps.
-#   - Platform library `elmd_platform` is the ONLY layer touching Win32 /
+#   - Core library `folia_core` is PURE C++: no Windows / DirectX / WinUI deps.
+#   - Platform library `folia_platform` is the ONLY layer touching Win32 /
 #     Direct2D / DirectWrite / DXGI / TSF / Clipboard (Windows headers stay
 #     in that translation unit's global module fragment so no macros leak).
 #   - App `Folia` is a WinUI 3 shell hosting a self-drawn EditorView surface.
@@ -48,41 +48,41 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 option(FOLIA_BUILD_WINUI "Build the WinUI 3 C++/WinRT application shell" OFF)
 
 if(FOLIA_BUILD_WINUI)
-    message(FATAL_ERROR "The WinUI 3 shell is built with MSBuild at src/app-winui/Folia.vcxproj so XAML/IDL/C++WinRT generation runs through the Windows App SDK targets. Keep CMake for elmd_core, elmd_platform, and tests.")
+    message(FATAL_ERROR "The WinUI 3 shell is built with MSBuild at src/app-winui/Folia.vcxproj so XAML/IDL/C++WinRT generation runs through the Windows App SDK targets. Keep CMake for folia_core, folia_platform, and tests.")
 endif()
 
 # ---------------------------------------------------------------------------
 # Core library — pure C++, portable. Acceptance gate: no Windows dependency.
 # ---------------------------------------------------------------------------
-add_library(elmd_tree_sitter_html STATIC
+add_library(folia_tree_sitter_html STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tree-sitter/runtime/lib.c
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tree-sitter/grammars/html_parser.c
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tree-sitter/grammars/html_scanner.c)
-target_include_directories(elmd_tree_sitter_html PUBLIC
+target_include_directories(folia_tree_sitter_html PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tree-sitter/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tree-sitter/runtime)
-set_target_properties(elmd_tree_sitter_html PROPERTIES
+set_target_properties(folia_tree_sitter_html PROPERTIES
     C_STANDARD 11
     C_STANDARD_REQUIRED ON)
 if(MSVC)
-    target_compile_options(elmd_tree_sitter_html PRIVATE /wd4244 /wd4996)
+    target_compile_options(folia_tree_sitter_html PRIVATE /wd4244 /wd4996)
 endif()
 
-add_library(elmd_core STATIC)
-target_compile_features(elmd_core PUBLIC cxx_std_23)
-set_target_properties(elmd_core PROPERTIES CXX_MODULE_STD ON)
-target_include_directories(elmd_core PRIVATE
+add_library(folia_core STATIC)
+target_compile_features(folia_core PUBLIC cxx_std_23)
+set_target_properties(folia_core PROPERTIES CXX_MODULE_STD ON)
+target_include_directories(folia_core PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tree-sitter/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/srell)
-target_link_libraries(elmd_core PRIVATE elmd_tree_sitter_html)
+target_link_libraries(folia_core PRIVATE folia_tree_sitter_html)
 
-file(GLOB_RECURSE ELMD_CORE_MODULE CONFIGURE_DEPENDS
+file(GLOB_RECURSE FOLIA_CORE_MODULE CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.ixx)
-file(GLOB_RECURSE ELMD_CORE_SOURCE CONFIGURE_DEPENDS
+file(GLOB_RECURSE FOLIA_CORE_SOURCE CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.cpp)
-target_sources(elmd_core PUBLIC
-    FILE_SET CXX_MODULES FILES ${ELMD_CORE_MODULE})
-target_sources(elmd_core PRIVATE ${ELMD_CORE_SOURCE})
+target_sources(folia_core PUBLIC
+    FILE_SET CXX_MODULES FILES ${FOLIA_CORE_MODULE})
+target_sources(folia_core PRIVATE ${FOLIA_CORE_SOURCE})
 
 # ---------------------------------------------------------------------------
 # Platform library — the ONLY Windows-touching layer.
@@ -95,30 +95,32 @@ if(WIN32)
     if(_win_sdk_inc_dirs)
         list(SORT _win_sdk_inc_dirs ORDER DESCENDING)
         list(GET _win_sdk_inc_dirs 0 _win_sdk_inc)
-        set(ELMD_WINSDK_INC "${_win_sdk_inc}" CACHE PATH "Windows SDK Include dir")
+        set(FOLIA_WINSDK_INC "${_win_sdk_inc}" CACHE PATH "Windows SDK Include dir")
     endif()
 
-    file(GLOB_RECURSE ELMD_PLATFORM_MODULE CONFIGURE_DEPENDS
+    file(GLOB_RECURSE FOLIA_PLATFORM_MODULE CONFIGURE_DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/*.ixx)
-    file(GLOB_RECURSE ELMD_PLATFORM_SRC CONFIGURE_DEPENDS
+    file(GLOB_RECURSE FOLIA_PLATFORM_SRC CONFIGURE_DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/*.cpp)
 
-    if(ELMD_PLATFORM_MODULE OR ELMD_PLATFORM_SRC)
-        add_library(elmd_platform STATIC)
-        target_compile_features(elmd_platform PUBLIC cxx_std_23)
-        set_target_properties(elmd_platform PROPERTIES CXX_MODULE_STD ON)
-        target_sources(elmd_platform PUBLIC
-            FILE_SET CXX_MODULES FILES ${ELMD_PLATFORM_MODULE})
-        target_sources(elmd_platform PRIVATE ${ELMD_PLATFORM_SRC})
-        target_link_libraries(elmd_platform PUBLIC elmd_core)
-        if(ELMD_WINSDK_INC)
-            target_include_directories(elmd_platform PRIVATE
-                ${ELMD_WINSDK_INC}/um
-                ${ELMD_WINSDK_INC}/shared
-                ${ELMD_WINSDK_INC}/ucrt
-                ${ELMD_WINSDK_INC}/cppwinrt)
+    if(FOLIA_PLATFORM_MODULE OR FOLIA_PLATFORM_SRC)
+        add_library(folia_platform STATIC)
+        target_compile_features(folia_platform PUBLIC cxx_std_23)
+        set_target_properties(folia_platform PROPERTIES CXX_MODULE_STD ON)
+        target_sources(folia_platform PUBLIC
+            FILE_SET CXX_MODULES FILES ${FOLIA_PLATFORM_MODULE})
+        target_sources(folia_platform PRIVATE ${FOLIA_PLATFORM_SRC})
+        target_link_libraries(folia_platform PUBLIC folia_core)
+        target_include_directories(folia_platform PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/platform)
+        if(FOLIA_WINSDK_INC)
+            target_include_directories(folia_platform PUBLIC
+                ${FOLIA_WINSDK_INC}/um
+                ${FOLIA_WINSDK_INC}/shared
+                ${FOLIA_WINSDK_INC}/ucrt
+                ${FOLIA_WINSDK_INC}/cppwinrt)
         endif()
-        target_link_libraries(elmd_platform PUBLIC
+        target_link_libraries(folia_platform PUBLIC
             dwrite d2d1 d3d11 dxgi windowscodecs dwmapi uxtheme shlwapi
             ole32 oleaut32 uuid user32 gdi32 comctl32
             shell32 advapi32 imm32 propsys)
@@ -145,13 +147,32 @@ target_compile_features(FoliaTests PRIVATE cxx_std_23)
 set_target_properties(FoliaTests PROPERTIES
     CXX_MODULE_STD ON
     CXX_SCAN_FOR_MODULES ON)
-file(GLOB_RECURSE ELMD_TEST_SRC CONFIGURE_DEPENDS
+file(GLOB_RECURSE FOLIA_TEST_SRC CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp)
+list(FILTER FOLIA_TEST_SRC EXCLUDE REGEX "/tests/platform/")
 target_sources(FoliaTests PRIVATE
-    ${ELMD_TEST_SRC})
+    ${FOLIA_TEST_SRC})
 target_include_directories(FoliaTests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/tests)
-target_link_libraries(FoliaTests PRIVATE elmd_core Boost::ut_module)
+target_link_libraries(FoliaTests PRIVATE folia_core Boost::ut_module)
 # Boost.UT parses positional test-name patterns and CLI options. For example,
 # `FoliaTests.exe "*name*"` filters by name; `-t` lists tags.
 add_test(NAME FoliaTests COMMAND FoliaTests)
+
+if(TARGET folia_platform)
+    add_executable(FoliaWindowsEditorTests)
+    target_compile_features(FoliaWindowsEditorTests PRIVATE cxx_std_23)
+    set_target_properties(FoliaWindowsEditorTests PROPERTIES
+        CXX_MODULE_STD ON
+        CXX_SCAN_FOR_MODULES ON)
+    file(GLOB_RECURSE FOLIA_PLATFORM_TEST_SRC CONFIGURE_DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/platform/*.cpp)
+    target_sources(FoliaWindowsEditorTests PRIVATE
+        ${FOLIA_PLATFORM_TEST_SRC})
+    target_include_directories(FoliaWindowsEditorTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/platform)
+    target_link_libraries(FoliaWindowsEditorTests PRIVATE
+        folia_platform Boost::ut_module)
+    add_test(NAME FoliaWindowsEditorTests COMMAND FoliaWindowsEditorTests)
+endif()

@@ -1,11 +1,12 @@
-#include "../src/app-winui/editor/rendering/EditorBlockGeometryIndex.h"
 #include "support/folia_test.hpp"
+
+import elmd.platform.editor_geometry;
 
 using namespace boost::ut;
 
 namespace
 {
-    using Geometry = winrt::ElMd::EditorBlockGeometryIndex;
+    using Geometry = elmd::platform::editor::EditorBlockGeometryIndex;
 
     Geometry::Placement NaivePlacement(
         std::vector<Geometry::Entry> const& entries,

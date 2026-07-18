@@ -1,8 +1,9 @@
 #pragma once
 
+import elmd.platform.editor_interaction;
+
 #include "editor/rendering/EditorEmbeddedDraw.h"
 #include "editor/rendering/EditorInlineImageRenderer.h"
-#include "editor/interaction/EditorInteractionMap.h"
 #include "editor/rendering/EditorRenderResources.h"
 #include "editor/rendering/EditorStyleSheet.h"
 #include "editor/rendering/EditorTextLayoutEngine.h"
@@ -16,6 +17,12 @@ namespace elmd
 
 namespace winrt::ElMd
 {
+    using elmd::platform::editor::EditorInteractionMap;
+    using elmd::platform::editor::EditorVisualBlock;
+    using elmd::platform::editor::EditorVisualMathHit;
+    using elmd::platform::editor::EditorVisualTable;
+    using elmd::platform::editor::EditorVisualTableCell;
+
     struct EditorTableBlockRenderer
     {
         struct PreparedTable

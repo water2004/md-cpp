@@ -1,7 +1,11 @@
-#include "pch.h"
-#include "editor/interaction/EditorInteractionMap.h"
+module;
+#include <d2d1.h>
+#include <dwrite.h>
 
-namespace winrt::ElMd
+module elmd.platform.editor_interaction;
+import std;
+
+namespace elmd::platform::editor
 {
     namespace
     {

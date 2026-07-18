@@ -46,6 +46,12 @@
     <Filter Include="Core Modules\Support">
       <UniqueIdentifier>{ed439d88-b4eb-4daf-894e-62d49461c772}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Platform Modules">
+      <UniqueIdentifier>{a29c3f11-e0b6-43ca-884b-f51df728472a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Platform Modules\Windows Editor">
+      <UniqueIdentifier>{4471bd78-463e-4c51-a2fa-99914b6194bb}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Third Party">
       <UniqueIdentifier>{c15f70e8-7f12-4e04-ac76-8d246b5e3ca4}</UniqueIdentifier>
     </Filter>
@@ -74,6 +80,18 @@
   <ItemGroup>
     <ClCompile Include="..\core\model\ast.ixx">
       <Filter>Core Modules\Model</Filter>
+    </ClCompile>
+    <ClCompile Include="..\platform\windows\editor\geometry\editor_geometry.ixx">
+      <Filter>Platform Modules\Windows Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="..\platform\windows\editor\layout\editor_display_mapping.ixx">
+      <Filter>Platform Modules\Windows Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="..\platform\windows\editor\interaction\editor_interaction.ixx">
+      <Filter>Platform Modules\Windows Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="..\platform\windows\editor\interaction\editor_scroll_state.ixx">
+      <Filter>Platform Modules\Windows Editor</Filter>
     </ClCompile>
     <ClCompile Include="..\core\parsing\block_source.ixx">
       <Filter>Core Modules\Parsing</Filter>
@@ -294,8 +312,8 @@
     <ClCompile Include="editor\rendering\EditorStyleSheet.cpp">
       <Filter>Editor\Rendering</Filter>
     </ClCompile>
-    <ClCompile Include="editor\interaction\EditorInteractionMap.cpp">
-      <Filter>Editor\Interaction</Filter>
+    <ClCompile Include="..\platform\windows\editor\interaction\editor_interaction.cpp">
+      <Filter>Platform Modules\Windows Editor</Filter>
     </ClCompile>
     <ClCompile Include="editor\rendering\EditorContentPreparation.cpp">
       <Filter>Editor\Rendering</Filter>
@@ -449,12 +467,6 @@
     <ClInclude Include="editor\rendering\EditorStyleSheet.h">
       <Filter>Editor\Rendering</Filter>
     </ClInclude>
-    <ClInclude Include="editor\interaction\EditorInteractionMap.h">
-      <Filter>Editor\Interaction</Filter>
-    </ClInclude>
-    <ClInclude Include="editor\session\EditorDisplayMapping.h">
-      <Filter>Editor\Session</Filter>
-    </ClInclude>
     <ClInclude Include="editor\rendering\EditorContentPreparation.h">
       <Filter>Editor\Rendering</Filter>
     </ClInclude>
@@ -517,9 +529,6 @@
     </ClInclude>
     <ClInclude Include="editor\rendering\EditorSurfaceRenderer.h">
       <Filter>Editor\Rendering</Filter>
-    </ClInclude>
-    <ClInclude Include="editor\rendering\EditorBlockGeometryIndex.h">
-      <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="editor\rendering\EditorPreparedDocument.h">
       <Filter>Editor\Rendering</Filter>

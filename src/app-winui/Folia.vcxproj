@@ -88,7 +88,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderOutputFile>$(IntDir)pch.pch</PrecompiledHeaderOutputFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)..\platform;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WarningLevel>Level4</WarningLevel>
       <LanguageStandard Condition="'$(VisualStudioVersion)' &gt;= '18.0'">stdcpplatest</LanguageStandard>
       <LanguageStandard Condition="'$(VisualStudioVersion)' &lt; '18.0'">stdcpp17</LanguageStandard>
@@ -151,8 +151,6 @@
     <ClInclude Include="editor\session\EditorSession.h" />
     <ClInclude Include="editor\session\EditorRenderFrame.h" />
     <ClInclude Include="editor\rendering\EditorStyleSheet.h" />
-    <ClInclude Include="editor\interaction\EditorInteractionMap.h" />
-    <ClInclude Include="editor\session\EditorDisplayMapping.h" />
     <ClInclude Include="editor\rendering\EditorContentPreparation.h" />
     <ClInclude Include="editor\rendering\EditorDocumentPainter.h" />
     <ClInclude Include="editor\rendering\EditorRenderResources.h" />
@@ -174,7 +172,6 @@
     <ClInclude Include="export\EditorPdfPrintJob.h" />
     <ClInclude Include="editor\interaction\EditorSidebarController.h" />
     <ClInclude Include="editor\rendering\EditorSurfaceRenderer.h" />
-    <ClInclude Include="editor\rendering\EditorBlockGeometryIndex.h" />
     <ClInclude Include="editor\rendering\EditorPreparedDocument.h" />
     <ClInclude Include="media\MathJaxRenderer.h" />
     <ClInclude Include="media\MermaidRenderer.h" />
@@ -293,6 +290,18 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\core\query\document_text.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\platform\windows\editor\geometry\editor_geometry.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\platform\windows\editor\layout\editor_display_mapping.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\platform\windows\editor\interaction\editor_interaction.ixx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\platform\windows\editor\interaction\editor_scroll_state.ixx">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\core\query\search.ixx">
@@ -415,7 +424,9 @@
     </ClCompile>
     <ClCompile Include="media\EditorGifDecoder.cpp" />
     <ClCompile Include="editor\rendering\EditorStyleSheet.cpp" />
-    <ClCompile Include="editor\interaction\EditorInteractionMap.cpp" />
+    <ClCompile Include="..\platform\windows\editor\interaction\editor_interaction.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="editor\rendering\EditorContentPreparation.cpp" />
     <ClCompile Include="editor\rendering\EditorDocumentPainter.cpp" />
     <ClCompile Include="editor\rendering\EditorContentUtilities.cpp" />

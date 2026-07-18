@@ -1,10 +1,15 @@
-#pragma once
+// elmd.platform.editor_interaction — DirectWrite-backed visual geometry and hit testing.
+module;
+#include <d2d1.h>
+#include <dwrite.h>
+#include <wrl/client.h>
 
+export module elmd.platform.editor_interaction;
+import std;
 import elmd.core.text_edit;
+export import elmd.platform.editor_display_mapping;
 
-#include "editor/session/EditorDisplayMapping.h"
-
-namespace winrt::ElMd
+export namespace elmd::platform::editor
 {
     struct EditorVisualBlock
     {

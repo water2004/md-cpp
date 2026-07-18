@@ -1,13 +1,16 @@
 #pragma once
 
+import elmd.platform.editor_geometry;
+
 #include "editor/rendering/EditorSurfaceRenderer.h"
-#include "editor/rendering/EditorBlockGeometryIndex.h"
 #include "editor/rendering/EditorContentPreparation.h"
 #include "editor/rendering/EditorInlineImageRenderer.h"
 #include "editor/rendering/EditorTableBlockRenderer.h"
 
 namespace winrt::ElMd
 {
+    using elmd::platform::editor::EditorBlockGeometryIndex;
+
     struct EditorSurfaceRenderer::PreparedDocument
     {
         struct MathPreview

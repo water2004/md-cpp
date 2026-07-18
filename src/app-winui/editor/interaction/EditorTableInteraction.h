@@ -1,10 +1,14 @@
 #pragma once
 
-#include "editor/interaction/EditorInteractionMap.h"
+import elmd.platform.editor_interaction;
+
 #include "editor/rendering/EditorRenderResources.h"
 
 namespace winrt::ElMd
 {
+    using elmd::platform::editor::EditorInteractionMap;
+    using elmd::platform::editor::EditorVisualTable;
+
     enum class EditorTableActionKind
     {
         InsertRow,

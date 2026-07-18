@@ -1,11 +1,8 @@
-#pragma once
+// elmd.platform.editor_geometry — persistent block placement index.
+export module elmd.platform.editor_geometry;
+import std;
 
-#include <algorithm>
-#include <cstddef>
-#include <utility>
-#include <vector>
-
-namespace winrt::ElMd
+export namespace elmd::platform::editor
 {
     class EditorBlockGeometryIndex
     {

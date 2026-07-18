@@ -1,13 +1,16 @@
 #pragma once
 
+import elmd.platform.editor_interaction;
+
 #include "EditorContentPreparation.h"
 #include "EditorRenderResources.h"
 #include "EditorStyleSheet.h"
-#include "editor/interaction/EditorInteractionMap.h"
 #include "editor/session/EditorRenderFrame.h"
 
 namespace winrt::ElMd
 {
+    using elmd::platform::editor::EditorInteractionMap;
+
     class EditorDocumentPainter
     {
     public:

@@ -1,18 +1,30 @@
 #pragma once
 
+import elmd.platform.editor_interaction;
+import elmd.platform.editor_scroll_state;
+
 #include "editor/session/EditorRenderFrame.h"
 #include "media/MathJaxRenderer.h"
 #include "media/MermaidRenderer.h"
 #include "media/SvgNormalizer.h"
 #include "media/TreeSitterHighlighter.h"
 #include "editor/rendering/EditorStyleSheet.h"
-#include "editor/interaction/EditorInteractionMap.h"
 #include "editor/rendering/EditorRenderCache.h"
 #include "editor/rendering/EditorRenderResources.h"
 #include "editor/interaction/EditorTableInteraction.h"
 
 namespace winrt::ElMd
 {
+    using elmd::platform::editor::EditorInteractionMap;
+    using elmd::platform::editor::EditorScrollState;
+    using elmd::platform::editor::EditorFootnoteControlKind;
+    using elmd::platform::editor::EditorVisualBlock;
+    using elmd::platform::editor::EditorVisualFootnoteHit;
+    using elmd::platform::editor::EditorVisualLine;
+    using elmd::platform::editor::EditorVisualMathHit;
+    using elmd::platform::editor::EditorVisualTable;
+    using elmd::platform::editor::EditorVisualTableCell;
+
     struct EditorSurfaceRenderer
     {
         EditorSurfaceRenderer();
@@ -115,8 +127,7 @@ namespace winrt::ElMd
         std::optional<D2D1_POINT_2F> pointerPosition;
         std::optional<TableAction> draggedTableAction;
         std::optional<std::size_t> tableDropIndex;
-        float scrollOffset = 0.0f;
-        float scrollTarget = 0.0f;
+        EditorScrollState scrollState;
         float totalDocumentHeight = 0.0f;
         bool resizing = false;
         bool rendering = false;

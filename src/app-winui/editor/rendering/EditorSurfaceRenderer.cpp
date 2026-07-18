@@ -130,8 +130,7 @@ namespace winrt::ElMd
             renderCache.ClearTextLayouts();
             ClearPreparedDocument();
         }
-        scrollOffset = (std::min)(scrollOffset, MaximumScrollOffset());
-        scrollTarget = (std::min)(scrollTarget, MaximumScrollOffset());
+        scrollState.Clamp(MaximumScrollOffset());
     }
 
     void EditorSurfaceRenderer::Render(detail::EditorRenderFrame const& frame)

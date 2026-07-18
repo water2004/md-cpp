@@ -1,14 +1,13 @@
-#include <algorithm>
-#include <cstddef>
-#include <optional>
-#include <vector>
-
 #include "support/folia_test.hpp"
-#include "../src/app-winui/editor/session/EditorDisplayMapping.h"
+
+import elmd.core.ids;
+import elmd.core.selection;
+import elmd.core.text_edit;
+import elmd.platform.editor_display_mapping;
 
 using namespace boost::ut;
 using namespace elmd;
-using namespace winrt::ElMd;
+using namespace elmd::platform::editor;
 
 suite display_mapping_tests = [] {
 

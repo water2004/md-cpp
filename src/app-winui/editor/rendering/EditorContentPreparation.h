@@ -4,15 +4,20 @@ import elmd.core.ids;
 import elmd.core.image_dimension;
 import elmd.core.render_model;
 import elmd.core.text_edit;
+import elmd.platform.editor_display_mapping;
 
 #include "media/MathJaxRenderer.h"
 #include "media/MermaidRenderer.h"
 #include "media/SvgNormalizer.h"
 #include "media/TreeSitterHighlighter.h"
-#include "editor/session/EditorDisplayMapping.h"
 
 namespace winrt::ElMd
 {
+    using elmd::platform::editor::EditorDisplayMapping;
+    using elmd::platform::editor::EditorDisplayPosition;
+    using elmd::platform::editor::EditorDisplayPositionKind;
+    using elmd::platform::editor::EditorFootnoteControlKind;
+
     inline std::optional<float> ResolveImageDimension(
         std::optional<elmd::ImageDimension> const& dimension,
         std::optional<float> percentBasis = std::nullopt)
