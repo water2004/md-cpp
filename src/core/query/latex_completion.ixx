@@ -56,6 +56,15 @@ inline bool valid_latex_command_definition(LatexCommandDefinition const& command
         && !command.snippet.empty();
 }
 
+inline std::optional<std::u32string_view> latex_command_search_alias(
+    LatexCommandDefinition const& command) {
+    if (command.category != "environment"
+        || !command.snippet.starts_with(U"\\begin{")) return std::nullopt;
+    auto close = command.snippet.find(U'}', 7);
+    if (close == std::u32string::npos || close == 7) return std::nullopt;
+    return U"begin";
+}
+
 inline std::optional<LatexCommandPrefix> latex_command_prefix_at(
     std::u32string_view source,
     std::size_t caret) {
@@ -125,7 +134,10 @@ inline std::vector<LatexCompletionCandidate> query_latex_commands(
         auto const& command = catalog[index];
         if (!command.enabled || !valid_latex_command_definition(command)) continue;
         auto trigger = normalize_latex_trigger(command.trigger);
-        if (!trigger.starts_with(prefix)) continue;
+        auto alias = latex_command_search_alias(command);
+        auto trigger_match = trigger.starts_with(prefix);
+        auto alias_match = alias && alias->starts_with(prefix);
+        if (!trigger_match && !alias_match) continue;
         auto found_usage = usage.find(command.id);
         auto score = found_usage == usage.end()
             ? 0.0
@@ -133,7 +145,7 @@ inline std::vector<LatexCompletionCandidate> query_latex_commands(
         result.push_back({
             .command = command,
             .recent_score = score,
-            .exact_match = trigger == prefix,
+            .exact_match = trigger == prefix || (alias && *alias == prefix),
             .catalog_order = index,
         });
     }

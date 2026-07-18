@@ -75,6 +75,36 @@ suite latex_completion_tests = [] {
     expect(candidates[0].exact_match);
 };
 
+"environment commands remain discoverable through the begin syntax"_test = [] {
+    auto matrix = Command(
+        "environment.matrix", U"matrix", U"\\begin{matrix}\n$1\n\\end{matrix}$0");
+    matrix.category = "environment";
+    auto cases = Command(
+        "environment.cases", U"cases", U"\\begin{cases}\n$1\n\\end{cases}$0");
+    cases.category = "environment";
+    std::vector catalog{
+        Command("symbol.beta", U"beta", U"\\beta$0"),
+        matrix,
+        cases,
+    };
+    std::unordered_map<std::string, LatexCommandUsage> usage;
+    record_latex_command_usage(usage["environment.cases"], 1000);
+
+    auto partial = query_latex_commands(catalog, U"beg", usage, 1000);
+    expect(partial.size() == 2_u);
+    expect(partial[0].command.id == "environment.cases");
+    expect(partial[1].command.id == "environment.matrix");
+
+    auto complete = query_latex_commands(catalog, U"begin", usage, 1000);
+    expect(complete.size() == 2_u);
+    expect(complete[0].exact_match);
+    expect(complete[1].exact_match);
+
+    auto short_trigger = query_latex_commands(catalog, U"mat", usage, 1000);
+    expect(short_trigger.size() == 1_u);
+    expect(short_trigger[0].command.id == "environment.matrix");
+};
+
 "usage score decays by half over one half life"_test = [] {
     LatexCommandUsage usage;
     record_latex_command_usage(usage, 100, 20.0);
