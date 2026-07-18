@@ -189,6 +189,7 @@
       <ClInclude Include="editor\rendering\EditorPreparedDocumentRetention.h" />
     <ClInclude Include="media\AsyncWorkDependency.h" />
     <ClInclude Include="media\MathJaxRenderer.h" />
+    <ClInclude Include="media\MathJaxSvgParser.h" />
     <ClInclude Include="media\MermaidRenderer.h" />
     <ClInclude Include="media\SvgNormalizer.h" />
     <ClInclude Include="media\TreeSitterHighlighter.h" />
@@ -528,6 +529,7 @@
     <ClCompile Include="editor\rendering\EditorSurfaceRenderer.Interaction.cpp" />
     <ClCompile Include="editor\rendering\EditorSurfaceRenderer.Pdf.cpp" />
     <ClCompile Include="media\MathJaxRenderer.cpp" />
+    <ClCompile Include="media\MathJaxSvgParser.cpp" />
     <ClCompile Include="media\MermaidRenderer.cpp" />
     <ClCompile Include="media\SvgNormalizer.cpp" />
     <ClCompile Include="media\TreeSitterHighlighter.cpp">

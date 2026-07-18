@@ -450,6 +450,9 @@
     <ClCompile Include="media\MathJaxRenderer.cpp">
       <Filter>Media Services</Filter>
     </ClCompile>
+    <ClCompile Include="media\MathJaxSvgParser.cpp">
+      <Filter>Media Services</Filter>
+    </ClCompile>
     <ClCompile Include="media\MermaidRenderer.cpp">
       <Filter>Media Services</Filter>
     </ClCompile>
@@ -612,6 +615,9 @@
       <Filter>Media Services</Filter>
     </ClInclude>
     <ClInclude Include="media\MathJaxRenderer.h">
+      <Filter>Media Services</Filter>
+    </ClInclude>
+    <ClInclude Include="media\MathJaxSvgParser.h">
       <Filter>Media Services</Filter>
     </ClInclude>
     <ClInclude Include="media\MermaidRenderer.h">
