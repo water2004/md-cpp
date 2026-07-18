@@ -66,4 +66,20 @@ suite rendered_search_tests = [] {
         == "**two** <em>two</em> [two](https://one.test)"));
 };
 
+"rendered replacement spanning hidden markers keeps the structural wrappers"_test = [] {
+    Editor editor("**foo**<em>bar</em>");
+    auto found = search_rendered_document_for_replacement(
+        editor.document(), U"(foo)(bar)", U"$2-$1", [] {
+            auto options = exact_options();
+            options.regular_expression = true;
+            return options;
+        }());
+    expect(fatal(found.valid()));
+    expect(fatal(bool(found.matches.size() == 1u)));
+    expect(fatal(bool(editor.execute_document_replace_matches(found.matches).has_value())));
+    expect(bool(editor.markdown_utf8() == "**bar-foo**<em></em>"));
+    expect(fatal(editor.undo()));
+    expect(bool(editor.markdown_utf8() == "**foo**<em>bar</em>"));
+};
+
 };
