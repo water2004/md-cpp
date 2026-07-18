@@ -4,6 +4,7 @@
 import folia.core.editor;
 import folia.core.document_text;
 import folia.core.document_interaction;
+import folia.core.document_content_context;
 import folia.core.document_footnotes;
 import folia.core.render_builder;
 import folia.core.render_model;
@@ -520,6 +521,21 @@ namespace winrt::Folia
     folia::TextSelection EditorSession::Selection() const
     {
         return core_->sourceEditor ? core_->sourceEditor->projected_selection() : core_->editor.selection();
+    }
+
+    folia::platform::editor::EditorShortcutScope EditorSession::ShortcutScope() const
+    {
+        using folia::DocumentContentContext;
+        using folia::platform::editor::EditorShortcutScope;
+        if (core_->sourceEditor) return EditorShortcutScope::Global;
+        switch (folia::document_content_context_at(
+            core_->editor.document(), core_->editor.selection().active))
+        {
+            case DocumentContentContext::Code: return EditorShortcutScope::Code;
+            case DocumentContentContext::Math: return EditorShortcutScope::Math;
+            case DocumentContentContext::Normal: return EditorShortcutScope::Global;
+        }
+        return EditorShortcutScope::Global;
     }
 
     folia::RenderModel const& EditorSession::RenderModel() const

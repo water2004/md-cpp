@@ -4,6 +4,8 @@
 #include <optional>
 #include <string>
 
+import folia.platform.editor_shortcuts;
+
 namespace winrt::Folia
 {
     struct AppSettings
@@ -11,6 +13,8 @@ namespace winrt::Folia
         bool mathRenderingEnabled = true;
         std::string themeId = "system";
         std::string languageId = "system";
+        std::vector<folia::platform::editor::EditorShortcutBinding> shortcutBindings =
+            folia::platform::editor::default_editor_shortcuts();
 
         bool operator==(AppSettings const&) const = default;
     };

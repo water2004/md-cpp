@@ -43,6 +43,14 @@ namespace winrt::Folia::implementation
             [this] { documentController.CopySelection(); },
             [this] { documentController.CutSelection(); },
             [this] { documentController.PasteClipboard(); },
+            [this](std::string_view action)
+            {
+                if (action == "file.open") documentController.OpenDocument();
+                else if (action == "file.save") documentController.SaveDocument();
+                else if (action == "search.find") ShowFindBar(false);
+                else if (action == "search.replace") ShowFindBar(true);
+            },
+            appSettings.shortcutBindings,
             [this] { RenderEditorSurface(); });
         pointerController.Attach(
             editorSession,
@@ -54,7 +62,11 @@ namespace winrt::Folia::implementation
             [this] { RenderEditorSurface(); },
             [this](std::string href) { documentController.OpenLink(std::move(href)); },
             [this](auto hit, auto position) { ShowFootnoteFlyout(hit, position); },
-            [this] { keyboardController.ResetCaretGoal(); });
+            [this]
+            {
+                keyboardController.ResetCaretGoal();
+                keyboardController.CancelSnippetSession();
+            });
     }
 
     void MainWindow::RegisterWindowHandlers()
@@ -118,30 +130,6 @@ namespace winrt::Folia::implementation
             args.Handled(keyboardController.InsertNewline());
         });
         EditorSurface().KeyboardAccelerators().Append(enterAccelerator);
-
-        auto registerSearchAccelerator = [this](
-            winrt::Windows::System::VirtualKey key,
-            winrt::Windows::System::VirtualKeyModifiers modifiers,
-            bool replace)
-        {
-            auto accelerator = Microsoft::UI::Xaml::Input::KeyboardAccelerator();
-            accelerator.Key(key);
-            accelerator.Modifiers(modifiers);
-            accelerator.Invoked([this, replace](auto const&, auto const& args)
-            {
-                ShowFindBar(replace);
-                args.Handled(true);
-            });
-            Root().KeyboardAccelerators().Append(accelerator);
-        };
-        registerSearchAccelerator(
-            winrt::Windows::System::VirtualKey::F,
-            winrt::Windows::System::VirtualKeyModifiers::Control,
-            false);
-        registerSearchAccelerator(
-            winrt::Windows::System::VirtualKey::H,
-            winrt::Windows::System::VirtualKeyModifiers::Control,
-            true);
 
         auto escapeAccelerator = Microsoft::UI::Xaml::Input::KeyboardAccelerator();
         escapeAccelerator.Key(winrt::Windows::System::VirtualKey::Escape);

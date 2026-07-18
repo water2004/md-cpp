@@ -2,6 +2,8 @@
 #include "editor/interaction/EditorKeyboardController.h"
 
 import folia.platform.editor_input_command;
+import folia.core.snippet_template;
+import folia.platform.editor_shortcuts;
 
 namespace winrt::Folia
 {
@@ -13,6 +15,8 @@ namespace winrt::Folia
         Action copy,
         Action cut,
         Action paste,
+        ApplicationAction applicationAction,
+        std::vector<folia::platform::editor::EditorShortcutBinding> shortcuts,
         Render render)
     {
         Detach();
@@ -23,6 +27,8 @@ namespace winrt::Folia
         copy_ = std::move(copy);
         cut_ = std::move(cut);
         paste_ = std::move(paste);
+        applicationAction_ = std::move(applicationAction);
+        shortcuts_ = std::move(shortcuts);
         render_ = std::move(render);
     }
 
@@ -35,9 +41,19 @@ namespace winrt::Folia
         copy_ = {};
         cut_ = {};
         paste_ = {};
+        applicationAction_ = {};
+        shortcuts_.clear();
         render_ = {};
+        CancelSnippetSession();
         pendingHighSurrogate_.reset();
         ResetCaretGoal();
+    }
+
+    void EditorKeyboardController::SetShortcuts(
+        std::vector<folia::platform::editor::EditorShortcutBinding> shortcuts)
+    {
+        shortcuts_ = std::move(shortcuts);
+        CancelSnippetSession();
     }
 
     bool EditorKeyboardController::Character(char16_t character)
@@ -96,14 +112,18 @@ namespace winrt::Folia
         auto alt = KeyDown(winrt::Windows::System::VirtualKey::Menu)
             || KeyDown(winrt::Windows::System::VirtualKey::LeftMenu)
             || KeyDown(winrt::Windows::System::VirtualKey::RightMenu);
-        auto action = folia::platform::editor::TranslateEditorKeyGesture({
+        auto gesture = folia::platform::editor::EditorKeyGesture{
             .key = static_cast<folia::platform::editor::EditorKey>(
                 static_cast<std::uint32_t>(key)),
             .control = ctrl,
             .shift = shift,
             .alt = alt,
-        });
-        return DispatchInputAction(action);
+        };
+        if (auto shortcut = folia::platform::editor::resolve_editor_shortcut(
+            shortcuts_, gesture, session_->ShortcutScope()))
+            return DispatchShortcut(shortcuts_[*shortcut]);
+        return DispatchInputAction(
+            folia::platform::editor::TranslateEditorKeyGesture(gesture));
     }
 
     bool EditorKeyboardController::InsertNewline()
@@ -129,29 +149,36 @@ namespace winrt::Folia
             case EditorInputActionKind::None:
                 return false;
             case EditorInputActionKind::ExecuteCommand:
+                CancelSnippetSession();
                 if (action.command.kind == folia::CommandKind::MoveLeft
                     || action.command.kind == folia::CommandKind::MoveRight)
                     ResetCaretGoal();
                 executeCommand_(action.command);
                 return true;
             case EditorInputActionKind::ExecuteCommandIfApplied:
+                CancelSnippetSession();
                 return executeCommand_(action.command);
             case EditorInputActionKind::Copy:
                 if (copy_) copy_();
                 return true;
             case EditorInputActionKind::Cut:
+                CancelSnippetSession();
                 if (cut_) cut_();
                 return true;
             case EditorInputActionKind::Paste:
+                CancelSnippetSession();
                 if (paste_) paste_();
                 return true;
             case EditorInputActionKind::VisualLineUp:
+                CancelSnippetSession();
                 return MoveCaretVerticalStep(false, action.command.extend_selection);
             case EditorInputActionKind::VisualLineDown:
+                CancelSnippetSession();
                 return MoveCaretVerticalStep(true, action.command.extend_selection);
             case EditorInputActionKind::VisualLineStart:
             case EditorInputActionKind::VisualLineEnd:
             {
+                CancelSnippetSession();
                 ResetCaretGoal();
                 auto selection = session_->Selection();
                 auto position = action.kind == EditorInputActionKind::VisualLineStart
@@ -175,6 +202,7 @@ namespace winrt::Folia
             }
             case EditorInputActionKind::TabBackward:
             {
+                if (MoveSnippetTabStop(true)) return true;
                 auto command = folia::Command{.kind = folia::CommandKind::OutdentListItem};
                 if (executeCommand_(command)) return true;
                 command.kind = folia::CommandKind::MoveTableCellPrevious;
@@ -183,6 +211,7 @@ namespace winrt::Folia
             }
             case EditorInputActionKind::TabForward:
             {
+                if (MoveSnippetTabStop(false)) return true;
                 auto command = folia::Command{.kind = folia::CommandKind::IndentListItem};
                 if (executeCommand_(command)) return true;
                 command.kind = folia::CommandKind::MoveTableCellNext;
@@ -194,9 +223,105 @@ namespace winrt::Folia
         return false;
     }
 
+    bool EditorKeyboardController::DispatchShortcut(
+        folia::platform::editor::EditorShortcutBinding const& shortcut)
+    {
+        using folia::platform::editor::EditorShortcutActionKind;
+        if (shortcut.action_kind == EditorShortcutActionKind::InsertSnippet)
+            return InsertSnippet(shortcut.snippet);
+        auto action = folia::platform::editor::editor_shortcut_input_action(shortcut.action_id);
+        if (action.Handled()) return DispatchInputAction(action);
+        CancelSnippetSession();
+        if (!applicationAction_) return false;
+        applicationAction_(shortcut.action_id);
+        return true;
+    }
+
+    bool EditorKeyboardController::InsertSnippet(std::u32string_view source)
+    {
+        if (!session_ || !executeCommand_) return false;
+        auto parsed = folia::parse_snippet_template(source);
+        auto before = session_->Selection();
+        auto container = before.active.container_id;
+        auto base = before.active.source_offset;
+        if (before.anchor.container_id == container)
+            base = (std::min)(base, before.anchor.source_offset);
+        CancelSnippetSession();
+        if (!executeCommand_(folia::Command::InsertText(parsed.text))) return false;
+        if (parsed.tab_stops.empty()) return true;
+        auto after = session_->Selection();
+        if (after.active.container_id != container) return true;
+
+        SnippetSession snippet;
+        snippet.container = container;
+        snippet.offsets.reserve(parsed.tab_stops.size());
+        for (auto const& stop : parsed.tab_stops)
+            snippet.offsets.push_back(base + stop.range.start);
+        snippetSession_ = std::move(snippet);
+        auto position = folia::TextPosition{
+            container, snippetSession_->offsets.front(), folia::TextAffinity::Downstream};
+        session_->SetSelection(position, position);
+        if (textInput_) textInput_->NotifySelectionChanged();
+        if (render_) render_();
+        return true;
+    }
+
+    bool EditorKeyboardController::MoveSnippetTabStop(bool backward)
+    {
+        if (!snippetSession_ || !session_) return false;
+        auto selection = session_->Selection();
+        auto& snippet = *snippetSession_;
+        if (selection.active.container_id != snippet.container
+            || selection.anchor.container_id != snippet.container)
+        {
+            CancelSnippetSession();
+            return false;
+        }
+
+        auto currentOffset = snippet.offsets[snippet.current];
+        auto caret = selection.active.source_offset;
+        auto delta = static_cast<std::ptrdiff_t>(caret)
+            - static_cast<std::ptrdiff_t>(currentOffset);
+        if (delta != 0)
+        {
+            for (std::size_t index = snippet.current + 1; index < snippet.offsets.size(); ++index)
+            {
+                auto shifted = static_cast<std::ptrdiff_t>(snippet.offsets[index]) + delta;
+                snippet.offsets[index] = static_cast<std::size_t>((std::max)(shifted, std::ptrdiff_t{0}));
+            }
+            snippet.offsets[snippet.current] = caret;
+        }
+
+        if (backward)
+        {
+            if (snippet.current == 0) return true;
+            --snippet.current;
+        }
+        else
+        {
+            if (snippet.current + 1 >= snippet.offsets.size())
+            {
+                CancelSnippetSession();
+                return true;
+            }
+            ++snippet.current;
+        }
+        auto position = folia::TextPosition{
+            snippet.container, snippet.offsets[snippet.current], folia::TextAffinity::Downstream};
+        session_->SetSelection(position, position);
+        if (textInput_) textInput_->NotifySelectionChanged();
+        if (render_) render_();
+        return true;
+    }
+
     void EditorKeyboardController::ResetCaretGoal()
     {
         caretGoalX_ = -1.0f;
+    }
+
+    void EditorKeyboardController::CancelSnippetSession()
+    {
+        snippetSession_.reset();
     }
 
     bool EditorKeyboardController::MoveCaretVerticalStep(bool down, bool extend)

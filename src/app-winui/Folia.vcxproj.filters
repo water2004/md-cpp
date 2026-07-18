@@ -99,6 +99,9 @@
     <ClCompile Include="..\platform\windows\editor\interaction\editor_input_command.ixx">
       <Filter>Platform Modules\Windows Editor</Filter>
     </ClCompile>
+    <ClCompile Include="..\platform\windows\editor\interaction\editor_shortcuts.ixx">
+      <Filter>Platform Modules\Windows Editor</Filter>
+    </ClCompile>
     <ClCompile Include="..\platform\windows\editor\interaction\editor_selection_drag_model.ixx">
       <Filter>Platform Modules\Windows Editor</Filter>
     </ClCompile>
@@ -195,10 +198,16 @@
     <ClCompile Include="..\core\editing\document_index_update.ixx">
       <Filter>Core Modules\Editing</Filter>
     </ClCompile>
+    <ClCompile Include="..\core\editing\snippet_template.ixx">
+      <Filter>Core Modules\Editing</Filter>
+    </ClCompile>
     <ClCompile Include="..\core\query\document_symbols.ixx">
       <Filter>Core Modules\Query</Filter>
     </ClCompile>
     <ClCompile Include="..\core\query\document_text.ixx">
+      <Filter>Core Modules\Query</Filter>
+    </ClCompile>
+    <ClCompile Include="..\core\query\document_content_context.ixx">
       <Filter>Core Modules\Query</Filter>
     </ClCompile>
     <ClCompile Include="..\core\editing\editor.ixx">

@@ -33,7 +33,9 @@ namespace winrt::Folia::implementation
         }
         auto mathChanged = appSettings.mathRenderingEnabled != settings.mathRenderingEnabled;
         auto themeChanged = appSettings.themeId != settings.themeId;
+        auto shortcutsChanged = appSettings.shortcutBindings != settings.shortcutBindings;
         appSettings = settings;
+        if (shortcutsChanged) keyboardController.SetShortcuts(appSettings.shortcutBindings);
         if (mathChanged) editorRenderer.SetMathRenderingEnabled(appSettings.mathRenderingEnabled);
         if (themeChanged) UpdateTheme();
         else if (mathChanged) RenderEditorSurface();

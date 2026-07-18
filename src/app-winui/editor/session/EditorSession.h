@@ -8,6 +8,7 @@ import folia.core.render_model;
 import folia.core.search;
 import folia.core.source_editor;
 import folia.core.theme;
+import folia.platform.editor_shortcuts;
 
 namespace winrt::Folia
 {
@@ -90,6 +91,7 @@ namespace winrt::Folia
         std::optional<std::u32string> EditableSource(folia::NodeId id) const;
         std::optional<EditorDocumentInteraction> InteractionAt(folia::TextPosition position) const;
         folia::TextSelection Selection() const;
+        folia::platform::editor::EditorShortcutScope ShortcutScope() const;
         folia::RenderModel const& RenderModel() const;
         folia::RenderModel BuildPrintRenderModel() const;
         std::optional<folia::TextPosition> FootnoteDefinitionTarget(std::string_view label) const;
