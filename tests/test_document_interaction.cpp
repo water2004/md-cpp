@@ -58,6 +58,34 @@ suite document_interaction_tests = [] {
     expect(interaction->tooltip == std::optional<std::string>{"image alt"});
 };
 
+"html anchor interaction is resolved from its inline cst"_test = [] {
+    Editor editor("prefix <a href=\"https://example.com/html\" title=\"HTML title\">label</a> suffix");
+    const auto* paragraph = first_block(editor, BlockKind::Paragraph);
+    expect(fatal(paragraph != nullptr));
+    auto const labelOffset = paragraph->inline_content.source.find(U"label");
+    expect(fatal(labelOffset != std::u32string::npos));
+    auto interaction = document_interaction_at(
+        editor.document(),
+        {paragraph->id, labelOffset + 2, TextAffinity::Downstream});
+    expect(fatal(interaction.has_value()));
+    expect(interaction->link == std::optional<std::string>{"https://example.com/html"});
+    expect(interaction->tooltip == std::optional<std::string>{"HTML title"});
+};
+
+"html image keeps its anchor link and image tooltip"_test = [] {
+    Editor editor("prefix <a href=\"https://example.com/badge\"><img src=\"badge.svg\" alt=\"badge alt\"></a> suffix");
+    const auto* paragraph = first_block(editor, BlockKind::Paragraph);
+    expect(fatal(paragraph != nullptr));
+    auto const imageOffset = paragraph->inline_content.source.find(U"<img");
+    expect(fatal(imageOffset != std::u32string::npos));
+    auto interaction = document_interaction_at(
+        editor.document(),
+        {paragraph->id, imageOffset + 2, TextAffinity::Downstream});
+    expect(fatal(interaction.has_value()));
+    expect(interaction->link == std::optional<std::string>{"https://example.com/badge"});
+    expect(interaction->tooltip == std::optional<std::string>{"badge alt"});
+};
+
 "block image interaction is local"_test = [] {
     Editor editor("[![image alt](asset.png \"Image title\")](https://example.com)\n");
     const auto* image = first_block(editor, BlockKind::ImageBlock);

@@ -58,6 +58,16 @@ inline std::optional<DocumentInteraction> document_interaction_at(
                     if (node.semantics().title && !node.semantics().title->empty()) interaction.tooltip = node.semantics().title;
                     else if (!node.semantics().alt.empty()) interaction.tooltip = node.semantics().alt;
                     break;
+                case InlineCstKind::HtmlElement:
+                    if (node.semantics().html_tag == "a") {
+                        if (!node.semantics().href.empty()) interaction.link = node.semantics().href;
+                        if (node.semantics().title && !node.semantics().title->empty()) interaction.tooltip = node.semantics().title;
+                        else if (!node.semantics().href.empty()) interaction.tooltip = node.semantics().href;
+                    } else if (node.semantics().html_tag == "img") {
+                        if (node.semantics().title && !node.semantics().title->empty()) interaction.tooltip = node.semantics().title;
+                        else if (!node.semantics().alt.empty()) interaction.tooltip = node.semantics().alt;
+                    }
+                    break;
                 default:
                     break;
             }
