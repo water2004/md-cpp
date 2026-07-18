@@ -111,6 +111,46 @@ suite editor_paste_tests = [] {
     expect(fatal(bool(quote.selection().active.source_offset == 1u)));
 };
 
+"multiline_paste_into_atx_heading_reparses_each_split_inline_source"_test = [] {
+    Editor editor("# head-tail");
+    const auto heading_id = first_text(editor).id;
+    editor.set_selection(TextSelection::caret({
+        heading_id,
+        4,
+        TextAffinity::Downstream}));
+
+    auto transaction = editor.execute_document_paste_text(
+        editor.selection(),
+        U"**bold**\n$unfinished\U0001F642");
+    expect(fatal(bool(transaction.has_value())));
+    if (!transaction) return;
+
+    std::size_t editable_count = 0;
+    walk_blocks(editor.document().root, [&](const BlockNode& block) {
+        const auto* document = editable_inline_document(block);
+        if (!document) return;
+        ++editable_count;
+        expect(fatal(bool(tokens_partition_source(document->tree, document->source.size()))));
+        expect(fatal(bool(roots_partition_source(document->tree, document->source.size()))));
+        expect(fatal(bool(flatten_tokens(document->tree, document->source) == document->source)));
+        expect(fatal(bool(serialize_lossless(document->tree, document->source) == document->source)));
+    });
+    expect(fatal(bool(editable_count == 2u)));
+    expect(fatal(bool(editor.markdown_utf8()
+        == "# head**bold**\n\n$unfinished\xF0\x9F\x99\x82-tail")));
+    const auto after_selection = editor.selection();
+
+    expect(fatal(bool(editor.undo())));
+    expect(fatal(bool(editor.markdown_utf8() == "# head-tail")));
+    expect(fatal(bool(editor.redo())));
+    expect(fatal(bool(editor.selection() == after_selection)));
+    walk_blocks(editor.document().root, [&](const BlockNode& block) {
+        const auto* document = editable_inline_document(block);
+        if (!document) return;
+        expect(fatal(bool(flatten_tokens(document->tree, document->source) == document->source)));
+    });
+};
+
 "paste_merges_compatible_lists_at_the_semantic_item_position"_test = [] {
     Editor bullet("- a");
     auto bullet_owner = first_text(bullet);

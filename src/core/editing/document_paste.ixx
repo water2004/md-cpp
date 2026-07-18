@@ -9,6 +9,7 @@ import folia.core.document_source_edit;
 import folia.core.document_text;
 import folia.core.inline_cst;
 import folia.core.inline_document;
+import folia.core.inline_parser;
 import folia.core.parser;
 import folia.core.text_edit;
 import folia.core.utf;
@@ -211,16 +212,27 @@ inline std::optional<std::u32string> whole_pasted_link_destination(const BlockVe
 
 inline void split_soft_lines_for_atx_heading(
     BlockVec& blocks,
-    const BlockNode& anchor) {
+    const BlockNode& anchor,
+    const MarkdownDialect& dialect) {
     if (!atx_heading(anchor) || blocks.size() != 1
         || blocks.front().kind != BlockKind::Paragraph) return;
-    auto& source = blocks.front().inline_content.source;
+    auto& first = blocks.front().inline_content;
+    auto& source = first.source;
     const auto newline = source.find(U'\n');
     if (newline == std::u32string::npos) return;
     auto trailing = blocks.front();
     trailing.inline_content.source = source.substr(newline + 1);
     trailing.separator_before.reset();
     source.erase(newline);
+
+    // These are temporary clipboard blocks, so their parser-local ids are
+    // replaced before insertion.  The CST must still be rebuilt immediately:
+    // copying the paragraph and changing only `source` leaves both halves with
+    // ranges and tokens from the unsplit input.
+    InlineParseContext context;
+    context.dialect = dialect;
+    reparse_inline_document(first, context);
+    reparse_inline_document(trailing.inline_content, context);
     blocks.push_back(std::move(trailing));
 }
 
@@ -432,7 +444,7 @@ inline std::optional<TextPosition> paste_parsed_blocks(
     std::vector<DocumentOperation>& operations) {
     auto* anchor = find_block(document.root, position.container_id);
     if (!anchor) return std::nullopt;
-    split_soft_lines_for_atx_heading(blocks, *anchor);
+    split_soft_lines_for_atx_heading(blocks, *anchor, document.dialect);
 
     if (const auto* inline_document = editable_inline_document(*anchor);
         inline_document
