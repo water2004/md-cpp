@@ -330,6 +330,9 @@
     <ClCompile Include="storage\AssetPaths.cpp">
       <Filter>Storage</Filter>
     </ClCompile>
+    <ClCompile Include="storage\DocumentEncodingService.cpp">
+      <Filter>Storage</Filter>
+    </ClCompile>
     <ClCompile Include="editor\session\EditorSession.cpp">
       <Filter>Editor\Session</Filter>
     </ClCompile>
@@ -492,6 +495,9 @@
     <ClCompile Include="MainWindow.Events.cpp">
       <Filter>Application Shell</Filter>
     </ClCompile>
+    <ClCompile Include="MainWindow.Encoding.cpp">
+      <Filter>Application Shell</Filter>
+    </ClCompile>
     <ClCompile Include="MainWindow.Search.cpp">
       <Filter>Application Shell</Filter>
     </ClCompile>
@@ -525,6 +531,9 @@
       <Filter>Settings</Filter>
     </ClInclude>
     <ClInclude Include="storage\AssetPaths.h">
+      <Filter>Storage</Filter>
+    </ClInclude>
+    <ClInclude Include="storage\DocumentEncodingService.h">
       <Filter>Storage</Filter>
     </ClInclude>
     <ClInclude Include="editor\session\EditorSession.h">

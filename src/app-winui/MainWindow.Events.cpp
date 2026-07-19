@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "MainWindow.xaml.h"
+#include "localization/Localization.h"
 
 import folia.core.command;
 
@@ -108,6 +109,26 @@ namespace winrt::Folia::implementation
         SourceModeButton().Click([this](auto const&, auto const&)
         {
             ToggleSourceMode();
+        });
+
+        EncodingButton().Click([this](auto const&, auto const&)
+        {
+            auto menu = Microsoft::UI::Xaml::Controls::MenuFlyout();
+            auto reopen = Microsoft::UI::Xaml::Controls::MenuFlyoutItem();
+            reopen.Text(Localize(L"ReopenWithEncoding"));
+            reopen.Click([this](auto const&, auto const&)
+            {
+                ShowEncodingPicker(false);
+            });
+            menu.Items().Append(reopen);
+            auto save = Microsoft::UI::Xaml::Controls::MenuFlyoutItem();
+            save.Text(Localize(L"SaveWithEncoding"));
+            save.Click([this](auto const&, auto const&)
+            {
+                ShowEncodingPicker(true);
+            });
+            menu.Items().Append(save);
+            menu.ShowAt(EncodingButton());
         });
 
         SidebarToggleButton().Click([this](auto const&, auto const&)

@@ -43,6 +43,7 @@ namespace winrt::Folia::implementation
         void ToggleSourceMode();
         void UpdateSourceModeUi();
         void UpdateDocumentInfo();
+        winrt::fire_and_forget ShowEncodingPicker(bool saveWithEncoding);
         void ShowFindBar(bool replace);
         void HideFindBar();
         void RefreshSearch(bool activateMatch = false);

@@ -139,6 +139,7 @@ namespace winrt::Folia::implementation
         PasteMenuItem().Text(Localize(L"Paste"));
         SelectAllMenuItem().Text(Localize(L"SelectAll"));
         tooltip(CancelOperationButton(), L"CancelOperation");
+        tooltip(EncodingButton(), L"SelectFileEncoding");
         tooltip(SourceModeButton(), L"SourceMode");
         FindQueryBox().PlaceholderText(Localize(L"Find"));
         ReplaceTextBox().PlaceholderText(Localize(L"Replace"));
@@ -170,6 +171,11 @@ namespace winrt::Folia::implementation
             L"CharacterCount", { winrt::to_hstring(editorSession.CharacterCount()) }));
         RevisionText().Text(LocalizeFormat(
             L"Revision", { winrt::to_hstring(editorSession.Revision()) }));
+        auto encodingLabel = winrt::to_hstring(editorSession.Encoding().name);
+        if (editorSession.Encoding().byteOrderMark == DocumentByteOrderMark::Utf8)
+            encodingLabel = encodingLabel + L" BOM";
+        EncodingButton().Content(winrt::box_value(encodingLabel));
+        EncodingButton().IsEnabled(editorSession.HasFile());
         if (!settingsMode) Title(LocalizeFormat(L"WindowTitleDocument", { displayName }));
     }
 

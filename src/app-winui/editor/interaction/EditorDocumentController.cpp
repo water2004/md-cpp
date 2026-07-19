@@ -2,6 +2,7 @@
 #include "editor/interaction/EditorDocumentController.h"
 #include "editor/interaction/EditorDocumentControllerState.h"
 #include "localization/Localization.h"
+#include "storage/DocumentEncodingService.h"
 
 import folia.core.command;
 import folia.core.slug;
@@ -9,6 +10,23 @@ import folia.core.utf;
 
 namespace winrt::Folia
 {
+    namespace
+    {
+        winrt::Windows::Foundation::IAsyncAction WriteBytesAsync(
+            winrt::Windows::Storage::StorageFile const& file,
+            std::vector<std::uint8_t> bytes)
+        {
+            auto stream = co_await file.OpenAsync(winrt::Windows::Storage::FileAccessMode::ReadWrite);
+            stream.Size(0);
+            auto output = stream.GetOutputStreamAt(0);
+            winrt::Windows::Storage::Streams::DataWriter writer(output);
+            writer.WriteBytes(bytes);
+            co_await writer.StoreAsync();
+            co_await writer.FlushAsync();
+            writer.DetachStream();
+        }
+    }
+
     EditorDocumentController::EditorDocumentController() : state_(std::make_shared<State>())
     {
     }
@@ -73,6 +91,18 @@ namespace winrt::Folia
     {
         if (path.empty()) return;
         OpenDocumentPathAsync(state_, state_->generation.load(), path);
+    }
+
+    void EditorDocumentController::ReopenDocumentWithEncoding(std::string encoding)
+    {
+        if (encoding.empty()) return;
+        ReopenDocumentWithEncodingAsync(state_, state_->generation.load(), std::move(encoding));
+    }
+
+    void EditorDocumentController::SaveDocumentWithEncoding(DocumentEncoding encoding)
+    {
+        if (encoding.name.empty()) return;
+        SaveDocumentWithEncodingAsync(state_, state_->generation.load(), std::move(encoding));
     }
 
     void EditorDocumentController::SaveDocument()
@@ -209,16 +239,51 @@ namespace winrt::Folia
         }
     }
 
+    winrt::fire_and_forget EditorDocumentController::ReopenDocumentWithEncodingAsync(
+        std::shared_ptr<State> state,
+        std::uint64_t generation,
+        std::string encoding)
+    {
+        try
+        {
+            if (!Active(state, generation) || !state->session->HasFile()) co_return;
+            co_await LoadDocumentAsync(
+                state, generation, state->session->File(), std::move(encoding));
+        }
+        catch (winrt::hresult_error const& error)
+        {
+            if (Active(state, generation))
+            {
+                if (state->setProgress) state->setProgress(false, std::nullopt, false);
+                if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusOpenFailed", { error.message() }));
+            }
+        }
+        catch (std::exception const& error)
+        {
+            if (Active(state, generation))
+            {
+                if (state->setProgress) state->setProgress(false, std::nullopt, false);
+                if (state->setStatus) state->setStatus(LocalizeFormat(
+                    L"StatusOpenFailed", { winrt::to_hstring(error.what()) }));
+            }
+        }
+    }
+
     winrt::Windows::Foundation::IAsyncAction EditorDocumentController::LoadDocumentAsync(
         std::shared_ptr<State> state,
         std::uint64_t generation,
-        winrt::Windows::Storage::StorageFile file)
+        winrt::Windows::Storage::StorageFile file,
+        std::optional<std::string> requestedEncoding)
     {
         if (!Active(state, generation) || !file) co_return;
         if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusReadingFile", { file.Name() }));
         if (state->setProgress) state->setProgress(true, std::nullopt, false);
-        auto text = co_await winrt::Windows::Storage::FileIO::ReadTextAsync(file);
+        auto buffer = co_await winrt::Windows::Storage::FileIO::ReadBufferAsync(file);
         if (!Active(state, generation)) co_return;
+        winrt::Windows::Storage::Streams::DataReader reader =
+            winrt::Windows::Storage::Streams::DataReader::FromBuffer(buffer);
+        std::vector<std::uint8_t> bytes(buffer.Length());
+        reader.ReadBytes(bytes);
         if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusParsingFile", { file.Name() }));
         if (state->setProgress) state->setProgress(true, 0.0, false);
         auto dispatcher = winrt::Microsoft::UI::Dispatching::DispatcherQueue::GetForCurrentThread();
@@ -230,8 +295,17 @@ namespace winrt::Folia
         co_await winrt::resume_background();
         try
         {
+            auto decoded = DocumentEncodingService::Decode(
+                bytes,
+                requestedEncoding
+                    ? std::optional<std::string_view>{ *requestedEncoding }
+                    : std::nullopt);
             loaded.emplace();
-            loaded->Open(file, text, [
+            loaded->Open(
+                file,
+                winrt::to_hstring(decoded.utf8),
+                std::move(decoded.encoding),
+                std::move(decoded.candidates), [
                 state,
                 generation,
                 dispatcher,
@@ -277,6 +351,49 @@ namespace winrt::Folia
         if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusOpenedFile", { file.Name() }));
     }
 
+    winrt::fire_and_forget EditorDocumentController::SaveDocumentWithEncodingAsync(
+        std::shared_ptr<State> state,
+        std::uint64_t generation,
+        DocumentEncoding encoding)
+    {
+        try
+        {
+            if (!Active(state, generation) || !state->session->HasFile()) co_return;
+            encoding = DocumentEncodingService::NormalizeForSave(std::move(encoding));
+            auto file = state->session->File();
+            auto text = state->session->TextUtf8();
+            winrt::apartment_context uiContext;
+            std::exception_ptr writeFailure;
+            co_await winrt::resume_background();
+            try
+            {
+                auto bytes = DocumentEncodingService::Encode(text, encoding);
+                co_await WriteBytesAsync(file, std::move(bytes));
+            }
+            catch (...)
+            {
+                writeFailure = std::current_exception();
+            }
+            co_await uiContext;
+            if (writeFailure) std::rethrow_exception(writeFailure);
+            if (!Active(state, generation)) co_return;
+            state->session->SetEncoding(std::move(encoding));
+            if (state->documentChanged) state->documentChanged();
+            if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusSavedFile", { file.Name() }));
+        }
+        catch (winrt::hresult_error const& error)
+        {
+            if (Active(state, generation) && state->setStatus)
+                state->setStatus(LocalizeFormat(L"StatusSaveFailed", { error.message() }));
+        }
+        catch (std::exception const& error)
+        {
+            if (Active(state, generation) && state->setStatus)
+                state->setStatus(LocalizeFormat(
+                    L"StatusSaveFailed", { winrt::to_hstring(error.what()) }));
+        }
+    }
+
     winrt::fire_and_forget EditorDocumentController::SaveDocumentAsync(std::shared_ptr<State> state, std::uint64_t generation)
     {
         try
@@ -288,8 +405,22 @@ namespace winrt::Folia
                 co_return;
             }
             auto file = state->session->File();
-            auto text = state->session->Text();
-            co_await winrt::Windows::Storage::FileIO::WriteTextAsync(file, text);
+            auto text = state->session->TextUtf8();
+            auto encoding = state->session->Encoding();
+            winrt::apartment_context uiContext;
+            std::exception_ptr writeFailure;
+            co_await winrt::resume_background();
+            try
+            {
+                auto bytes = DocumentEncodingService::Encode(text, encoding);
+                co_await WriteBytesAsync(file, std::move(bytes));
+            }
+            catch (...)
+            {
+                writeFailure = std::current_exception();
+            }
+            co_await uiContext;
+            if (writeFailure) std::rethrow_exception(writeFailure);
             if (!Active(state, generation)) co_return;
             if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusSavedFile", { file.Name() }));
         }
@@ -297,6 +428,12 @@ namespace winrt::Folia
         {
             if (Active(state, generation) && state->setStatus)
                 state->setStatus(LocalizeFormat(L"StatusSaveFailed", { error.message() }));
+        }
+        catch (std::exception const& error)
+        {
+            if (Active(state, generation) && state->setStatus)
+                state->setStatus(LocalizeFormat(
+                    L"StatusSaveFailed", { winrt::to_hstring(error.what()) }));
         }
     }
 
@@ -319,7 +456,22 @@ namespace winrt::Folia
                 if (state->setStatus) state->setStatus(Localize(L"StatusSaveCancelled"));
                 co_return;
             }
-            co_await winrt::Windows::Storage::FileIO::WriteTextAsync(file, state->session->Text());
+            auto text = state->session->TextUtf8();
+            auto encoding = state->session->Encoding();
+            winrt::apartment_context uiContext;
+            std::exception_ptr writeFailure;
+            co_await winrt::resume_background();
+            try
+            {
+                auto bytes = DocumentEncodingService::Encode(text, encoding);
+                co_await WriteBytesAsync(file, std::move(bytes));
+            }
+            catch (...)
+            {
+                writeFailure = std::current_exception();
+            }
+            co_await uiContext;
+            if (writeFailure) std::rethrow_exception(writeFailure);
             if (!Active(state, generation)) co_return;
             state->session->SaveAs(file);
             if (state->documentChanged) state->documentChanged();
@@ -329,6 +481,12 @@ namespace winrt::Folia
         {
             if (Active(state, generation) && state->setStatus)
                 state->setStatus(LocalizeFormat(L"StatusSaveFailed", { error.message() }));
+        }
+        catch (std::exception const& error)
+        {
+            if (Active(state, generation) && state->setStatus)
+                state->setStatus(LocalizeFormat(
+                    L"StatusSaveFailed", { winrt::to_hstring(error.what()) }));
         }
     }
 

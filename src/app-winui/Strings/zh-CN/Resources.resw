@@ -278,4 +278,9 @@
   <data name="LatexDescriptionArrowGeneric" xml:space="preserve"><value>箭头符号</value></data>
   <data name="LatexDescriptionSymbolGeneric" xml:space="preserve"><value>数学符号</value></data>
   <data name="LatexDescriptionEnvironmentGeneric" xml:space="preserve"><value>数学环境</value></data>
+  <data name="SelectFileEncoding" xml:space="preserve"><value>选择文件编码</value></data>
+  <data name="ReopenWithEncoding" xml:space="preserve"><value>使用编码重新打开</value></data>
+  <data name="Reopen" xml:space="preserve"><value>重新打开</value></data>
+  <data name="SearchEncodings" xml:space="preserve"><value>搜索编码</value></data>
+  <data name="SaveWithEncoding" xml:space="preserve"><value>转换编码并保存</value></data>
 </root>

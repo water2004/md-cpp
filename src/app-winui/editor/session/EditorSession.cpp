@@ -27,10 +27,14 @@ namespace winrt::Folia
     void EditorSession::Open(
         winrt::Windows::Storage::StorageFile const& file,
         winrt::hstring const& text,
+        DocumentEncoding encoding,
+        std::vector<DocumentEncodingCandidate> encodingCandidates,
         LoadProgress progress)
     {
         file_ = file;
         text_ = text;
+        encoding_ = std::move(encoding);
+        encodingCandidates_ = std::move(encodingCandidates);
         ++revision_;
         RebuildCore(std::move(progress));
     }
@@ -203,10 +207,32 @@ namespace winrt::Folia
 
     winrt::hstring EditorSession::Text() const
     {
-        if (!core_) return text_;
-        return winrt::to_hstring(core_->sourceEditor
+        return winrt::to_hstring(TextUtf8());
+    }
+
+    std::string EditorSession::TextUtf8() const
+    {
+        if (!core_) return winrt::to_string(text_);
+        return core_->sourceEditor
             ? folia::cps_to_utf8(core_->sourceEditor->source())
-            : core_->editor.markdown_utf8());
+            : core_->editor.markdown_utf8();
+    }
+
+    DocumentEncoding const& EditorSession::Encoding() const
+    {
+        return encoding_;
+    }
+
+    std::span<DocumentEncodingCandidate const> EditorSession::EncodingCandidates() const
+    {
+        return encodingCandidates_;
+    }
+
+    void EditorSession::SetEncoding(DocumentEncoding encoding)
+    {
+        encoding_ = std::move(encoding);
+        encodingCandidates_.clear();
+        encodingCandidates_.push_back({ encoding_.name, 100 });
     }
 
     winrt::hstring EditorSession::DisplayName() const

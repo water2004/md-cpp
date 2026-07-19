@@ -387,6 +387,16 @@
                     VerticalAlignment="Center"
                     Foreground="{ThemeResource FoliaShellMutedForegroundBrush}"
                     Text="Revision 0"/>
+                <Button
+                    x:Name="EncodingButton"
+                    MinHeight="24"
+                    Padding="6,0"
+                    VerticalAlignment="Center"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Content="UTF-8"
+                    Foreground="{ThemeResource FoliaShellMutedForegroundBrush}"
+                    ToolTipService.ToolTip="Select file encoding"/>
                 <ToggleButton
                     x:Name="SourceModeButton"
                     MinWidth="36"

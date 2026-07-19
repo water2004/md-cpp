@@ -1,6 +1,7 @@
 #pragma once
 
 #include "editor/session/EditorRenderFrame.h"
+#include "storage/DocumentEncodingService.h"
 
 import folia.core.editor;
 import folia.core.command;
@@ -70,6 +71,8 @@ namespace winrt::Folia
         void Open(
             winrt::Windows::Storage::StorageFile const& file,
             winrt::hstring const& text,
+            DocumentEncoding encoding,
+            std::vector<DocumentEncodingCandidate> encodingCandidates,
             LoadProgress progress = {});
         void SaveAs(winrt::Windows::Storage::StorageFile const& file);
         void SetText(winrt::hstring const& text);
@@ -87,6 +90,10 @@ namespace winrt::Folia
         bool HasFile() const;
         winrt::Windows::Storage::StorageFile File() const;
         winrt::hstring Text() const;
+        std::string TextUtf8() const;
+        DocumentEncoding const& Encoding() const;
+        std::span<DocumentEncodingCandidate const> EncodingCandidates() const;
+        void SetEncoding(DocumentEncoding encoding);
         winrt::hstring DisplayName() const;
         winrt::hstring Path() const;
         uint64_t Revision() const;
@@ -138,6 +145,8 @@ namespace winrt::Folia
 
         winrt::Windows::Storage::StorageFile file_{ nullptr };
         winrt::hstring text_;
+        DocumentEncoding encoding_;
+        std::vector<DocumentEncodingCandidate> encodingCandidates_;
         uint64_t revision_ = 0;
         std::unique_ptr<detail::EditorSessionCore> core_;
     };
