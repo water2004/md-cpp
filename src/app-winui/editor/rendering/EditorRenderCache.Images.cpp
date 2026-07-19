@@ -4,6 +4,7 @@
 
 import folia.core.image_metadata;
 import folia.core.render_model;
+import folia.core.slug;
 import folia.core.types;
 
 #include "editor/rendering/EditorContentPreparation.h"
@@ -154,7 +155,11 @@ namespace
         if (source.starts_with("data:image/"))
             return L"data:" + std::to_wstring(source.size()) + L":"
                 + std::to_wstring(std::hash<std::string_view>{}(source));
-        auto sourceText = winrt::to_hstring(std::string(source));
+        const auto suffix = source.find_first_of("?#");
+        const auto encodedPath = source.substr(0, suffix);
+        const auto decodedPath = folia::percent_decode_url_component(encodedPath);
+        if (decodedPath.empty()) return std::nullopt;
+        auto sourceText = winrt::to_hstring(decodedPath);
         auto path = std::filesystem::path(sourceText.c_str());
         if (path.has_root_directory() && !path.has_root_name() && !baseDirectory.empty())
             path = std::filesystem::path(baseDirectory) / path.relative_path();

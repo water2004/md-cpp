@@ -4,6 +4,7 @@
 #include "localization/Localization.h"
 
 import folia.core.command;
+import folia.core.slug;
 import folia.core.utf;
 
 namespace winrt::Folia
@@ -90,7 +91,7 @@ namespace winrt::Folia
         if (href.empty() || !state_->session) return;
         if (href.front() == '#')
         {
-            if (auto item = state_->session->RenderModel().outline.find_item_by_slug(href.substr(1)))
+            if (auto item = state_->session->RenderModel().outline.find_item_by_url_fragment(href))
             {
                 state_->session->SetSelection(item->position, item->position);
                 if (state_->textInput) state_->textInput->NotifySelectionChanged();
@@ -345,7 +346,13 @@ namespace winrt::Folia
             auto colon = lower.find(':');
             auto boundary = lower.find_first_of("/?#");
             if (colon != std::string::npos && (boundary == std::string::npos || colon < boundary)) co_return;
-            auto path = std::filesystem::path(winrt::to_hstring(href).c_str());
+            const auto suffix = href.find_first_of("?#");
+            const auto encodedPath = suffix == std::string::npos
+                ? std::string_view{href}
+                : std::string_view{href}.substr(0, suffix);
+            const auto decodedPath = folia::percent_decode_url_component(encodedPath);
+            if (decodedPath.empty()) co_return;
+            auto path = std::filesystem::path(winrt::to_hstring(decodedPath).c_str());
             if (path.is_relative()) path = std::filesystem::path(state->session->BaseDirectory()) / path;
             auto file = co_await winrt::Windows::Storage::StorageFile::GetFileFromPathAsync(path.lexically_normal().wstring());
             if (!Active(state, generation)) co_return;
