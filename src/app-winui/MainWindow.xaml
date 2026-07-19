@@ -11,7 +11,10 @@
         <MicaBackdrop Kind="Base"/>
     </Window.SystemBackdrop>
 
-    <Grid x:Name="Root" RowDefinitions="40,Auto,Auto,*,Auto">
+    <Grid
+        x:Name="Root"
+        KeyboardAcceleratorPlacementMode="Hidden"
+        RowDefinitions="40,Auto,Auto,*,Auto">
         <Grid.Resources>
             <SolidColorBrush x:Key="FoliaShellBackgroundBrush" Color="#121419"/>
             <SolidColorBrush x:Key="FoliaShellLayerBrush" Color="#191C23"/>
