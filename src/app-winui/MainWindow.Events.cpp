@@ -125,6 +125,11 @@ namespace winrt::Folia::implementation
             ResizeEditorSurface(args.NewSize().Width, args.NewSize().Height);
         });
 
+        WorkspaceHost().SizeChanged([this](auto const&, Microsoft::UI::Xaml::SizeChangedEventArgs const& args)
+        {
+            OutlinePaneContent().Height((std::max)(0.0f, args.NewSize().Height));
+        });
+
         EditorSurface().CompositionScaleChanged([this](auto const&, auto const&)
         {
             ResizeEditorSurface(EditorSurface().ActualWidth(), EditorSurface().ActualHeight());

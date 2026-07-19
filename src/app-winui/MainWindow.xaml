@@ -202,7 +202,7 @@
                 PaneDisplayMode="Left">
                 <NavigationView.PaneCustomContent>
                     <Grid
-                        Height="{Binding ActualHeight, ElementName=WorkspaceHost}"
+                        x:Name="OutlinePaneContent"
                         Padding="8,8,8,8"
                         RowDefinitions="Auto,*">
                         <TextBlock
