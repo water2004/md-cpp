@@ -4,6 +4,7 @@
 
 - Use C++23 modules and `import std;`.
 - Core tests: `cmd /c build_test.bat 2>&1`.
+- Deterministic Windows editor tests: `cmd /c build_platform_test.bat 2>&1`.
 - Core-only builds may target `folia_core` with CMake.
 - Restore WinUI/NuGet and native SVG dependencies with `powershell -ExecutionPolicy Bypass -File .\setup.ps1` before building the WinUI app.
 - Keep generated output in ignored build directories; do not commit build products or restored packages.
@@ -13,7 +14,7 @@
 - Core modules under `src/core` are platform-independent and must not include Windows, WinRT, Direct2D, DirectWrite, DXGI, or TSF headers.
 - Windows and rendering APIs belong in `src/platform` or the WinUI application layer.
 - The application shell remains WinUI 3 with C++/WinRT; do not introduce a Win32 WndProc shell.
-- Tests use the repository's forked Boost.UT C++23 module through `tests/folia_test.hpp`, which performs `import boost.ut;`. Test translation units deliberately do not `import std;`; they include the shared test header and then import the required `folia.core.*` modules. Do not replace this with the header-only `<boost/ut.hpp>` path. A single `tests/main.cpp` provides `main()` and passes `argc`/`argv` to `boost::ut::cfg<>.run()`; use a positional pattern such as `FoliaTests.exe "*name*"` to filter tests (`-t` lists tags).
+- Tests use the repository's forked Boost.UT C++23 module through `tests/support/folia_test.hpp`, which performs `import boost.ut;`. Test translation units deliberately do not `import std;`; they include the shared test header and then import the required `folia.core.*` or `folia.platform.*` modules. Do not replace this with the header-only `<boost/ut.hpp>` path. `tests/main.cpp` provides the core runner and `tests/platform/main.cpp` provides the Windows editor runner; both pass `argc`/`argv` to `boost::ut::cfg<>.run()`. Use a positional pattern such as `FoliaTests.exe "*name*"` to filter tests (`-t` lists tags).
 - Prefer semantic fixes and focused tests. Do not add source-text special cases to make one example pass.
 
 ## Document model — block tree plus block-local lossless source

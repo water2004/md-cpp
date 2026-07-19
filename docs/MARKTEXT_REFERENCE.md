@@ -53,9 +53,9 @@ EditorDocument -> Serializer -> Markdown
 
 块树 + 块内 source-backed lossless editable inline CST 已是既定架构。不得保留或重新引入旧模型、双轨 Selection、全文 SourceMap 光标恢复、语义 inline 节点直接修改或其他兼容路径；发现此类路径应视为架构回归并从责任边界移除。
 
-## 优先级
+## 持续验证重点
 
-优先完成：
+以下交互已落地，后续改动仍应优先做结构化回归验证：
 
 1. Enter；
 2. Backspace 和 Delete；
@@ -69,7 +69,7 @@ EditorDocument -> Serializer -> Markdown
 
 每项交互同时验证：
 
-* AST 结构；
+* 统一块树结构；
 * Selection 位置；
 * 文档不变量；
 * 序列化 Markdown；
@@ -80,7 +80,7 @@ EditorDocument -> Serializer -> Markdown
 
 ## 工作方式
 
-每次修改前：
+涉及相应交互时：
 
 1. 找到 MarkText/Muya 中对应交互；
 2. 总结其结构语义和不变量；

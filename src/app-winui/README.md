@@ -2,7 +2,7 @@
 
 WinUI 3/C++/WinRT application shell for Folia.
 
-This layer owns the native window, command bar, side panels, status bar, file dialogs, and the `SwapChainPanel` host for the self-drawn editor surface. It must not implement Markdown mutations directly; UI commands are translated to core `Command` values and applied through `editor-core` transactions.
+This layer owns the native window, command bar, collapsible outline/settings navigation, status/progress surfaces, file dialogs, and the `SwapChainPanel` host for the self-drawn editor surface. It must not implement Markdown mutations directly; UI actions are translated to core `Command` values and applied through core document transactions.
 
 Source ownership:
 
@@ -27,20 +27,26 @@ Source ownership:
 - `media/` owns GIF decoding and MathJax, Mermaid, and SVG integration. MathJax
   runtime/queue ownership is separate from parsing the renderer's SVG fragment
   protocol; changing fragment measurement must not alter QuickJS lifecycle or
-  scheduling.
+  scheduling. Images and animated GIFs are loaded asynchronously around the
+  viewport; intrinsic metadata is retained so unloaded media does not move the
+  surrounding layout.
 - `settings/` owns WinUI settings pages and persisted application settings.
   Feature-specific schemas such as shortcut/snippet bindings serialize through
   dedicated components; the root settings store owns only schema versioning,
   validation dispatch, and atomic file replacement.
 - `export/` owns Windows PDF/print integration and the value types used to
   report export progress across UI controllers.
+- `localization/`, `theme/`, and `storage/` own compiled WinUI resources,
+  complete theme materialization, and the compile-time-configurable Assets
+  root. They do not own document state.
 
 The document pipeline has three app-owned stages:
 
 1. `EditorDocumentPreparationPass` reconciles cached blocks and executes the
    viewport/prefetch/retention plans supplied by `folia_platform`.
 2. `EditorDocumentBlockPreparer` turns one core `RenderBlock` into DWrite/D2D,
-   math, SVG, and image resources without rewalking the document.
+   code-highlight, math/SVG, Mermaid, and image resources without rewalking the
+   document. Work is budgeted and prioritized around the viewport.
 3. `EditorDocumentRenderPass` paints already-prepared visible blocks and
    populates the interaction map.
 
@@ -50,6 +56,20 @@ the split must not add per-block heap objects, callbacks, or a second document
 scan. Large files remain appropriate for cohesive state machines such as GIF
 decoding and PDF page recording. New UI commands and Markdown behavior do not
 belong in rendering files.
+
+Document opening is asynchronous at the shell boundary. Picker selection,
+command-line/Explorer activation, and MSI file associations all converge on
+the same document controller; parsing still produces one authoritative core
+document. PDF export records pages off the UI thread, reports preparation and
+per-page progress, and observes cancellation through the document-controller
+lifetime.
+
+Settings replaces the document workspace rather than opening a separate
+window. Its navigation currently contains General, Shortcuts, LaTeX Commands,
+Themes, Licenses, and About. Only theme selection is staged behind an `Apply`
+button; other switches and bindings persist immediately. See
+[docs/SETTINGS.md](../../docs/SETTINGS.md) and
+[docs/THEMES.md](../../docs/THEMES.md).
 
 Do not create another top-level presentation library merely to move code. A
 new shared presentation target is justified only when a second UI backend needs

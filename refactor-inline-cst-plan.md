@@ -1,6 +1,6 @@
 # Inline CST 架构落地记录（已完成）
 
-状态：已于 2026-07-13 完成。本文保留为历史实施与验证记录，不代表仍在进行迁移。
+状态：已于 2026-07-13 完成。本文只保留为历史实施与验证记录，不是当前路线图。现行约束以 `AGENTS.md` 和 `src/core/README.md` 为准。
 
 实施基线：`ecadd1b docs: rewrite AGENTS.md`（基于 `bf94bf6`）
 
@@ -31,7 +31,7 @@
 10. 重写测试套件到新模型 + property tests
 11. WinUI 应用层迁移到新模型，并通过 Debug x64 MSBuild 验证
 
-全部阶段已按依赖完成。`document_edit.ixx` 现为薄 facade，具体职责拆分到 `document_edit_support.ixx`、`document_source_edit.ixx` 与 `document_structure_edit.ixx`。
+全部阶段已按依赖完成。`src/core/editing/document_edit.ixx` 现为薄 facade；源码编辑、结构编辑、输入规则、格式化、复制粘贴、脚注、搜索替换、history 与事务分别由同目录的窄模块承担。
 
 ## 环境约束
 - 核心构建+测试: `cmd /c build_test.bat 2>&1` (vcvars64 + ninja + FoliaTests)
@@ -43,7 +43,7 @@
 - 2026-07-12 基线提交 ecadd1b (AGENTS.md 新纲领)
 - 2026-07-12 测试框架迁移到仓库 fork 的 Boost.UT C++23 module (`third_party/ut`):
   - CMake: `cmake_minimum_required(VERSION 4.0)`、`file(GLOB_RECURSE)` 递归收集 `tests/*.cpp`，`FoliaTests` 链接 `Boost::ut_module`
-  - `tests/folia_test.hpp` 使用 `import boost.ut;`；测试 TU 不再 `import std;`
+  - `tests/support/folia_test.hpp` 使用 `import boost.ut;`；测试 TU 不再 `import std;`
   - `tests/main.cpp` 将 `argc`/`argv` 传给 `boost::ut::cfg<>.run()`；测试名过滤使用位置参数（例如 `FoliaTests.exe "*name*"`），`-t` 用于列出标签
   - fork 包含 MSVC module linkage 与命令行初始化修复；不得退回 `<boost/ut.hpp>` header-only 路径
   - 删除旧的 `tests/test_framework.h`

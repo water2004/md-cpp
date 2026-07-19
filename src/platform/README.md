@@ -6,10 +6,12 @@
 - `text/`: DirectWrite factory and text measurement.
 - `windows/editor/geometry/`: persistent block placement and viewport lookup.
 - `windows/editor/layout/`: source/display mapping, preparation invalidation,
-  and deterministic viewport/prefetch/retention work planning.
+  priority work queues, and deterministic viewport/prefetch/retention work
+  planning.
 - `windows/editor/interaction/`: DirectWrite hit testing plus deterministic
-  table-action/drop hit policy, scrolling, key-gesture, and selection-drag
-  models.
+  input-command translation, table-action/drop hit policy, scrolling,
+  key-gesture/shortcut settings, snippet/LaTeX completion sessions, and
+  selection-drag models.
 
 This layer may use Windows, WinRT, Direct2D, and DirectWrite APIs. It must not own Markdown parsing, document mutation, selection, history, or application-shell behavior. Core modules must not depend on this directory.
 
@@ -28,3 +30,8 @@ For example, the table interaction module decides which semantic table action
 a coordinate represents, while the WinUI application paints the D2D controls.
 Likewise, the preparation planner decides which block indices are invalidated
 or retained, while the application creates and releases DWrite/image resources.
+
+Run these deterministic Windows tests with `cmd /c build_platform_test.bat`.
+They are not WinUI automation: XAML controls, window activation, swap-chain
+submission, and asynchronous media lifetimes are verified by application
+build/manual integration checks instead.
