@@ -91,7 +91,9 @@ machine does not need a separately installed Windows App SDK runtime. The MSI
 is written to `build/installer/bin/Folia-<version>-x64.msi`. It installs the
 application below `%LOCALAPPDATA%\Programs\Folia` and the configurable Assets
 tree below `%LOCALAPPDATA%\Folia\Assets`. Uninstall removes MSI-owned built-in
-resources but preserves `settings.json` and `themes/custom/`.
+resources but preserves `settings.json` and `themes/custom/`. The installer
+registers Folia as an available handler for `.md` and `.markdown`; Windows still
+leaves the default-app choice to the user.
 
 For installer builds, `build_app.ps1` receives the compile-time Assets token
 `{LocalAppData}\Folia\Assets`; it is resolved for the current user at runtime.

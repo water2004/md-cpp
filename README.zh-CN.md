@@ -86,7 +86,8 @@ powershell -ExecutionPolicy Bypass -File .\build_msi.ps1 -Version 0.1.0
 `build/installer/bin/Folia-<version>-x64.msi`；程序安装在
 `%LOCALAPPDATA%\Programs\Folia`，可配置的 Assets 树安装在
 `%LOCALAPPDATA%\Folia\Assets`。卸载会移除 MSI 管理的内置资源，但保留
-`settings.json` 和 `themes/custom/`。
+`settings.json` 和 `themes/custom/`。安装器会把折笺注册为 `.md` 和
+`.markdown` 的可选打开程序；是否设为默认应用仍由用户在 Windows 中决定。
 
 安装包构建会通过编译参数把 Assets 根目录设为
 `{LocalAppData}\Folia\Assets`，程序启动时再针对当前用户解析该占位符；普通
