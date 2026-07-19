@@ -48,6 +48,9 @@ the user did not change.
 - **Focused reading** — configurable themes, English and Chinese interfaces,
   a borderless WinUI shell, file-association support, and cancellable native
   Windows PDF export with page progress.
+- **Encoding aware** — ICU-based charset detection ranks likely encodings when
+  reopening a file, while explicit conversion saves in any installed ICU
+  encoding and preserves the selected encoding on subsequent saves.
 - **Clear boundaries** — the C++23 modules core remains platform independent;
   Windows, DirectX, and WinUI code stays in the platform and application layers.
 
@@ -80,6 +83,9 @@ CMake, Ninja, Rust/Cargo, and PowerShell.
 powershell -ExecutionPolicy Bypass -File .\setup.ps1
 powershell -ExecutionPolicy Bypass -File .\build_app.ps1 -Configuration Debug
 ```
+
+`setup.ps1` restores NuGet/native dependencies and the pinned ICU runtime used
+for charset detection and lossless transcoding.
 
 For a clean Release build:
 
@@ -116,6 +122,7 @@ tests with:
 ```powershell
 cmd /c build_test.bat
 cmd /c build_platform_test.bat
+cmd /c build_encoding_test.bat
 ```
 
 Both runners forward positional Boost.UT name filters, for example

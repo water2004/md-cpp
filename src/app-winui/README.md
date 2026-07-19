@@ -37,8 +37,10 @@ Source ownership:
 - `export/` owns Windows PDF/print integration and the value types used to
   report export progress across UI controllers.
 - `localization/`, `theme/`, and `storage/` own compiled WinUI resources,
-  complete theme materialization, and the compile-time-configurable Assets
-  root. They do not own document state.
+  complete theme materialization, the compile-time-configurable Assets root,
+  and ICU-backed document byte decoding/encoding. Storage reports ranked
+  detection candidates but does not own document state; the session owns the
+  encoding selected for the currently open document.
 
 The document pipeline has three app-owned stages:
 
@@ -57,7 +59,10 @@ scan. Large files remain appropriate for cohesive state machines such as GIF
 decoding and PDF page recording. New UI commands and Markdown behavior do not
 belong in rendering files.
 
-Document opening is asynchronous at the shell boundary. Picker selection,
+Document opening and charset conversion are asynchronous at the shell boundary.
+The status-bar encoding command separates detection-driven reopening (ranked
+candidates with confidence) from explicit conversion saves (the alphabetical
+ICU converter catalog without confidence). Picker selection,
 command-line/Explorer activation, and MSI file associations all converge on
 the same document controller; parsing still produces one authoritative core
 document. PDF export records pages off the UI thread, reports preparation and

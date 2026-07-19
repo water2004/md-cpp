@@ -1,11 +1,14 @@
 # Test layout
 
-Folia has two Boost.UT C++23-module test executables:
+Folia has three Boost.UT C++23-module test executables:
 
 - `FoliaTests` covers the platform-independent core under `foundation/`,
   `parsing/`, `editing/`, `query/`, and `rendering/`.
 - `FoliaWindowsEditorTests` covers deterministic Windows editor adapters under
   `platform/` without creating a WinUI window.
+- `FoliaEncodingTests` covers the app storage boundary against the pinned ICU
+  runtime: BOM handling, detection candidate ordering, strict transcoding,
+  converter enumeration, and byte-faithful round trips.
 
 Run them from a Visual Studio developer environment through the repository
 wrappers:
@@ -13,10 +16,11 @@ wrappers:
 ```powershell
 cmd /c build_test.bat
 cmd /c build_platform_test.bat
+cmd /c build_encoding_test.bat
 ```
 
-Both wrappers configure `build/core`, build only the requested executable, and
-forward command-line arguments. Boost.UT accepts a positional name pattern,
+The wrappers configure an ignored build directory, build only the requested
+executable, and forward command-line arguments. Boost.UT accepts a positional name pattern,
 for example `cmd /c build_test.bat "*inline*"`; `-t` lists tags.
 
 ## Conventions
