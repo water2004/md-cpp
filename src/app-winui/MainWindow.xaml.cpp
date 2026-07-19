@@ -53,7 +53,11 @@ namespace winrt::Folia::implementation
         }
     }
 
-    MainWindow::MainWindow()
+    MainWindow::MainWindow() : MainWindow(winrt::hstring{})
+    {
+    }
+
+    MainWindow::MainWindow(winrt::hstring const& initialDocumentPath)
     {
         InitializeComponent();
         LocalizeShell();
@@ -75,6 +79,7 @@ namespace winrt::Folia::implementation
         else if (!themeCatalog->Diagnostics().empty()) SetStatus(themeCatalog->Diagnostics().front());
         else if (!latexCommandCatalog->Diagnostics().empty())
             SetStatus(latexCommandCatalog->Diagnostics().front());
+        if (!initialDocumentPath.empty()) documentController.OpenDocumentPath(initialDocumentPath);
     }
 
     void MainWindow::LocalizeShell()

@@ -21,6 +21,7 @@ namespace winrt::Folia::implementation
     struct MainWindow : MainWindowT<MainWindow>
     {
         MainWindow();
+        explicit MainWindow(winrt::hstring const& initialDocumentPath);
 
     private:
         void AttachControllers();

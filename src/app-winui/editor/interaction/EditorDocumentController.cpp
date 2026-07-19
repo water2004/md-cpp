@@ -69,6 +69,12 @@ namespace winrt::Folia
         OpenDocumentAsync(state_, state_->generation.load());
     }
 
+    void EditorDocumentController::OpenDocumentPath(winrt::hstring const& path)
+    {
+        if (path.empty()) return;
+        OpenDocumentPathAsync(state_, state_->generation.load(), path);
+    }
+
     void EditorDocumentController::SaveDocument()
     {
         SaveDocumentAsync(state_, state_->generation.load());
@@ -149,66 +155,7 @@ namespace winrt::Folia
                 if (state->setStatus) state->setStatus(Localize(L"StatusOpenCancelled"));
                 co_return;
             }
-            if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusReadingFile", { file.Name() }));
-            if (state->setProgress) state->setProgress(true, std::nullopt, false);
-            auto text = co_await winrt::Windows::Storage::FileIO::ReadTextAsync(file);
-            if (!Active(state, generation)) co_return;
-            if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusParsingFile", { file.Name() }));
-            if (state->setProgress) state->setProgress(true, 0.0, false);
-            auto dispatcher = winrt::Microsoft::UI::Dispatching::DispatcherQueue::GetForCurrentThread();
-            auto reportedPercent = std::make_shared<std::atomic_size_t>(0);
-            auto progressActive = std::make_shared<std::atomic_bool>(true);
-            winrt::apartment_context uiContext;
-            std::exception_ptr loadFailure;
-            std::optional<EditorSession> loaded;
-            co_await winrt::resume_background();
-            try
-            {
-                loaded.emplace();
-                loaded->Open(file, text, [
-                    state,
-                    generation,
-                    dispatcher,
-                    reportedPercent,
-                    progressActive](
-                    std::size_t consumed,
-                    std::size_t total)
-                {
-                    if (!progressActive->load()) return;
-                    auto percent = total == 0
-                        ? std::size_t{100}
-                        : (std::min)(std::size_t{100}, consumed * 100 / total);
-                    auto previous = reportedPercent->load();
-                    while (percent > previous
-                        && !reportedPercent->compare_exchange_weak(previous, percent)) {}
-                    if (percent <= previous) return;
-                    dispatcher.TryEnqueue([state, generation, percent, progressActive]
-                    {
-                        if (!progressActive->load()
-                            || !Active(state, generation)
-                            || !state->setProgress) return;
-                        state->setProgress(true, static_cast<double>(percent) / 100.0, false);
-                    });
-                });
-            }
-            catch (...)
-            {
-                loadFailure = std::current_exception();
-            }
-            progressActive->store(false);
-            co_await uiContext;
-            if (!Active(state, generation)) co_return;
-            if (loadFailure) std::rethrow_exception(loadFailure);
-            *state->session = std::move(*loaded);
-            if (state->renderer)
-            {
-                state->renderer->ResetDocumentCaches();
-                state->renderer->SetScrollOffset(0.0f);
-            }
-            if (state->textInput) state->textInput->NotifyTextChanged();
-            if (state->documentChanged) state->documentChanged();
-            if (state->setProgress) state->setProgress(false, std::nullopt, false);
-            if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusOpenedFile", { file.Name() }));
+            co_await LoadDocumentAsync(state, generation, file);
         }
         catch (winrt::hresult_error const& error)
         {
@@ -227,6 +174,107 @@ namespace winrt::Folia
                     L"StatusOpenFailed", { winrt::to_hstring(error.what()) }));
             }
         }
+    }
+
+    winrt::fire_and_forget EditorDocumentController::OpenDocumentPathAsync(
+        std::shared_ptr<State> state,
+        std::uint64_t generation,
+        winrt::hstring path)
+    {
+        try
+        {
+            if (!Active(state, generation)) co_return;
+            auto normalized = std::filesystem::path(path.c_str()).lexically_normal();
+            if (normalized.is_relative()) normalized = std::filesystem::absolute(normalized);
+            auto file = co_await winrt::Windows::Storage::StorageFile::GetFileFromPathAsync(normalized.wstring());
+            if (!Active(state, generation)) co_return;
+            co_await LoadDocumentAsync(state, generation, file);
+        }
+        catch (winrt::hresult_error const& error)
+        {
+            if (Active(state, generation))
+            {
+                if (state->setProgress) state->setProgress(false, std::nullopt, false);
+                if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusOpenFailed", { error.message() }));
+            }
+        }
+        catch (std::exception const& error)
+        {
+            if (Active(state, generation))
+            {
+                if (state->setProgress) state->setProgress(false, std::nullopt, false);
+                if (state->setStatus) state->setStatus(LocalizeFormat(
+                    L"StatusOpenFailed", { winrt::to_hstring(error.what()) }));
+            }
+        }
+    }
+
+    winrt::Windows::Foundation::IAsyncAction EditorDocumentController::LoadDocumentAsync(
+        std::shared_ptr<State> state,
+        std::uint64_t generation,
+        winrt::Windows::Storage::StorageFile file)
+    {
+        if (!Active(state, generation) || !file) co_return;
+        if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusReadingFile", { file.Name() }));
+        if (state->setProgress) state->setProgress(true, std::nullopt, false);
+        auto text = co_await winrt::Windows::Storage::FileIO::ReadTextAsync(file);
+        if (!Active(state, generation)) co_return;
+        if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusParsingFile", { file.Name() }));
+        if (state->setProgress) state->setProgress(true, 0.0, false);
+        auto dispatcher = winrt::Microsoft::UI::Dispatching::DispatcherQueue::GetForCurrentThread();
+        auto reportedPercent = std::make_shared<std::atomic_size_t>(0);
+        auto progressActive = std::make_shared<std::atomic_bool>(true);
+        winrt::apartment_context uiContext;
+        std::exception_ptr loadFailure;
+        std::optional<EditorSession> loaded;
+        co_await winrt::resume_background();
+        try
+        {
+            loaded.emplace();
+            loaded->Open(file, text, [
+                state,
+                generation,
+                dispatcher,
+                reportedPercent,
+                progressActive](
+                std::size_t consumed,
+                std::size_t total)
+            {
+                if (!progressActive->load()) return;
+                auto percent = total == 0
+                    ? std::size_t{100}
+                    : (std::min)(std::size_t{100}, consumed * 100 / total);
+                auto previous = reportedPercent->load();
+                while (percent > previous
+                    && !reportedPercent->compare_exchange_weak(previous, percent)) {}
+                if (percent <= previous) return;
+                dispatcher.TryEnqueue([state, generation, percent, progressActive]
+                {
+                    if (!progressActive->load()
+                        || !Active(state, generation)
+                        || !state->setProgress) return;
+                    state->setProgress(true, static_cast<double>(percent) / 100.0, false);
+                });
+            });
+        }
+        catch (...)
+        {
+            loadFailure = std::current_exception();
+        }
+        progressActive->store(false);
+        co_await uiContext;
+        if (!Active(state, generation)) co_return;
+        if (loadFailure) std::rethrow_exception(loadFailure);
+        *state->session = std::move(*loaded);
+        if (state->renderer)
+        {
+            state->renderer->ResetDocumentCaches();
+            state->renderer->SetScrollOffset(0.0f);
+        }
+        if (state->textInput) state->textInput->NotifyTextChanged();
+        if (state->documentChanged) state->documentChanged();
+        if (state->setProgress) state->setProgress(false, std::nullopt, false);
+        if (state->setStatus) state->setStatus(LocalizeFormat(L"StatusOpenedFile", { file.Name() }));
     }
 
     winrt::fire_and_forget EditorDocumentController::SaveDocumentAsync(std::shared_ptr<State> state, std::uint64_t generation)

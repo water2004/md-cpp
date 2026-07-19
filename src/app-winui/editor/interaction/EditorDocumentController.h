@@ -35,6 +35,7 @@ namespace winrt::Folia
             WindowHandle windowHandle);
         void Detach();
         void OpenDocument();
+        void OpenDocumentPath(winrt::hstring const& path);
         void SaveDocument();
         void SaveDocumentAs();
         void ExportPdf();
@@ -49,6 +50,14 @@ namespace winrt::Folia
         struct State;
         static bool Active(std::shared_ptr<State> const& state, std::uint64_t generation);
         static winrt::fire_and_forget OpenDocumentAsync(std::shared_ptr<State> state, std::uint64_t generation);
+        static winrt::fire_and_forget OpenDocumentPathAsync(
+            std::shared_ptr<State> state,
+            std::uint64_t generation,
+            winrt::hstring path);
+        static winrt::Windows::Foundation::IAsyncAction LoadDocumentAsync(
+            std::shared_ptr<State> state,
+            std::uint64_t generation,
+            winrt::Windows::Storage::StorageFile file);
         static winrt::fire_and_forget SaveDocumentAsync(std::shared_ptr<State> state, std::uint64_t generation);
         static winrt::fire_and_forget SaveDocumentAsAsync(std::shared_ptr<State> state, std::uint64_t generation);
         static winrt::fire_and_forget ExportPdfAsync(std::shared_ptr<State> state, std::uint64_t generation);
