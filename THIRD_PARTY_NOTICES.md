@@ -5,9 +5,12 @@ license notices distributed with the application are generated at:
 
 `src/app-winui/Assets/licenses/THIRD-PARTY-NOTICES.txt`
 
-The search engine uses the vendored, header-only SRELL regular-expression
-library under the BSD 2-Clause License; that license is included in the
-generated notice bundle.
+The generated bundle is authoritative. It includes the repository's Boost.UT
+test fork, the SRELL search engine, QuickJS and MathJax, Tree-sitter and its
+language grammars, the native SVG/Mermaid Rust dependency graph, Windows App
+SDK/NuGet packages, and bundled npm packages. Dependencies that are present
+only because the Windows App SDK package graph restores them are listed too;
+their presence does not imply that Folia embeds a WebView editor.
 
 Regenerate the file after changing native, NuGet, Cargo, or npm dependencies:
 

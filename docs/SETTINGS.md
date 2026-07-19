@@ -1,6 +1,6 @@
 # Settings
 
-Settings is a full-window WinUI mode rather than a modal dialog. While it is active, the checked Settings command remains highlighted, document commands are hidden, and the document outline is replaced by General, Shortcuts, LaTeX Commands, Themes, Licenses, and About navigation. Press the checked Settings command again to return to the document without rebuilding the editor session.
+Settings is a full-window WinUI mode rather than a modal dialog. While it is active, the checked Settings command remains highlighted, document commands are hidden, and the document outline is replaced by General, Shortcuts, LaTeX Commands, Themes, Licenses, and About navigation. Press the checked Settings command again to return to the document without rebuilding the editor session. Settings pages use one page-level scroll surface; lists open focused dialogs for editing instead of embedding a second scrolling form.
 
 ## Math rendering
 
@@ -21,19 +21,23 @@ Settings use schema version 4 and are saved atomically to `Assets/settings.json`
 }
 ```
 
-An invalid or unavailable file falls back to safe defaults and reports a diagnostic. The MathJax switch applies and saves immediately. Theme selection is staged: it updates only the theme preview until the Theme page's `Apply` button is pressed. Leaving Settings without applying discards the pending theme selection. The preview uses the profile's actual typography, code, quote, and color values. An active custom theme cannot be removed until a different theme has been applied, preventing a dangling persisted ID.
+An invalid or unavailable file falls back to safe defaults and reports a diagnostic. MathJax, LaTeX suggestions, language, and shortcut changes save immediately. A language override takes effect on the next launch; `system`, `en-US`, and `zh-CN` are supported by compiled WinUI resource files. Theme selection alone is staged: it updates only the preview until the Theme page's `Apply` button is pressed. Leaving Settings without applying discards the pending theme selection. The preview uses the profile's actual typography, code, quote, and color values. An active custom theme cannot be removed until a different theme has been applied, preventing a dangling persisted ID.
 
 ## Shortcuts and insertion actions
 
 Shortcut bindings are resolved deterministically by editor context. A Code or Math binding overrides the same Global gesture only while the caret is in that context; conflicts inside one scope are rejected and reported before settings are saved. A binding with no gesture is intentionally disabled. There is no hidden hard-coded Ctrl-key fallback, so clearing a built-in binding actually disables it.
 
-Custom insertion actions store multiline source templates and use a deterministic subset of VS Code snippet syntax:
+The page shows built-in and custom actions in one list. A row menu changes or clears a binding; custom actions can also be edited, reset, or removed. Adding or editing a custom action opens a focused dialog for its name, scope, gesture, and insertion template.
+
+Templates may expand to multiple lines, but the Settings field is deliberately a single-line literal. It first decodes `\\` as a backslash, `\n` as a newline, `\r` as carriage return, and `\t` as a tab; unknown or dangling escapes are rejected. The decoded source then uses a deterministic subset of VS Code snippet syntax:
 
 - `$1`, `${1}`, and later numbered markers define the order visited by Tab; `$0` is the final caret stop.
 - `${1:default}` inserts and selects default text, so typing replaces it before Tab advances.
 - `${TM_SELECTED_TEXT}` inserts the exact selected block-local Markdown source.
 - `${1:${TM_SELECTED_TEXT}}` inserts the selection as the first editable placeholder. A useful wrapping action is `\mathbf{${1:${TM_SELECTED_TEXT}}}$0`.
-- `$$` inserts a literal dollar sign. Ordinary characters, including newlines, are preserved verbatim.
+- `$$` inserts a literal dollar sign. Other decoded characters are preserved verbatim.
+
+For example, the one-line literal `\\frac{${1}}{${2}}$0` expands to `\frac{…}{…}`, while `\\begin{matrix}\n$1\n\\end{matrix}$0` expands to a three-line matrix environment.
 
 Insertion remains a normal block-local source edit, and the temporary Tab-stop session is UI state rather than a second document coordinate system. Selected source is inserted verbatim rather than parsed as another snippet, so Markdown and LaTeX dollar characters inside the selection are not accidentally interpreted as placeholders.
 
@@ -41,7 +45,9 @@ Insertion remains a normal block-local source edit, and the temporary Tab-stop s
 
 LaTeX suggestions have an independent immediate-apply switch. In rendered mode, typing a command prefix such as `\fr` inside inline or block math opens a native WinUI candidate popup beside the caret. Up/Down changes the selected candidate, Tab or Enter inserts it, and Escape closes the popup. Accepting a command replaces only the command prefix in the current editable block and reuses the same source-template and Tab-stop transaction path as custom shortcut insertions.
 
-Built-in commands are loaded from `Assets/latex/commands.json`. Personal commands and usage history are stored separately in `Assets/latex/commands.user.json`, so application updates do not rewrite user data. Personal commands can shadow a built-in trigger without creating a compatibility entry. Usage ranking applies exponential time decay with a 14-day half-life; exact prefix matches remain first, and Settings can reset all usage scores. The personal command editor accepts multiline templates and uses the same snippet notation described above. Built-in matrix, cases, and aligned commands therefore insert real multiline environments; accepting a completion does not expose the command prefix itself as `TM_SELECTED_TEXT`.
+Built-in commands are loaded from `Assets/latex/commands.json`. Personal commands and usage history are stored separately in `Assets/latex/commands.user.json`, so application updates do not rewrite user data. Each catalog row owns exactly one trigger and one template; `matrix` and `begin{matrix}` are therefore separate commands even when their expanded templates are similar. Triggers are stored without the leading backslash and may include registered suffix syntax such as `{matrix}`. Personal commands can shadow a built-in trigger without creating a compatibility entry.
+
+The LaTeX page uses the same add/edit dialog and single-line escaped template notation as insertion actions. Its overflow menu resets usage ranking, while command-row menus edit, disable, reset, or remove the relevant entry. Ranking applies exponential time decay with a 14-day half-life and keeps exact prefix matches first. Built-in matrix, cases, and aligned commands expand `\n` escapes into real multiline environments; accepting a completion does not expose the command prefix itself as `TM_SELECTED_TEXT`.
 
 ## Built-in themes
 

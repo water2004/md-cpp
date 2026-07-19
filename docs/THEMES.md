@@ -1,6 +1,6 @@
 # Theme configuration
 
-The application loads built-in themes from `Assets/themes` and manages imported themes in `Assets/themes/custom`. The repository ships complete `dark.json`, `light.json`, and `high-contrast.json` profiles; MSBuild copies them to the configured Assets directory. Imported profiles can be previewed, selected, replaced by ID, and removed from the native full-window Settings view. Built-in profiles cannot be removed.
+The application loads built-in themes from `Assets/themes` and manages imported themes in `Assets/themes/custom`. The repository ships complete neutral (`light`, `dark`, and `high-contrast`) and distinctive (`inkstone-paper`, `moss-linen`, `arctic-night`, and `ember-night`) profiles; MSBuild copies them to the configured Assets directory. Imported profiles can be previewed, selected, replaced by ID, and removed from the native full-window Settings view. Built-in profiles cannot be removed.
 
 The theme file is the normal runtime source of truth for:
 
@@ -34,10 +34,12 @@ Theme selection in Settings changes only the preview until `Apply` is pressed. A
 
 All application data and resource paths are relative to one Assets root:
 
-- `settings.json` stores the selected theme and MathJax setting;
+- `settings.json` stores runtime settings, selected theme/language, and shortcut bindings;
 - `themes/*.json` contains protected built-in profiles;
 - `themes/custom/*.json` contains user-managed profiles;
-- `mathjax/` contains the QuickJS MathJax bundle and its font modules.
+- `latex/` contains built-in commands plus the separate user catalog and usage data;
+- `mathjax/` contains the QuickJS MathJax bundle and its font modules;
+- `licenses/`, `branding/`, and other media folders contain distributable static resources.
 
 Without an explicit build value, the root is `./Assets` relative to the process working directory. Set the MSBuild property `FoliaAssetsDirectory` to name the Assets directory itself:
 
@@ -45,4 +47,4 @@ Without an explicit build value, the root is `./Assets` relative to the process 
 powershell -ExecutionPolicy Bypass -File .\build_app.ps1 -Configuration Release -AssetsDirectory "C:\path with spaces\Assets"
 ```
 
-The configured value is compiled into the application and static Assets are copied there after the build. Environment references such as `%LOCALAPPDATA%` are expanded by the application at runtime; packaging should pass or materialize an appropriate per-user Assets path rather than writing settings into the installed program directory.
+The configured value is compiled into the application and static Assets are copied there after the build. Environment references such as `%LOCALAPPDATA%` are expanded by the application at runtime; the installer uses the explicit `{LocalAppData}\Folia\Assets` token, which is resolved for the current user. Packaging should pass or materialize an appropriate per-user Assets path rather than writing settings into the installed program directory.

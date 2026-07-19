@@ -32,8 +32,9 @@ the user did not change.
 
 - **Source faithful** — preserves marker spelling, escapes, whitespace, link
   syntax, and temporarily incomplete editing states.
-- **Native editing** — WYSIWYG and monospaced source modes, outline navigation,
-  transactional history, semantic copy/paste, and regular-expression
+- **Native editing** — WYSIWYG and monospaced source modes, line numbers and
+  outline navigation, transactional history, semantic copy/paste, configurable
+  context-aware shortcuts/snippets, LaTeX completion, and regular-expression
   find/replace are implemented in native C++. Rendered-mode search operates on
   visible text while source mode searches the exact Markdown buffer.
 - **Rich rendering** — MathJax, Mermaid, Tree-sitter syntax highlighting,
@@ -41,9 +42,12 @@ the user did not change.
   and installed WebP/HEIF codecs), tables, footnotes, callouts, and recursively
   nested blocks. Safe embedded HTML is projected into native block/inline
   presentation, including common text styles, image/link flows, and
-  `align`/`text-align`; no browser surface is embedded.
+  `align`/`text-align`; HTML comments stay non-rendered, and Ctrl-clicked local
+  links resolve percent-encoded paths and anchors. No browser surface is
+  embedded.
 - **Focused reading** — configurable themes, English and Chinese interfaces,
-  a borderless WinUI shell, and native Windows PDF export.
+  a borderless WinUI shell, file-association support, and cancellable native
+  Windows PDF export with page progress.
 - **Clear boundaries** — the C++23 modules core remains platform independent;
   Windows, DirectX, and WinUI code stays in the platform and application layers.
 
@@ -58,10 +62,13 @@ Markdown source
                  ↓
         platform-neutral render model
                  ↓
-        WinUI 3 + Direct2D/DirectWrite
+        deterministic Windows editor plans
+                 ↓
+        WinUI 3 + Direct2D/DirectWrite resources
 ```
 
-See the [source layout](src/README.md), [core layout](src/core/README.md), and
+See the [source layout](src/README.md), [core layout](src/core/README.md),
+[Windows platform layer](src/platform/README.md), and
 [WinUI application layer](src/app-winui/README.md) for ownership boundaries.
 
 ## Build from source
@@ -103,15 +110,23 @@ All generated files stay below `build/`. Application binaries are written to
 `build/app-winui/bin/<platform>/<configuration>/`; builds do not write into
 the source tree.
 
-Run the core test suite with:
+Run the platform-independent core test suite and deterministic Windows editor
+tests with:
 
 ```powershell
 cmd /c build_test.bat
+cmd /c build_platform_test.bat
 ```
 
+Both runners forward positional Boost.UT name filters, for example
+`cmd /c build_test.bat "*inline*"`. See the [test layout](tests/README.md) for
+suite ownership and conventions.
+
 The WinUI project entry point is [Folia.vcxproj](src/app-winui/Folia.vcxproj).
-See the [theme documentation](docs/THEMES.md) for custom themes and external
-Assets roots.
+See [Settings](docs/SETTINGS.md) for shortcuts, snippets, LaTeX completion, and
+runtime options; see [Themes](docs/THEMES.md) for profile fields and external
+Assets roots. [MarkText interaction notes](docs/MARKTEXT_REFERENCE.md) record
+behavioral references without changing Folia's native architecture.
 
 ## Project status
 
