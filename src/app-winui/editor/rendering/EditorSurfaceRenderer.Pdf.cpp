@@ -140,8 +140,7 @@ namespace winrt::Folia
                         PdfContentWidth,
                         (std::max)(1.0f, clipHeight)),
                     D2D1_ANTIALIAS_MODE_ALIASED);
-                scrollState.Set(sourceTop, MaximumScrollOffset());
-                DrawDocument(frame);
+                DrawDocument(frame, sourceTop);
                 resources.d2dContext->PopAxisAlignedClip();
                 auto result = resources.d2dContext->EndDraw();
                 resources.d2dContext->SetTarget(nullptr);

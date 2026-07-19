@@ -17,7 +17,9 @@ import folia.core.render_model;
 
 namespace winrt::Folia
 {
-    void EditorSurfaceRenderer::DrawDocument(detail::EditorRenderFrame const& frame)
+    void EditorSurfaceRenderer::DrawDocument(
+        detail::EditorRenderFrame const& frame,
+        std::optional<float> sourceTopOverride)
     {
         interactionMap.Clear();
         nonInteractiveRegions.clear();
@@ -42,7 +44,11 @@ namespace winrt::Folia
         auto documentLeft = sourceGutterWidth > 0.0f ? sourceGutterWidth + 8.0f : padding;
         auto documentRight = (std::max)(documentLeft + 1.0f, resources.surfaceWidthDip - padding - 14.0f);
         auto documentWidth = documentRight - documentLeft;
-        auto scrollOffset = scrollState.Offset();
+        // Printed pages use document coordinates directly.  In particular,
+        // the final page may start below the editor viewport's maximum scroll
+        // offset when less than one page remains, so it must not be clamped as
+        // an interactive viewport position.
+        auto scrollOffset = sourceTopOverride.value_or(scrollState.Offset());
         auto y = styleSheet.verticalPadding - scrollOffset;
         auto selection = printMode ? folia::TextSelection{} : frame.selection;
         auto caret = selection.active;
@@ -163,7 +169,7 @@ namespace winrt::Folia
             draggedTableAction,
             tableDropIndex);
         totalDocumentHeight = preparedDocument->totalHeight;
-        scrollState.Clamp(MaximumScrollOffset());
+        if (!sourceTopOverride) scrollState.Clamp(MaximumScrollOffset());
     }
 
 }

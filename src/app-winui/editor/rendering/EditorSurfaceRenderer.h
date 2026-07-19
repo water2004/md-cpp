@@ -74,7 +74,9 @@ namespace winrt::Folia
     private:
         struct PdfExportState;
 
-        void DrawDocument(detail::EditorRenderFrame const& frame);
+        void DrawDocument(
+            detail::EditorRenderFrame const& frame,
+            std::optional<float> sourceTopOverride = std::nullopt);
         void ClearPreparedDocument();
 
         void Invalidate();
