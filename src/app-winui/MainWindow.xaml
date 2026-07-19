@@ -202,7 +202,7 @@
                 PaneDisplayMode="Left">
                 <NavigationView.PaneCustomContent>
                     <Grid
-                        MaxHeight="{Binding ActualHeight, ElementName=WorkspaceHost}"
+                        Height="{Binding ActualHeight, ElementName=WorkspaceHost}"
                         Padding="8,8,8,8"
                         RowDefinitions="Auto,*">
                         <TextBlock
@@ -214,6 +214,8 @@
                             x:Name="OutlineList"
                             Grid.Row="1"
                             Background="Transparent"
+                            ScrollViewer.VerticalScrollBarVisibility="Auto"
+                            ScrollViewer.VerticalScrollMode="Enabled"
                             SelectionMode="Single"/>
                     </Grid>
                 </NavigationView.PaneCustomContent>
