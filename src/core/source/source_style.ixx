@@ -19,6 +19,7 @@ enum class SourceSyntaxKind {
     Math,
     Escape,
     Entity,
+    Comment,
     Error,
 };
 

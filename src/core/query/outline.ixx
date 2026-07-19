@@ -54,6 +54,10 @@ struct Outline {
         }
         return nullptr;
     }
+    const OutlineItem* find_item_by_url_fragment(std::string_view fragment) const {
+        if (!fragment.empty() && fragment.front() == '#') fragment.remove_prefix(1);
+        return find_item_by_slug(percent_decode_url_component(fragment));
+    }
     const OutlineItem* find_item_by_id(NodeId id) const {
         const OutlineItem* r = nullptr;
         for (const auto& it : items) if (find_item_by_id_(it, id, r)) return r;

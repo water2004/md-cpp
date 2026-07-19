@@ -60,7 +60,7 @@ static_assert(sizeof(InlineToken) == sizeof(std::uint64_t));
 enum class InlineCstKind {
     Text, Whitespace, SoftBreak, HardBreak, Escape, Entity, Delimiter, Raw,
     CodeSpan, InlineMath, Emphasis, Strong, Strikethrough,
-    Link, Image, Autolink, HtmlElement,
+    Link, Image, Autolink, HtmlElement, HtmlComment,
     FootnoteRef, WikiLink, Extension,
     Error,
     Incomplete,

@@ -189,6 +189,8 @@ inline std::string inline_nodes_to_html(
                 }
                 break;
             }
+            case K::HtmlComment:
+                break;
             case K::Autolink:
                 html += "<a href=\"" + escape_text(sanitized_target(node.semantics().href, false)) + "\">"
                     + escape_text(cps_to_utf8(inline_source_slice(document, node.delimiter_ranges().content))) + "</a>";

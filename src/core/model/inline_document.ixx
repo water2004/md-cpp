@@ -143,6 +143,8 @@ inline void append_inline_visible_text(
                     append_inline_visible_text(document, node.children, output);
                 }
                 break;
+            case K::HtmlComment:
+                break;
             case K::Image:
                 output += utf8_to_cps(node.semantics().alt);
                 break;

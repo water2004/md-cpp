@@ -4,6 +4,36 @@ import std;
 
 export namespace folia {
 
+inline std::string percent_decode_url_component(std::string_view value) {
+    const auto hex_value = [](unsigned char ch) -> int {
+        if (ch >= '0' && ch <= '9') return ch - '0';
+        if (ch >= 'a' && ch <= 'f') return 10 + ch - 'a';
+        if (ch >= 'A' && ch <= 'F') return 10 + ch - 'A';
+        return -1;
+    };
+
+    std::string decoded;
+    decoded.reserve(value.size());
+    for (std::size_t index = 0; index < value.size();) {
+        if (value[index] == '%' && index + 2 < value.size()) {
+            const auto high = hex_value(static_cast<unsigned char>(value[index + 1]));
+            const auto low = hex_value(static_cast<unsigned char>(value[index + 2]));
+            const auto byte = high >= 0 && low >= 0 ? (high << 4) | low : -1;
+            // NUL cannot participate in a URI-to-filesystem/heading lookup
+            // boundary.  Preserve its spelling instead of silently
+            // truncating a later native string conversion.
+            if (byte > 0) {
+                decoded.push_back(static_cast<char>(byte));
+                index += 3;
+                continue;
+            }
+        }
+        decoded.push_back(value[index]);
+        ++index;
+    }
+    return decoded;
+}
+
 inline std::string to_lower_ascii(std::string s) {
     for (char& c : s) if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
     return s;
@@ -18,7 +48,11 @@ inline std::string generate_slug(const std::string& title,
     std::string base;
     base.reserve(low.size());
     for (char c : low) {
-        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_') base.push_back(c);
+        const auto byte = static_cast<unsigned char>(c);
+        // UTF-8 non-ASCII bytes are retained as one encoded code-point
+        // sequence.  The previous ASCII-only port collapsed every CJK
+        // heading to `section`, which made its page URL impossible to target.
+        if (byte >= 0x80 || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_') base.push_back(c);
         else base.push_back('-');
     }
     // trim leading/trailing '-'

@@ -128,6 +128,22 @@ suite parser_roundtrip_tests = [] {
     expect(fatal(serialize_markdown(parsed.document) == source));
 };
 
+"standalone_html_comments_are_inert_lossless_blocks"_test = [] {
+    const std::string source = "<!-- hidden\ncomment -->\n\nvisible";
+    const auto parsed = parse_text(1, source);
+    expect(fatal(parsed.document.root.children.size() == 2u));
+    if (parsed.document.root.children.size() != 2u) return;
+    const auto& comment = parsed.document.root.children.front();
+    expect(fatal(comment.kind == BlockKind::HtmlContainer));
+    expect(fatal(comment.children.empty()));
+    expect(fatal(comment.has_html_source()));
+    expect(fatal(comment.html_special().tree.nodes.size() == 1u));
+    expect(fatal(comment.html_special().tree.nodes.front().kind == HtmlCstKind::Comment));
+    expect(fatal(parsed.document.root.children.back().kind == BlockKind::Paragraph));
+    expect(fatal(inline_visible_text(parsed.document.root.children.back().inline_content) == U"visible"));
+    expect(fatal(serialize_markdown(parsed.document) == source));
+};
+
 "direct_block_separators_round_trip_exactly"_test = [] {
     const std::vector<std::string> sources{
         "\nvalue\n```",

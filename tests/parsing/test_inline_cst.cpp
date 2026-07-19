@@ -395,4 +395,60 @@ suite inline_cst_tests = [] {
     }
 };
 
+"percent_escapes_remain_exact_only_inside_link_targets"_test = [] {
+    const auto source = std::u32string{
+        U"100% [local](docs/My%20File.md#part%202) "
+        U"<a href=\"#hello%2Dworld\">anchor</a>"};
+    const auto tree = parse_inline(source, test_context());
+    expect(fatal(is_lossless(source)));
+    const auto* link = first_node(tree, InlineCstKind::Link);
+    const auto* anchor = first_html_node(tree.nodes, "a");
+    expect(fatal(link != nullptr));
+    expect(fatal(anchor != nullptr));
+    if (link) expect(fatal(link->semantics().href == "docs/My%20File.md#part%202"));
+    if (anchor) expect(fatal(anchor->semantics().href == "#hello%2Dworld"));
+    InlineDocument document{source, tree};
+    expect(fatal(inline_visible_text(document) == U"100% local anchor"));
+};
+
+"html_comments_are_lossless_inert_inline_nodes"_test = [] {
+    const auto source = std::u32string{U"before <!-- hidden\ncontent --> after"};
+    const auto tree = parse_inline(source, test_context());
+    expect(fatal(is_lossless(source)));
+    const auto* comment = first_node(tree, InlineCstKind::HtmlComment);
+    expect(fatal(comment != nullptr));
+    if (comment) {
+        expect(fatal(comment->status == ParseStatus::Complete));
+        expect(fatal(source.substr(comment->range.start, comment->range.length())
+            == U"<!-- hidden\ncontent -->"));
+    }
+
+    InlineDocument document{source, tree};
+    expect(fatal(inline_visible_text(document) == U"before  after"));
+};
+
+"unfinished_html_comments_remain_visible_editing_text"_test = [] {
+    const auto source = std::u32string{U"before <!-- unfinished"};
+    const auto tree = parse_inline(source, test_context());
+    expect(fatal(is_lossless(source)));
+    expect(fatal(first_node(tree, InlineCstKind::HtmlComment) == nullptr));
+    InlineDocument document{source, tree};
+    expect(fatal(inline_visible_text(document) == source));
+};
+
+"html_text_islands_hide_nested_comments_without_enabling_markdown"_test = [] {
+    const auto source = std::u32string{
+        U"<span>*literal*<!-- hidden --><strong>visible</strong></span>"};
+    const auto tree = parse_inline(source, test_context());
+    expect(fatal(is_lossless(source)));
+    const auto* span = first_html_node(tree.nodes, "span");
+    expect(fatal(span != nullptr));
+    if (span) {
+        expect(fatal(contains_kind(span->children, InlineCstKind::HtmlComment)));
+        expect(fatal(!contains_kind(span->children, InlineCstKind::Emphasis)));
+    }
+    InlineDocument document{source, tree};
+    expect(fatal(inline_visible_text(document) == U"*literal*visible"));
+};
+
 }; // suite inline_cst_tests

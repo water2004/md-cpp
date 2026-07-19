@@ -14,6 +14,23 @@ using namespace boost::ut;
 
 suite outline_tests = [] {
 
+"url_component_percent_decoding_is_scoped_and_loss_tolerant"_test = [] {
+    expect(fatal(percent_decode_url_component("a%20b") == "a b"));
+    expect(fatal(percent_decode_url_component("%E4%B8%AD%E6%96%87") == "中文"));
+    expect(fatal(percent_decode_url_component("%2520") == "%20"));
+    expect(fatal(percent_decode_url_component("a+b") == "a+b"));
+    expect(fatal(percent_decode_url_component("bad%2%ZZtail") == "bad%2%ZZtail"));
+    expect(fatal(percent_decode_url_component("%00tail") == "%00tail"));
+};
+
+"unicode_heading_slugs_are_addressable_by_encoded_page_urls"_test = [] {
+    auto out = parse_text(1, "# 中文标题\n");
+    const auto* item = out.outline.find_item_by_url_fragment(
+        "#%E4%B8%AD%E6%96%87%E6%A0%87%E9%A2%98");
+    expect(fatal(item != nullptr));
+    if (item) expect(fatal(item->slug == "中文标题"));
+};
+
 "test_basic_slug"_test = [] {
     expect(fatal(bool((generate_slug("Hello World", {})) == (std::string("hello-world")))));
 };
@@ -49,9 +66,10 @@ suite outline_tests = [] {
 };
 
 "test_find_by_slug"_test = [] {
-    auto out = parse_text(1, "# Intro\n## Details\n");
-    auto p = out.outline.find_item_by_slug("details");
+    auto out = parse_text(1, "# Intro\n## Hello World\n");
+    auto p = out.outline.find_item_by_slug("hello-world");
     expect(fatal(bool(p != nullptr)));
+    expect(fatal(out.outline.find_item_by_url_fragment("#hello%2Dworld") == p));
     auto none = out.outline.find_item_by_slug("nonexistent");
     expect(fatal(bool(none == nullptr)));
 };

@@ -821,6 +821,40 @@ struct Parser {
             || name == "samp";
     }
 
+    bool parse_html_comment(InlineCstNodes& out, std::size_t& run_start) {
+        static constexpr auto opener = std::u32string_view{U"<!--"};
+        static constexpr auto closer = std::u32string_view{U"-->"};
+        if (!starts_with(pos, opener)) return false;
+
+        const auto start = pos;
+        const auto content_start = start + opener.size();
+        auto closing_start = content_start;
+        while (closing_start + closer.size() <= limit
+            && !starts_with(closing_start, closer)) {
+            ++closing_start;
+        }
+        // An unfinished comment is an ordinary editing state.  Keep it
+        // visible and editable as literal text until the closing marker is
+        // present instead of hiding the remainder of the block.
+        if (closing_start + closer.size() > limit) return false;
+
+        flush_text_to(out, run_start, start);
+        pos = closing_start + closer.size();
+        InlineCstNode node;
+        node.id = next_id();
+        node.kind = InlineCstKind::HtmlComment;
+        node.status = ParseStatus::Complete;
+        node.range = {start, pos};
+        node.ensure_delimiter_ranges() = {
+            {start, pos},
+            {start, content_start},
+            {content_start, closing_start},
+            SourceRange{closing_start, pos}};
+        out.push_back(std::move(node));
+        run_start = pos;
+        return true;
+    }
+
     bool parse_html_element(InlineCstNodes& out, std::size_t& run_start) {
         if (peek() != U'<') return false;
         const auto start = pos;
@@ -1038,6 +1072,7 @@ struct Parser {
             if (is_line_ending(peek())) { advance(line_ending_length(pos)); continue; }
             if (ctx.syntax_mode == InlineSyntaxMode::HtmlText) {
                 if (parse_entity(out, run_start)) continue;
+                if (peek() == U'<' && parse_html_comment(out, run_start)) continue;
                 if (peek() == U'<' && parse_html_element(out, run_start)) continue;
                 advance();
                 continue;
@@ -1062,6 +1097,7 @@ struct Parser {
                 if (parse_link_or_image(out, run_start)) continue;
             }
             if (peek() == U'<') {
+                if (parse_html_comment(out, run_start)) continue;
                 if (parse_autolink(out, run_start)) continue;
                 if (parse_html_element(out, run_start)) continue;
             }
@@ -1095,6 +1131,7 @@ struct Parser {
             }
             if (ctx.syntax_mode == InlineSyntaxMode::HtmlText) {
                 if (parse_entity(out, run_start)) continue;
+                if (peek() == U'<' && parse_html_comment(out, run_start)) continue;
                 if (peek() == U'<' && parse_html_element(out, run_start)) continue;
                 advance();
                 continue;
@@ -1115,6 +1152,7 @@ struct Parser {
                 if (parse_link_or_image(out, run_start)) continue;
             }
             if (peek() == U'<') {
+                if (parse_html_comment(out, run_start)) continue;
                 if (parse_autolink(out, run_start)) continue;
                 if (parse_html_element(out, run_start)) continue;
             }

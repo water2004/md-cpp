@@ -786,6 +786,8 @@ struct Builder {
                         if (delim.closing) append_marker(target, node, *delim.closing);
                         break;
                     }
+                    case K::HtmlComment:
+                        break;
                     case K::Escape: {
                         const auto raw = inline_source_slice(document, node.range);
                         if (!raw.empty()) {

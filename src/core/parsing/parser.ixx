@@ -1153,9 +1153,10 @@ public:
         auto scanned = parse_html_cst(remainder);
         if (scanned.nodes.empty()) return std::nullopt;
         const auto& first = scanned.nodes.front();
-        if (first.kind != HtmlCstKind::Element
+        const auto comment = first.kind == HtmlCstKind::Comment;
+        if ((!comment && (first.kind != HtmlCstKind::Element
+                || !html_is_block_element(first.tag_name)))
             || first.range.start != 0
-            || !html_is_block_element(first.tag_name)
             || first.range.empty()) {
             return std::nullopt;
         }
@@ -1165,6 +1166,23 @@ public:
         auto tree = parse_html_cst(raw);
         if (tree.nodes.empty()) return std::nullopt;
         const auto& root = tree.nodes.front();
+
+        if (comment && !tree.has_error && root.status == HtmlParseStatus::Complete) {
+            pos = start + source_length;
+            consume_line_ending();
+            BlockNode block;
+            block.id = next_node_id();
+            block.kind = BlockKind::HtmlContainer;
+            auto& html = block.ensure_html_special();
+            html.source = std::move(raw);
+            html.tree = std::move(tree);
+            html.structure_shape = html_block_structure_shape(block);
+            push_range(
+                block.id,
+                {start, start + source_length},
+                {start, start + source_length});
+            return block;
+        }
 
         if (tree.has_error || root.status != HtmlParseStatus::Complete
             || html_contains_unsafe(root)) {

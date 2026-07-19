@@ -116,6 +116,7 @@ inline void collect_inline_styles(std::vector<SourceStyleSpan>& styles, InlineCs
                 break;
             case K::Escape: add_style(styles, node.range, SourceSyntaxKind::Escape); break;
             case K::Entity: add_style(styles, node.range, SourceSyntaxKind::Entity); break;
+            case K::HtmlComment: add_style(styles, node.range, SourceSyntaxKind::Comment); break;
             case K::Error:
             case K::Incomplete:
                 add_style(styles, node.range, SourceSyntaxKind::Error);
