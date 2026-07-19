@@ -45,6 +45,8 @@ Add-LicenseFile 'Boost.UT (test dependency) — Boost Software License 1.0' `
     (Join-Path $Root 'third_party\ut\LICENSE.md')
 Add-LicenseFile 'SRELL — BSD 2-Clause License' `
     (Join-Path $Root 'third_party\srell\LICENSE')
+Add-LicenseFile 'ICU4C 78.3 — Unicode License V3' `
+    (Join-Path $Root 'build\dependencies\icu-78.3\root\LICENSE')
 Add-LicenseFile 'QuickJS — MIT License' `
     (Join-Path $Root 'src\app-winui\third_party\quickjs\LICENSE')
 Add-LicenseFile 'MathJax and MathJax NewCM font — Apache License 2.0' `

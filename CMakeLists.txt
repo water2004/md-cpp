@@ -150,6 +150,7 @@ set_target_properties(FoliaTests PROPERTIES
 file(GLOB_RECURSE FOLIA_TEST_SRC CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp)
 list(FILTER FOLIA_TEST_SRC EXCLUDE REGEX "/tests/platform/")
+list(FILTER FOLIA_TEST_SRC EXCLUDE REGEX "/tests/encoding/")
 target_sources(FoliaTests PRIVATE
     ${FOLIA_TEST_SRC})
 target_include_directories(FoliaTests PRIVATE
@@ -175,4 +176,39 @@ if(TARGET folia_platform)
     target_link_libraries(FoliaWindowsEditorTests PRIVATE
         folia_platform Boost::ut_module)
     add_test(NAME FoliaWindowsEditorTests COMMAND FoliaWindowsEditorTests)
+endif()
+
+if(WIN32)
+    set(FOLIA_ICU_ROOT
+        "${CMAKE_CURRENT_SOURCE_DIR}/build/dependencies/icu-78.3/root"
+        CACHE PATH "ICU4C root used by document encoding tests")
+    if(EXISTS "${FOLIA_ICU_ROOT}/include/unicode/ucsdet.h")
+        add_executable(FoliaEncodingTests
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/encoding/main.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/encoding/test_document_encoding.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/app-winui/storage/DocumentEncodingService.cpp)
+        target_compile_features(FoliaEncodingTests PRIVATE cxx_std_23)
+        set_target_properties(FoliaEncodingTests PROPERTIES
+            CXX_MODULE_STD ON
+            CXX_SCAN_FOR_MODULES ON)
+        target_include_directories(FoliaEncodingTests PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/app-winui
+            ${FOLIA_ICU_ROOT}/include)
+        target_sources(FoliaEncodingTests PRIVATE
+            FILE_SET CXX_MODULES FILES
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/encoding/document_encoding_test_support.ixx)
+        target_link_libraries(FoliaEncodingTests PRIVATE
+            Boost::ut_module
+            ${FOLIA_ICU_ROOT}/lib64/icuin.lib
+            ${FOLIA_ICU_ROOT}/lib64/icuuc.lib
+            ${FOLIA_ICU_ROOT}/lib64/icudt.lib)
+        add_custom_command(TARGET FoliaEncodingTests POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${FOLIA_ICU_ROOT}/bin64/icuin78.dll
+                ${FOLIA_ICU_ROOT}/bin64/icuuc78.dll
+                ${FOLIA_ICU_ROOT}/bin64/icudt78.dll
+                $<TARGET_FILE_DIR:FoliaEncodingTests>)
+        add_test(NAME FoliaEncodingTests COMMAND FoliaEncodingTests)
+    endif()
 endif()

@@ -7,7 +7,8 @@ license notices distributed with the application are generated at:
 
 The generated bundle is authoritative. It includes the repository's Boost.UT
 test fork, the SRELL search engine, QuickJS and MathJax, Tree-sitter and its
-language grammars, the native SVG/Mermaid Rust dependency graph, Windows App
+language grammars, ICU4C charset detection and conversion, the native
+SVG/Mermaid Rust dependency graph, Windows App
 SDK/NuGet packages, and bundled npm packages. Dependencies that are present
 only because the Windows App SDK package graph restores them are listed too;
 their presence does not imply that Folia embeds a WebView editor.
