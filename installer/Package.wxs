@@ -23,6 +23,47 @@
             <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
             <RegistryValue Root="HKCU" Key="Software\water2004\Folia\Installer" Name="InstallFolder" Type="integer" Value="1" KeyPath="yes" />
           </Component>
+          <Component Id="MarkdownFileAssociationComponent" Guid="15007EF1-9604-4FF6-BD0A-B793E1AF7D9D" Bitness="always64">
+            <!-- Default Apps registration: advertises Folia without silently taking ownership. -->
+            <RegistryValue Root="HKCU" Key="Software\RegisteredApplications" Name="Folia" Type="string"
+                           Value="Software\water2004\Folia\Capabilities" KeyPath="yes" />
+            <RegistryValue Root="HKCU" Key="Software\water2004\Folia\Capabilities" Name="ApplicationName"
+                           Type="string" Value="Folia" />
+            <RegistryValue Root="HKCU" Key="Software\water2004\Folia\Capabilities" Name="ApplicationDescription"
+                           Type="string" Value="Folia Markdown editor" />
+            <RegistryValue Root="HKCU" Key="Software\water2004\Folia\Capabilities" Name="ApplicationIcon"
+                           Type="string" Value="[INSTALLFOLDER]Folia.exe,0" />
+            <RegistryValue Root="HKCU" Key="Software\water2004\Folia\Capabilities\FileAssociations" Name=".md"
+                           Type="string" Value="Folia.Markdown" />
+            <RegistryValue Root="HKCU" Key="Software\water2004\Folia\Capabilities\FileAssociations" Name=".markdown"
+                           Type="string" Value="Folia.Markdown" />
+
+            <!-- ProgID used by Open With and by the Default Apps picker. -->
+            <RegistryValue Root="HKCU" Key="Software\Classes\Folia.Markdown"
+                           Type="string" Value="Folia Markdown document" />
+            <RegistryValue Root="HKCU" Key="Software\Classes\Folia.Markdown" Name="FriendlyTypeName"
+                           Type="string" Value="Folia Markdown document" />
+            <RegistryValue Root="HKCU" Key="Software\Classes\Folia.Markdown\DefaultIcon"
+                           Type="string" Value="[INSTALLFOLDER]Folia.exe,0" />
+            <RegistryValue Root="HKCU" Key="Software\Classes\Folia.Markdown\shell\open\command"
+                           Type="string" Value="&quot;[INSTALLFOLDER]Folia.exe&quot; &quot;%1&quot;" />
+            <RegistryValue Root="HKCU" Key="Software\Classes\.md\OpenWithProgids" Name="Folia.Markdown"
+                           Type="string" Value="" />
+            <RegistryValue Root="HKCU" Key="Software\Classes\.markdown\OpenWithProgids" Name="Folia.Markdown"
+                           Type="string" Value="" />
+
+            <!-- Explicit Applications entry keeps Folia visible in the classic Open With dialog. -->
+            <RegistryValue Root="HKCU" Key="Software\Classes\Applications\Folia.exe" Name="FriendlyAppName"
+                           Type="string" Value="Folia" />
+            <RegistryValue Root="HKCU" Key="Software\Classes\Applications\Folia.exe\DefaultIcon"
+                           Type="string" Value="[INSTALLFOLDER]Folia.exe,0" />
+            <RegistryValue Root="HKCU" Key="Software\Classes\Applications\Folia.exe\SupportedTypes" Name=".md"
+                           Type="string" Value="" />
+            <RegistryValue Root="HKCU" Key="Software\Classes\Applications\Folia.exe\SupportedTypes" Name=".markdown"
+                           Type="string" Value="" />
+            <RegistryValue Root="HKCU" Key="Software\Classes\Applications\Folia.exe\shell\open\command"
+                           Type="string" Value="&quot;[INSTALLFOLDER]Folia.exe&quot; &quot;%1&quot;" />
+          </Component>
         </Directory>
       </Directory>
       <Directory Id="FOLIADATADIR" Name="Folia">
@@ -65,6 +106,7 @@
       <ComponentRef Id="StartMenuShortcutComponent" />
       <ComponentRef Id="LocalProgramsCleanupComponent" />
       <ComponentRef Id="InstallFolderCleanupComponent" />
+      <ComponentRef Id="MarkdownFileAssociationComponent" />
       <ComponentRef Id="DataFolderCleanupComponent" />
       <ComponentRef Id="AssetsFolderCleanupComponent" />
     </Feature>
